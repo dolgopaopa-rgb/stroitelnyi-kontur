@@ -101,7 +101,7 @@
               <form class="form embedded compact-form" id="estimateImportForm">
                 <label>Объект <select name="project_id" required></select></label>
                 <label>Версия сметы <input name="estimate_version" placeholder="основная смета v1" /></label>
-                <label>CSV-файл из Excel <input name="estimate_file" type="file" accept=".csv" required /></label>
+                <label>Файл из Сметтера / Excel <input name="estimate_file" type="file" accept=".xlsx,.csv" required /></label>
                 <div class="form-actions">
                   <button class="secondary" type="button" id="previewEstimateButton">Предпросмотр</button>
                   <button class="primary" type="submit">Загрузить</button>
@@ -115,7 +115,7 @@
               <h2>Предпросмотр файла</h2>
             </div>
             <div class="table" id="estimatePreviewRows">
-              <p class="muted">Выберите CSV-файл и нажмите “Предпросмотр”.</p>
+              <p class="muted">Выберите файл .xlsx из Сметтера или CSV и нажмите “Предпросмотр”.</p>
             </div>
           </section>
         </section>

@@ -347,14 +347,34 @@ function renderEstimatePreview() {
     : `<p class="muted">В файле не найдено строк материалов.</p>`;
 }
 
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(String(reader.result).split(",", 2)[1] || ""));
+    reader.addEventListener("error", () => reject(reader.error));
+    reader.readAsDataURL(file);
+  });
+}
+
 async function loadEstimatePreview() {
   const file = qs('#estimateImportForm input[name="estimate_file"]').files[0];
   if (!file) {
-    showToast("Выберите CSV-файл");
+    showToast("Выберите файл .xlsx или CSV");
     return;
   }
-  const text = await file.text();
-  state.estimatePreviewRows = readEstimateRows(text);
+  if (file.name.toLowerCase().endsWith(".xlsx")) {
+    const result = await api("/api/estimate-materials/preview-file", {
+      method: "POST",
+      body: JSON.stringify({
+        file_name: file.name,
+        file_base64: await fileToBase64(file),
+      }),
+    });
+    state.estimatePreviewRows = result.rows || [];
+  } else {
+    const text = await file.text();
+    state.estimatePreviewRows = readEstimateRows(text);
+  }
   renderEstimatePreview();
   showToast(`Найдено строк: ${state.estimatePreviewRows.length}`);
 }

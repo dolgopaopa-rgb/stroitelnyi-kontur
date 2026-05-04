@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+import base64
+import csv
+import io
 import json
+import re
+import zipfile
+import xml.etree.ElementTree as ET
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -27,6 +33,162 @@ def read_json(handler: BaseHTTPRequestHandler) -> dict:
         return {}
     raw = handler.rfile.read(length).decode("utf-8")
     return json.loads(raw)
+
+
+def number_value(value: object) -> float:
+    if value in (None, ""):
+        return 0
+    if isinstance(value, (int, float)):
+        return float(value)
+    return float(str(value).replace(" ", "").replace(",", ".") or 0)
+
+
+def cell_text(value: object) -> str:
+    if value in (None, ""):
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value).strip()
+
+
+def column_index(cell_ref: str) -> int:
+    letters = re.sub(r"[^A-Z]", "", cell_ref.upper())
+    result = 0
+    for letter in letters:
+        result = result * 26 + ord(letter) - ord("A") + 1
+    return result
+
+
+def parse_xlsx_rows(file_bytes: bytes) -> list[list[object]]:
+    ns = {
+        "main": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
+        "rel": "http://schemas.openxmlformats.org/package/2006/relationships",
+    }
+    with zipfile.ZipFile(io.BytesIO(file_bytes)) as archive:
+        shared_strings: list[str] = []
+        if "xl/sharedStrings.xml" in archive.namelist():
+            root = ET.fromstring(archive.read("xl/sharedStrings.xml"))
+            for item in root.findall("main:si", ns):
+                parts = [node.text or "" for node in item.findall(".//main:t", ns)]
+                shared_strings.append("".join(parts))
+
+        sheet_name = "xl/worksheets/sheet1.xml"
+        workbook_rels = "xl/_rels/workbook.xml.rels"
+        if "xl/workbook.xml" in archive.namelist() and workbook_rels in archive.namelist():
+            workbook = ET.fromstring(archive.read("xl/workbook.xml"))
+            first_sheet = workbook.find(".//main:sheet", ns)
+            rel_id = first_sheet.attrib.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id") if first_sheet is not None else None
+            if rel_id:
+                rels = ET.fromstring(archive.read(workbook_rels))
+                for rel in rels.findall("rel:Relationship", ns):
+                    if rel.attrib.get("Id") == rel_id:
+                        target = rel.attrib["Target"].lstrip("/")
+                        sheet_name = target if target.startswith("xl/") else f"xl/{target}"
+                        break
+
+        root = ET.fromstring(archive.read(sheet_name))
+        rows: list[list[object]] = []
+        for row in root.findall(".//main:row", ns):
+            values: dict[int, object] = {}
+            for cell in row.findall("main:c", ns):
+                cell_type = cell.attrib.get("t")
+                ref = cell.attrib.get("r", "")
+                col = column_index(ref) if ref else len(values) + 1
+                if cell_type == "inlineStr":
+                    value = "".join(node.text or "" for node in cell.findall(".//main:t", ns))
+                else:
+                    raw = cell.findtext("main:v", default="", namespaces=ns)
+                    if cell_type == "s" and raw != "":
+                        value = shared_strings[int(raw)]
+                    elif raw == "":
+                        value = ""
+                    else:
+                        try:
+                            value = float(raw)
+                        except ValueError:
+                            value = raw
+                values[col] = value
+            if values:
+                max_col = max(values)
+                rows.append([values.get(col, "") for col in range(1, max_col + 1)])
+        return rows
+
+
+def parse_smetter_purchase_xlsx(file_bytes: bytes) -> list[dict]:
+    rows = parse_xlsx_rows(file_bytes)
+    materials: list[dict] = []
+    stage = ""
+    subsection = ""
+
+    for row in rows:
+        cells = row + [""] * 13
+        col1 = cell_text(cells[0])
+        col2 = cell_text(cells[1])
+        col3 = cell_text(cells[2])
+
+        if re.match(r"^\d+\.", col1):
+            stage = col1
+            subsection = ""
+            continue
+
+        if not col1 and col2 and col2.lower() not in {"итого по этапу", "итого по бюджету"} and not col3:
+            subsection = col2
+            continue
+
+        if col1.lower() != "мат":
+            continue
+
+        stage_without_number = re.sub(r"^\d+\.\s*", "", stage).strip().lower()
+        if subsection and stage_without_number == subsection.lower():
+            section_parts = [stage]
+        else:
+            section_parts = [part for part in (stage, subsection) if part]
+        materials.append(
+            {
+                "section": " / ".join(section_parts),
+                "name": col2,
+                "unit": col3,
+                "estimated_quantity": number_value(cells[3]),
+                "unit_price": number_value(cells[4]),
+                "total_price": number_value(cells[5]),
+            }
+        )
+
+    return [row for row in materials if row["name"]]
+
+
+def parse_csv_materials(file_bytes: bytes) -> list[dict]:
+    text = file_bytes.decode("utf-8-sig", errors="replace")
+    sample = text[:2048]
+    delimiter = ";" if sample.count(";") > sample.count(",") else ","
+    reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
+    rows = []
+    for item in reader:
+        normalized = {re.sub(r"\s+", "", key.lower()): value for key, value in item.items() if key}
+        rows.append(
+            {
+                "section": normalized.get("раздел") or normalized.get("section") or normalized.get("группа") or "",
+                "name": normalized.get("наименование") or normalized.get("материал") or normalized.get("название") or normalized.get("name") or "",
+                "unit": normalized.get("ед") or normalized.get("ед.") or normalized.get("единица") or normalized.get("unit") or "",
+                "estimated_quantity": number_value(normalized.get("количество") or normalized.get("кол-во") or normalized.get("колво") or normalized.get("quantity") or 0),
+                "unit_price": number_value(normalized.get("цена") or normalized.get("price") or 0),
+                "total_price": number_value(normalized.get("сумма") or normalized.get("итого") or normalized.get("total") or 0),
+            }
+        )
+    return [row for row in rows if row["name"]]
+
+
+def parse_uploaded_materials(data: dict) -> list[dict]:
+    file_name = str(data.get("file_name") or "").lower()
+    encoded = data.get("file_base64") or ""
+    if "," in encoded:
+        encoded = encoded.split(",", 1)[1]
+    file_bytes = base64.b64decode(encoded)
+    if file_name.endswith(".xlsx"):
+        return parse_smetter_purchase_xlsx(file_bytes)
+    if file_name.endswith(".csv"):
+        return parse_csv_materials(file_bytes)
+    raise ValueError("Поддерживаются файлы .xlsx из Сметтера и .csv")
 
 
 def get_project_detail(project_id: int) -> dict | None:
@@ -276,6 +438,11 @@ class AppHandler(BaseHTTPRequestHandler):
                     ),
                 )
                 json_response(self, {"id": cursor.lastrowid}, 201)
+                return
+
+            if path == "/api/estimate-materials/preview-file":
+                rows = parse_uploaded_materials(data)
+                json_response(self, {"rows": rows, "count": len(rows)})
                 return
 
             if path == "/api/estimate-materials/import":
