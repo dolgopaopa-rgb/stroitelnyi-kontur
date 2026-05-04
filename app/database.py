@@ -58,6 +58,9 @@ def init_db() -> None:
                 submitted_at TEXT,
                 accepted_at TEXT,
                 returned_at TEXT,
+                archived_at TEXT,
+                archived_by INTEGER,
+                archive_reason TEXT,
                 planned_end_date TEXT,
                 main_estimate_amount REAL NOT NULL DEFAULT 0,
                 approved_variations_amount REAL NOT NULL DEFAULT 0,
@@ -66,6 +69,7 @@ def init_db() -> None:
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (estimate_uploaded_by) REFERENCES users(id),
                 FOREIGN KEY (sales_manager_id) REFERENCES users(id),
+                FOREIGN KEY (archived_by) REFERENCES users(id),
                 FOREIGN KEY (construction_manager_id) REFERENCES users(id),
                 FOREIGN KEY (foreman_id) REFERENCES users(id),
                 FOREIGN KEY (estimator_id) REFERENCES users(id),
@@ -219,6 +223,9 @@ def init_db() -> None:
         ensure_column(db, "projects", "submitted_at", "TEXT")
         ensure_column(db, "projects", "accepted_at", "TEXT")
         ensure_column(db, "projects", "returned_at", "TEXT")
+        ensure_column(db, "projects", "archived_at", "TEXT")
+        ensure_column(db, "projects", "archived_by", "INTEGER")
+        ensure_column(db, "projects", "archive_reason", "TEXT")
         seed(db)
         ensure_core_users(db)
         seed_estimate_materials(db)

@@ -325,7 +325,8 @@ class AppHandler(BaseHTTPRequestHandler):
 
             if path == "/api/summary":
                 payload = {
-                    "projects": db.execute("SELECT COUNT(*) AS count FROM projects").fetchone()["count"],
+                    "projects": db.execute("SELECT COUNT(*) AS count FROM projects WHERE status != 'archived'").fetchone()["count"],
+                    "archived_projects": db.execute("SELECT COUNT(*) AS count FROM projects WHERE status = 'archived'").fetchone()["count"],
                     "pending_handover": db.execute("SELECT COUNT(*) AS count FROM projects WHERE status IN ('draft', 'revision_requested')").fetchone()["count"],
                     "construction_review": db.execute("SELECT COUNT(*) AS count FROM projects WHERE status = 'submitted_to_construction'").fetchone()["count"],
                     "open_tasks": db.execute("SELECT COUNT(*) AS count FROM tasks WHERE status != 'completed'").fetchone()["count"],
@@ -348,7 +349,27 @@ class AppHandler(BaseHTTPRequestHandler):
                     LEFT JOIN users procurement ON procurement.id = p.procurement_manager_id
                     LEFT JOIN users tech ON tech.id = p.tech_supervisor_id
                     LEFT JOIN users sales ON sales.id = p.sales_manager_id
+                    WHERE p.status != 'archived'
                     ORDER BY p.updated_at DESC
+                    """
+                ).fetchall()
+                json_response(self, rows_to_dicts(rows))
+                return
+
+            if path == "/api/projects/archive":
+                rows = db.execute(
+                    """
+                    SELECT p.*, foreman.name AS foreman_name, estimator.name AS estimator_name,
+                           procurement.name AS procurement_name, tech.name AS tech_supervisor_name,
+                           sales.name AS sales_manager_name
+                    FROM projects p
+                    LEFT JOIN users foreman ON foreman.id = p.foreman_id
+                    LEFT JOIN users estimator ON estimator.id = p.estimator_id
+                    LEFT JOIN users procurement ON procurement.id = p.procurement_manager_id
+                    LEFT JOIN users tech ON tech.id = p.tech_supervisor_id
+                    LEFT JOIN users sales ON sales.id = p.sales_manager_id
+                    WHERE p.status = 'archived'
+                    ORDER BY p.archived_at DESC, p.updated_at DESC
                     """
                 ).fetchall()
                 json_response(self, rows_to_dicts(rows))
@@ -455,7 +476,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 json_response(self, get_project_detail(project_id), 201)
                 return
 
-            project_action = re.match(r"^/api/projects/(\d+)/(update|submit|accept|return)$", path)
+            project_action = re.match(r"^/api/projects/(\d+)/(update|submit|accept|return|archive|restore)$", path)
             if project_action:
                 project_id = int(project_action.group(1))
                 action = project_action.group(2)
@@ -645,6 +666,55 @@ class AppHandler(BaseHTTPRequestHandler):
                         VALUES (?, 'decision', ?, 2, 'internal', 'handover')
                         """,
                         (project_id, "Руководитель строительства принял объект в работу и назначил ответственных."),
+                    )
+                    db.commit()
+                    json_response(self, get_project_detail(project_id))
+                    return
+
+                if action == "archive":
+                    reason = data.get("reason") or "Работы завершены, объект отправлен в архив."
+                    db.execute(
+                        """
+                        UPDATE projects
+                        SET status = 'archived',
+                            archived_at = CURRENT_TIMESTAMP,
+                            archived_by = 2,
+                            archive_reason = ?,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (reason, project_id),
+                    )
+                    db.execute(
+                        """
+                        INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
+                        VALUES (?, 'decision', ?, 2, 'internal', 'archive')
+                        """,
+                        (project_id, f"Объект отправлен в архив: {reason}"),
+                    )
+                    db.commit()
+                    json_response(self, get_project_detail(project_id))
+                    return
+
+                if action == "restore":
+                    db.execute(
+                        """
+                        UPDATE projects
+                        SET status = 'in_progress',
+                            archived_at = NULL,
+                            archived_by = NULL,
+                            archive_reason = '',
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (project_id,),
+                    )
+                    db.execute(
+                        """
+                        INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
+                        VALUES (?, 'decision', 'Объект возвращен из архива в работу.', 2, 'internal', 'archive')
+                        """,
+                        (project_id,),
                     )
                     db.commit()
                     json_response(self, get_project_detail(project_id))

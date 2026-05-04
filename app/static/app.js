@@ -11,6 +11,7 @@ const state = {
 const viewTitles = {
   dashboard: "Рабочий стол",
   projects: "Объекты",
+  archive: "Архив",
   tasks: "Задачи",
   materials: "Материалы",
   variations: "Допработы и отклонения",
@@ -30,6 +31,7 @@ const statusLabels = {
   acceptance: "Приемка",
   document_closing: "Документы",
   completed: "Завершен",
+  archived: "Архив",
   new: "Новая",
   in_progress_task: "В работе",
   review: "На проверке",
@@ -119,6 +121,7 @@ async function loadAll() {
     renderDashboard(),
     renderNotifications(),
     renderProjects(),
+    renderArchive(),
     renderTasks(),
     renderMaterials(),
     renderEstimateMaterials(),
@@ -197,7 +200,7 @@ async function renderDashboard() {
     <div class="metric"><span class="muted">Объекты</span><strong>${summary.projects}</strong><span>В базе MVP</span></div>
     <div class="metric"><span class="muted">У менеджера</span><strong>${summary.pending_handover}</strong><span>Черновики и доработки</span></div>
     <div class="metric"><span class="muted">На проверке</span><strong>${summary.construction_review}</strong><span>Ждут руководителя строительства</span></div>
-    <div class="metric"><span class="muted">Открытые задачи</span><strong>${summary.open_tasks}</strong><span>Нужен контроль</span></div>
+    <div class="metric"><span class="muted">Архив</span><strong>${summary.archived_projects}</strong><span>Можно вернуть в работу</span></div>
   `;
   qs("#dashboardProjects").innerHTML = state.projects
     .slice(0, 4)
@@ -254,7 +257,26 @@ async function renderProjects() {
   if (state.selectedProjectId) await renderProjectDetail(state.selectedProjectId);
 }
 
-async function renderProjectDetail(projectId) {
+async function renderArchive() {
+  const projects = await api("/api/projects/archive");
+  qs("#archiveRows").innerHTML = projects.length
+    ? projects
+        .map(
+          (project) => `
+          <button class="row clickable" data-open-project="${project.id}" data-open-archive="true">
+            <div class="row-grid">
+              <div><strong>${project.title}</strong><div class="muted">${project.customer_name || ""}</div></div>
+              ${pill(label(project.status), "blue")}
+              <div>${project.archived_at || "без даты"}</div>
+              ${pill(project.archive_reason || "архив", "success")}
+            </div>
+          </button>`
+        )
+        .join("")
+    : `<p class="muted">В архиве пока пусто.</p>`;
+}
+
+async function renderProjectDetail(projectId, targetSelector = "#projectDetail") {
   const project = await api(`/api/projects/${projectId}`);
   state.selectedProjectId = project.id;
   const tabData = {
@@ -272,7 +294,7 @@ async function renderProjectDetail(projectId) {
     documents: renderSmallList(project.documents, (doc) => `${doc.title} · ${doc.type} · ${label(doc.status)}`),
     events: renderSmallList(project.events, (event) => `${event.text}`),
   };
-  qs("#projectDetail").innerHTML = `
+  qs(targetSelector).innerHTML = `
     <div class="stack-line"><h2>${project.title}</h2>${pill(label(project.status), "blue")}</div>
     <p class="muted">${project.address || "Адрес не указан"}</p>
     <div class="stack-line">
@@ -294,6 +316,15 @@ async function renderProjectDetail(projectId) {
 }
 
 function renderProjectWorkflow(project) {
+  if (project.status === "archived") {
+    return `
+      <section class="workflow-panel">
+        <div class="stack-line"><h3>Архив</h3>${pill("Объект скрыт из работы", "blue")}</div>
+        <p class="muted">Причина: ${project.archive_reason || "не указана"}</p>
+        <button class="primary" data-project-action="restore" data-project-id="${project.id}">Вернуть в работу</button>
+      </section>`;
+  }
+
   if (project.status === "draft" || project.status === "revision_requested") {
     return `
       <section class="workflow-panel">
@@ -344,6 +375,8 @@ function renderProjectWorkflow(project) {
     <section class="workflow-panel">
       <div class="stack-line"><h3>Объект в работе</h3>${pill("Ответственные назначены", "success")}</div>
       <p class="muted">После принятия уведомления получают прораб, снабжение, сметчик и технадзор.</p>
+      <label>Причина архивации <textarea id="archiveReason" rows="2" placeholder="Например: работы завершены, документы закрыты"></textarea></label>
+      <button class="secondary" data-project-action="archive" data-project-id="${project.id}">Отправить в архив</button>
     </section>`;
 }
 
@@ -690,6 +723,15 @@ async function handleProjectAction(button) {
     message = "Объект возвращен менеджеру";
   }
 
+  if (action === "archive") {
+    payload = { reason: qs("#archiveReason")?.value || "" };
+    message = "Объект отправлен в архив";
+  }
+
+  if (action === "restore") {
+    message = "Объект возвращен в работу";
+  }
+
   if (action === "update") {
     payload = {
       title: qs("#projectEditTitle")?.value,
@@ -724,7 +766,9 @@ async function handleProjectAction(button) {
   });
   await loadAll();
   state.selectedProjectId = Number(projectId);
-  await renderProjectDetail(state.selectedProjectId);
+  if (action === "archive") switchView("archive");
+  if (action === "restore") switchView("projects");
+  await renderProjectDetail(state.selectedProjectId, action === "archive" ? "#archiveDetail" : "#projectDetail");
   showToast(message);
 }
 
@@ -760,8 +804,8 @@ function bindEvents() {
     if (projectButton) {
       state.selectedProjectId = Number(projectButton.dataset.openProject);
       state.selectedProjectTab = "overview";
-      switchView("projects");
-      await renderProjectDetail(state.selectedProjectId);
+      switchView(projectButton.dataset.openArchive ? "archive" : "projects");
+      await renderProjectDetail(state.selectedProjectId, projectButton.dataset.openArchive ? "#archiveDetail" : "#projectDetail");
     }
     const tabButton = event.target.closest("[data-project-tab]");
     if (tabButton) {
