@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Строительный контур MVP</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">СК</div>
+          <div>
+            <strong>Строительный контур</strong>
+            <span>Рабочий MVP</span>
+          </div>
+        </div>
+        <nav class="nav">
+          <button class="nav-button active" data-view="dashboard">Рабочий стол</button>
+          <button class="nav-button" data-view="projects">Объекты</button>
+          <button class="nav-button" data-view="tasks">Задачи</button>
+          <button class="nav-button" data-view="materials">Материалы</button>
+          <button class="nav-button" data-view="variations">Допработы</button>
+          <button class="nav-button" data-view="contracts">Договоры</button>
+          <button class="nav-button" data-view="documents">Документы</button>
+          <button class="nav-button" data-view="events">Журнал</button>
+        </nav>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Локальная версия с базой SQLite</p>
+            <h1 id="pageTitle">Рабочий стол</h1>
+          </div>
+          <div class="actions">
+            <button class="secondary" id="refreshButton">Обновить</button>
+            <button class="primary" id="newProjectButton">Новый объект</button>
+          </div>
+        </header>
+
+        <section class="view active" id="dashboardView">
+          <div class="metrics" id="summaryCards"></div>
+          <div class="layout-two">
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Объекты</h2>
+                <button class="link-button" data-view-target="projects">Открыть</button>
+              </div>
+              <div class="list" id="dashboardProjects"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Срочные задачи</h2>
+                <button class="link-button" data-view-target="tasks">Открыть</button>
+              </div>
+              <div class="list" id="dashboardTasks"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="projectsView">
+          <div class="split">
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Список объектов</h2>
+              </div>
+              <div class="table" id="projectRows"></div>
+            </section>
+            <section class="panel detail" id="projectDetail">
+              <p class="muted">Выберите объект слева.</p>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="tasksView">
+          <div class="panel">
+            <div class="panel-head">
+              <h2>Задачи</h2>
+              <button class="primary" id="newTaskButton">Добавить задачу</button>
+            </div>
+            <div class="table" id="taskRows"></div>
+          </div>
+        </section>
+
+        <section class="view" id="materialsView">
+          <div class="layout-two">
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Заявки на материалы</h2>
+                <button class="primary" id="newMaterialButton">Добавить заявку</button>
+              </div>
+              <div class="table" id="materialRows"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Сметные материалы объекта</h2>
+                <button class="secondary" id="refreshEstimateButton">Обновить</button>
+              </div>
+              <form class="form embedded compact-form" id="estimateImportForm">
+                <label>Объект <select name="project_id" required></select></label>
+                <label>Версия сметы <input name="estimate_version" placeholder="основная смета v1" /></label>
+                <label>CSV-файл из Excel <input name="estimate_file" type="file" accept=".csv" required /></label>
+                <div class="form-actions">
+                  <button class="secondary" type="button" id="previewEstimateButton">Предпросмотр</button>
+                  <button class="primary" type="submit">Загрузить</button>
+                </div>
+              </form>
+              <div class="table" id="estimateMaterialRows"></div>
+            </section>
+          </div>
+          <section class="panel import-preview-panel">
+            <div class="panel-head">
+              <h2>Предпросмотр файла</h2>
+            </div>
+            <div class="table" id="estimatePreviewRows">
+              <p class="muted">Выберите CSV-файл и нажмите “Предпросмотр”.</p>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="documentsView">
+          <div class="panel">
+            <div class="panel-head">
+              <h2>Документы</h2>
+              <button class="primary" id="newDocumentButton">Добавить документ</button>
+            </div>
+            <div class="cards" id="documentCards"></div>
+          </div>
+        </section>
+
+        <section class="view" id="variationsView">
+          <div class="panel">
+            <div class="panel-head">
+              <h2>Допработы и отклонения</h2>
+              <button class="primary" id="newVariationButton">Добавить</button>
+            </div>
+            <div class="table" id="variationRows"></div>
+          </div>
+        </section>
+
+        <section class="view" id="contractsView">
+          <div class="layout-two">
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Договоры</h2>
+                <button class="primary" id="newContractButton">Добавить договор</button>
+              </div>
+              <div class="table" id="contractRows"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Контроль сроков</h2>
+              </div>
+              <div class="table" id="deadlineRows"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="eventsView">
+          <div class="panel">
+            <div class="panel-head">
+              <h2>Журнал событий</h2>
+              <button class="primary" id="newEventButton">Добавить событие</button>
+            </div>
+            <div class="timeline" id="eventTimeline"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="projectDialog">
+      <form method="dialog" class="form" id="projectForm">
+        <div class="modal-head">
+          <h2>Новый объект</h2>
+          <button type="button" class="icon" data-close="projectDialog">×</button>
+        </div>
+        <label>Название <input name="title" required placeholder="Дом, Павловская Слобода" /></label>
+        <label>Заказчик <input name="customer_name" placeholder="ФИО или компания" /></label>
+        <label>Адрес <input name="address" placeholder="Адрес объекта" /></label>
+        <div class="grid-2">
+          <label>Bitrix <input name="bitrix_ref" placeholder="BITRIX-0000" /></label>
+          <label>Сметтер <input name="smetter_ref" placeholder="SMT-0000" /></label>
+        </div>
+        <section class="hint-box neutral">
+          <strong>Ответственные по объекту</strong>
+          <p>На этапе регистрации выбираем должности. Конкретных сотрудников можно назначить позже внутри карточки объекта.</p>
+        </section>
+        <div class="grid-2">
+          <label>
+            Управление стройкой
+            <select name="construction_manager_id">
+              <option value="2">Руководитель строительства</option>
+            </select>
+          </label>
+          <label>
+            Производство работ
+            <select name="foreman_id">
+              <option value="7">Прораб</option>
+            </select>
+          </label>
+        </div>
+        <div class="grid-2">
+          <label>
+            Сметная часть
+            <select name="estimator_id">
+              <option value="5">Сметчик</option>
+            </select>
+          </label>
+          <label>
+            Снабжение
+            <select name="procurement_manager_id">
+              <option value="4">Снабженец</option>
+            </select>
+          </label>
+        </div>
+        <div class="grid-2">
+          <label>Плановый срок <input name="planned_end_date" type="date" /></label>
+          <label>Смета, ₽ <input name="main_estimate_amount" type="number" min="0" step="10000" /></label>
+        </div>
+        <section class="hint-box">
+          <strong>Первичный список материалов</strong>
+          <p>На старте это делает Алексей: выгружает материалы из сметы в Excel и прикладывает при создании карточки. В этой версии файл пока не читается автоматически, но мы фиксируем процесс и дальше подключим импорт.</p>
+        </section>
+        <label>Excel-файл материалов сметы <input name="estimate_file_name" type="file" accept=".xlsx,.xls,.csv" /></label>
+        <label>Версия сметы <input name="estimate_version" placeholder="Например: основная смета v1" /></label>
+        <div class="form-actions">
+          <button type="button" class="secondary" data-close="projectDialog">Отмена</button>
+          <button class="primary" type="submit">Создать</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="taskDialog">
+      <form method="dialog" class="form" id="taskForm">
+        <div class="modal-head">
+          <h2>Новая задача</h2>
+          <button type="button" class="icon" data-close="taskDialog">×</button>
+        </div>
+        <label>Объект <select name="project_id" required></select></label>
+        <label>Задача <input name="title" required placeholder="Что нужно сделать" /></label>
+        <div class="grid-2">
+          <label>Исполнитель <select name="assignee_id"></select></label>
+          <label>Срок <input name="due_date" type="date" /></label>
+        </div>
+        <label>Комментарий <textarea name="description" rows="3"></textarea></label>
+        <div class="form-actions">
+          <button type="button" class="secondary" data-close="taskDialog">Отмена</button>
+          <button class="primary" type="submit">Создать</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="materialDialog">
+      <form method="dialog" class="form" id="materialForm">
+        <div class="modal-head">
+          <h2>Новая заявка</h2>
+          <button type="button" class="icon" data-close="materialDialog">×</button>
+        </div>
+        <label>Объект <select name="project_id" required></select></label>
+        <label>
+          Материал из сметы
+          <select name="estimate_material_id" id="estimateMaterialSelect">
+            <option value="">Сначала выберите объект</option>
+          </select>
+        </label>
+        <label>Материалы <input name="title" placeholder="Можно дописать вручную, если позиции нет в смете" /></label>
+        <div class="grid-2">
+          <label>
+            Основание
+            <select name="basis_type">
+              <option value="main_estimate">Основная смета</option>
+              <option value="main_estimate_overspend">Перерасход по смете</option>
+              <option value="additional_work">Допработа</option>
+              <option value="over_budget_cost">Сверхбюджет</option>
+              <option value="internal_error_or_loss">За счет компании</option>
+            </select>
+          </label>
+          <label>Нужно к <input name="needed_at" type="date" /></label>
+        </div>
+        <div class="grid-2">
+          <label>Раздел сметы <input name="estimate_section" /></label>
+          <label>Сумма, ₽ <input name="total_amount" type="number" min="0" step="1000" /></label>
+        </div>
+        <label>Комментарий <textarea name="comment" rows="3"></textarea></label>
+        <div class="form-actions">
+          <button type="button" class="secondary" data-close="materialDialog">Отмена</button>
+          <button class="primary" type="submit">Создать</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="documentDialog">
+      <form method="dialog" class="form" id="documentForm">
+        <div class="modal-head">
+          <h2>Новый документ</h2>
+          <button type="button" class="icon" data-close="documentDialog">×</button>
+        </div>
+        <label>Объект <select name="project_id" required></select></label>
+        <label>Название <input name="title" required placeholder="Смета, акт, договор..." /></label>
+        <div class="grid-2">
+          <label>
+            Тип
+            <select name="type">
+              <option value="contract">Договор</option>
+              <option value="main_estimate">Основная смета</option>
+              <option value="variation_estimate">Смета допработ</option>
+              <option value="act">Акт</option>
+              <option value="ks_2">КС-2</option>
+              <option value="ks_3">КС-3</option>
+              <option value="detail_node">Узел</option>
+              <option value="invoice">Счет</option>
+            </select>
+          </label>
+          <label>Версия <input name="version" placeholder="v1, v2, финальная" /></label>
+        </div>
+        <div class="grid-2">
+          <label>Ответственный <select name="owner_id"></select></label>
+          <label>Срок <input name="due_date" type="date" /></label>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="secondary" data-close="documentDialog">Отмена</button>
+          <button class="primary" type="submit">Сохранить</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="variationDialog">
+      <form method="dialog" class="form" id="variationForm">
+        <div class="modal-head">
+          <h2>Новая допработа / отклонение</h2>
+          <button type="button" class="icon" data-close="variationDialog">×</button>
+        </div>
+        <label>Объект <select name="project_id" required></select></label>
+        <label>Название <input name="title" required placeholder="Что появилось сверх основной сметы" /></label>
+        <div class="grid-2">
+          <label>
+            Тип
+            <select name="type">
+              <option value="additional_work">Дополнительная работа</option>
+              <option value="material_overspend">Перерасход материала</option>
+              <option value="material_replacement">Замена материала</option>
+              <option value="hidden_work">Скрытые работы</option>
+              <option value="estimate_error">Ошибка в смете</option>
+              <option value="company_cost">За счет компании</option>
+              <option value="disputed_position">Спорная позиция</option>
+            </select>
+          </label>
+          <label>
+            Решение по деньгам
+            <select name="financial_decision">
+              <option value="not_decided">Не решено</option>
+              <option value="customer">Заказчик</option>
+              <option value="company">Компания</option>
+              <option value="contractor">Подрядчик</option>
+              <option value="disputed">Спорно</option>
+            </select>
+          </label>
+        </div>
+        <div class="grid-2">
+          <label>Сумма, ₽ <input name="amount" type="number" min="0" step="1000" /></label>
+          <label>Срок решения <input name="due_date" type="date" /></label>
+        </div>
+        <label>Описание <textarea name="description" rows="3" placeholder="Причина, фото/документы, что нужно решить"></textarea></label>
+        <div class="form-actions">
+          <button type="button" class="secondary" data-close="variationDialog">Отмена</button>
+          <button class="primary" type="submit">Создать</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="contractDialog">
+      <form method="dialog" class="form" id="contractForm">
+        <div class="modal-head">
+          <h2>Новый договор</h2>
+          <button type="button" class="icon" data-close="contractDialog">×</button>
+        </div>
+        <label>Объект <select name="project_id" required></select></label>
+        <label>Название <input name="title" required placeholder="Договор / допсоглашение / поставка" /></label>
+        <div class="grid-2">
+          <label>
+            Тип
+            <select name="type">
+              <option value="customer_contract">Договор с заказчиком</option>
+              <option value="additional_agreement">Допсоглашение</option>
+              <option value="supplier_contract">Договор поставщика</option>
+              <option value="contractor_contract">Договор подрядчика</option>
+              <option value="equipment_rent">Аренда техники</option>
+            </select>
+          </label>
+          <label>Контрагент <input name="counterparty" placeholder="Кто в договоре" /></label>
+        </div>
+        <div class="grid-2">
+          <label>Дата окончания <input name="ends_at" type="date" /></label>
+          <label>Ответственный <select name="responsible_id"></select></label>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="secondary" data-close="contractDialog">Отмена</button>
+          <button class="primary" type="submit">Сохранить</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="eventDialog">
+      <form method="dialog" class="form" id="eventForm">
+        <div class="modal-head">
+          <h2>Новое событие</h2>
+          <button type="button" class="icon" data-close="eventDialog">×</button>
+        </div>
+        <label>Объект <select name="project_id" required></select></label>
+        <div class="grid-2">
+          <label>
+            Тип
+            <select name="type">
+              <option value="decision">Решение</option>
+              <option value="comment">Комментарий</option>
+              <option value="document">Документ</option>
+              <option value="problem">Проблема</option>
+              <option value="customer_approval">Согласование с заказчиком</option>
+            </select>
+          </label>
+          <label>
+            Видимость
+            <select name="visibility">
+              <option value="internal">Только внутреннее</option>
+              <option value="customer_allowed">Можно заказчику</option>
+            </select>
+          </label>
+        </div>
+        <label>Текст <textarea name="text" rows="4" required></textarea></label>
+        <div class="form-actions">
+          <button type="button" class="secondary" data-close="eventDialog">Отмена</button>
+          <button class="primary" type="submit">Сохранить</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div class="toast" id="toast"></div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

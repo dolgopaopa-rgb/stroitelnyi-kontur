@@ -1,0 +1,937 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Строительный контур</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Основная навигация">
+        <div class="brand">
+          <div class="brand-mark">СК</div>
+          <div>
+            <div class="brand-title">Строительный контур</div>
+            <div class="brand-subtitle">Внутренняя система</div>
+          </div>
+        </div>
+
+        <nav class="nav-list">
+          <button class="nav-item active" data-section="dashboard" type="button">
+            <i data-lucide="layout-dashboard"></i>
+            <span>Рабочий стол</span>
+          </button>
+          <button class="nav-item" data-section="projects" type="button">
+            <i data-lucide="building-2"></i>
+            <span>Объекты</span>
+          </button>
+          <button class="nav-item" data-section="tasks" type="button">
+            <i data-lucide="list-checks"></i>
+            <span>Задачи</span>
+          </button>
+          <button class="nav-item" data-section="materials" type="button">
+            <i data-lucide="package-check"></i>
+            <span>Материалы</span>
+          </button>
+          <button class="nav-item" data-section="variations" type="button">
+            <i data-lucide="file-diff"></i>
+            <span>Допработы</span>
+          </button>
+          <button class="nav-item" data-section="approvals" type="button">
+            <i data-lucide="badge-check"></i>
+            <span>Согласования</span>
+          </button>
+          <button class="nav-item" data-section="events" type="button">
+            <i data-lucide="messages-square"></i>
+            <span>Журнал</span>
+          </button>
+          <button class="nav-item" data-section="contracts" type="button">
+            <i data-lucide="file-signature"></i>
+            <span>Договоры</span>
+          </button>
+          <button class="nav-item" data-section="deadlines" type="button">
+            <i data-lucide="calendar-clock"></i>
+            <span>Сроки</span>
+          </button>
+          <button class="nav-item" data-section="smetter" type="button">
+            <i data-lucide="refresh-cw"></i>
+            <span>Сметтер</span>
+          </button>
+          <button class="nav-item" data-section="suppliers" type="button">
+            <i data-lucide="map-pinned"></i>
+            <span>Локации</span>
+          </button>
+          <button class="nav-item" data-section="photos" type="button">
+            <i data-lucide="camera"></i>
+            <span>Фото</span>
+          </button>
+          <button class="nav-item" data-section="documents" type="button">
+            <i data-lucide="folder-open"></i>
+            <span>Архив</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <div class="small-label">Роль</div>
+          <select id="roleSelect" aria-label="Роль пользователя">
+            <option value="owner">Руководитель</option>
+            <option value="construction">Артем</option>
+            <option value="procurement">Анастасия</option>
+            <option value="foreman">Прораб</option>
+          </select>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <div class="eyebrow">MVP прототип</div>
+            <h1 id="pageTitle">Рабочий стол</h1>
+          </div>
+          <div class="topbar-actions">
+            <button class="icon-button" type="button" title="Поиск">
+              <i data-lucide="search"></i>
+            </button>
+            <button class="icon-button" type="button" title="Уведомления">
+              <i data-lucide="bell"></i>
+              <span class="dot"></span>
+            </button>
+            <button class="primary-action" id="newMaterialButton" type="button">
+              <i data-lucide="plus"></i>
+              <span>Заявка</span>
+            </button>
+          </div>
+        </header>
+
+        <section class="role-context" id="roleContext"></section>
+
+        <section class="section active" id="dashboardSection" aria-labelledby="dashboard-title">
+          <div class="metric-grid">
+            <button class="metric-card" data-section-target="projects" type="button">
+              <span class="metric-label">Активные объекты</span>
+              <strong>8</strong>
+              <span class="metric-note">3 требуют внимания</span>
+            </button>
+            <button class="metric-card warning" data-section-target="contracts" type="button">
+              <span class="metric-label">Договоры скоро истекают</span>
+              <strong>4</strong>
+              <span class="metric-note">ближайший через 6 дней</span>
+            </button>
+            <button class="metric-card danger" data-section-target="variations" type="button">
+              <span class="metric-label">Сверхбюджет без решения</span>
+              <strong>312 000 ₽</strong>
+              <span class="metric-note">5 позиций</span>
+            </button>
+            <button class="metric-card success" data-section-target="materials" type="button">
+              <span class="metric-label">Доставки сегодня</span>
+              <strong>6</strong>
+              <span class="metric-note">2 с риском задержки</span>
+            </button>
+          </div>
+
+          <div class="dashboard-layout">
+            <section class="panel wide">
+              <div class="panel-header">
+                <h2>Объекты с рисками</h2>
+                <button class="text-action" data-section-target="projects" type="button">Все объекты</button>
+              </div>
+              <div id="riskProjects" class="project-list"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Напоминания</h2>
+                <button class="icon-button small" type="button" title="Настройки">
+                  <i data-lucide="settings"></i>
+                </button>
+              </div>
+              <div id="reminderList" class="stack-list"></div>
+            </section>
+          </div>
+
+          <div class="dashboard-layout">
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Заявки на материалы</h2>
+                <button class="text-action" data-section-target="materials" type="button">Открыть</button>
+              </div>
+              <div id="materialShortList" class="stack-list"></div>
+            </section>
+
+            <section class="panel wide">
+              <div class="panel-header">
+                <h2>Допработы и отклонения</h2>
+                <button class="text-action" data-section-target="variations" type="button">Открыть</button>
+              </div>
+              <div id="variationShortList" class="stack-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="section" id="projectsSection" aria-labelledby="projects-title">
+          <div class="toolbar">
+            <div class="filter-group">
+              <button class="filter-chip active" type="button">Все</button>
+              <button class="filter-chip" type="button">В работе</button>
+              <button class="filter-chip" type="button">Есть риски</button>
+              <button class="filter-chip" type="button">На закрытии</button>
+            </div>
+            <button class="secondary-action" id="newProjectButton" type="button">
+              <i data-lucide="plus"></i>
+              <span>Объект</span>
+            </button>
+          </div>
+
+          <div class="split-view">
+            <section class="table-panel">
+              <div class="table-header">
+                <span>Объект</span>
+                <span>Статус</span>
+                <span>Ответственный</span>
+                <span>Риск</span>
+              </div>
+              <div id="projectRows" class="table-body"></div>
+            </section>
+
+            <section class="detail-panel" id="projectDetail"></section>
+          </div>
+        </section>
+
+        <section class="section" id="tasksSection" aria-labelledby="tasks-title">
+          <div class="toolbar">
+            <div class="filter-group">
+              <button class="filter-chip active" type="button">Все</button>
+              <button class="filter-chip" type="button">Просрочены</button>
+              <button class="filter-chip" type="button">Мне назначено</button>
+              <button class="filter-chip" type="button">На проверке</button>
+            </div>
+            <button class="primary-action" id="newTaskButton" type="button">
+              <i data-lucide="plus"></i>
+              <span>Задача</span>
+            </button>
+          </div>
+          <div id="taskBoard" class="workflow-board"></div>
+        </section>
+
+        <section class="section" id="materialsSection" aria-labelledby="materials-title">
+          <div class="toolbar">
+            <div class="filter-group">
+              <button class="filter-chip active" type="button">Открытые</button>
+              <button class="filter-chip" type="button">Сверх сметы</button>
+              <button class="filter-chip" type="button">Ждет Сметтер</button>
+              <button class="filter-chip" type="button">Доставка</button>
+            </div>
+            <button class="primary-action" id="newMaterialButtonSecondary" type="button">
+              <i data-lucide="plus"></i>
+              <span>Заявка</span>
+            </button>
+          </div>
+          <section class="table-panel full">
+            <div class="table-header materials-header">
+              <span>Заявка</span>
+              <span>Основание</span>
+              <span>Срок</span>
+              <span>Статус</span>
+              <span>Сметтер</span>
+            </div>
+            <div id="materialRows" class="table-body"></div>
+          </section>
+        </section>
+
+        <section class="section" id="variationsSection" aria-labelledby="variations-title">
+          <div class="toolbar">
+            <div class="filter-group">
+              <button class="filter-chip active" type="button">Все</button>
+              <button class="filter-chip" type="button">На решении</button>
+              <button class="filter-chip" type="button">На согласовании</button>
+              <button class="filter-chip" type="button">За счет компании</button>
+            </div>
+            <button class="primary-action" id="newVariationButton" type="button">
+              <i data-lucide="plus"></i>
+              <span>Допработа</span>
+            </button>
+          </div>
+          <div id="variationGrid" class="cards-grid"></div>
+        </section>
+
+        <section class="section" id="approvalsSection" aria-labelledby="approvals-title">
+          <div class="toolbar">
+            <div class="filter-group">
+              <button class="filter-chip active" type="button">Все</button>
+              <button class="filter-chip" type="button">Мне на решение</button>
+              <button class="filter-chip" type="button">Заказчику</button>
+              <button class="filter-chip" type="button">Просрочены</button>
+            </div>
+            <button class="secondary-action" type="button">
+              <i data-lucide="refresh-cw"></i>
+              <span>Обновить статусы</span>
+            </button>
+          </div>
+          <div id="approvalBoard" class="workflow-board"></div>
+        </section>
+
+        <section class="section" id="eventsSection" aria-labelledby="events-title">
+          <div class="toolbar">
+            <div class="filter-group">
+              <button class="filter-chip active" type="button">Все</button>
+              <button class="filter-chip" type="button">Решения</button>
+              <button class="filter-chip" type="button">Сроки</button>
+              <button class="filter-chip" type="button">Документы</button>
+              <button class="filter-chip" type="button">Для заказчика</button>
+            </div>
+            <button class="primary-action" id="newEventButton" type="button">
+              <i data-lucide="plus"></i>
+              <span>Событие</span>
+            </button>
+          </div>
+          <div class="events-layout">
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Что фиксируем вместо чата</h2>
+              </div>
+              <div class="check-list">
+                <div class="check-item success"><i data-lucide="check-circle-2"></i><span>Решение по допработе или сверхбюджету</span></div>
+                <div class="check-item warning"><i data-lucide="clock"></i><span>Изменение срока, даты поставки или договора</span></div>
+                <div class="check-item warning"><i data-lucide="file-text"></i><span>Новый документ, акт, смета или допник</span></div>
+                <div class="check-item danger"><i data-lucide="circle-alert"></i><span>Риск, проблема, спорная позиция</span></div>
+              </div>
+            </section>
+            <section class="panel wide">
+              <div id="eventTimeline" class="timeline"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="section" id="contractsSection" aria-labelledby="contracts-title">
+          <div class="toolbar">
+            <div class="filter-group">
+              <button class="filter-chip active" type="button">Все</button>
+              <button class="filter-chip danger-text" type="button">Просрочены</button>
+              <button class="filter-chip" type="button">30 дней</button>
+              <button class="filter-chip" type="button">Без даты</button>
+            </div>
+            <button class="secondary-action" id="newContractButton" type="button">
+              <i data-lucide="file-plus-2"></i>
+              <span>Договор</span>
+            </button>
+          </div>
+          <section class="table-panel full">
+            <div class="table-header contracts-header">
+              <span>Договор</span>
+              <span>Объект</span>
+              <span>Ответственный</span>
+              <span>Окончание</span>
+              <span>Статус</span>
+            </div>
+            <div id="contractRows" class="table-body"></div>
+          </section>
+        </section>
+
+        <section class="section" id="deadlinesSection" aria-labelledby="deadlines-title">
+          <div class="toolbar">
+            <div class="filter-group">
+              <button class="filter-chip active" type="button">Все сроки</button>
+              <button class="filter-chip danger-text" type="button">Просрочены</button>
+              <button class="filter-chip" type="button">7 дней</button>
+              <button class="filter-chip" type="button">30 дней</button>
+              <button class="filter-chip" type="button">Без ответственного</button>
+            </div>
+          </div>
+          <div class="deadline-layout">
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Сводка сроков</h2>
+              </div>
+              <div id="deadlineSummary" class="sync-summary"></div>
+            </section>
+            <section class="table-panel full">
+              <div class="table-header deadlines-header">
+                <span>Событие</span>
+                <span>Объект</span>
+                <span>Тип</span>
+                <span>Дата</span>
+                <span>Ответственный</span>
+                <span>Статус</span>
+              </div>
+              <div id="deadlineRows" class="table-body"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="section" id="smetterSection" aria-labelledby="smetter-title">
+          <div class="toolbar">
+            <div class="filter-group">
+              <button class="filter-chip active" type="button">Очередь</button>
+              <button class="filter-chip" type="button">Материалы</button>
+              <button class="filter-chip" type="button">Выполнение</button>
+              <button class="filter-chip" type="button">Акты</button>
+              <button class="filter-chip" type="button">Ошибки</button>
+            </div>
+            <button class="secondary-action" type="button">
+              <i data-lucide="download"></i>
+              <span>Выгрузка</span>
+            </button>
+          </div>
+          <div class="integration-layout">
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Контроль двойной работы</h2>
+              </div>
+              <div class="sync-summary" id="smetterSummary"></div>
+            </section>
+            <section class="table-panel full">
+              <div class="table-header smetter-header">
+                <span>Событие</span>
+                <span>Объект</span>
+                <span>Тип</span>
+                <span>Ответственный</span>
+                <span>Статус</span>
+              </div>
+              <div id="smetterRows" class="table-body"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="section" id="suppliersSection" aria-labelledby="locations-title">
+          <div class="toolbar">
+            <div class="filter-group">
+              <button class="filter-chip active" data-location-view="projects" type="button">Объекты</button>
+              <button class="filter-chip" data-location-view="suppliers" type="button">Поставщики</button>
+            </div>
+            <button class="secondary-action" type="button">
+              <i data-lucide="plus"></i>
+              <span>Локация</span>
+            </button>
+          </div>
+          <div id="locationGrid" class="cards-grid"></div>
+        </section>
+
+        <section class="section" id="photosSection" aria-labelledby="photos-title">
+          <div class="toolbar">
+            <div class="filter-group">
+              <button class="filter-chip active" type="button">Все</button>
+              <button class="filter-chip" type="button">Сегодня</button>
+              <button class="filter-chip" type="button">Скрытые работы</button>
+              <button class="filter-chip" type="button">Можно заказчику</button>
+            </div>
+            <button class="primary-action" id="newPhotoButton" type="button">
+              <i data-lucide="camera"></i>
+              <span>Фотоотчёт</span>
+            </button>
+          </div>
+          <div id="photoGrid" class="photo-grid"></div>
+        </section>
+
+        <section class="section" id="documentsSection" aria-labelledby="documents-title">
+          <div class="toolbar">
+            <div class="filter-group">
+              <button class="filter-chip active" type="button">Все документы</button>
+              <button class="filter-chip" type="button">Сметы</button>
+              <button class="filter-chip" type="button">Акты</button>
+              <button class="filter-chip" type="button">Узлы</button>
+              <button class="filter-chip" type="button">КС-2 / КС-3</button>
+            </div>
+            <button class="primary-action" id="newDocumentButton" type="button">
+              <i data-lucide="file-plus-2"></i>
+              <span>Документ</span>
+            </button>
+          </div>
+          <div id="documentGrid" class="cards-grid"></div>
+        </section>
+      </main>
+    </div>
+
+    <div class="modal-backdrop" id="taskModal" aria-hidden="true">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="taskModalTitle">
+        <div class="modal-header">
+          <h2 id="taskModalTitle">Новая задача</h2>
+          <button class="icon-button" data-close-modal="taskModal" type="button" title="Закрыть">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+        <form id="taskForm" class="form-grid">
+          <label>
+            <span>Объект</span>
+            <select id="taskProject"></select>
+          </label>
+          <label>
+            <span>Исполнитель</span>
+            <select id="taskAssignee">
+              <option>Артем</option>
+              <option>Анастасия</option>
+              <option>Ксения</option>
+              <option>Илья</option>
+              <option>Андрей</option>
+              <option>Сергей</option>
+            </select>
+          </label>
+          <label class="span-2">
+            <span>Задача</span>
+            <input id="taskTitleInput" type="text" placeholder="Что нужно сделать" />
+          </label>
+          <label>
+            <span>Срок</span>
+            <input id="taskDueInput" type="date" value="2026-04-30" />
+          </label>
+          <label>
+            <span>Связь</span>
+            <select id="taskRelatedInput">
+              <option>Без связи</option>
+              <option>Заявка на материалы</option>
+              <option>Допработа</option>
+              <option>Договор</option>
+              <option>Документ</option>
+              <option>Фотоотчет</option>
+            </select>
+          </label>
+          <label class="span-2">
+            <span>Комментарий</span>
+            <textarea id="taskCommentInput" rows="3" placeholder="Детали, файлы или что проверить"></textarea>
+          </label>
+          <div class="modal-actions">
+            <button class="secondary-action" data-close-modal="taskModal" type="button">Отмена</button>
+            <button class="primary-action" type="submit">
+              <i data-lucide="send"></i>
+              <span>Создать</span>
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="eventModal" aria-hidden="true">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="eventModalTitle">
+        <div class="modal-header">
+          <h2 id="eventModalTitle">Зафиксировать событие</h2>
+          <button class="icon-button" data-close-modal="eventModal" type="button" title="Закрыть">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+        <form id="eventForm" class="form-grid">
+          <label>
+            <span>Объект</span>
+            <select id="eventProject"></select>
+          </label>
+          <label>
+            <span>Тип события</span>
+            <select id="eventTypeInput">
+              <option>Решение</option>
+              <option>Комментарий</option>
+              <option>Изменение срока</option>
+              <option>Документ</option>
+              <option>Проблема</option>
+              <option>Согласование с заказчиком</option>
+            </select>
+          </label>
+          <label>
+            <span>Связь</span>
+            <select id="eventRelatedInput">
+              <option>Объект</option>
+              <option>Задача</option>
+              <option>Заявка на материалы</option>
+              <option>Допработа</option>
+              <option>Договор</option>
+              <option>Акт / документ</option>
+            </select>
+          </label>
+          <label>
+            <span>Видимость</span>
+            <select id="eventVisibilityInput">
+              <option>Только внутреннее</option>
+              <option>Можно заказчику</option>
+            </select>
+          </label>
+          <label class="span-2">
+            <span>Текст</span>
+            <textarea id="eventTextInput" rows="4" placeholder="Что решили, кто ответственный, какой следующий шаг"></textarea>
+          </label>
+          <div class="modal-actions">
+            <button class="secondary-action" data-close-modal="eventModal" type="button">Отмена</button>
+            <button class="primary-action" type="submit">
+              <i data-lucide="send"></i>
+              <span>Сохранить</span>
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="documentModal" aria-hidden="true">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="documentModalTitle">
+        <div class="modal-header">
+          <h2 id="documentModalTitle">Новый документ</h2>
+          <button class="icon-button" data-close-modal="documentModal" type="button" title="Закрыть">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+        <form id="documentForm" class="form-grid">
+          <label>
+            <span>Объект</span>
+            <select id="documentProject"></select>
+          </label>
+          <label>
+            <span>Тип</span>
+            <select id="documentTypeInput">
+              <option>Договор</option>
+              <option>Допсоглашение</option>
+              <option>Смета</option>
+              <option>Акт</option>
+              <option>КС-2</option>
+              <option>КС-3</option>
+              <option>Узел</option>
+              <option>Чертеж</option>
+              <option>Счет</option>
+              <option>Накладная</option>
+            </select>
+          </label>
+          <label class="span-2">
+            <span>Название</span>
+            <input id="documentTitleInput" type="text" placeholder="Например: Смета допработ по дренажу" />
+          </label>
+          <label>
+            <span>Версия</span>
+            <input id="documentVersionInput" type="text" placeholder="v1, v2, финальная" />
+          </label>
+          <label>
+            <span>Ответственный</span>
+            <select id="documentOwnerInput">
+              <option>Артем</option>
+              <option>Анастасия</option>
+              <option>Ксения</option>
+              <option>Илья</option>
+              <option>Андрей</option>
+              <option>Сергей</option>
+            </select>
+          </label>
+          <label>
+            <span>Срок согласования / действия</span>
+            <input id="documentDueInput" type="date" value="2026-05-06" />
+          </label>
+          <label>
+            <span>Связь</span>
+            <select id="documentRelatedInput">
+              <option>Объект</option>
+              <option>Договор</option>
+              <option>Допработа</option>
+              <option>Заявка на материалы</option>
+              <option>Акт</option>
+            </select>
+          </label>
+          <label class="span-2">
+            <span>Статус</span>
+            <select id="documentStatusInput">
+              <option>Черновик</option>
+              <option>На согласовании</option>
+              <option>Актуален</option>
+              <option>Подписан</option>
+              <option>На проверке</option>
+            </select>
+          </label>
+          <div class="modal-actions">
+            <button class="secondary-action" data-close-modal="documentModal" type="button">Отмена</button>
+            <button class="primary-action" type="submit">
+              <i data-lucide="send"></i>
+              <span>Сохранить</span>
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="photoModal" aria-hidden="true">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="photoModalTitle">
+        <div class="modal-header">
+          <h2 id="photoModalTitle">Новый фотоотчёт</h2>
+          <button class="icon-button" data-close-modal="photoModal" type="button" title="Закрыть">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+        <form id="photoForm" class="form-grid">
+          <label>
+            <span>Объект</span>
+            <select id="photoProject"></select>
+          </label>
+          <label>
+            <span>Автор</span>
+            <select id="photoAuthorInput">
+              <option>Андрей</option>
+              <option>Сергей</option>
+              <option>Артем</option>
+            </select>
+          </label>
+          <label>
+            <span>Этап / вид работ</span>
+            <input id="photoStageInput" type="text" placeholder="Кровля, дренаж, монолит" />
+          </label>
+          <label>
+            <span>Зона</span>
+            <input id="photoZoneInput" type="text" placeholder="1 этаж, санузел, фасад" />
+          </label>
+          <label>
+            <span>Количество фото</span>
+            <input id="photoCountInput" type="number" min="1" value="8" />
+          </label>
+          <label>
+            <span>Доступ заказчику</span>
+            <select id="photoCustomerVisibleInput">
+              <option>Только внутреннее</option>
+              <option>Можно заказчику</option>
+            </select>
+          </label>
+          <label class="span-2">
+            <span>Комментарий</span>
+            <textarea id="photoCommentInput" rows="3" placeholder="Что видно на фото и с чем связано"></textarea>
+          </label>
+          <div class="modal-actions">
+            <button class="secondary-action" data-close-modal="photoModal" type="button">Отмена</button>
+            <button class="primary-action" type="submit">
+              <i data-lucide="send"></i>
+              <span>Создать</span>
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="projectModal" aria-hidden="true">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="projectModalTitle">
+        <div class="modal-header">
+          <h2 id="projectModalTitle">Передать объект в строительство</h2>
+          <button class="icon-button" data-close-modal="projectModal" type="button" title="Закрыть">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+        <form id="projectForm" class="form-grid">
+          <label>
+            <span>Название объекта</span>
+            <input id="projectTitleInput" type="text" placeholder="Например: Дом, Павловская Слобода" />
+          </label>
+          <label>
+            <span>Заказчик</span>
+            <input id="projectCustomerInput" type="text" placeholder="ФИО или компания" />
+          </label>
+          <label class="span-2">
+            <span>Адрес</span>
+            <input id="projectAddressInput" type="text" placeholder="Адрес объекта" />
+          </label>
+          <label>
+            <span>Ссылка / ID Bitrix</span>
+            <input id="projectBitrixInput" type="text" placeholder="BITRIX-0000" />
+          </label>
+          <label>
+            <span>Ссылка / ID Сметтер</span>
+            <input id="projectSmetterInput" type="text" placeholder="SMT-0000" />
+          </label>
+          <label>
+            <span>Прораб</span>
+            <select id="projectForemanInput">
+              <option>Андрей</option>
+              <option>Сергей</option>
+            </select>
+          </label>
+          <label>
+            <span>Сметчик</span>
+            <select id="projectEstimatorInput">
+              <option>Ксения</option>
+              <option>Илья</option>
+            </select>
+          </label>
+          <label>
+            <span>Плановый срок</span>
+            <input id="projectDeadlineInput" type="date" value="2026-07-15" />
+          </label>
+          <label>
+            <span>Бюджет по смете, ₽</span>
+            <input id="projectBudgetInput" type="number" min="0" step="10000" placeholder="0" />
+          </label>
+          <div class="modal-actions">
+            <button class="secondary-action" data-close-modal="projectModal" type="button">Отмена</button>
+            <button class="primary-action" type="submit">
+              <i data-lucide="send"></i>
+              <span>Создать объект</span>
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="contractModal" aria-hidden="true">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="contractModalTitle">
+        <div class="modal-header">
+          <h2 id="contractModalTitle">Новый договор или допсоглашение</h2>
+          <button class="icon-button" data-close-modal="contractModal" type="button" title="Закрыть">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+        <form id="contractForm" class="form-grid">
+          <label>
+            <span>Объект</span>
+            <select id="contractProject"></select>
+          </label>
+          <label>
+            <span>Тип</span>
+            <select id="contractTypeInput">
+              <option>Договор с заказчиком</option>
+              <option>Допсоглашение</option>
+              <option>Договор поставщика</option>
+              <option>Договор подрядчика</option>
+              <option>Аренда техники</option>
+            </select>
+          </label>
+          <label>
+            <span>Номер</span>
+            <input id="contractNumberInput" type="text" placeholder="N 01/26" />
+          </label>
+          <label>
+            <span>Контрагент</span>
+            <input id="contractCounterpartyInput" type="text" placeholder="Заказчик, поставщик или подрядчик" />
+          </label>
+          <label>
+            <span>Дата окончания</span>
+            <input id="contractEndsInput" type="date" value="2026-05-27" />
+          </label>
+          <label>
+            <span>Ответственный</span>
+            <select id="contractResponsibleInput">
+              <option>Артем</option>
+              <option>Анастасия</option>
+              <option>Ксения</option>
+              <option>Илья</option>
+              <option>Руководитель</option>
+            </select>
+          </label>
+          <label class="span-2">
+            <span>Напоминания</span>
+            <select id="contractReminderInput">
+              <option>За 30, 14, 7 дней и в день окончания</option>
+              <option>За 14, 7 дней и в день окончания</option>
+              <option>За 7 дней и в день окончания</option>
+            </select>
+          </label>
+          <div class="modal-actions">
+            <button class="secondary-action" data-close-modal="contractModal" type="button">Отмена</button>
+            <button class="primary-action" type="submit">
+              <i data-lucide="send"></i>
+              <span>Сохранить</span>
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="materialModal" aria-hidden="true">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="materialModalTitle">
+        <div class="modal-header">
+          <h2 id="materialModalTitle">Новая заявка на материалы</h2>
+          <button class="icon-button" data-close-modal="materialModal" type="button" title="Закрыть">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+        <form id="materialForm" class="form-grid">
+          <label>
+            <span>Объект</span>
+            <select id="materialProject"></select>
+          </label>
+          <label>
+            <span>Срок на объекте</span>
+            <input id="materialDue" type="date" value="2026-05-04" />
+          </label>
+          <label>
+            <span>Основание</span>
+            <select id="materialBasis">
+              <option value="main">Основная смета</option>
+              <option value="overspend">Перерасход по основной смете</option>
+              <option value="replacement">Замена материала</option>
+              <option value="additional">Допработа / допник</option>
+              <option value="company">За счет компании</option>
+            </select>
+          </label>
+          <label>
+            <span>Раздел сметы</span>
+            <input id="materialSection" type="text" placeholder="Например: кровля / монолит / отделка" />
+          </label>
+          <label class="span-2">
+            <span>Материалы</span>
+            <textarea id="materialItems" rows="3" placeholder="Наименование, количество, единицы"></textarea>
+          </label>
+          <div class="basis-warning hidden" id="basisWarning">
+            Требуется причина, ответственное решение и связь с допработой или отклонением. Такая заявка не попадет в основной акт автоматически.
+          </div>
+          <label class="span-2">
+            <span>Комментарий</span>
+            <textarea id="materialComment" rows="3" placeholder="Что важно учесть снабжению"></textarea>
+          </label>
+          <div class="modal-actions">
+            <button class="secondary-action" data-close-modal="materialModal" type="button">Отмена</button>
+            <button class="primary-action" type="submit">
+              <i data-lucide="send"></i>
+              <span>Создать</span>
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="variationModal" aria-hidden="true">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="variationModalTitle">
+        <div class="modal-header">
+          <h2 id="variationModalTitle">Новая допработа / отклонение</h2>
+          <button class="icon-button" data-close-modal="variationModal" type="button" title="Закрыть">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+        <form id="variationForm" class="form-grid">
+          <label>
+            <span>Объект</span>
+            <select id="variationProject"></select>
+          </label>
+          <label>
+            <span>Тип</span>
+            <select id="variationType">
+              <option>Дополнительная работа</option>
+              <option>Перерасход материала</option>
+              <option>Скрытые работы</option>
+              <option>Ошибка в смете</option>
+              <option>Замена материала</option>
+            </select>
+          </label>
+          <label class="span-2">
+            <span>Описание</span>
+            <textarea id="variationDescription" rows="3" placeholder="Что произошло и почему это не в основной смете"></textarea>
+          </label>
+          <label>
+            <span>Оценка, ₽</span>
+            <input id="variationAmount" type="number" min="0" step="1000" placeholder="0" />
+          </label>
+          <label>
+            <span>Срок решения</span>
+            <input id="variationDue" type="date" value="2026-05-02" />
+          </label>
+          <label class="span-2">
+            <span>Решение по деньгам</span>
+            <select id="variationDecision">
+              <option>Не решено</option>
+              <option>Предъявить заказчику</option>
+              <option>Оформить отдельным актом</option>
+              <option>Списать за счет компании</option>
+              <option>Спорная позиция</option>
+            </select>
+          </label>
+          <div class="modal-actions">
+            <button class="secondary-action" data-close-modal="variationModal" type="button">Отмена</button>
+            <button class="primary-action" type="submit">
+              <i data-lucide="send"></i>
+              <span>Создать</span>
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
