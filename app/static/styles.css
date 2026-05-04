@@ -455,6 +455,20 @@ textarea {
   margin-top: 16px;
 }
 
+.notifications-panel,
+.workflow-panel {
+  margin-top: 16px;
+}
+
+.workflow-panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  padding: 12px;
+  display: grid;
+  gap: 12px;
+}
+
 @media (max-width: 980px) {
   .app {
     grid-template-columns: 1fr;

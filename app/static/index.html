@@ -58,6 +58,12 @@
               <div class="list" id="dashboardTasks"></div>
             </section>
           </div>
+          <section class="panel notifications-panel">
+            <div class="panel-head">
+              <h2>Уведомления</h2>
+            </div>
+            <div class="list" id="notificationRows"></div>
+          </section>
         </section>
 
         <section class="view" id="projectsView">
@@ -177,53 +183,25 @@
           <button type="button" class="icon" data-close="projectDialog">×</button>
         </div>
         <label>Название <input name="title" required placeholder="Дом, Павловская Слобода" /></label>
-        <label>Заказчик <input name="customer_name" placeholder="ФИО или компания" /></label>
-        <label>Адрес <input name="address" placeholder="Адрес объекта" /></label>
+        <label>Заказчик <input name="customer_name" required placeholder="ФИО или компания" /></label>
+        <label>Адрес <input name="address" required placeholder="Адрес объекта" /></label>
         <div class="grid-2">
-          <label>Bitrix <input name="bitrix_ref" placeholder="Ссылка на сделку или ID" /></label>
-          <label>Сметтер <input name="smetter_ref" placeholder="Ссылка на смету или номер" /></label>
+          <label>Bitrix <input name="bitrix_ref" required placeholder="Ссылка на сделку или ID" /></label>
+          <label>Сметтер <input name="smetter_ref" required placeholder="Ссылка на смету или номер" /></label>
         </div>
         <section class="hint-box neutral">
-          <strong>Ответственные по объекту</strong>
-          <p>На этапе регистрации выбираем должности. Конкретных сотрудников можно назначить позже внутри карточки объекта.</p>
+          <strong>Передача в строительство</strong>
+          <p>Менеджер заполняет все данные и прикладывает документацию. Ответственных назначает руководитель строительства после проверки карточки.</p>
         </section>
         <div class="grid-2">
-          <label>
-            Управление стройкой
-            <select name="construction_manager_id">
-              <option value="2">Руководитель строительства</option>
-            </select>
-          </label>
-          <label>
-            Производство работ
-            <select name="foreman_id">
-              <option value="7">Прораб</option>
-            </select>
-          </label>
-        </div>
-        <div class="grid-2">
-          <label>
-            Сметная часть
-            <select name="estimator_id">
-              <option value="5">Сметчик</option>
-            </select>
-          </label>
-          <label>
-            Снабжение
-            <select name="procurement_manager_id">
-              <option value="4">Снабженец</option>
-            </select>
-          </label>
-        </div>
-        <div class="grid-2">
-          <label>Плановый срок <input name="planned_end_date" type="date" /></label>
-          <label>Смета, ₽ <input name="main_estimate_amount" inputmode="decimal" placeholder="Можно вставить 1 482 584,60 ₽" /></label>
+          <label>Плановый срок <input name="planned_end_date" type="date" required /></label>
+          <label>Смета, ₽ <input name="main_estimate_amount" inputmode="decimal" required placeholder="Можно вставить 1 482 584,60 ₽" /></label>
         </div>
         <section class="hint-box">
           <strong>Первичный список материалов</strong>
           <p>На старте это делает Алексей: выгружает материалы из сметы в Excel и прикладывает при создании карточки. В этой версии файл пока не читается автоматически, но мы фиксируем процесс и дальше подключим импорт.</p>
         </section>
-        <label>Excel-файл материалов сметы <input name="estimate_file_name" type="file" accept=".xlsx,.xls,.csv" /></label>
+        <label>Документация / файл материалов сметы <input name="estimate_file_name" type="file" accept=".xlsx,.xls,.csv,.pdf,.doc,.docx" required /></label>
         <div class="form-actions">
           <button type="button" class="secondary" data-close="projectDialog">Отмена</button>
           <button class="primary" type="submit">Создать</button>

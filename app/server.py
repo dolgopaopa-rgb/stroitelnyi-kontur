@@ -199,17 +199,41 @@ def parse_uploaded_materials(data: dict) -> list[dict]:
     raise ValueError("Поддерживаются файлы .xlsx из Сметтера и .csv")
 
 
+def require_fields(data: dict, fields: list[tuple[str, str]]) -> None:
+    missing = [label for key, label in fields if not str(data.get(key) or "").strip()]
+    if missing:
+        raise ValueError("Заполните обязательные поля: " + ", ".join(missing))
+
+
+def create_notification(db, project_id: int, user_id: int | None, role: str, title: str, text: str) -> None:
+    db.execute(
+        """
+        INSERT INTO notifications (project_id, user_id, role, title, text)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (project_id, user_id, role, title, text),
+    )
+
+
+def user_id_by_role(db, role: str) -> int | None:
+    row = db.execute("SELECT id FROM users WHERE role = ? AND is_active = 1 ORDER BY id LIMIT 1", (role,)).fetchone()
+    return int(row["id"]) if row else None
+
+
 def get_project_detail(project_id: int) -> dict | None:
     with connect() as db:
         project = db.execute(
             """
             SELECT p.*, foreman.name AS foreman_name, estimator.name AS estimator_name,
-                   procurement.name AS procurement_name, manager.name AS manager_name
+                   procurement.name AS procurement_name, manager.name AS manager_name,
+                   tech.name AS tech_supervisor_name, sales.name AS sales_manager_name
             FROM projects p
             LEFT JOIN users foreman ON foreman.id = p.foreman_id
             LEFT JOIN users estimator ON estimator.id = p.estimator_id
             LEFT JOIN users procurement ON procurement.id = p.procurement_manager_id
             LEFT JOIN users manager ON manager.id = p.construction_manager_id
+            LEFT JOIN users tech ON tech.id = p.tech_supervisor_id
+            LEFT JOIN users sales ON sales.id = p.sales_manager_id
             WHERE p.id = ?
             """,
             (project_id,),
@@ -223,6 +247,7 @@ def get_project_detail(project_id: int) -> dict | None:
         detail["contracts"] = rows_to_dicts(db.execute("SELECT * FROM contracts WHERE project_id = ? ORDER BY ends_at", (project_id,)).fetchall())
         detail["documents"] = rows_to_dicts(db.execute("SELECT * FROM documents WHERE project_id = ? ORDER BY created_at DESC", (project_id,)).fetchall())
         detail["events"] = rows_to_dicts(db.execute("SELECT * FROM events WHERE project_id = ? ORDER BY created_at DESC", (project_id,)).fetchall())
+        detail["notifications"] = rows_to_dicts(db.execute("SELECT * FROM notifications WHERE project_id = ? ORDER BY created_at DESC", (project_id,)).fetchall())
         return detail
 
 
@@ -284,9 +309,25 @@ class AppHandler(BaseHTTPRequestHandler):
                 json_response(self, rows_to_dicts(rows))
                 return
 
+            if path == "/api/notifications":
+                rows = db.execute(
+                    """
+                    SELECT n.*, p.title AS project_title, u.name AS user_name
+                    FROM notifications n
+                    LEFT JOIN projects p ON p.id = n.project_id
+                    LEFT JOIN users u ON u.id = n.user_id
+                    ORDER BY n.created_at DESC
+                    LIMIT 30
+                    """
+                ).fetchall()
+                json_response(self, rows_to_dicts(rows))
+                return
+
             if path == "/api/summary":
                 payload = {
                     "projects": db.execute("SELECT COUNT(*) AS count FROM projects").fetchone()["count"],
+                    "pending_handover": db.execute("SELECT COUNT(*) AS count FROM projects WHERE status IN ('draft', 'revision_requested')").fetchone()["count"],
+                    "construction_review": db.execute("SELECT COUNT(*) AS count FROM projects WHERE status = 'submitted_to_construction'").fetchone()["count"],
                     "open_tasks": db.execute("SELECT COUNT(*) AS count FROM tasks WHERE status != 'completed'").fetchone()["count"],
                     "material_requests": db.execute("SELECT COUNT(*) AS count FROM material_requests WHERE procurement_status != 'closed'").fetchone()["count"],
                     "unresolved_overbudget": db.execute("SELECT COALESCE(SUM(amount), 0) AS total FROM variations WHERE financial_decision = 'not_decided'").fetchone()["total"],
@@ -299,11 +340,14 @@ class AppHandler(BaseHTTPRequestHandler):
                 rows = db.execute(
                     """
                     SELECT p.*, foreman.name AS foreman_name, estimator.name AS estimator_name,
-                           procurement.name AS procurement_name
+                           procurement.name AS procurement_name, tech.name AS tech_supervisor_name,
+                           sales.name AS sales_manager_name
                     FROM projects p
                     LEFT JOIN users foreman ON foreman.id = p.foreman_id
                     LEFT JOIN users estimator ON estimator.id = p.estimator_id
                     LEFT JOIN users procurement ON procurement.id = p.procurement_manager_id
+                    LEFT JOIN users tech ON tech.id = p.tech_supervisor_id
+                    LEFT JOIN users sales ON sales.id = p.sales_manager_id
                     ORDER BY p.updated_at DESC
                     """
                 ).fetchall()
@@ -360,36 +404,251 @@ class AppHandler(BaseHTTPRequestHandler):
     def handle_api_post(self, path: str, data: dict) -> None:
         with connect() as db:
             if path == "/api/projects":
+                require_fields(
+                    data,
+                    [
+                        ("title", "Название"),
+                        ("customer_name", "Заказчик"),
+                        ("address", "Адрес"),
+                        ("bitrix_ref", "Bitrix"),
+                        ("smetter_ref", "Сметтер"),
+                        ("planned_end_date", "Плановый срок"),
+                        ("main_estimate_amount", "Смета"),
+                        ("estimate_file_name", "Документация / файл материалов"),
+                    ],
+                )
                 cursor = db.execute(
                     """
                     INSERT INTO projects (
                         title, customer_name, status, address, navigator_url, bitrix_ref,
                         smetter_ref, estimate_file_name, estimate_version, estimate_uploaded_by,
-                        construction_manager_id, foreman_id, estimator_id,
-                        procurement_manager_id, planned_end_date, main_estimate_amount
+                        sales_manager_id, construction_manager_id, foreman_id, estimator_id,
+                        procurement_manager_id, tech_supervisor_id, planned_end_date, main_estimate_amount
                     )
-                    VALUES (?, ?, 'transferred_to_construction', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?)
                     """,
                     (
-                        data.get("title") or "Новый объект",
-                        data.get("customer_name") or "",
-                        data.get("address") or "",
+                        data.get("title"),
+                        data.get("customer_name"),
+                        data.get("address"),
                         data.get("navigator_url") or "https://yandex.ru/maps",
-                        data.get("bitrix_ref") or "",
-                        data.get("smetter_ref") or "",
-                        data.get("estimate_file_name") or "",
+                        data.get("bitrix_ref"),
+                        data.get("smetter_ref"),
+                        data.get("estimate_file_name"),
                         data.get("estimate_version") or "",
                         3,
-                        int(data.get("construction_manager_id") or 2),
-                        int(data.get("foreman_id") or 7),
-                        int(data.get("estimator_id") or 5),
-                        int(data.get("procurement_manager_id") or 4),
-                        data.get("planned_end_date") or None,
+                        3,
+                        user_id_by_role(db, "construction_manager") or 2,
+                        data.get("planned_end_date"),
                         number_value(data.get("main_estimate_amount")),
                     ),
                 )
-                json_response(self, get_project_detail(cursor.lastrowid), 201)
+                project_id = cursor.lastrowid
+                db.execute(
+                    """
+                    INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
+                    VALUES (?, 'document', ?, 3, 'internal', 'handover')
+                    """,
+                    (project_id, "Менеджер создал карточку объекта. Объект еще не передан в строительство."),
+                )
+                db.commit()
+                json_response(self, get_project_detail(project_id), 201)
                 return
+
+            project_action = re.match(r"^/api/projects/(\d+)/(update|submit|accept|return)$", path)
+            if project_action:
+                project_id = int(project_action.group(1))
+                action = project_action.group(2)
+                project = db.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+                if not project:
+                    json_response(self, {"error": "Project not found"}, 404)
+                    return
+
+                if action == "update":
+                    require_fields(
+                        data,
+                        [
+                            ("title", "Название"),
+                            ("customer_name", "Заказчик"),
+                            ("address", "Адрес"),
+                            ("bitrix_ref", "Bitrix"),
+                            ("smetter_ref", "Сметтер"),
+                            ("planned_end_date", "Плановый срок"),
+                            ("main_estimate_amount", "Смета"),
+                            ("estimate_file_name", "Документация / файл материалов"),
+                        ],
+                    )
+                    db.execute(
+                        """
+                        UPDATE projects
+                        SET title = ?,
+                            customer_name = ?,
+                            address = ?,
+                            bitrix_ref = ?,
+                            smetter_ref = ?,
+                            planned_end_date = ?,
+                            main_estimate_amount = ?,
+                            estimate_file_name = ?,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (
+                            data.get("title"),
+                            data.get("customer_name"),
+                            data.get("address"),
+                            data.get("bitrix_ref"),
+                            data.get("smetter_ref"),
+                            data.get("planned_end_date"),
+                            number_value(data.get("main_estimate_amount")),
+                            data.get("estimate_file_name"),
+                            project_id,
+                        ),
+                    )
+                    db.execute(
+                        """
+                        INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
+                        VALUES (?, 'document', ?, 3, 'internal', 'handover')
+                        """,
+                        (project_id, "Менеджер обновил данные карточки объекта."),
+                    )
+                    db.commit()
+                    json_response(self, get_project_detail(project_id))
+                    return
+
+                if action == "submit":
+                    required = [
+                        ("title", "Название"),
+                        ("customer_name", "Заказчик"),
+                        ("address", "Адрес"),
+                        ("bitrix_ref", "Bitrix"),
+                        ("smetter_ref", "Сметтер"),
+                        ("planned_end_date", "Плановый срок"),
+                        ("estimate_file_name", "Документация / файл материалов"),
+                    ]
+                    missing = [label for key, label in required if not str(project[key] or "").strip()]
+                    if not number_value(project["main_estimate_amount"]):
+                        missing.append("Смета")
+                    if missing:
+                        raise ValueError("Перед передачей заполните: " + ", ".join(missing))
+                    db.execute(
+                        """
+                        UPDATE projects
+                        SET status = 'submitted_to_construction',
+                            submitted_at = CURRENT_TIMESTAMP,
+                            workflow_comment = '',
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (project_id,),
+                    )
+                    manager_id = project["construction_manager_id"] or user_id_by_role(db, "construction_manager")
+                    create_notification(
+                        db,
+                        project_id,
+                        manager_id,
+                        "construction_manager",
+                        "Новый объект передан в строительство",
+                        f"{project['title']}: проверьте карточку, документацию и примите объект в работу или верните на доработку.",
+                    )
+                    db.execute(
+                        """
+                        INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
+                        VALUES (?, 'decision', ?, 3, 'internal', 'handover')
+                        """,
+                        (project_id, "Менеджер передал объект руководителю строительства на проверку."),
+                    )
+                    db.commit()
+                    json_response(self, get_project_detail(project_id))
+                    return
+
+                if action == "return":
+                    comment = data.get("comment") or "Нужна доработка карточки объекта."
+                    db.execute(
+                        """
+                        UPDATE projects
+                        SET status = 'revision_requested',
+                            workflow_comment = ?,
+                            returned_at = CURRENT_TIMESTAMP,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (comment, project_id),
+                    )
+                    create_notification(
+                        db,
+                        project_id,
+                        project["sales_manager_id"] or user_id_by_role(db, "sales_manager"),
+                        "sales_manager",
+                        "Объект возвращен на доработку",
+                        f"{project['title']}: {comment}",
+                    )
+                    db.execute(
+                        """
+                        INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
+                        VALUES (?, 'problem', ?, 2, 'internal', 'handover')
+                        """,
+                        (project_id, f"Руководитель строительства вернул объект на доработку: {comment}"),
+                    )
+                    db.commit()
+                    json_response(self, get_project_detail(project_id))
+                    return
+
+                if action == "accept":
+                    require_fields(
+                        data,
+                        [
+                            ("foreman_id", "Прораб"),
+                            ("estimator_id", "Сметчик"),
+                            ("procurement_manager_id", "Снабжение"),
+                            ("tech_supervisor_id", "Технадзор"),
+                        ],
+                    )
+                    assignees = {
+                        "foreman": int(data["foreman_id"]),
+                        "estimator": int(data["estimator_id"]),
+                        "procurement_manager": int(data["procurement_manager_id"]),
+                        "technical_supervisor": int(data["tech_supervisor_id"]),
+                    }
+                    db.execute(
+                        """
+                        UPDATE projects
+                        SET status = 'in_progress',
+                            foreman_id = ?,
+                            estimator_id = ?,
+                            procurement_manager_id = ?,
+                            tech_supervisor_id = ?,
+                            accepted_at = CURRENT_TIMESTAMP,
+                            workflow_comment = '',
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (
+                            assignees["foreman"],
+                            assignees["estimator"],
+                            assignees["procurement_manager"],
+                            assignees["technical_supervisor"],
+                            project_id,
+                        ),
+                    )
+                    for role, user_id in assignees.items():
+                        create_notification(
+                            db,
+                            project_id,
+                            user_id,
+                            role,
+                            "Объект принят в работу",
+                            f"{project['title']}: руководитель строительства принял объект и назначил вас участником.",
+                        )
+                    db.execute(
+                        """
+                        INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
+                        VALUES (?, 'decision', ?, 2, 'internal', 'handover')
+                        """,
+                        (project_id, "Руководитель строительства принял объект в работу и назначил ответственных."),
+                    )
+                    db.commit()
+                    json_response(self, get_project_detail(project_id))
+                    return
 
             if path == "/api/tasks":
                 cursor = db.execute(

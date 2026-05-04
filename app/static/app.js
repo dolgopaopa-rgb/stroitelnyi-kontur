@@ -20,6 +20,9 @@ const viewTitles = {
 };
 
 const statusLabels = {
+  draft: "Черновик менеджера",
+  submitted_to_construction: "На проверке строительства",
+  revision_requested: "Возвращен на доработку",
   transferred_to_construction: "Передан",
   preparation: "Подготовка",
   in_progress: "В работе",
@@ -83,6 +86,14 @@ function label(value) {
   return statusLabels[value] || value || "Не задано";
 }
 
+function escapeAttr(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 function showToast(message) {
   const toast = qs("#toast");
   toast.textContent = message;
@@ -106,6 +117,7 @@ async function loadAll() {
   fillSelects();
   await Promise.all([
     renderDashboard(),
+    renderNotifications(),
     renderProjects(),
     renderTasks(),
     renderMaterials(),
@@ -123,6 +135,14 @@ function fillSelects() {
   qsa('select[name="project_id"]').forEach((select) => (select.innerHTML = projectOptions));
   qsa('select[name="assignee_id"], select[name="owner_id"], select[name="responsible_id"]').forEach((select) => (select.innerHTML = userOptions));
   updateEstimateMaterialSelect();
+}
+
+function usersByRole(role) {
+  return state.users.filter((user) => user.role === role);
+}
+
+function userOptionsByRole(role) {
+  return usersByRole(role).map((user) => `<option value="${user.id}">${user.name}</option>`).join("");
 }
 
 async function updateEstimateMaterialSelect() {
@@ -175,9 +195,9 @@ async function renderDashboard() {
   const [summary, tasks] = await Promise.all([api("/api/summary"), api("/api/tasks")]);
   qs("#summaryCards").innerHTML = `
     <div class="metric"><span class="muted">Объекты</span><strong>${summary.projects}</strong><span>В базе MVP</span></div>
+    <div class="metric"><span class="muted">У менеджера</span><strong>${summary.pending_handover}</strong><span>Черновики и доработки</span></div>
+    <div class="metric"><span class="muted">На проверке</span><strong>${summary.construction_review}</strong><span>Ждут руководителя строительства</span></div>
     <div class="metric"><span class="muted">Открытые задачи</span><strong>${summary.open_tasks}</strong><span>Нужен контроль</span></div>
-    <div class="metric"><span class="muted">Заявки</span><strong>${summary.material_requests}</strong><span>Не закрыты</span></div>
-    <div class="metric"><span class="muted">Сверхбюджет без решения</span><strong>${money(summary.unresolved_overbudget)}</strong><span>Риск</span></div>
   `;
   qs("#dashboardProjects").innerHTML = state.projects
     .slice(0, 4)
@@ -201,6 +221,22 @@ async function renderDashboard() {
     .join("");
 }
 
+async function renderNotifications() {
+  const rows = await api("/api/notifications");
+  qs("#notificationRows").innerHTML = rows.length
+    ? rows
+        .map(
+          (row) => `
+          <button class="row clickable" data-open-project="${row.project_id}">
+            <div class="stack-line"><strong>${row.title}</strong>${pill(row.user_name || row.role, row.is_read ? "" : "warning")}</div>
+            <div>${row.text}</div>
+            <div class="muted">${row.project_title || "Без объекта"} · ${row.created_at}</div>
+          </button>`
+        )
+        .join("")
+    : `<p class="muted">Уведомлений пока нет.</p>`;
+}
+
 async function renderProjects() {
   qs("#projectRows").innerHTML = state.projects
     .map(
@@ -208,8 +244,8 @@ async function renderProjects() {
       <button class="row clickable" data-open-project="${project.id}">
         <div class="row-grid">
           <div><strong>${project.title}</strong><div class="muted">${project.customer_name || ""}</div></div>
-          ${pill(label(project.status), "blue")}
-          <div>${project.foreman_name || "не назначен"}</div>
+          ${pill(label(project.status), project.status === "revision_requested" ? "danger" : project.status === "submitted_to_construction" ? "warning" : "blue")}
+          <div>${project.foreman_name || "прораб не назначен"}</div>
           ${pill(money(project.unresolved_overbudget_amount), levelByMoney(project.unresolved_overbudget_amount))}
         </div>
       </button>`
@@ -242,9 +278,12 @@ async function renderProjectDetail(projectId) {
     <div class="stack-line">
       ${pill(`Прораб: ${project.foreman_name || "не назначен"}`)}
       ${pill(`Сметчик: ${project.estimator_name || "не назначен"}`)}
+      ${pill(`Снабжение: ${project.procurement_name || "не назначено"}`)}
+      ${pill(`Технадзор: ${project.tech_supervisor_name || "не назначен"}`)}
       ${pill(project.bitrix_ref || "Bitrix не указан", "blue")}
       ${pill(project.smetter_ref || "Сметтер не указан", "success")}
     </div>
+    ${renderProjectWorkflow(project)}
     <div class="tabs">
       ${["overview", "tasks", "materials", "variations", "contracts", "documents", "events"]
         .map((tab) => `<button class="tab ${state.selectedProjectTab === tab ? "active" : ""}" data-project-tab="${tab}">${tabTitle(tab)}</button>`)
@@ -252,6 +291,60 @@ async function renderProjectDetail(projectId) {
     </div>
     <div>${tabData[state.selectedProjectTab]}</div>
   `;
+}
+
+function renderProjectWorkflow(project) {
+  if (project.status === "draft" || project.status === "revision_requested") {
+    return `
+      <section class="workflow-panel">
+        <div class="stack-line"><h3>Передача объекта</h3>${pill(project.status === "revision_requested" ? "Нужна доработка" : "Черновик", project.status === "revision_requested" ? "danger" : "warning")}</div>
+        ${project.workflow_comment ? `<p class="muted">Комментарий руководителя строительства: ${project.workflow_comment}</p>` : ""}
+        <div class="grid-2">
+          <label>Название <input id="projectEditTitle" value="${escapeAttr(project.title)}" /></label>
+          <label>Заказчик <input id="projectEditCustomer" value="${escapeAttr(project.customer_name)}" /></label>
+        </div>
+        <label>Адрес <input id="projectEditAddress" value="${escapeAttr(project.address)}" /></label>
+        <div class="grid-2">
+          <label>Bitrix <input id="projectEditBitrix" value="${escapeAttr(project.bitrix_ref)}" placeholder="Ссылка на сделку или ID" /></label>
+          <label>Сметтер <input id="projectEditSmetter" value="${escapeAttr(project.smetter_ref)}" placeholder="Ссылка на смету или номер" /></label>
+        </div>
+        <div class="grid-2">
+          <label>Плановый срок <input id="projectEditEndDate" type="date" value="${escapeAttr(project.planned_end_date)}" /></label>
+          <label>Смета, ₽ <input id="projectEditEstimate" inputmode="decimal" value="${escapeAttr(project.main_estimate_amount)}" /></label>
+        </div>
+        <label>Документация / файл материалов <input id="projectEditFileName" value="${escapeAttr(project.estimate_file_name)}" placeholder="Название прикрепленного файла" /></label>
+        <div class="form-actions">
+          <button class="secondary" data-project-action="update" data-project-id="${project.id}">Сохранить правки</button>
+          <button class="primary" data-project-action="submit" data-project-id="${project.id}">Передать в работу</button>
+        </div>
+      </section>`;
+  }
+
+  if (project.status === "submitted_to_construction") {
+    return `
+      <section class="workflow-panel">
+        <div class="stack-line"><h3>Проверка руководителем строительства</h3>${pill("Ожидает решения", "warning")}</div>
+        <div class="grid-2">
+          <label>Прораб <select id="acceptForeman">${userOptionsByRole("foreman")}</select></label>
+          <label>Сметчик <select id="acceptEstimator">${userOptionsByRole("estimator")}</select></label>
+        </div>
+        <div class="grid-2">
+          <label>Снабжение <select id="acceptProcurement">${userOptionsByRole("procurement_manager")}</select></label>
+          <label>Технадзор <select id="acceptTech">${userOptionsByRole("technical_supervisor")}</select></label>
+        </div>
+        <label>Комментарий при возврате <textarea id="returnComment" rows="2" placeholder="Что менеджеру нужно исправить"></textarea></label>
+        <div class="form-actions">
+          <button class="secondary" data-project-action="return" data-project-id="${project.id}">Вернуть на доработку</button>
+          <button class="primary" data-project-action="accept" data-project-id="${project.id}">Принять в работу</button>
+        </div>
+      </section>`;
+  }
+
+  return `
+    <section class="workflow-panel">
+      <div class="stack-line"><h3>Объект в работе</h3>${pill("Ответственные назначены", "success")}</div>
+      <p class="muted">После принятия уведомления получают прораб, снабжение, сметчик и технадзор.</p>
+    </section>`;
 }
 
 function renderSmallList(items, getText) {
@@ -586,6 +679,55 @@ async function submitForm(dialogId, formId, endpoint, successMessage) {
   showToast(successMessage);
 }
 
+async function handleProjectAction(button) {
+  const projectId = button.dataset.projectId;
+  const action = button.dataset.projectAction;
+  let payload = {};
+  let message = "Объект обновлен";
+
+  if (action === "return") {
+    payload = { comment: qs("#returnComment")?.value || "" };
+    message = "Объект возвращен менеджеру";
+  }
+
+  if (action === "update") {
+    payload = {
+      title: qs("#projectEditTitle")?.value,
+      customer_name: qs("#projectEditCustomer")?.value,
+      address: qs("#projectEditAddress")?.value,
+      bitrix_ref: qs("#projectEditBitrix")?.value,
+      smetter_ref: qs("#projectEditSmetter")?.value,
+      planned_end_date: qs("#projectEditEndDate")?.value,
+      main_estimate_amount: qs("#projectEditEstimate")?.value,
+      estimate_file_name: qs("#projectEditFileName")?.value,
+    };
+    message = "Карточка объекта сохранена";
+  }
+
+  if (action === "accept") {
+    payload = {
+      foreman_id: qs("#acceptForeman")?.value,
+      estimator_id: qs("#acceptEstimator")?.value,
+      procurement_manager_id: qs("#acceptProcurement")?.value,
+      tech_supervisor_id: qs("#acceptTech")?.value,
+    };
+    message = "Объект принят в работу";
+  }
+
+  if (action === "submit") {
+    message = "Объект передан руководителю строительства";
+  }
+
+  await api(`/api/projects/${projectId}/${action}`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  await loadAll();
+  state.selectedProjectId = Number(projectId);
+  await renderProjectDetail(state.selectedProjectId);
+  showToast(message);
+}
+
 function bindEvents() {
   qsa("[data-view]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
   qsa("[data-view-target]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.viewTarget)));
@@ -608,6 +750,12 @@ function bindEvents() {
   qs("#previewEstimateButton").addEventListener("click", loadEstimatePreview);
 
   document.addEventListener("click", async (event) => {
+    const actionButton = event.target.closest("[data-project-action]");
+    if (actionButton) {
+      await handleProjectAction(actionButton);
+      return;
+    }
+
     const projectButton = event.target.closest("[data-open-project]");
     if (projectButton) {
       state.selectedProjectId = Number(projectButton.dataset.openProject);
@@ -624,7 +772,7 @@ function bindEvents() {
 
   qs("#projectForm").addEventListener("submit", (event) => {
     event.preventDefault();
-    submitForm("projectDialog", "projectForm", "/api/projects", "Объект создан");
+    submitForm("projectDialog", "projectForm", "/api/projects", "Объект создан как черновик");
   });
   qs("#taskForm").addEventListener("submit", (event) => {
     event.preventDefault();

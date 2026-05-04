@@ -48,10 +48,16 @@ def init_db() -> None:
                 estimate_file_name TEXT,
                 estimate_version TEXT,
                 estimate_uploaded_by INTEGER,
+                sales_manager_id INTEGER,
                 construction_manager_id INTEGER,
                 foreman_id INTEGER,
                 estimator_id INTEGER,
                 procurement_manager_id INTEGER,
+                tech_supervisor_id INTEGER,
+                workflow_comment TEXT,
+                submitted_at TEXT,
+                accepted_at TEXT,
+                returned_at TEXT,
                 planned_end_date TEXT,
                 main_estimate_amount REAL NOT NULL DEFAULT 0,
                 approved_variations_amount REAL NOT NULL DEFAULT 0,
@@ -59,10 +65,12 @@ def init_db() -> None:
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (estimate_uploaded_by) REFERENCES users(id),
+                FOREIGN KEY (sales_manager_id) REFERENCES users(id),
                 FOREIGN KEY (construction_manager_id) REFERENCES users(id),
                 FOREIGN KEY (foreman_id) REFERENCES users(id),
                 FOREIGN KEY (estimator_id) REFERENCES users(id),
-                FOREIGN KEY (procurement_manager_id) REFERENCES users(id)
+                FOREIGN KEY (procurement_manager_id) REFERENCES users(id),
+                FOREIGN KEY (tech_supervisor_id) REFERENCES users(id)
             );
 
             CREATE TABLE IF NOT EXISTS tasks (
@@ -175,6 +183,19 @@ def init_db() -> None:
                 FOREIGN KEY (author_id) REFERENCES users(id)
             );
 
+            CREATE TABLE IF NOT EXISTS notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER,
+                user_id INTEGER,
+                role TEXT,
+                title TEXT NOT NULL,
+                text TEXT NOT NULL,
+                is_read INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            );
+
             CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
             CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
             CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(due_date);
@@ -184,13 +205,22 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_contracts_ends ON contracts(ends_at);
             CREATE INDEX IF NOT EXISTS idx_documents_project ON documents(project_id);
             CREATE INDEX IF NOT EXISTS idx_events_project ON events(project_id);
+            CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read);
+            CREATE INDEX IF NOT EXISTS idx_notifications_role ON notifications(role, is_read);
             """
         )
         ensure_column(db, "material_requests", "estimate_material_id", "INTEGER")
         ensure_column(db, "projects", "estimate_file_name", "TEXT")
         ensure_column(db, "projects", "estimate_version", "TEXT")
         ensure_column(db, "projects", "estimate_uploaded_by", "INTEGER")
+        ensure_column(db, "projects", "sales_manager_id", "INTEGER")
+        ensure_column(db, "projects", "tech_supervisor_id", "INTEGER")
+        ensure_column(db, "projects", "workflow_comment", "TEXT")
+        ensure_column(db, "projects", "submitted_at", "TEXT")
+        ensure_column(db, "projects", "accepted_at", "TEXT")
+        ensure_column(db, "projects", "returned_at", "TEXT")
         seed(db)
+        ensure_core_users(db)
         seed_estimate_materials(db)
         seed_related_records(db)
 
@@ -199,6 +229,16 @@ def ensure_column(db: sqlite3.Connection, table: str, column: str, definition: s
     columns = {row["name"] for row in db.execute(f"PRAGMA table_info({table})").fetchall()}
     if column not in columns:
         db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
+def ensure_core_users(db: sqlite3.Connection) -> None:
+    required_users = [
+        ("Технадзор", "technical_supervisor", "technadzor@example.local"),
+    ]
+    for name, role, email in required_users:
+        exists = db.execute("SELECT id FROM users WHERE role = ? LIMIT 1", (role,)).fetchone()
+        if not exists:
+            db.execute("INSERT INTO users (name, role, email) VALUES (?, ?, ?)", (name, role, email))
 
 
 def seed(db: sqlite3.Connection) -> None:
@@ -215,6 +255,7 @@ def seed(db: sqlite3.Connection) -> None:
         ("Илья", "estimator", "ilya@example.local"),
         ("Андрей", "foreman", "andrey@example.local"),
         ("Сергей", "foreman", "sergey@example.local"),
+        ("Технадзор", "technical_supervisor", "technadzor@example.local"),
     ]
     db.executemany("INSERT INTO users (name, role, email) VALUES (?, ?, ?)", users)
 
