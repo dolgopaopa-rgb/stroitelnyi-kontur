@@ -40,7 +40,15 @@ def number_value(value: object) -> float:
         return 0
     if isinstance(value, (int, float)):
         return float(value)
-    return float(str(value).replace(" ", "").replace(",", ".") or 0)
+    cleaned = str(value)
+    cleaned = cleaned.replace("\u00a0", "").replace(" ", "")
+    cleaned = cleaned.replace("₽", "").replace("руб.", "").replace("руб", "")
+    cleaned = re.sub(r"[^0-9,.\-]", "", cleaned)
+    if "," in cleaned and "." in cleaned:
+        cleaned = cleaned.replace(".", "").replace(",", ".")
+    else:
+        cleaned = cleaned.replace(",", ".")
+    return float(cleaned or 0)
 
 
 def cell_text(value: object) -> str:
@@ -377,7 +385,7 @@ class AppHandler(BaseHTTPRequestHandler):
                         int(data.get("estimator_id") or 5),
                         int(data.get("procurement_manager_id") or 4),
                         data.get("planned_end_date") or None,
-                        float(data.get("main_estimate_amount") or 0),
+                        number_value(data.get("main_estimate_amount")),
                     ),
                 )
                 json_response(self, get_project_detail(cursor.lastrowid), 201)
@@ -433,7 +441,7 @@ class AppHandler(BaseHTTPRequestHandler):
                         data.get("needed_at") or None,
                         "not_required" if data.get("basis_type") == "main_estimate" else "waiting_to_enter",
                         data.get("supplier") or "",
-                        float(total_amount or 0),
+                        number_value(total_amount),
                         data.get("comment") or "",
                     ),
                 )
@@ -454,9 +462,9 @@ class AppHandler(BaseHTTPRequestHandler):
                 if data.get("replace", True):
                     db.execute("DELETE FROM estimate_materials WHERE project_id = ?", (project_id,))
                 for row in rows:
-                    quantity = float(row.get("estimated_quantity") or 0)
-                    unit_price = float(row.get("unit_price") or 0)
-                    total_price = float(row.get("total_price") or quantity * unit_price or 0)
+                    quantity = number_value(row.get("estimated_quantity"))
+                    unit_price = number_value(row.get("unit_price"))
+                    total_price = number_value(row.get("total_price")) or quantity * unit_price
                     db.execute(
                         """
                         INSERT INTO estimate_materials (
@@ -523,7 +531,7 @@ class AppHandler(BaseHTTPRequestHandler):
                         data.get("title") or "Новая допработа",
                         data.get("type") or "additional_work",
                         data.get("financial_decision") or "not_decided",
-                        float(data.get("amount") or 0),
+                        number_value(data.get("amount")),
                         data.get("due_date") or None,
                         data.get("description") or "",
                     ),

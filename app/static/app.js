@@ -289,7 +289,14 @@ function parseCsvLine(line, delimiter) {
 
 function numberFromCell(value) {
   if (!value) return 0;
-  return Number(String(value).replace(/\s/g, "").replace(",", ".")) || 0;
+  const cleaned = String(value)
+    .replace(/\s/g, "")
+    .replace(/₽|руб\.?/gi, "")
+    .replace(/[^0-9,.-]/g, "");
+  if (cleaned.includes(",") && cleaned.includes(".")) {
+    return Number(cleaned.replace(/\./g, "").replace(",", ".")) || 0;
+  }
+  return Number(cleaned.replace(",", ".")) || 0;
 }
 
 function normalizeHeader(value) {
