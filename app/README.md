@@ -30,7 +30,7 @@ http://127.0.0.1:8765
 
 ```bash
 cp .env.example .env
-docker compose up -d --build
+bash deploy/first-run.sh
 ```
 
 В `.env` нужно указать домен и пароль. Подробная инструкция лежит в `docs/12-deployment.md`.

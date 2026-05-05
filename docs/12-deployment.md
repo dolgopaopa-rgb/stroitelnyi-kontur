@@ -23,7 +23,13 @@
 
 ## Первичная настройка
 
-На сервере должны быть установлены Docker и Docker Compose.
+На сервере должны быть установлены Docker и Docker Compose. Если сервер чистый Ubuntu, можно установить их так:
+
+```bash
+bash deploy/install-docker-ubuntu.sh
+```
+
+После установки нужно выйти из SSH и зайти заново, чтобы группа `docker` применилась к пользователю.
 
 1. Склонировать репозиторий:
 
@@ -50,7 +56,7 @@ APP_BASIC_AUTH_PASSWORD=long-random-password
 3. Запустить:
 
 ```bash
-docker compose up -d --build
+bash deploy/first-run.sh
 ```
 
 4. Проверить:
@@ -71,20 +77,71 @@ docker compose up -d --build
 
 База остается в Docker volume `app_data`.
 
+Или коротко:
+
+```bash
+bash deploy/update.sh
+```
+
 ## Резервная копия базы
 
 Создать копию вручную:
 
 ```bash
-docker compose exec app python app/backup_sqlite.py
+bash deploy/backup.sh
 ```
 
-Файлы резервных копий будут лежать внутри volume рядом с базой, в папке `backups`.
+Файлы резервных копий будут лежать на сервере в папке `data/backups`.
 
 Для ежедневной копии можно добавить cron на сервере:
 
 ```bash
-0 3 * * * cd /path/to/stroitelnyi-kontur && docker compose exec -T app python app/backup_sqlite.py
+0 3 * * * cd /path/to/stroitelnyi-kontur && bash deploy/backup.sh
+```
+
+## Восстановление базы из копии
+
+Восстановление заменяет текущую базу. Скрипт специально требует подтверждение, чтобы случайно не затереть рабочие данные.
+
+```bash
+RESTORE_CONFIRM=yes bash deploy/restore-sqlite.sh data/backups/construction-YYYYMMDD-HHMMSS.db
+```
+
+Перед заменой текущая база сохраняется внутри Docker volume с именем вида `construction.db.before-restore-...`.
+
+## Перенос текущей базы с компьютера на сервер
+
+Если нужно перенести локальные тестовые данные с твоего компьютера:
+
+1. На Windows запустить:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy\export-local-db.ps1
+```
+
+2. Полученный файл из `data/backups` загрузить на сервер в папку `data/backups`.
+
+3. На сервере выполнить восстановление:
+
+```bash
+RESTORE_CONFIRM=yes bash deploy/restore-sqlite.sh data/backups/local-export-YYYYMMDD-HHMMSS.db
+```
+
+Если переносить тестовые данные не нужно, этот раздел можно пропустить: на сервере приложение само создаст чистую базу при первом запуске.
+
+## DNS и ссылка для коллег
+
+Чтобы коллеги открывали приложение по нормальному адресу:
+
+1. Купить или использовать существующий домен.
+2. Создать DNS-запись типа `A`: например `kontur.company.ru -> IP сервера`.
+3. В `.env` указать этот домен в строке `DOMAIN=kontur.company.ru`.
+4. Запустить `bash deploy/first-run.sh`.
+
+Когда DNS уже смотрит на сервер, Caddy автоматически выпустит HTTPS-сертификат. После этого коллегам можно отправлять ссылку вида:
+
+```text
+https://kontur.company.ru
 ```
 
 ## Важное ограничение текущей версии
