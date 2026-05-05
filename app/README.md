@@ -24,6 +24,17 @@ start-server.bat
 http://127.0.0.1:8765
 ```
 
+## Как запустить на постоянном сервере
+
+Для VPS подготовлен запуск через Docker Compose из корня репозитория:
+
+```bash
+cp .env.example .env
+docker compose up -d --build
+```
+
+В `.env` нужно указать домен и пароль. Подробная инструкция лежит в `docs/12-deployment.md`.
+
 ## Что уже есть
 
 - база SQLite;

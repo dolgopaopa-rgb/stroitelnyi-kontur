@@ -15,6 +15,7 @@
 9. [Детальная схема базы данных MVP](docs/09-database-schema.md)
 10. [План разработки MVP по спринтам](docs/10-development-plan.md)
 11. [Executive Summary](docs/11-executive-summary.md)
+12. [Постоянный сервер](docs/12-deployment.md)
 
 ## Прототип
 
@@ -55,6 +56,10 @@
 [Deploy to Render](https://render.com/deploy?repo=https://github.com/dolgopaopa-rgb/stroitelnyi-kontur)
 
 Важно: бесплатный облачный запуск подходит для проверки коллегами, но не для настоящих рабочих данных. У бесплатного сервера файловая база SQLite может сбрасываться при перезапуске или redeploy. Для постоянной работы нужно будет подключить нормальное хранилище: PostgreSQL или платный диск.
+
+### Постоянный сервер
+
+Для собственного VPS подготовлены Docker-файлы, Caddy для HTTPS, постоянный volume под базу и базовая защита логином/паролем. Инструкция: [Постоянный сервер](docs/12-deployment.md).
 
 Что уже реализовано:
 

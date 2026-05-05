@@ -1,0 +1,12 @@
+.git
+.gitignore
+__pycache__/
+*.py[cod]
+.env
+.venv/
+venv/
+app/construction.db
+data/
+backups/
+prototype/
+docs/

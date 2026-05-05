@@ -8,8 +8,14 @@ app/construction.db
 *.sqlite3
 
 .env
+.env.*
+!.env.example
 .venv/
 venv/
+
+data/
+backups/
+app/backups/
 
 .DS_Store
 Thumbs.db

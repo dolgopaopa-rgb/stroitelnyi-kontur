@@ -28,6 +28,28 @@ def json_response(handler: BaseHTTPRequestHandler, payload: object, status: int 
     handler.wfile.write(body)
 
 
+def is_authorized(handler: BaseHTTPRequestHandler) -> bool:
+    username = os.environ.get("APP_BASIC_AUTH_USER")
+    password = os.environ.get("APP_BASIC_AUTH_PASSWORD")
+    if not username or not password:
+        return True
+    header = handler.headers.get("Authorization", "")
+    if not header.startswith("Basic "):
+        return False
+    try:
+        decoded = base64.b64decode(header.removeprefix("Basic ").strip()).decode("utf-8")
+    except Exception:
+        return False
+    return decoded == f"{username}:{password}"
+
+
+def auth_required_response(handler: BaseHTTPRequestHandler) -> None:
+    handler.send_response(401)
+    handler.send_header("WWW-Authenticate", 'Basic realm="Stroitelnyi Kontur"')
+    handler.send_header("Content-Length", "0")
+    handler.end_headers()
+
+
 def read_json(handler: BaseHTTPRequestHandler) -> dict:
     length = int(handler.headers.get("Content-Length", "0"))
     if not length:
@@ -257,6 +279,9 @@ class AppHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
 
+        if path != "/health" and not is_authorized(self):
+            auth_required_response(self)
+            return
         if path == "/":
             self.serve_static("index.html")
             return
@@ -275,6 +300,9 @@ class AppHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if not parsed.path.startswith("/api/"):
             self.send_error(404)
+            return
+        if not is_authorized(self):
+            auth_required_response(self)
             return
         try:
             self.handle_api_post(parsed.path, read_json(self))
