@@ -139,6 +139,7 @@ h2 {
 
 .primary,
 .secondary,
+.danger-button,
 .link-button,
 .icon {
   min-height: 38px;
@@ -159,6 +160,56 @@ h2 {
 .secondary {
   background: white;
   border-color: var(--line);
+}
+
+.danger-button {
+  background: var(--danger);
+  color: white;
+}
+
+.danger-button:hover {
+  filter: brightness(0.95);
+}
+
+.role-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.role-switcher select {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  padding: 0 10px;
+}
+
+.segmented-control {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: white;
+}
+
+.segment {
+  min-height: 34px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  background: white;
+  padding: 0 12px;
+}
+
+.segment:last-child {
+  border-right: 0;
+}
+
+.segment.active {
+  background: #dcebe8;
+  color: var(--brand-strong);
 }
 
 .link-button {

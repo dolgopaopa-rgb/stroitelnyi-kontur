@@ -1,17 +1,19 @@
 const state = {
   view: "dashboard",
+  currentRole: "owner",
   users: [],
   projects: [],
+  archivedProjects: [],
   estimateMaterials: [],
   estimatePreviewRows: [],
   selectedProjectId: null,
   selectedProjectTab: "overview",
+  projectListMode: "active",
 };
 
 const viewTitles = {
   dashboard: "Рабочий стол",
   projects: "Объекты",
-  archive: "Архив",
   tasks: "Задачи",
   materials: "Материалы",
   variations: "Допработы и отклонения",
@@ -88,6 +90,26 @@ function label(value) {
   return statusLabels[value] || value || "Не задано";
 }
 
+function canEditProject() {
+  return ["owner", "sales_manager", "construction_manager"].includes(state.currentRole);
+}
+
+function canDeleteForever() {
+  return state.currentRole === "owner";
+}
+
+function roleLabel(role) {
+  return {
+    owner: "Руководитель",
+    sales_manager: "Менеджер",
+    construction_manager: "Рук. строительства",
+    foreman: "Прораб",
+    procurement_manager: "Снабжение",
+    estimator: "Сметчик",
+    technical_supervisor: "Технадзор",
+  }[role] || role;
+}
+
 function escapeAttr(value) {
   return String(value || "")
     .replace(/&/g, "&amp;")
@@ -112,16 +134,16 @@ function switchView(view) {
 }
 
 async function loadAll() {
-  const [users, projects] = await Promise.all([api("/api/users"), api("/api/projects")]);
+  const [users, projects, archivedProjects] = await Promise.all([api("/api/users"), api("/api/projects"), api("/api/projects/archive")]);
   state.users = users;
   state.projects = projects;
+  state.archivedProjects = archivedProjects;
   if (!state.selectedProjectId && projects.length) state.selectedProjectId = projects[0].id;
   fillSelects();
   await Promise.all([
     renderDashboard(),
     renderNotifications(),
     renderProjects(),
-    renderArchive(),
     renderTasks(),
     renderMaterials(),
     renderEstimateMaterials(),
@@ -241,42 +263,28 @@ async function renderNotifications() {
 }
 
 async function renderProjects() {
-  qs("#projectRows").innerHTML = state.projects
-    .map(
-      (project) => `
-      <button class="row clickable" data-open-project="${project.id}">
-        <div class="row-grid">
-          <div><strong>${project.title}</strong><div class="muted">${project.customer_name || ""}</div></div>
-          ${pill(label(project.status), project.status === "revision_requested" ? "danger" : project.status === "submitted_to_construction" ? "warning" : "blue")}
-          <div>${project.foreman_name || "прораб не назначен"}</div>
-          ${pill(money(project.unresolved_overbudget_amount), levelByMoney(project.unresolved_overbudget_amount))}
-        </div>
-      </button>`
-    )
-    .join("");
-  if (state.selectedProjectId) await renderProjectDetail(state.selectedProjectId);
-}
-
-async function renderArchive() {
-  const projects = await api("/api/projects/archive");
-  qs("#archiveRows").innerHTML = projects.length
+  const projects = state.projectListMode === "archive" ? state.archivedProjects : state.projects;
+  qs("#projectListTitle").textContent = state.projectListMode === "archive" ? "Архив объектов" : "Список объектов";
+  qsa("[data-project-list]").forEach((button) => button.classList.toggle("active", button.dataset.projectList === state.projectListMode));
+  qs("#projectRows").innerHTML = projects.length
     ? projects
         .map(
           (project) => `
-          <button class="row clickable" data-open-project="${project.id}" data-open-archive="true">
+          <button class="row clickable" data-open-project="${project.id}">
             <div class="row-grid">
               <div><strong>${project.title}</strong><div class="muted">${project.customer_name || ""}</div></div>
-              ${pill(label(project.status), "blue")}
-              <div>${project.archived_at || "без даты"}</div>
-              ${pill(project.archive_reason || "архив", "success")}
+              ${pill(label(project.status), project.status === "revision_requested" ? "danger" : project.status === "submitted_to_construction" ? "warning" : "blue")}
+              <div>${state.projectListMode === "archive" ? project.archived_at || "без даты" : project.foreman_name || "прораб не назначен"}</div>
+              ${state.projectListMode === "archive" ? pill(project.archive_reason || "архив", "success") : pill(money(project.unresolved_overbudget_amount), levelByMoney(project.unresolved_overbudget_amount))}
             </div>
           </button>`
         )
         .join("")
-    : `<p class="muted">В архиве пока пусто.</p>`;
+    : `<p class="muted">${state.projectListMode === "archive" ? "В архиве пока пусто." : "Объектов пока нет."}</p>`;
+  if (state.selectedProjectId) await renderProjectDetail(state.selectedProjectId);
 }
 
-async function renderProjectDetail(projectId, targetSelector = "#projectDetail") {
+async function renderProjectDetail(projectId) {
   const project = await api(`/api/projects/${projectId}`);
   state.selectedProjectId = project.id;
   const tabData = {
@@ -294,7 +302,7 @@ async function renderProjectDetail(projectId, targetSelector = "#projectDetail")
     documents: renderSmallList(project.documents, (doc) => `${doc.title} · ${doc.type} · ${label(doc.status)}`),
     events: renderSmallList(project.events, (event) => `${event.text}`),
   };
-  qs(targetSelector).innerHTML = `
+  qs("#projectDetail").innerHTML = `
     <div class="stack-line"><h2>${project.title}</h2>${pill(label(project.status), "blue")}</div>
     <p class="muted">${project.address || "Адрес не указан"}</p>
     <div class="stack-line">
@@ -305,6 +313,7 @@ async function renderProjectDetail(projectId, targetSelector = "#projectDetail")
       ${pill(project.bitrix_ref || "Bitrix не указан", "blue")}
       ${pill(project.smetter_ref || "Сметтер не указан", "success")}
     </div>
+    ${renderProjectEditPanel(project)}
     ${renderProjectWorkflow(project)}
     <div class="tabs">
       ${["overview", "tasks", "materials", "variations", "contracts", "documents", "events"]
@@ -315,13 +324,48 @@ async function renderProjectDetail(projectId, targetSelector = "#projectDetail")
   `;
 }
 
+function renderProjectEditPanel(project) {
+  if (!canEditProject()) {
+    return `<section class="workflow-panel subtle"><p class="muted">Текущая роль: ${roleLabel(state.currentRole)}. Редактирование карточки доступно руководителю, менеджеру и руководителю строительства.</p></section>`;
+  }
+  return `
+    <section class="workflow-panel">
+      <div class="stack-line"><h3>Редактирование карточки</h3>${pill(`Доступ: ${roleLabel(state.currentRole)}`, "success")}</div>
+      <div class="grid-2">
+        <label>Название <input id="projectEditTitle" value="${escapeAttr(project.title)}" /></label>
+        <label>Заказчик <input id="projectEditCustomer" value="${escapeAttr(project.customer_name)}" /></label>
+      </div>
+      <label>Адрес <input id="projectEditAddress" value="${escapeAttr(project.address)}" /></label>
+      <div class="grid-2">
+        <label>Bitrix <input id="projectEditBitrix" value="${escapeAttr(project.bitrix_ref)}" placeholder="Ссылка на сделку или ID" /></label>
+        <label>Сметтер <input id="projectEditSmetter" value="${escapeAttr(project.smetter_ref)}" placeholder="Ссылка на смету или номер" /></label>
+      </div>
+      <div class="grid-2">
+        <label>Плановый срок <input id="projectEditEndDate" type="date" value="${escapeAttr(project.planned_end_date)}" /></label>
+        <label>Смета, ₽ <input id="projectEditEstimate" inputmode="decimal" value="${escapeAttr(project.main_estimate_amount)}" /></label>
+      </div>
+      <label>Документация / файл материалов <input id="projectEditFileName" value="${escapeAttr(project.estimate_file_name)}" placeholder="Название прикрепленного файла" /></label>
+      <div class="form-actions">
+        <span class="muted">Правки сохраняются в карточку объекта.</span>
+        <button class="secondary" data-project-action="update" data-project-id="${project.id}">Сохранить правки</button>
+      </div>
+    </section>`;
+}
+
 function renderProjectWorkflow(project) {
   if (project.status === "archived") {
+    const deleteButton = canDeleteForever()
+      ? `<button class="danger-button" data-project-action="delete" data-project-id="${project.id}">Удалить навсегда</button>`
+      : "";
     return `
       <section class="workflow-panel">
         <div class="stack-line"><h3>Архив</h3>${pill("Объект скрыт из работы", "blue")}</div>
         <p class="muted">Причина: ${project.archive_reason || "не указана"}</p>
-        <button class="primary" data-project-action="restore" data-project-id="${project.id}">Вернуть в работу</button>
+        <div class="form-actions">
+          <button class="primary" data-project-action="restore" data-project-id="${project.id}">Вернуть в работу</button>
+          ${deleteButton}
+        </div>
+        ${canDeleteForever() ? `<p class="muted">Полное удаление доступно только роли “Руководитель” и только из архива.</p>` : ""}
       </section>`;
   }
 
@@ -330,22 +374,8 @@ function renderProjectWorkflow(project) {
       <section class="workflow-panel">
         <div class="stack-line"><h3>Передача объекта</h3>${pill(project.status === "revision_requested" ? "Нужна доработка" : "Черновик", project.status === "revision_requested" ? "danger" : "warning")}</div>
         ${project.workflow_comment ? `<p class="muted">Комментарий руководителя строительства: ${project.workflow_comment}</p>` : ""}
-        <div class="grid-2">
-          <label>Название <input id="projectEditTitle" value="${escapeAttr(project.title)}" /></label>
-          <label>Заказчик <input id="projectEditCustomer" value="${escapeAttr(project.customer_name)}" /></label>
-        </div>
-        <label>Адрес <input id="projectEditAddress" value="${escapeAttr(project.address)}" /></label>
-        <div class="grid-2">
-          <label>Bitrix <input id="projectEditBitrix" value="${escapeAttr(project.bitrix_ref)}" placeholder="Ссылка на сделку или ID" /></label>
-          <label>Сметтер <input id="projectEditSmetter" value="${escapeAttr(project.smetter_ref)}" placeholder="Ссылка на смету или номер" /></label>
-        </div>
-        <div class="grid-2">
-          <label>Плановый срок <input id="projectEditEndDate" type="date" value="${escapeAttr(project.planned_end_date)}" /></label>
-          <label>Смета, ₽ <input id="projectEditEstimate" inputmode="decimal" value="${escapeAttr(project.main_estimate_amount)}" /></label>
-        </div>
-        <label>Документация / файл материалов <input id="projectEditFileName" value="${escapeAttr(project.estimate_file_name)}" placeholder="Название прикрепленного файла" /></label>
         <div class="form-actions">
-          <button class="secondary" data-project-action="update" data-project-id="${project.id}">Сохранить правки</button>
+          <span class="muted">После проверки заполнения менеджер передает объект руководителю строительства.</span>
           <button class="primary" data-project-action="submit" data-project-id="${project.id}">Передать в работу</button>
         </div>
       </section>`;
@@ -732,6 +762,12 @@ async function handleProjectAction(button) {
     message = "Объект возвращен в работу";
   }
 
+  if (action === "delete") {
+    const confirmed = window.confirm("Удалить объект навсегда? Это действие нельзя отменить.");
+    if (!confirmed) return;
+    message = "Объект удален навсегда";
+  }
+
   if (action === "update") {
     payload = {
       title: qs("#projectEditTitle")?.value,
@@ -764,11 +800,22 @@ async function handleProjectAction(button) {
     method: "POST",
     body: JSON.stringify(payload),
   });
+  if (action === "delete") {
+    state.selectedProjectId = null;
+    state.projectListMode = "archive";
+    await loadAll();
+    switchView("projects");
+    qs("#projectDetail").innerHTML = `<p class="muted">Объект удален из архива навсегда.</p>`;
+    showToast(message);
+    return;
+  }
+  if (action === "restore") {
+    state.projectListMode = "active";
+  }
   await loadAll();
   state.selectedProjectId = Number(projectId);
-  if (action === "archive") switchView("archive");
-  if (action === "restore") switchView("projects");
-  await renderProjectDetail(state.selectedProjectId, action === "archive" ? "#archiveDetail" : "#projectDetail");
+  switchView("projects");
+  await renderProjectDetail(state.selectedProjectId);
   showToast(message);
 }
 
@@ -776,6 +823,11 @@ function bindEvents() {
   qsa("[data-view]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
   qsa("[data-view-target]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.viewTarget)));
   qs("#refreshButton").addEventListener("click", () => loadAll().then(() => showToast("Данные обновлены")));
+  qs("#currentRoleSelect").addEventListener("change", async (event) => {
+    state.currentRole = event.target.value;
+    if (state.selectedProjectId) await renderProjectDetail(state.selectedProjectId);
+    showToast(`Роль: ${roleLabel(state.currentRole)}`);
+  });
 
   qs("#newProjectButton").addEventListener("click", () => qs("#projectDialog").showModal());
   qs("#newTaskButton").addEventListener("click", () => qs("#taskDialog").showModal());
@@ -794,6 +846,13 @@ function bindEvents() {
   qs("#previewEstimateButton").addEventListener("click", loadEstimatePreview);
 
   document.addEventListener("click", async (event) => {
+    const projectListButton = event.target.closest("[data-project-list]");
+    if (projectListButton) {
+      state.projectListMode = projectListButton.dataset.projectList;
+      await renderProjects();
+      return;
+    }
+
     const actionButton = event.target.closest("[data-project-action]");
     if (actionButton) {
       await handleProjectAction(actionButton);
@@ -804,8 +863,8 @@ function bindEvents() {
     if (projectButton) {
       state.selectedProjectId = Number(projectButton.dataset.openProject);
       state.selectedProjectTab = "overview";
-      switchView(projectButton.dataset.openArchive ? "archive" : "projects");
-      await renderProjectDetail(state.selectedProjectId, projectButton.dataset.openArchive ? "#archiveDetail" : "#projectDetail");
+      switchView("projects");
+      await renderProjectDetail(state.selectedProjectId);
     }
     const tabButton = event.target.closest("[data-project-tab]");
     if (tabButton) {

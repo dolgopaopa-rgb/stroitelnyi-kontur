@@ -19,7 +19,6 @@
         <nav class="nav">
           <button class="nav-button active" data-view="dashboard">Рабочий стол</button>
           <button class="nav-button" data-view="projects">Объекты</button>
-          <button class="nav-button" data-view="archive">Архив</button>
           <button class="nav-button" data-view="tasks">Задачи</button>
           <button class="nav-button" data-view="materials">Материалы</button>
           <button class="nav-button" data-view="variations">Допработы</button>
@@ -36,6 +35,18 @@
             <h1 id="pageTitle">Рабочий стол</h1>
           </div>
           <div class="actions">
+            <label class="role-switcher">
+              Роль
+              <select id="currentRoleSelect">
+                <option value="owner">Руководитель</option>
+                <option value="sales_manager">Менеджер</option>
+                <option value="construction_manager">Рук. строительства</option>
+                <option value="foreman">Прораб</option>
+                <option value="procurement_manager">Снабжение</option>
+                <option value="estimator">Сметчик</option>
+                <option value="technical_supervisor">Технадзор</option>
+              </select>
+            </label>
             <button class="secondary" id="refreshButton">Обновить</button>
             <button class="primary" id="newProjectButton">Новый объект</button>
           </div>
@@ -71,26 +82,16 @@
           <div class="split">
             <section class="panel">
               <div class="panel-head">
-                <h2>Список объектов</h2>
+                <h2 id="projectListTitle">Список объектов</h2>
+                <div class="segmented-control">
+                  <button class="segment active" data-project-list="active">В работе</button>
+                  <button class="segment" data-project-list="archive">Архив</button>
+                </div>
               </div>
               <div class="table" id="projectRows"></div>
             </section>
             <section class="panel detail" id="projectDetail">
               <p class="muted">Выберите объект слева.</p>
-            </section>
-          </div>
-        </section>
-
-        <section class="view" id="archiveView">
-          <div class="split">
-            <section class="panel">
-              <div class="panel-head">
-                <h2>Архив объектов</h2>
-              </div>
-              <div class="table" id="archiveRows"></div>
-            </section>
-            <section class="panel detail" id="archiveDetail">
-              <p class="muted">Выберите объект из архива.</p>
             </section>
           </div>
         </section>

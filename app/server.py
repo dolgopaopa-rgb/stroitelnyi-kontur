@@ -476,7 +476,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 json_response(self, get_project_detail(project_id), 201)
                 return
 
-            project_action = re.match(r"^/api/projects/(\d+)/(update|submit|accept|return|archive|restore)$", path)
+            project_action = re.match(r"^/api/projects/(\d+)/(update|submit|accept|return|archive|restore|delete)$", path)
             if project_action:
                 project_id = int(project_action.group(1))
                 action = project_action.group(2)
@@ -718,6 +718,25 @@ class AppHandler(BaseHTTPRequestHandler):
                     )
                     db.commit()
                     json_response(self, get_project_detail(project_id))
+                    return
+
+                if action == "delete":
+                    if project["status"] != "archived":
+                        raise ValueError("Навсегда можно удалить только объект из архива.")
+                    for table in (
+                        "notifications",
+                        "events",
+                        "documents",
+                        "contracts",
+                        "variations",
+                        "material_requests",
+                        "estimate_materials",
+                        "tasks",
+                    ):
+                        db.execute(f"DELETE FROM {table} WHERE project_id = ?", (project_id,))
+                    db.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+                    db.commit()
+                    json_response(self, {"deleted": project_id})
                     return
 
             if path == "/api/tasks":
