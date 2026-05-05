@@ -4,6 +4,7 @@ import base64
 import csv
 import io
 import json
+import os
 import re
 import zipfile
 import xml.etree.ElementTree as ET
@@ -258,6 +259,9 @@ class AppHandler(BaseHTTPRequestHandler):
 
         if path == "/":
             self.serve_static("index.html")
+            return
+        if path == "/health":
+            json_response(self, {"status": "ok"})
             return
         if path.startswith("/static/"):
             self.serve_static(path.replace("/static/", "", 1))
@@ -930,8 +934,10 @@ class AppHandler(BaseHTTPRequestHandler):
 
 def main() -> None:
     init_db()
-    server = ThreadingHTTPServer(("127.0.0.1", 8765), AppHandler)
-    print("Construction MVP is running at http://127.0.0.1:8765")
+    host = os.environ.get("HOST", "127.0.0.1")
+    port = int(os.environ.get("PORT", "8765"))
+    server = ThreadingHTTPServer((host, port), AppHandler)
+    print(f"Construction MVP is running at http://{host}:{port}")
     server.serve_forever()
 
 

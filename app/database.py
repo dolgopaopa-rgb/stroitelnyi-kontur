@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import sqlite3
+import os
 from pathlib import Path
 
 
 APP_DIR = Path(__file__).resolve().parent
-DB_PATH = APP_DIR / "construction.db"
+DATA_DIR = Path(os.environ.get("APP_DATA_DIR", APP_DIR))
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+DB_PATH = DATA_DIR / "construction.db"
 
 
 def connect() -> sqlite3.Connection:
