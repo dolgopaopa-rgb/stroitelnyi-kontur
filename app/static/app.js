@@ -128,6 +128,18 @@ function externalRefLink(value, fallbackText, level = "") {
   return `<a class="pill link-pill ${level}" href="${escapeAttr(href)}" target="_blank" rel="noopener noreferrer">${fallbackText}</a>`;
 }
 
+function yandexMapsUrl(address) {
+  const text = String(address || "").trim();
+  if (!text) return "";
+  return `https://yandex.ru/maps/?text=${encodeURIComponent(text)}`;
+}
+
+function addressLink(address, className = "") {
+  const text = String(address || "").trim();
+  if (!text) return `<span class="muted">Адрес не указан</span>`;
+  return `<a class="address-link ${className}" href="${escapeAttr(yandexMapsUrl(text))}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+}
+
 function documentType(type) {
   return {
     contract: "Договор",
@@ -160,6 +172,21 @@ function documentFileLink(doc) {
       <strong>${doc.title}</strong>
       <span>${type}${file ? ` · ${file}` : ""}</span>
     </a>`;
+}
+
+function renderDocumentSummary(docs) {
+  return `
+    <section class="workflow-panel document-summary">
+      <div class="stack-line">
+        <h3>Документы объекта</h3>
+        ${pill(`${docs.length} шт.`, docs.length ? "blue" : "")}
+      </div>
+      ${
+        docs.length
+          ? `<div class="document-list">${docs.map((doc) => `<div class="document-row">${documentFileLink(doc)}</div>`).join("")}</div>`
+          : `<p class="muted">Документы пока не загружены. Добавить договор, смету, график платежей или проект можно через кнопку “Редактировать”.</p>`
+      }
+    </section>`;
 }
 
 function showToast(message) {
@@ -314,14 +341,18 @@ async function renderProjects() {
     ? projects
         .map(
           (project) => `
-          <button class="row clickable" data-open-project="${project.id}">
+          <div class="row clickable" data-open-project="${project.id}">
             <div class="row-grid">
-              <div><strong>${project.title}</strong><div class="muted">${project.customer_name || ""}</div></div>
+              <div>
+                <strong>${project.title}</strong>
+                <div class="muted">${project.customer_name || ""}</div>
+                <div>${addressLink(project.address, "small-address")}</div>
+              </div>
               ${pill(label(project.status), project.status === "revision_requested" ? "danger" : project.status === "submitted_to_construction" ? "warning" : "blue")}
               <div>${state.projectListMode === "archive" ? project.archived_at || "без даты" : project.foreman_name || "прораб не назначен"}</div>
-              ${state.projectListMode === "archive" ? pill(project.archive_reason || "архив", "success") : pill(money(project.unresolved_overbudget_amount), levelByMoney(project.unresolved_overbudget_amount))}
+              ${state.projectListMode === "archive" ? pill(project.archive_reason || "архив", "success") : pill(`Смета: ${money(project.main_estimate_amount)}`, "success")}
             </div>
-          </button>`
+          </div>`
         )
         .join("")
     : `<p class="muted">${state.projectListMode === "archive" ? "В архиве пока пусто." : "Объектов пока нет."}</p>`;
@@ -348,7 +379,7 @@ async function renderProjectDetail(projectId) {
   };
   qs("#projectDetail").innerHTML = `
     <div class="stack-line"><h2>${project.title}</h2>${pill(label(project.status), "blue")}</div>
-    <p class="muted">${project.address || "Адрес не указан"}</p>
+    <p>${addressLink(project.address)}</p>
     <div class="stack-line">
       ${pill(`Прораб: ${project.foreman_name || "не назначен"}`)}
       ${pill(`Сметчик: ${project.estimator_name || "не назначен"}`)}
@@ -359,6 +390,7 @@ async function renderProjectDetail(projectId) {
     </div>
     ${renderProjectEditPanel(project)}
     ${renderProjectWorkflow(project)}
+    ${renderDocumentSummary(project.documents)}
     <div class="tabs">
       ${["overview", "tasks", "materials", "variations", "contracts", "documents", "events"]
         .map((tab) => `<button class="tab ${state.selectedProjectTab === tab ? "active" : ""}" data-project-tab="${tab}">${tabTitle(tab)}</button>`)
@@ -373,25 +405,14 @@ function renderProjectEditPanel(project) {
     return `<section class="workflow-panel subtle"><p class="muted">Текущая роль: ${roleLabel(state.currentRole)}. Редактирование карточки доступно руководителю, менеджеру и руководителю строительства.</p></section>`;
   }
   return `
-    <section class="workflow-panel">
-      <div class="stack-line"><h3>Редактирование карточки</h3>${pill(`Доступ: ${roleLabel(state.currentRole)}`, "success")}</div>
-      <div class="grid-2">
-        <label>Название <input id="projectEditTitle" value="${escapeAttr(project.title)}" /></label>
-        <label>Заказчик <input id="projectEditCustomer" value="${escapeAttr(project.customer_name)}" /></label>
+    <section class="workflow-panel compact-workflow">
+      <div class="stack-line">
+        <h3>Карточка объекта</h3>
+        ${pill(`Доступ: ${roleLabel(state.currentRole)}`, "success")}
       </div>
-      <label>Адрес <input id="projectEditAddress" value="${escapeAttr(project.address)}" /></label>
-      <div class="grid-2">
-        <label>Bitrix <input id="projectEditBitrix" value="${escapeAttr(project.bitrix_ref)}" placeholder="Ссылка на сделку или ID" /></label>
-        <label>Сметтер <input id="projectEditSmetter" value="${escapeAttr(project.smetter_ref)}" placeholder="Ссылка на смету или номер" /></label>
-      </div>
-      <div class="grid-2">
-        <label>Плановый срок окончания работ по договору <input id="projectEditEndDate" type="date" value="${escapeAttr(project.planned_end_date)}" /></label>
-        <label>Смета, ₽ <input id="projectEditEstimate" inputmode="decimal" value="${escapeAttr(project.main_estimate_amount)}" /></label>
-      </div>
-      <label>Файл материалов из Сметтера <input id="projectEditFileName" value="${escapeAttr(project.estimate_file_name)}" placeholder="Название прикрепленного файла" /></label>
       <div class="form-actions">
-        <span class="muted">Правки сохраняются в карточку объекта.</span>
-        <button class="secondary" data-project-action="update" data-project-id="${project.id}">Сохранить правки</button>
+        <span class="muted">Основные данные и файлы меняются в отдельном окне.</span>
+        <button class="secondary" data-edit-project="${project.id}">Редактировать</button>
       </div>
     </section>`;
 }
@@ -579,7 +600,7 @@ async function projectFormToJson(form) {
   const data = formToJson(form);
   const files = form.elements;
   const materialFile = files.estimate_file_name.files[0];
-  data.estimate_file_name = materialFile?.name || "";
+  data.estimate_file_name = materialFile?.name || form.dataset.existingEstimateFileName || "";
   data.initial_documents = (
     await Promise.all([
       fileDocumentPayload(materialFile, "Файл материалов из Сметтера", "smetter_materials"),
@@ -816,6 +837,44 @@ async function submitForm(dialogId, formId, endpoint, successMessage) {
   showToast(successMessage);
 }
 
+function setProjectFileFieldsRequired(required) {
+  ["estimate_file_name", "contract_file", "estimate_doc_file", "payment_schedule_file", "project_docs_file"].forEach((name) => {
+    const input = qs(`#projectForm input[name="${name}"]`);
+    if (input) input.required = required;
+  });
+}
+
+function resetProjectDialog() {
+  const form = qs("#projectForm");
+  form.reset();
+  form.dataset.mode = "create";
+  form.dataset.projectId = "";
+  form.dataset.existingEstimateFileName = "";
+  qs("#projectDialogTitle").textContent = "Новый объект";
+  qs("#projectSubmitButton").textContent = "Создать";
+  setProjectFileFieldsRequired(true);
+}
+
+async function openProjectEditDialog(projectId) {
+  const project = await api(`/api/projects/${projectId}`);
+  const form = qs("#projectForm");
+  form.reset();
+  form.dataset.mode = "edit";
+  form.dataset.projectId = project.id;
+  form.dataset.existingEstimateFileName = project.estimate_file_name || "";
+  qs("#projectDialogTitle").textContent = "Редактирование объекта";
+  qs("#projectSubmitButton").textContent = "Сохранить";
+  setProjectFileFieldsRequired(false);
+  form.elements.title.value = project.title || "";
+  form.elements.customer_name.value = project.customer_name || "";
+  form.elements.address.value = project.address || "";
+  form.elements.bitrix_ref.value = project.bitrix_ref || "";
+  form.elements.smetter_ref.value = project.smetter_ref || "";
+  form.elements.planned_end_date.value = project.planned_end_date || "";
+  form.elements.main_estimate_amount.value = project.main_estimate_amount || "";
+  qs("#projectDialog").showModal();
+}
+
 async function handleProjectAction(button) {
   const projectId = button.dataset.projectId;
   const action = button.dataset.projectAction;
@@ -903,7 +962,10 @@ function bindEvents() {
     showToast(`Роль: ${roleLabel(state.currentRole)}`);
   });
 
-  qs("#newProjectButton").addEventListener("click", () => qs("#projectDialog").showModal());
+  qs("#newProjectButton").addEventListener("click", () => {
+    resetProjectDialog();
+    qs("#projectDialog").showModal();
+  });
   qs("#newTaskButton").addEventListener("click", () => qs("#taskDialog").showModal());
   qs("#newMaterialButton").addEventListener("click", () => qs("#materialDialog").showModal());
   qs("#newVariationButton").addEventListener("click", () => qs("#variationDialog").showModal());
@@ -933,6 +995,14 @@ function bindEvents() {
       return;
     }
 
+    const editProjectButton = event.target.closest("[data-edit-project]");
+    if (editProjectButton) {
+      await openProjectEditDialog(Number(editProjectButton.dataset.editProject));
+      return;
+    }
+
+    if (event.target.closest("a")) return;
+
     const projectButton = event.target.closest("[data-open-project]");
     if (projectButton) {
       state.selectedProjectId = Number(projectButton.dataset.openProject);
@@ -950,11 +1020,21 @@ function bindEvents() {
   qs("#projectForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = qs("#projectForm");
-    await api("/api/projects", { method: "POST", body: JSON.stringify(await projectFormToJson(form)) });
+    const payload = await projectFormToJson(form);
+    const isEdit = form.dataset.mode === "edit";
+    const projectId = form.dataset.projectId;
+    await api(isEdit ? `/api/projects/${projectId}/update` : "/api/projects", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
     qs("#projectDialog").close();
     form.reset();
     await loadAll();
-    showToast("Объект создан как черновик");
+    if (isEdit) {
+      state.selectedProjectId = Number(projectId);
+      await renderProjectDetail(state.selectedProjectId);
+    }
+    showToast(isEdit ? "Карточка объекта сохранена" : "Объект создан как черновик");
   });
   qs("#taskForm").addEventListener("submit", (event) => {
     event.preventDefault();

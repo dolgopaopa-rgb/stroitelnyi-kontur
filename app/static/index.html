@@ -195,7 +195,7 @@
     <dialog id="projectDialog">
       <form method="dialog" class="form" id="projectForm">
         <div class="modal-head">
-          <h2>Новый объект</h2>
+          <h2 id="projectDialogTitle">Новый объект</h2>
           <button type="button" class="icon" data-close="projectDialog">×</button>
         </div>
         <label>Название <input name="title" required placeholder="Дом, Павловская Слобода" /></label>
@@ -228,7 +228,7 @@
         </div>
         <div class="form-actions">
           <button type="button" class="secondary" data-close="projectDialog">Отмена</button>
-          <button class="primary" type="submit">Создать</button>
+          <button class="primary" id="projectSubmitButton" type="submit">Создать</button>
         </div>
       </form>
     </dialog>

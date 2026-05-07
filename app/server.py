@@ -649,6 +649,7 @@ class AppHandler(BaseHTTPRequestHandler):
                         """,
                         (project_id, "Менеджер обновил данные карточки объекта."),
                     )
+                    save_initial_documents(db, project_id, data.get("initial_documents") or [])
                     db.commit()
                     json_response(self, get_project_detail(project_id))
                     return

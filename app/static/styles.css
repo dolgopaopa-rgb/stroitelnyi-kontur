@@ -306,6 +306,7 @@ h2 {
   width: 100%;
   color: inherit;
   text-align: left;
+  cursor: pointer;
 }
 
 .row-grid {
@@ -450,6 +451,34 @@ h2 {
 
 .document-link:hover strong {
   text-decoration: underline;
+}
+
+.address-link {
+  color: var(--blue);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.address-link:hover {
+  text-decoration: underline;
+}
+
+.small-address {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 13px;
+}
+
+.document-list {
+  display: grid;
+  gap: 8px;
+}
+
+.document-row {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 10px;
 }
 
 .stack-line {
