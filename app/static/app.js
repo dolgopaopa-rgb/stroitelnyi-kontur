@@ -9,6 +9,7 @@ const state = {
   selectedProjectId: null,
   selectedProjectTab: "overview",
   projectListMode: "active",
+  taskFilter: "all",
 };
 
 const viewTitles = {
@@ -102,7 +103,7 @@ function canDeleteForever() {
 
 function roleLabel(role) {
   return {
-    owner: "Руководитель",
+    owner: "Ген.директор",
     sales_manager: "Менеджер",
     construction_manager: "Рук. строительства",
     foreman: "Прораб",
@@ -233,8 +234,10 @@ async function loadAll() {
 function fillSelects() {
   const projectOptions = state.projects.map((project) => `<option value="${project.id}">${project.title}</option>`).join("");
   const userOptions = state.users.map((user) => `<option value="${user.id}">${user.name}</option>`).join("");
+  const taskUserOptions = taskParticipantOptions();
   qsa('select[name="project_id"]').forEach((select) => (select.innerHTML = projectOptions));
-  qsa('select[name="assignee_id"], select[name="owner_id"], select[name="responsible_id"], select[name="reviewer_id"]').forEach((select) => (select.innerHTML = userOptions));
+  qsa('select[name="owner_id"], select[name="responsible_id"]').forEach((select) => (select.innerHTML = userOptions));
+  qsa('#taskForm select[name="assignee_id"], #taskForm select[name="reviewer_id"]').forEach((select) => (select.innerHTML = taskUserOptions));
   updateEstimateMaterialSelect();
 }
 
@@ -244,6 +247,23 @@ function usersByRole(role) {
 
 function userOptionsByRole(role) {
   return usersByRole(role).map((user) => `<option value="${user.id}">${user.name}</option>`).join("");
+}
+
+function taskParticipantLabel(user) {
+  if (user.role === "owner") return "Ген.директор";
+  if (user.role === "construction_manager") return "Рук.по строительству";
+  if (user.role === "technical_supervisor") return "Технадзор";
+  if (user.role === "foreman") return `Прораб ${user.name}`;
+  return user.name;
+}
+
+function taskParticipantOptions() {
+  const order = { technical_supervisor: 1, foreman: 2, construction_manager: 3, owner: 4 };
+  return state.users
+    .filter((user) => ["technical_supervisor", "foreman", "construction_manager", "owner"].includes(user.role))
+    .sort((a, b) => (order[a.role] || 99) - (order[b.role] || 99) || a.name.localeCompare(b.name, "ru"))
+    .map((user) => `<option value="${user.id}">${taskParticipantLabel(user)}</option>`)
+    .join("");
 }
 
 async function updateEstimateMaterialSelect() {
@@ -302,10 +322,20 @@ function taskStats(tasks) {
   };
 }
 
-function renderTaskStats(tasks) {
+function taskMatchesFilter(task, filter) {
+  if (filter === "active") return ["new", "in_progress_task", "review"].includes(task.status);
+  if (filter === "returned") return task.status === "returned";
+  if (filter === "waiting") return task.status === "completed_pending_acceptance";
+  if (filter === "accepted") return task.status === "accepted";
+  if (filter === "overdue") return task.status !== "accepted" && levelByDate(task.due_date) === "danger";
+  return true;
+}
+
+function renderTaskStats(tasks, activeFilter = state.taskFilter) {
   const stats = taskStats(tasks);
   const total = Math.max(tasks.length, 1);
   const segments = [
+    ["all", "Все", tasks.length, ""],
     ["active", "В работе", stats.active, "warning"],
     ["returned", "На доработке", stats.returned, "danger"],
     ["waiting", "Не принято", stats.waiting, "blue"],
@@ -317,11 +347,11 @@ function renderTaskStats(tasks) {
       ${segments
         .map(
           ([key, title, count, level]) => `
-          <div class="task-stat ${level}">
+          <button class="task-stat ${level} ${activeFilter === key ? "active" : ""}" data-task-filter="${key}" type="button">
             <span>${title}</span>
             <strong>${count}</strong>
             <div class="stat-bar"><i style="width: ${(count / total) * 100}%"></i></div>
-          </div>`
+          </button>`
         )
         .join("")}
     </div>`;
@@ -346,7 +376,7 @@ function canActAsTaskUser(task, kind) {
 }
 
 function canDeleteTask(task) {
-  return ["owner", "construction_manager"].includes(state.currentRole) || canActAsTaskUser(task, "creator") || canActAsTaskUser(task, "reviewer");
+  return ["owner", "construction_manager"].includes(state.currentRole);
 }
 
 function renderTaskCalendar(tasks) {
@@ -501,7 +531,7 @@ async function renderProjectDetail(projectId) {
 
 function renderProjectEditPanel(project) {
   if (!canEditProject()) {
-    return `<section class="workflow-panel subtle"><p class="muted">Текущая роль: ${roleLabel(state.currentRole)}. Редактирование карточки доступно руководителю, менеджеру и руководителю строительства.</p></section>`;
+    return `<section class="workflow-panel subtle"><p class="muted">Текущая роль: ${roleLabel(state.currentRole)}. Редактирование карточки доступно ген.директору, менеджеру и руководителю строительства.</p></section>`;
   }
   return `
     <section class="workflow-panel compact-workflow">
@@ -529,7 +559,7 @@ function renderProjectWorkflow(project) {
           <button class="primary" data-project-action="restore" data-project-id="${project.id}">Вернуть в работу</button>
           ${deleteButton}
         </div>
-        ${canDeleteForever() ? `<p class="muted">Полное удаление доступно только роли “Руководитель” и только из архива.</p>` : ""}
+        ${canDeleteForever() ? `<p class="muted">Полное удаление доступно только роли “Ген.директор” и только из архива.</p>` : ""}
       </section>`;
   }
 
@@ -750,8 +780,9 @@ async function renderTasks() {
   const tasks = await api("/api/tasks");
   qs("#taskStats").innerHTML = renderTaskStats(tasks);
   qs("#taskCalendar").innerHTML = renderTaskCalendar(tasks);
-  qs("#taskRows").innerHTML = tasks.length
-    ? tasks
+  const visibleTasks = tasks.filter((task) => taskMatchesFilter(task, state.taskFilter));
+  qs("#taskRows").innerHTML = visibleTasks.length
+    ? visibleTasks
         .map((task) => {
           const canComplete = task.status !== "accepted" && task.status !== "completed_pending_acceptance" && (canActAsTaskUser(task, "assignee") || ["owner", "construction_manager"].includes(state.currentRole));
           const canReview = task.status === "completed_pending_acceptance" && (["owner", "construction_manager"].includes(state.currentRole) || canActAsTaskUser(task, "reviewer"));
@@ -776,7 +807,7 @@ async function renderTasks() {
             </div>`;
         })
         .join("")
-    : `<p class="muted">Задач пока нет.</p>`;
+    : `<p class="muted">${tasks.length ? "В этом фильтре задач нет." : "Задач пока нет."}</p>`;
 }
 
 async function renderMaterials() {
@@ -1093,6 +1124,7 @@ async function handleTaskAction(button) {
     const confirmed = window.confirm("Удалить задачу? Это действие нельзя отменить.");
     if (!confirmed) return;
     message = "Задача удалена";
+    payload = { actor_role: state.currentRole };
   }
   await api(`/api/tasks/${taskId}/${action}`, {
     method: "POST",
@@ -1139,6 +1171,14 @@ function bindEvents() {
   qs("#previewEstimateButton").addEventListener("click", loadEstimatePreview);
 
   document.addEventListener("click", async (event) => {
+    const taskFilterButton = event.target.closest("[data-task-filter]");
+    if (taskFilterButton) {
+      state.taskFilter = taskFilterButton.dataset.taskFilter;
+      switchView("tasks");
+      await renderTasks();
+      return;
+    }
+
     const projectListButton = event.target.closest("[data-project-list]");
     if (projectListButton) {
       state.projectListMode = projectListButton.dataset.projectList;

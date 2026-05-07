@@ -262,6 +262,7 @@ def ensure_column(db: sqlite3.Connection, table: str, column: str, definition: s
 
 
 def ensure_core_users(db: sqlite3.Connection) -> None:
+    db.execute("UPDATE users SET name = 'Ген.директор' WHERE role = 'owner'")
     required_users = [
         ("Технадзор", "technical_supervisor", "technadzor@example.local"),
     ]
@@ -277,7 +278,7 @@ def seed(db: sqlite3.Connection) -> None:
         return
 
     users = [
-        ("Руководитель", "owner", "owner@example.local"),
+        ("Ген.директор", "owner", "owner@example.local"),
         ("Артем", "construction_manager", "artem@example.local"),
         ("Алексей", "sales_manager", "alexey@example.local"),
         ("Анастасия", "procurement_manager", "anastasia@example.local"),

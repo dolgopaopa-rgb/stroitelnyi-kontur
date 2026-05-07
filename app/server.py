@@ -452,10 +452,10 @@ class AppHandler(BaseHTTPRequestHandler):
                     "archived_projects": db.execute("SELECT COUNT(*) AS count FROM projects WHERE status = 'archived'").fetchone()["count"],
                     "pending_handover": db.execute("SELECT COUNT(*) AS count FROM projects WHERE status IN ('draft', 'revision_requested')").fetchone()["count"],
                     "construction_review": db.execute("SELECT COUNT(*) AS count FROM projects WHERE status = 'submitted_to_construction'").fetchone()["count"],
-                    "task_new": db.execute("SELECT COUNT(*) AS count FROM tasks WHERE status IN ('new', 'in_progress_task', 'review')").fetchone()["count"],
-                    "task_done_waiting": db.execute("SELECT COUNT(*) AS count FROM tasks WHERE status = 'completed_pending_acceptance'").fetchone()["count"],
-                    "task_accepted": db.execute("SELECT COUNT(*) AS count FROM tasks WHERE status = 'accepted'").fetchone()["count"],
-                    "task_returned": db.execute("SELECT COUNT(*) AS count FROM tasks WHERE status = 'returned'").fetchone()["count"],
+                    "task_new": db.execute("SELECT COUNT(*) AS count FROM tasks t JOIN projects p ON p.id = t.project_id WHERE p.status != 'archived' AND t.status IN ('new', 'in_progress_task', 'review')").fetchone()["count"],
+                    "task_done_waiting": db.execute("SELECT COUNT(*) AS count FROM tasks t JOIN projects p ON p.id = t.project_id WHERE p.status != 'archived' AND t.status = 'completed_pending_acceptance'").fetchone()["count"],
+                    "task_accepted": db.execute("SELECT COUNT(*) AS count FROM tasks t JOIN projects p ON p.id = t.project_id WHERE p.status != 'archived' AND t.status = 'accepted'").fetchone()["count"],
+                    "task_returned": db.execute("SELECT COUNT(*) AS count FROM tasks t JOIN projects p ON p.id = t.project_id WHERE p.status != 'archived' AND t.status = 'returned'").fetchone()["count"],
                     "material_requests": db.execute("SELECT COUNT(*) AS count FROM material_requests WHERE procurement_status != 'closed'").fetchone()["count"],
                     "unresolved_overbudget": db.execute("SELECT COALESCE(SUM(amount), 0) AS total FROM variations WHERE financial_decision = 'not_decided'").fetchone()["total"],
                     "contracts_soon": db.execute("SELECT COUNT(*) AS count FROM contracts WHERE ends_at <= '2026-05-27' AND status = 'active'").fetchone()["count"],
@@ -538,6 +538,7 @@ class AppHandler(BaseHTTPRequestHandler):
                     LEFT JOIN users assignee ON assignee.id = t.assignee_id
                     LEFT JOIN users creator ON creator.id = t.creator_id
                     LEFT JOIN users reviewer ON reviewer.id = t.reviewer_id
+                    WHERE p.status != 'archived'
                     ORDER BY
                         CASE t.status
                             WHEN 'completed_pending_acceptance' THEN 1
@@ -906,6 +907,8 @@ class AppHandler(BaseHTTPRequestHandler):
                     return
 
                 if action == "delete":
+                    if data.get("actor_role") not in {"owner", "construction_manager"}:
+                        raise ValueError("Удалять задачи может только ген.директор или руководитель строительства.")
                     db.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
                     json_response(self, {"deleted": task_id})
                     return
