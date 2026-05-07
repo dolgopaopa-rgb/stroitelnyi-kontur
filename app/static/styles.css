@@ -194,16 +194,19 @@ h2 {
   border-radius: 8px;
   overflow: hidden;
   background: white;
+  max-width: 100%;
 }
 
 .segment {
-  min-height: 40px;
+  min-height: 38px;
+  min-width: 0;
   border: 0;
   border-right: 1px solid var(--line);
   background: white;
-  padding: 0 16px;
+  padding: 0 10px;
   white-space: nowrap;
   line-height: 1;
+  font-size: 14px;
 }
 
 .segment:last-child {
@@ -332,6 +335,20 @@ h2 {
   line-height: 1.25;
   padding-top: 4px;
   padding-bottom: 4px;
+}
+
+#projectsView .panel-head {
+  align-items: flex-start;
+}
+
+#projectsView .segmented-control {
+  flex: 0 1 142px;
+}
+
+#projectsView .segment {
+  flex: 1 1 0;
+  font-size: 13px;
+  padding: 0 8px;
 }
 
 .detail {
