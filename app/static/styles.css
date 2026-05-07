@@ -481,6 +481,76 @@ h2 {
   padding: 10px;
 }
 
+.task-overview-panel {
+  margin-bottom: 16px;
+}
+
+.task-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.task-stat {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.task-stat span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.task-stat strong {
+  font-size: 24px;
+}
+
+.stat-bar {
+  height: 7px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.stat-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--brand);
+}
+
+.task-stat.warning .stat-bar i {
+  background: var(--warning);
+}
+
+.task-stat.blue .stat-bar i {
+  background: var(--blue);
+}
+
+.task-stat.success .stat-bar i {
+  background: var(--success);
+}
+
+.task-stat.danger .stat-bar i {
+  background: var(--danger);
+}
+
+.task-row {
+  gap: 12px;
+}
+
+.task-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .stack-line {
   display: flex;
   align-items: center;
@@ -797,6 +867,10 @@ textarea {
   }
 
   .grid-2 {
+    grid-template-columns: 1fr;
+  }
+
+  .task-stats {
     grid-template-columns: 1fr;
   }
 

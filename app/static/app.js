@@ -17,7 +17,6 @@ const viewTitles = {
   tasks: "Задачи",
   materials: "Материалы",
   variations: "Допработы и отклонения",
-  contracts: "Договоры и сроки",
   documents: "Документы",
   events: "Журнал событий",
 };
@@ -35,8 +34,11 @@ const statusLabels = {
   completed: "Завершен",
   archived: "Архив",
   new: "Новая",
+  returned: "Возвращена на доработку",
   in_progress_task: "В работе",
   review: "На проверке",
+  completed_pending_acceptance: "Выполнена, ждет приемки",
+  accepted: "Выполнение принято",
   approval: "Согласование",
   ordered: "Заказано",
   delivery: "Доставка",
@@ -108,6 +110,10 @@ function roleLabel(role) {
     estimator: "Сметчик",
     technical_supervisor: "Технадзор",
   }[role] || role;
+}
+
+function currentUserId() {
+  return state.users.find((user) => user.role === state.currentRole)?.id || null;
 }
 
 function escapeAttr(value) {
@@ -219,7 +225,6 @@ async function loadAll() {
     renderMaterials(),
     renderEstimateMaterials(),
     renderVariations(),
-    renderContracts(),
     renderDocuments(),
     renderEvents(),
   ]);
@@ -287,14 +292,59 @@ function applySelectedEstimateMaterial() {
   qs('#materialForm input[name="total_amount"]').value = selected.dataset.total || "";
 }
 
+function taskStats(tasks) {
+  return {
+    active: tasks.filter((task) => ["new", "in_progress_task", "review", "returned"].includes(task.status)).length,
+    waiting: tasks.filter((task) => task.status === "completed_pending_acceptance").length,
+    accepted: tasks.filter((task) => task.status === "accepted").length,
+    overdue: tasks.filter((task) => task.status !== "accepted" && levelByDate(task.due_date) === "danger").length,
+  };
+}
+
+function renderTaskStats(tasks) {
+  const stats = taskStats(tasks);
+  const total = Math.max(tasks.length, 1);
+  const segments = [
+    ["active", "В работе", stats.active, "warning"],
+    ["waiting", "Не принято", stats.waiting, "blue"],
+    ["accepted", "Принято", stats.accepted, "success"],
+    ["overdue", "Просрочено", stats.overdue, "danger"],
+  ];
+  return `
+    <div class="task-stats">
+      ${segments
+        .map(
+          ([key, title, count, level]) => `
+          <div class="task-stat ${level}">
+            <span>${title}</span>
+            <strong>${count}</strong>
+            <div class="stat-bar"><i style="width: ${(count / total) * 100}%"></i></div>
+          </div>`
+        )
+        .join("")}
+    </div>`;
+}
+
+function taskStatusLevel(status) {
+  return {
+    completed_pending_acceptance: "blue",
+    accepted: "success",
+    returned: "danger",
+    new: "warning",
+    in_progress_task: "warning",
+    review: "blue",
+  }[status] || "";
+}
+
 async function renderDashboard() {
   const [summary, tasks] = await Promise.all([api("/api/summary"), api("/api/tasks")]);
   qs("#summaryCards").innerHTML = `
     <div class="metric"><span class="muted">Объекты</span><strong>${summary.projects}</strong><span>В базе MVP</span></div>
     <div class="metric"><span class="muted">У менеджера</span><strong>${summary.pending_handover}</strong><span>Черновики и доработки</span></div>
-    <div class="metric"><span class="muted">На проверке</span><strong>${summary.construction_review}</strong><span>Ждут руководителя строительства</span></div>
-    <div class="metric"><span class="muted">Архив</span><strong>${summary.archived_projects}</strong><span>Можно вернуть в работу</span></div>
+    <div class="metric"><span class="muted">Задачи к приемке</span><strong>${summary.task_done_waiting || 0}</strong><span>Выполнены, но не приняты</span></div>
+    <div class="metric"><span class="muted">Просрочено</span><strong>${taskStats(tasks).overdue}</strong><span>По открытым задачам</span></div>
   `;
+  qs("#dashboardTaskStats").innerHTML = renderTaskStats(tasks);
   qs("#dashboardProjects").innerHTML = state.projects
     .slice(0, 4)
     .map(
@@ -310,8 +360,8 @@ async function renderDashboard() {
     .map(
       (task) => `
       <div class="row">
-        <div class="stack-line"><strong>${task.title}</strong>${pill(task.due_date || "без срока", levelByDate(task.due_date))}</div>
-        <div class="muted">${task.project_title} · ${task.assignee_name || "не назначен"}</div>
+        <div class="stack-line"><strong>${task.title}</strong>${pill(label(task.status), taskStatusLevel(task.status))}${pill(task.due_date || "без срока", levelByDate(task.due_date))}</div>
+        <div class="muted">${task.project_title} · ответственный: ${task.assignee_name || "не назначен"} · принимает: ${task.reviewer_name || task.creator_name || "не назначен"}</div>
       </div>`
     )
     .join("");
@@ -370,10 +420,9 @@ async function renderProjectDetail(projectId) {
         <div class="info"><span>Сверхбюджет без решения</span><strong>${money(project.unresolved_overbudget_amount)}</strong></div>
         <div class="info"><span>Срок</span><strong>${project.planned_end_date || "не задан"}</strong></div>
       </div>`,
-    tasks: renderSmallList(project.tasks, (task) => `${task.title} · ${task.due_date || "без срока"}`),
+    tasks: renderSmallList(project.tasks, (task) => `${task.title} · ${label(task.status)} · ${task.due_date || "без срока"}`),
     materials: renderSmallList(project.materials, (item) => `${item.title} · ${label(item.procurement_status)} · ${item.basis_type}`),
     variations: renderSmallList(project.variations, (item) => `${item.title} · ${variationType(item.type)} · ${money(item.amount)} · ${moneyDecision(item.financial_decision)}`),
-    contracts: renderSmallList(project.contracts, (item) => `${item.title} · ${contractType(item.type)} · ${item.ends_at || "без даты окончания"}`),
     documents: renderSmallList(project.documents, (doc) => documentFileLink(doc)),
     events: renderSmallList(project.events, (event) => `${event.text}`),
   };
@@ -392,7 +441,7 @@ async function renderProjectDetail(projectId) {
     ${renderProjectWorkflow(project)}
     ${renderDocumentSummary(project.documents)}
     <div class="tabs">
-      ${["overview", "tasks", "materials", "variations", "contracts", "documents", "events"]
+      ${["overview", "tasks", "materials", "variations", "documents", "events"]
         .map((tab) => `<button class="tab ${state.selectedProjectTab === tab ? "active" : ""}" data-project-tab="${tab}">${tabTitle(tab)}</button>`)
         .join("")}
     </div>
@@ -642,7 +691,6 @@ function tabTitle(tab) {
     tasks: "Задачи",
     materials: "Материалы",
     variations: "Допработы",
-    contracts: "Договоры",
     documents: "Документы",
     events: "История",
   }[tab];
@@ -650,15 +698,33 @@ function tabTitle(tab) {
 
 async function renderTasks() {
   const tasks = await api("/api/tasks");
-  qs("#taskRows").innerHTML = tasks.map((task) => `
-    <div class="row">
-      <div class="row-grid">
-        <div><strong>${task.title}</strong><div class="muted">${task.project_title}</div></div>
-        ${pill(label(task.status), task.status === "review" ? "blue" : "warning")}
-        <div>${task.assignee_name || "не назначен"}</div>
-        ${pill(task.due_date || "без срока", levelByDate(task.due_date))}
-      </div>
-    </div>`).join("");
+  qs("#taskStats").innerHTML = renderTaskStats(tasks);
+  qs("#taskRows").innerHTML = tasks.length
+    ? tasks
+        .map((task) => {
+          const canComplete = task.status !== "accepted" && task.status !== "completed_pending_acceptance" && [task.assignee_id, task.creator_id, task.reviewer_id].includes(currentUserId());
+          const canReview = task.status === "completed_pending_acceptance" && (["owner", "construction_manager"].includes(state.currentRole) || task.reviewer_id === currentUserId());
+          return `
+            <div class="row task-row">
+              <div class="row-grid">
+                <div>
+                  <strong>${task.title}</strong>
+                  <div class="muted">${task.project_title} · поставил: ${task.creator_name || "не указано"}</div>
+                  ${task.description ? `<div>${task.description}</div>` : ""}
+                  ${task.rejection_comment ? `<div class="muted">Комментарий по возврату: ${task.rejection_comment}</div>` : ""}
+                </div>
+                ${pill(label(task.status), taskStatusLevel(task.status))}
+                <div>Ответственный: ${task.assignee_name || "не назначен"}<br /><span class="muted">Принимает: ${task.reviewer_name || task.creator_name || "не назначен"}</span></div>
+                ${pill(task.due_date || "без срока", levelByDate(task.due_date))}
+              </div>
+              <div class="task-actions">
+                ${canComplete ? `<button class="secondary" data-task-action="complete" data-task-id="${task.id}">Выполнено</button>` : ""}
+                ${canReview ? `<button class="primary" data-task-action="accept" data-task-id="${task.id}">Принять</button><button class="secondary" data-task-action="return" data-task-id="${task.id}">Вернуть</button>` : ""}
+              </div>
+            </div>`;
+        })
+        .join("")
+    : `<p class="muted">Задач пока нет.</p>`;
 }
 
 async function renderMaterials() {
@@ -952,6 +1018,32 @@ async function handleProjectAction(button) {
   showToast(message);
 }
 
+async function handleTaskAction(button) {
+  const taskId = button.dataset.taskId;
+  const action = button.dataset.taskAction;
+  let payload = {};
+  let message = "Задача обновлена";
+  if (action === "complete") {
+    message = "Задача отмечена выполненной";
+  }
+  if (action === "accept") {
+    message = "Выполнение принято";
+  }
+  if (action === "return") {
+    const comment = window.prompt("Что нужно доработать?");
+    if (comment === null) return;
+    payload = { comment };
+    message = "Задача возвращена на доработку";
+  }
+  await api(`/api/tasks/${taskId}/${action}`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  await Promise.all([renderTasks(), renderDashboard(), renderNotifications()]);
+  if (state.selectedProjectId) await renderProjectDetail(state.selectedProjectId);
+  showToast(message);
+}
+
 function bindEvents() {
   qsa("[data-view]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
   qsa("[data-view-target]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.viewTarget)));
@@ -966,10 +1058,13 @@ function bindEvents() {
     resetProjectDialog();
     qs("#projectDialog").showModal();
   });
-  qs("#newTaskButton").addEventListener("click", () => qs("#taskDialog").showModal());
+  qs("#newTaskButton").addEventListener("click", () => {
+    qs("#taskForm").reset();
+    qs('#taskForm input[name="creator_role"]').value = state.currentRole;
+    qs("#taskDialog").showModal();
+  });
   qs("#newMaterialButton").addEventListener("click", () => qs("#materialDialog").showModal());
   qs("#newVariationButton").addEventListener("click", () => qs("#variationDialog").showModal());
-  qs("#newContractButton").addEventListener("click", () => qs("#contractDialog").showModal());
   qs("#newDocumentButton").addEventListener("click", () => qs("#documentDialog").showModal());
   qs("#newEventButton").addEventListener("click", () => qs("#eventDialog").showModal());
 
@@ -992,6 +1087,12 @@ function bindEvents() {
     const actionButton = event.target.closest("[data-project-action]");
     if (actionButton) {
       await handleProjectAction(actionButton);
+      return;
+    }
+
+    const taskActionButton = event.target.closest("[data-task-action]");
+    if (taskActionButton) {
+      await handleTaskAction(taskActionButton);
       return;
     }
 
@@ -1038,6 +1139,7 @@ function bindEvents() {
   });
   qs("#taskForm").addEventListener("submit", (event) => {
     event.preventDefault();
+    qs('#taskForm input[name="creator_role"]').value = state.currentRole;
     submitForm("taskDialog", "taskForm", "/api/tasks", "Задача создана");
   });
   qs("#materialForm").addEventListener("submit", (event) => {
@@ -1047,10 +1149,6 @@ function bindEvents() {
   qs("#variationForm").addEventListener("submit", (event) => {
     event.preventDefault();
     submitForm("variationDialog", "variationForm", "/api/variations", "Допработа добавлена");
-  });
-  qs("#contractForm").addEventListener("submit", (event) => {
-    event.preventDefault();
-    submitForm("contractDialog", "contractForm", "/api/contracts", "Договор сохранен");
   });
   qs("#estimateImportForm").addEventListener("submit", async (event) => {
     event.preventDefault();

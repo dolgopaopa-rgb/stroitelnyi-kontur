@@ -85,15 +85,22 @@ def init_db() -> None:
                 project_id INTEGER NOT NULL,
                 title TEXT NOT NULL,
                 assignee_id INTEGER,
+                creator_id INTEGER,
+                reviewer_id INTEGER,
                 due_date TEXT,
                 status TEXT NOT NULL DEFAULT 'new',
                 priority TEXT NOT NULL DEFAULT 'normal',
                 related_type TEXT,
                 description TEXT,
+                completed_at TEXT,
+                accepted_at TEXT,
+                rejection_comment TEXT,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
-                FOREIGN KEY (assignee_id) REFERENCES users(id)
+                FOREIGN KEY (assignee_id) REFERENCES users(id),
+                FOREIGN KEY (creator_id) REFERENCES users(id),
+                FOREIGN KEY (reviewer_id) REFERENCES users(id)
             );
 
             CREATE TABLE IF NOT EXISTS material_requests (
@@ -233,6 +240,11 @@ def init_db() -> None:
         ensure_column(db, "projects", "archived_at", "TEXT")
         ensure_column(db, "projects", "archived_by", "INTEGER")
         ensure_column(db, "projects", "archive_reason", "TEXT")
+        ensure_column(db, "tasks", "creator_id", "INTEGER")
+        ensure_column(db, "tasks", "reviewer_id", "INTEGER")
+        ensure_column(db, "tasks", "completed_at", "TEXT")
+        ensure_column(db, "tasks", "accepted_at", "TEXT")
+        ensure_column(db, "tasks", "rejection_comment", "TEXT")
         ensure_column(db, "documents", "file_name", "TEXT")
         ensure_column(db, "documents", "file_path", "TEXT")
         ensure_column(db, "documents", "mime_type", "TEXT")

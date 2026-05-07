@@ -22,7 +22,6 @@
           <button class="nav-button" data-view="tasks">Задачи</button>
           <button class="nav-button" data-view="materials">Материалы</button>
           <button class="nav-button" data-view="variations">Допработы</button>
-          <button class="nav-button" data-view="contracts">Договоры</button>
           <button class="nav-button" data-view="documents">Документы</button>
           <button class="nav-button" data-view="events">Журнал</button>
         </nav>
@@ -54,6 +53,13 @@
 
         <section class="view active" id="dashboardView">
           <div class="metrics" id="summaryCards"></div>
+          <section class="panel task-overview-panel">
+            <div class="panel-head">
+              <h2>Реестр задач</h2>
+              <button class="link-button" data-view-target="tasks">Открыть</button>
+            </div>
+            <div id="dashboardTaskStats"></div>
+          </section>
           <div class="layout-two">
             <section class="panel">
               <div class="panel-head">
@@ -102,6 +108,7 @@
               <h2>Задачи</h2>
               <button class="primary" id="newTaskButton">Добавить задачу</button>
             </div>
+            <div id="taskStats"></div>
             <div class="table" id="taskRows"></div>
           </div>
         </section>
@@ -245,6 +252,7 @@
           <label>Исполнитель <select name="assignee_id"></select></label>
           <label>Срок <input name="due_date" type="date" /></label>
         </div>
+        <input name="creator_role" type="hidden" />
         <label>Комментарий <textarea name="description" rows="3"></textarea></label>
         <div class="form-actions">
           <button type="button" class="secondary" data-close="taskDialog">Отмена</button>

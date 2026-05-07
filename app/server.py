@@ -247,6 +247,13 @@ def user_id_by_role(db, role: str) -> int | None:
     return int(row["id"]) if row else None
 
 
+def role_by_user_id(db, user_id: int | None) -> str:
+    if not user_id:
+        return ""
+    row = db.execute("SELECT role FROM users WHERE id = ?", (user_id,)).fetchone()
+    return str(row["role"]) if row else ""
+
+
 def safe_file_name(file_name: str) -> str:
     name = Path(file_name or "file").name.strip() or "file"
     return re.sub(r"[^A-Za-zА-Яа-я0-9._() -]+", "_", name)[:140]
@@ -445,7 +452,10 @@ class AppHandler(BaseHTTPRequestHandler):
                     "archived_projects": db.execute("SELECT COUNT(*) AS count FROM projects WHERE status = 'archived'").fetchone()["count"],
                     "pending_handover": db.execute("SELECT COUNT(*) AS count FROM projects WHERE status IN ('draft', 'revision_requested')").fetchone()["count"],
                     "construction_review": db.execute("SELECT COUNT(*) AS count FROM projects WHERE status = 'submitted_to_construction'").fetchone()["count"],
-                    "open_tasks": db.execute("SELECT COUNT(*) AS count FROM tasks WHERE status != 'completed'").fetchone()["count"],
+                    "task_new": db.execute("SELECT COUNT(*) AS count FROM tasks WHERE status IN ('new', 'in_progress_task', 'review')").fetchone()["count"],
+                    "task_done_waiting": db.execute("SELECT COUNT(*) AS count FROM tasks WHERE status = 'completed_pending_acceptance'").fetchone()["count"],
+                    "task_accepted": db.execute("SELECT COUNT(*) AS count FROM tasks WHERE status = 'accepted'").fetchone()["count"],
+                    "task_returned": db.execute("SELECT COUNT(*) AS count FROM tasks WHERE status = 'returned'").fetchone()["count"],
                     "material_requests": db.execute("SELECT COUNT(*) AS count FROM material_requests WHERE procurement_status != 'closed'").fetchone()["count"],
                     "unresolved_overbudget": db.execute("SELECT COALESCE(SUM(amount), 0) AS total FROM variations WHERE financial_decision = 'not_decided'").fetchone()["total"],
                     "contracts_soon": db.execute("SELECT COUNT(*) AS count FROM contracts WHERE ends_at <= '2026-05-27' AND status = 'active'").fetchone()["count"],
@@ -518,7 +528,26 @@ class AppHandler(BaseHTTPRequestHandler):
                 return
 
             endpoints = {
-                "/api/tasks": "SELECT t.*, p.title AS project_title, u.name AS assignee_name FROM tasks t JOIN projects p ON p.id = t.project_id LEFT JOIN users u ON u.id = t.assignee_id ORDER BY t.due_date",
+                "/api/tasks": """
+                    SELECT t.*, p.title AS project_title, assignee.name AS assignee_name,
+                           creator.name AS creator_name, reviewer.name AS reviewer_name
+                    FROM tasks t
+                    JOIN projects p ON p.id = t.project_id
+                    LEFT JOIN users assignee ON assignee.id = t.assignee_id
+                    LEFT JOIN users creator ON creator.id = t.creator_id
+                    LEFT JOIN users reviewer ON reviewer.id = t.reviewer_id
+                    ORDER BY
+                        CASE t.status
+                            WHEN 'completed_pending_acceptance' THEN 1
+                            WHEN 'returned' THEN 2
+                            WHEN 'new' THEN 3
+                            WHEN 'in_progress_task' THEN 4
+                            WHEN 'review' THEN 5
+                            WHEN 'accepted' THEN 6
+                            ELSE 7
+                        END,
+                        t.due_date
+                """,
                 "/api/material-requests": """
                     SELECT m.*, p.title AS project_title, em.name AS estimate_material_name,
                            em.unit AS estimate_material_unit, em.estimated_quantity
@@ -857,22 +886,146 @@ class AppHandler(BaseHTTPRequestHandler):
                     json_response(self, {"deleted": project_id})
                     return
 
+            task_action = re.match(r"^/api/tasks/(\d+)/(complete|accept|return)$", path)
+            if task_action:
+                task_id = int(task_action.group(1))
+                action = task_action.group(2)
+                task = db.execute(
+                    """
+                    SELECT t.*, p.title AS project_title
+                    FROM tasks t
+                    JOIN projects p ON p.id = t.project_id
+                    WHERE t.id = ?
+                    """,
+                    (task_id,),
+                ).fetchone()
+                if not task:
+                    json_response(self, {"error": "Task not found"}, 404)
+                    return
+
+                if action == "complete":
+                    db.execute(
+                        """
+                        UPDATE tasks
+                        SET status = 'completed_pending_acceptance',
+                            completed_at = CURRENT_TIMESTAMP,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (task_id,),
+                    )
+                    reviewer_id = task["reviewer_id"] or task["creator_id"] or user_id_by_role(db, "construction_manager")
+                    create_notification(
+                        db,
+                        task["project_id"],
+                        reviewer_id,
+                        role_by_user_id(db, reviewer_id),
+                        "Задача выполнена, нужна приемка",
+                        f"{task['project_title']}: {task['title']}",
+                    )
+                    for watcher_id in (user_id_by_role(db, "construction_manager"), user_id_by_role(db, "owner")):
+                        if watcher_id and watcher_id != reviewer_id:
+                            create_notification(
+                                db,
+                                task["project_id"],
+                                watcher_id,
+                                role_by_user_id(db, watcher_id),
+                                "Задача выполнена, нужна приемка",
+                                f"{task['project_title']}: {task['title']}",
+                            )
+                    json_response(self, {"id": task_id, "status": "completed_pending_acceptance"})
+                    return
+
+                if action == "accept":
+                    db.execute(
+                        """
+                        UPDATE tasks
+                        SET status = 'accepted',
+                            accepted_at = CURRENT_TIMESTAMP,
+                            rejection_comment = '',
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (task_id,),
+                    )
+                    create_notification(
+                        db,
+                        task["project_id"],
+                        task["assignee_id"],
+                        role_by_user_id(db, task["assignee_id"]),
+                        "Выполнение задачи принято",
+                        f"{task['project_title']}: {task['title']}",
+                    )
+                    json_response(self, {"id": task_id, "status": "accepted"})
+                    return
+
+                if action == "return":
+                    comment = data.get("comment") or "Нужно доработать задачу."
+                    db.execute(
+                        """
+                        UPDATE tasks
+                        SET status = 'returned',
+                            rejection_comment = ?,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (comment, task_id),
+                    )
+                    create_notification(
+                        db,
+                        task["project_id"],
+                        task["assignee_id"],
+                        role_by_user_id(db, task["assignee_id"]),
+                        "Задача возвращена на доработку",
+                        f"{task['project_title']}: {task['title']}. {comment}",
+                    )
+                    json_response(self, {"id": task_id, "status": "returned"})
+                    return
+
             if path == "/api/tasks":
+                creator_role = data.get("creator_role") or "construction_manager"
+                creator_id = user_id_by_role(db, creator_role) or user_id_by_role(db, "construction_manager") or 2
+                reviewer_id = int(data.get("reviewer_id") or creator_id)
+                assignee_id = int(data.get("assignee_id") or 2)
                 cursor = db.execute(
                     """
-                    INSERT INTO tasks (project_id, title, assignee_id, due_date, status, priority, related_type, description)
-                    VALUES (?, ?, ?, ?, 'new', ?, ?, ?)
+                    INSERT INTO tasks (
+                        project_id, title, assignee_id, creator_id, reviewer_id, due_date,
+                        status, priority, related_type, description
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, 'new', ?, ?, ?)
                     """,
                     (
                         int(data["project_id"]),
                         data.get("title") or "Новая задача",
-                        int(data.get("assignee_id") or 2),
+                        assignee_id,
+                        creator_id,
+                        reviewer_id,
                         data.get("due_date") or None,
                         data.get("priority") or "normal",
                         data.get("related_type") or "project",
                         data.get("description") or "",
                     ),
                 )
+                project = db.execute("SELECT title FROM projects WHERE id = ?", (int(data["project_id"]),)).fetchone()
+                create_notification(
+                    db,
+                    int(data["project_id"]),
+                    assignee_id,
+                    role_by_user_id(db, assignee_id),
+                    "Назначена новая задача",
+                    f"{project['title'] if project else 'Объект'}: {data.get('title') or 'Новая задача'}",
+                )
+                for watcher_id in (user_id_by_role(db, "construction_manager"), user_id_by_role(db, "owner")):
+                    if watcher_id and watcher_id not in {assignee_id, creator_id}:
+                        create_notification(
+                            db,
+                            int(data["project_id"]),
+                            watcher_id,
+                            role_by_user_id(db, watcher_id),
+                            "Назначена новая задача",
+                            f"{project['title'] if project else 'Объект'}: {data.get('title') or 'Новая задача'}",
+                        )
                 json_response(self, {"id": cursor.lastrowid}, 201)
                 return
 
