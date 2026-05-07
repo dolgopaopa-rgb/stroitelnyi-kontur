@@ -210,14 +210,22 @@
           <p>Менеджер заполняет все данные и прикладывает документацию. Ответственных назначает руководитель строительства после проверки карточки.</p>
         </section>
         <div class="grid-2">
-          <label>Плановый срок <input name="planned_end_date" type="date" required /></label>
+          <label>Плановый срок окончания работ по договору <input name="planned_end_date" type="date" required /></label>
           <label>Смета, ₽ <input name="main_estimate_amount" inputmode="decimal" required placeholder="Можно вставить 1 482 584,60 ₽" /></label>
         </div>
         <section class="hint-box">
           <strong>Первичный список материалов</strong>
-          <p>На старте это делает Алексей: выгружает материалы из сметы в Excel и прикладывает при создании карточки. В этой версии файл пока не читается автоматически, но мы фиксируем процесс и дальше подключим импорт.</p>
+          <p>На старте это делает Алексей: выгружает материалы из сметы в Excel и прикладывает при создании карточки. Файл сохраняется в документах объекта, а позиции материалов можно отдельно импортировать во вкладке “Материалы”.</p>
         </section>
-        <label>Документация / файл материалов сметы <input name="estimate_file_name" type="file" accept=".xlsx,.xls,.csv,.pdf,.doc,.docx" required /></label>
+        <label>Файл материалов из Сметтера / Excel <input name="estimate_file_name" type="file" accept=".xlsx,.xls,.csv" required /></label>
+        <div class="grid-2">
+          <label>Договор <input name="contract_file" type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" required /></label>
+          <label>Смета <input name="estimate_doc_file" type="file" accept=".pdf,.xlsx,.xls,.doc,.docx" required /></label>
+        </div>
+        <div class="grid-2">
+          <label>График платежей <input name="payment_schedule_file" type="file" accept=".pdf,.xlsx,.xls,.doc,.docx,.jpg,.jpeg,.png" required /></label>
+          <label>Проектная документация <input name="project_docs_file" type="file" accept=".pdf,.zip,.rar,.7z,.dwg,.dxf,.jpg,.jpeg,.png,.doc,.docx" required /></label>
+        </div>
         <div class="form-actions">
           <button type="button" class="secondary" data-close="projectDialog">Отмена</button>
           <button class="primary" type="submit">Создать</button>
@@ -298,6 +306,9 @@
             <select name="type">
               <option value="contract">Договор</option>
               <option value="main_estimate">Основная смета</option>
+              <option value="smetter_materials">Файл материалов из Сметтера</option>
+              <option value="payment_schedule">График платежей</option>
+              <option value="project_documentation">Проектная документация</option>
               <option value="variation_estimate">Смета допработ</option>
               <option value="act">Акт</option>
               <option value="ks_2">КС-2</option>
@@ -312,6 +323,7 @@
           <label>Ответственный <select name="owner_id"></select></label>
           <label>Срок <input name="due_date" type="date" /></label>
         </div>
+        <label>Файл <input name="document_file" type="file" accept=".pdf,.xlsx,.xls,.csv,.doc,.docx,.jpg,.jpeg,.png,.zip,.rar,.7z,.dwg,.dxf" /></label>
         <div class="form-actions">
           <button type="button" class="secondary" data-close="documentDialog">Отмена</button>
           <button class="primary" type="submit">Сохранить</button>

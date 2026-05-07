@@ -428,9 +428,27 @@ h2 {
 
 .link-pill {
   text-decoration: none;
+  cursor: pointer;
 }
 
 .link-pill:hover {
+  text-decoration: underline;
+}
+
+.document-link {
+  display: grid;
+  gap: 3px;
+  color: var(--brand);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.document-link span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.document-link:hover strong {
   text-decoration: underline;
 }
 

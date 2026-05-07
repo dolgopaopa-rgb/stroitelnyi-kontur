@@ -171,6 +171,10 @@ def init_db() -> None:
                 owner_id INTEGER,
                 due_date TEXT,
                 related_type TEXT,
+                file_name TEXT,
+                file_path TEXT,
+                mime_type TEXT,
+                file_size INTEGER,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
@@ -229,6 +233,10 @@ def init_db() -> None:
         ensure_column(db, "projects", "archived_at", "TEXT")
         ensure_column(db, "projects", "archived_by", "INTEGER")
         ensure_column(db, "projects", "archive_reason", "TEXT")
+        ensure_column(db, "documents", "file_name", "TEXT")
+        ensure_column(db, "documents", "file_path", "TEXT")
+        ensure_column(db, "documents", "mime_type", "TEXT")
+        ensure_column(db, "documents", "file_size", "INTEGER")
         seed(db)
         ensure_core_users(db)
         seed_estimate_materials(db)

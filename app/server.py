@@ -4,19 +4,23 @@ import base64
 import csv
 import io
 import json
+import mimetypes
 import os
 import re
+import time
 import zipfile
 import xml.etree.ElementTree as ET
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
-from database import connect, init_db, row_to_dict, rows_to_dicts
+from database import DATA_DIR, connect, init_db, row_to_dict, rows_to_dicts
 
 
 APP_DIR = Path(__file__).resolve().parent
 STATIC_DIR = APP_DIR / "static"
+UPLOAD_DIR = DATA_DIR / "uploads"
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def json_response(handler: BaseHTTPRequestHandler, payload: object, status: int = 200) -> None:
@@ -243,6 +247,59 @@ def user_id_by_role(db, role: str) -> int | None:
     return int(row["id"]) if row else None
 
 
+def safe_file_name(file_name: str) -> str:
+    name = Path(file_name or "file").name.strip() or "file"
+    return re.sub(r"[^A-Za-zА-Яа-я0-9._() -]+", "_", name)[:140]
+
+
+def save_document_file(db, project_id: int, file_data: dict, title: str, doc_type: str, related_type: str = "project") -> int | None:
+    file_name = safe_file_name(file_data.get("file_name") or title)
+    encoded = file_data.get("file_base64") or ""
+    if not encoded:
+        return None
+    if "," in encoded:
+        encoded = encoded.split(",", 1)[1]
+    raw = base64.b64decode(encoded)
+    project_dir = UPLOAD_DIR / f"project_{project_id}"
+    project_dir.mkdir(parents=True, exist_ok=True)
+    target_name = f"{int(time.time() * 1000)}_{file_name}"
+    target_path = project_dir / target_name
+    target_path.write_bytes(raw)
+    cursor = db.execute(
+        """
+        INSERT INTO documents (
+            project_id, title, type, version, status, owner_id, due_date, related_type,
+            file_name, file_path, mime_type, file_size
+        )
+        VALUES (?, ?, ?, '', 'active', ?, NULL, ?, ?, ?, ?, ?)
+        """,
+        (
+            project_id,
+            title,
+            doc_type,
+            user_id_by_role(db, "sales_manager") or 3,
+            related_type,
+            file_name,
+            str(target_path.relative_to(DATA_DIR)),
+            file_data.get("mime_type") or mimetypes.guess_type(file_name)[0] or "application/octet-stream",
+            len(raw),
+        ),
+    )
+    return int(cursor.lastrowid)
+
+
+def save_initial_documents(db, project_id: int, files: list[dict]) -> None:
+    for item in files:
+        save_document_file(
+            db,
+            project_id,
+            item,
+            item.get("title") or item.get("file_name") or "Документ объекта",
+            item.get("type") or "other",
+            item.get("related_type") or "handover",
+        )
+
+
 def get_project_detail(project_id: int) -> dict | None:
     with connect() as db:
         project = db.execute(
@@ -291,6 +348,10 @@ class AppHandler(BaseHTTPRequestHandler):
         if path.startswith("/static/"):
             self.serve_static(path.replace("/static/", "", 1))
             return
+        document_download = re.match(r"^/api/documents/(\d+)/download$", path)
+        if document_download:
+            self.serve_document_download(int(document_download.group(1)))
+            return
         if path.startswith("/api/"):
             self.handle_api_get(path, parse_qs(parsed.query))
             return
@@ -333,6 +394,29 @@ class AppHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def serve_document_download(self, document_id: int) -> None:
+        with connect() as db:
+            document = db.execute("SELECT * FROM documents WHERE id = ?", (document_id,)).fetchone()
+            if not document or not document["file_path"]:
+                self.send_error(404)
+                return
+            file_path = (DATA_DIR / document["file_path"]).resolve()
+            if DATA_DIR.resolve() not in file_path.parents and file_path != DATA_DIR.resolve():
+                self.send_error(403)
+                return
+            if not file_path.exists() or not file_path.is_file():
+                self.send_error(404)
+                return
+            body = file_path.read_bytes()
+            file_name = document["file_name"] or file_path.name
+            content_type = document["mime_type"] or mimetypes.guess_type(file_name)[0] or "application/octet-stream"
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Content-Disposition", f"inline; filename*=UTF-8''{quote(file_name)}")
+            self.end_headers()
+            self.wfile.write(body)
 
     def handle_api_get(self, path: str, query: dict[str, list[str]]) -> None:
         with connect() as db:
@@ -465,9 +549,9 @@ class AppHandler(BaseHTTPRequestHandler):
                         ("address", "Адрес"),
                         ("bitrix_ref", "Bitrix"),
                         ("smetter_ref", "Сметтер"),
-                        ("planned_end_date", "Плановый срок"),
+                        ("planned_end_date", "Плановый срок окончания работ по договору"),
                         ("main_estimate_amount", "Смета"),
-                        ("estimate_file_name", "Документация / файл материалов"),
+                        ("estimate_file_name", "Файл материалов из Сметтера"),
                     ],
                 )
                 cursor = db.execute(
@@ -497,6 +581,7 @@ class AppHandler(BaseHTTPRequestHandler):
                     ),
                 )
                 project_id = cursor.lastrowid
+                save_initial_documents(db, project_id, data.get("initial_documents") or [])
                 db.execute(
                     """
                     INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
@@ -526,9 +611,9 @@ class AppHandler(BaseHTTPRequestHandler):
                             ("address", "Адрес"),
                             ("bitrix_ref", "Bitrix"),
                             ("smetter_ref", "Сметтер"),
-                            ("planned_end_date", "Плановый срок"),
+                            ("planned_end_date", "Плановый срок окончания работ по договору"),
                             ("main_estimate_amount", "Смета"),
-                            ("estimate_file_name", "Документация / файл материалов"),
+                            ("estimate_file_name", "Файл материалов из Сметтера"),
                         ],
                     )
                     db.execute(
@@ -575,8 +660,8 @@ class AppHandler(BaseHTTPRequestHandler):
                         ("address", "Адрес"),
                         ("bitrix_ref", "Bitrix"),
                         ("smetter_ref", "Сметтер"),
-                        ("planned_end_date", "Плановый срок"),
-                        ("estimate_file_name", "Документация / файл материалов"),
+                        ("planned_end_date", "Плановый срок окончания работ по договору"),
+                        ("estimate_file_name", "Файл материалов из Сметтера"),
                     ]
                     missing = [label for key, label in required if not str(project[key] or "").strip()]
                     if not number_value(project["main_estimate_amount"]):
@@ -875,14 +960,56 @@ class AppHandler(BaseHTTPRequestHandler):
                         project_id,
                     ),
                 )
+                if data.get("file_base64"):
+                    save_document_file(
+                        db,
+                        project_id,
+                        {
+                            "file_name": data.get("file_name") or "materials.xlsx",
+                            "file_base64": data.get("file_base64"),
+                            "mime_type": data.get("mime_type") or "",
+                        },
+                        "Файл материалов из Сметтера",
+                        "smetter_materials",
+                        "materials",
+                    )
                 json_response(self, {"imported": len(rows)}, 201)
                 return
 
             if path == "/api/documents":
+                file_data = data.get("document_file") or {}
+                if file_data.get("file_base64"):
+                    document_id = save_document_file(
+                        db,
+                        int(data["project_id"]),
+                        file_data,
+                        data.get("title") or "Документ",
+                        data.get("type") or "other",
+                        data.get("related_type") or "project",
+                    )
+                    db.execute(
+                        """
+                        UPDATE documents
+                        SET version = ?, status = ?, owner_id = ?, due_date = ?
+                        WHERE id = ?
+                        """,
+                        (
+                            data.get("version") or "",
+                            data.get("status") or "draft",
+                            int(data.get("owner_id") or 2),
+                            data.get("due_date") or None,
+                            document_id,
+                        ),
+                    )
+                    json_response(self, {"id": document_id}, 201)
+                    return
                 cursor = db.execute(
                     """
-                    INSERT INTO documents (project_id, title, type, version, status, owner_id, due_date, related_type)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO documents (
+                        project_id, title, type, version, status, owner_id, due_date, related_type,
+                        file_name, file_path, mime_type, file_size
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL)
                     """,
                     (
                         int(data["project_id"]),

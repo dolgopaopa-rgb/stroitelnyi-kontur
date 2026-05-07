@@ -122,8 +122,44 @@ function externalRefLink(value, fallbackText, level = "") {
   const text = String(value || "").trim();
   if (!text) return pill(fallbackText, level);
   const isUrl = /^https?:\/\//i.test(text);
-  if (!isUrl) return pill(text, level);
-  return `<a class="pill link-pill ${level}" href="${escapeAttr(text)}" target="_blank" rel="noopener noreferrer">${fallbackText}</a>`;
+  const looksLikeDomain = /^(www\.|[a-z0-9-]+\.[a-z0-9.-]+\/?)/i.test(text) && !/\s/.test(text);
+  if (!isUrl && !looksLikeDomain) return pill(text, level);
+  const href = isUrl ? text : `https://${text}`;
+  return `<a class="pill link-pill ${level}" href="${escapeAttr(href)}" target="_blank" rel="noopener noreferrer">${fallbackText}</a>`;
+}
+
+function documentType(type) {
+  return {
+    contract: "Договор",
+    main_estimate: "Основная смета",
+    smetter_materials: "Файл материалов из Сметтера",
+    payment_schedule: "График платежей",
+    project_documentation: "Проектная документация",
+    variation_estimate: "Смета допработ",
+    act: "Акт",
+    ks_2: "КС-2",
+    ks_3: "КС-3",
+    detail_node: "Узел",
+    invoice: "Счет",
+    other: "Документ",
+  }[type] || type || "Документ";
+}
+
+function documentFileLink(doc) {
+  const type = documentType(doc.type);
+  const file = doc.file_name || "";
+  if (!doc.file_path) {
+    return `
+      <div>
+        <strong>${doc.title}</strong>
+        <div class="muted">${type} · файл не загружен</div>
+      </div>`;
+  }
+  return `
+    <a class="document-link" href="/api/documents/${doc.id}/download" target="_blank" rel="noopener noreferrer">
+      <strong>${doc.title}</strong>
+      <span>${type}${file ? ` · ${file}` : ""}</span>
+    </a>`;
 }
 
 function showToast(message) {
@@ -307,7 +343,7 @@ async function renderProjectDetail(projectId) {
     materials: renderSmallList(project.materials, (item) => `${item.title} · ${label(item.procurement_status)} · ${item.basis_type}`),
     variations: renderSmallList(project.variations, (item) => `${item.title} · ${variationType(item.type)} · ${money(item.amount)} · ${moneyDecision(item.financial_decision)}`),
     contracts: renderSmallList(project.contracts, (item) => `${item.title} · ${contractType(item.type)} · ${item.ends_at || "без даты окончания"}`),
-    documents: renderSmallList(project.documents, (doc) => `${doc.title} · ${doc.type} · ${label(doc.status)}`),
+    documents: renderSmallList(project.documents, (doc) => documentFileLink(doc)),
     events: renderSmallList(project.events, (event) => `${event.text}`),
   };
   qs("#projectDetail").innerHTML = `
@@ -349,10 +385,10 @@ function renderProjectEditPanel(project) {
         <label>Сметтер <input id="projectEditSmetter" value="${escapeAttr(project.smetter_ref)}" placeholder="Ссылка на смету или номер" /></label>
       </div>
       <div class="grid-2">
-        <label>Плановый срок <input id="projectEditEndDate" type="date" value="${escapeAttr(project.planned_end_date)}" /></label>
+        <label>Плановый срок окончания работ по договору <input id="projectEditEndDate" type="date" value="${escapeAttr(project.planned_end_date)}" /></label>
         <label>Смета, ₽ <input id="projectEditEstimate" inputmode="decimal" value="${escapeAttr(project.main_estimate_amount)}" /></label>
       </div>
-      <label>Документация / файл материалов <input id="projectEditFileName" value="${escapeAttr(project.estimate_file_name)}" placeholder="Название прикрепленного файла" /></label>
+      <label>Файл материалов из Сметтера <input id="projectEditFileName" value="${escapeAttr(project.estimate_file_name)}" placeholder="Название прикрепленного файла" /></label>
       <div class="form-actions">
         <span class="muted">Правки сохраняются в карточку объекта.</span>
         <button class="secondary" data-project-action="update" data-project-id="${project.id}">Сохранить правки</button>
@@ -525,6 +561,35 @@ function fileToBase64(file) {
     reader.addEventListener("error", () => reject(reader.error));
     reader.readAsDataURL(file);
   });
+}
+
+async function fileDocumentPayload(file, title, type, relatedType = "handover") {
+  if (!file) return null;
+  return {
+    title,
+    type,
+    related_type: relatedType,
+    file_name: file.name,
+    mime_type: file.type || "",
+    file_base64: await fileToBase64(file),
+  };
+}
+
+async function projectFormToJson(form) {
+  const data = formToJson(form);
+  const files = form.elements;
+  const materialFile = files.estimate_file_name.files[0];
+  data.estimate_file_name = materialFile?.name || "";
+  data.initial_documents = (
+    await Promise.all([
+      fileDocumentPayload(materialFile, "Файл материалов из Сметтера", "smetter_materials"),
+      fileDocumentPayload(files.contract_file.files[0], "Договор", "contract"),
+      fileDocumentPayload(files.estimate_doc_file.files[0], "Смета", "main_estimate"),
+      fileDocumentPayload(files.payment_schedule_file.files[0], "График платежей", "payment_schedule"),
+      fileDocumentPayload(files.project_docs_file.files[0], "Проектная документация", "project_documentation"),
+    ])
+  ).filter(Boolean);
+  return data;
 }
 
 async function loadEstimatePreview() {
@@ -705,8 +770,9 @@ async function renderDocuments() {
   const docs = await api("/api/documents");
   qs("#documentCards").innerHTML = docs.map((doc) => `
     <article class="card">
-      <div class="stack-line"><strong>${doc.title}</strong>${pill(doc.type, "blue")}${pill(label(doc.status))}</div>
+      <div class="stack-line"><strong>${doc.title}</strong>${pill(documentType(doc.type), "blue")}${pill(label(doc.status))}</div>
       <div class="muted">${doc.project_title} · ответственный: ${doc.owner_name || "не назначен"}</div>
+      ${doc.file_path ? documentFileLink(doc) : `<div class="muted">${doc.file_name || "Файл не загружен"}</div>`}
       <div class="stack-line">${doc.version ? pill(`Версия: ${doc.version}`) : ""}${doc.due_date ? pill(`Срок: ${doc.due_date}`, levelByDate(doc.due_date)) : ""}</div>
     </article>`).join("");
 }
@@ -881,9 +947,14 @@ function bindEvents() {
     }
   });
 
-  qs("#projectForm").addEventListener("submit", (event) => {
+  qs("#projectForm").addEventListener("submit", async (event) => {
     event.preventDefault();
-    submitForm("projectDialog", "projectForm", "/api/projects", "Объект создан как черновик");
+    const form = qs("#projectForm");
+    await api("/api/projects", { method: "POST", body: JSON.stringify(await projectFormToJson(form)) });
+    qs("#projectDialog").close();
+    form.reset();
+    await loadAll();
+    showToast("Объект создан как черновик");
   });
   qs("#taskForm").addEventListener("submit", (event) => {
     event.preventDefault();
@@ -915,6 +986,8 @@ function bindEvents() {
         project_id: form.elements.project_id.value,
         estimate_version: form.elements.estimate_version.value,
         file_name: file?.name || "",
+        mime_type: file?.type || "",
+        file_base64: file ? await fileToBase64(file) : "",
         replace: true,
         rows: state.estimatePreviewRows,
       }),
@@ -925,9 +998,19 @@ function bindEvents() {
     switchView("materials");
     showToast("Материалы сметы загружены в объект");
   });
-  qs("#documentForm").addEventListener("submit", (event) => {
+  qs("#documentForm").addEventListener("submit", async (event) => {
     event.preventDefault();
-    submitForm("documentDialog", "documentForm", "/api/documents", "Документ добавлен");
+    const form = qs("#documentForm");
+    const data = formToJson(form);
+    const file = form.elements.document_file.files[0];
+    if (file) {
+      data.document_file = await fileDocumentPayload(file, data.title || file.name, data.type || "other", "project");
+    }
+    await api("/api/documents", { method: "POST", body: JSON.stringify(data) });
+    qs("#documentDialog").close();
+    form.reset();
+    await loadAll();
+    showToast("Документ добавлен");
   });
   qs("#eventForm").addEventListener("submit", (event) => {
     event.preventDefault();
