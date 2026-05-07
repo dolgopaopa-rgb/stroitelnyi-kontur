@@ -487,7 +487,7 @@ h2 {
 
 .task-stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
   margin-bottom: 12px;
 }
@@ -549,6 +549,57 @@ h2 {
   justify-content: flex-end;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.task-calendar {
+  display: grid;
+  gap: 8px;
+  margin: 4px 0 14px;
+}
+
+.calendar-day {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--brand);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 10px;
+}
+
+.calendar-day.warning {
+  border-left-color: var(--warning);
+}
+
+.calendar-day.danger {
+  border-left-color: var(--danger);
+}
+
+.calendar-date {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.calendar-items {
+  display: grid;
+  gap: 8px;
+}
+
+.calendar-task {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(120px, 0.4fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.calendar-task span,
+.calendar-task small {
+  overflow-wrap: anywhere;
+}
+
+.calendar-task small {
+  color: var(--muted);
 }
 
 .stack-line {
@@ -871,6 +922,11 @@ textarea {
   }
 
   .task-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .calendar-day,
+  .calendar-task {
     grid-template-columns: 1fr;
   }
 

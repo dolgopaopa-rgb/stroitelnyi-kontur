@@ -529,8 +529,10 @@ class AppHandler(BaseHTTPRequestHandler):
 
             endpoints = {
                 "/api/tasks": """
-                    SELECT t.*, p.title AS project_title, assignee.name AS assignee_name,
-                           creator.name AS creator_name, reviewer.name AS reviewer_name
+                    SELECT t.*, p.title AS project_title,
+                           assignee.name AS assignee_name, assignee.role AS assignee_role,
+                           creator.name AS creator_name, creator.role AS creator_role,
+                           reviewer.name AS reviewer_name, reviewer.role AS reviewer_role
                     FROM tasks t
                     JOIN projects p ON p.id = t.project_id
                     LEFT JOIN users assignee ON assignee.id = t.assignee_id
@@ -886,7 +888,7 @@ class AppHandler(BaseHTTPRequestHandler):
                     json_response(self, {"deleted": project_id})
                     return
 
-            task_action = re.match(r"^/api/tasks/(\d+)/(complete|accept|return)$", path)
+            task_action = re.match(r"^/api/tasks/(\d+)/(complete|accept|return|delete)$", path)
             if task_action:
                 task_id = int(task_action.group(1))
                 action = task_action.group(2)
@@ -901,6 +903,11 @@ class AppHandler(BaseHTTPRequestHandler):
                 ).fetchone()
                 if not task:
                     json_response(self, {"error": "Task not found"}, 404)
+                    return
+
+                if action == "delete":
+                    db.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+                    json_response(self, {"deleted": task_id})
                     return
 
                 if action == "complete":
@@ -961,15 +968,17 @@ class AppHandler(BaseHTTPRequestHandler):
 
                 if action == "return":
                     comment = data.get("comment") or "Нужно доработать задачу."
+                    due_date = data.get("due_date") or task["due_date"]
                     db.execute(
                         """
                         UPDATE tasks
                         SET status = 'returned',
                             rejection_comment = ?,
+                            due_date = ?,
                             updated_at = CURRENT_TIMESTAMP
                         WHERE id = ?
                         """,
-                        (comment, task_id),
+                        (comment, due_date, task_id),
                     )
                     create_notification(
                         db,

@@ -59,6 +59,7 @@
               <button class="link-button" data-view-target="tasks">Открыть</button>
             </div>
             <div id="dashboardTaskStats"></div>
+            <div id="dashboardTaskCalendar"></div>
           </section>
           <div class="layout-two">
             <section class="panel">
@@ -109,6 +110,7 @@
               <button class="primary" id="newTaskButton">Добавить задачу</button>
             </div>
             <div id="taskStats"></div>
+            <div id="taskCalendar"></div>
             <div class="table" id="taskRows"></div>
           </div>
         </section>
@@ -252,6 +254,7 @@
           <label>Исполнитель <select name="assignee_id"></select></label>
           <label>Срок <input name="due_date" type="date" /></label>
         </div>
+        <label>Кому сдать выполнение <select name="reviewer_id"></select></label>
         <input name="creator_role" type="hidden" />
         <label>Комментарий <textarea name="description" rows="3"></textarea></label>
         <div class="form-actions">

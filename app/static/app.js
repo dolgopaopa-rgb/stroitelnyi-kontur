@@ -234,7 +234,7 @@ function fillSelects() {
   const projectOptions = state.projects.map((project) => `<option value="${project.id}">${project.title}</option>`).join("");
   const userOptions = state.users.map((user) => `<option value="${user.id}">${user.name}</option>`).join("");
   qsa('select[name="project_id"]').forEach((select) => (select.innerHTML = projectOptions));
-  qsa('select[name="assignee_id"], select[name="owner_id"], select[name="responsible_id"]').forEach((select) => (select.innerHTML = userOptions));
+  qsa('select[name="assignee_id"], select[name="owner_id"], select[name="responsible_id"], select[name="reviewer_id"]').forEach((select) => (select.innerHTML = userOptions));
   updateEstimateMaterialSelect();
 }
 
@@ -294,7 +294,8 @@ function applySelectedEstimateMaterial() {
 
 function taskStats(tasks) {
   return {
-    active: tasks.filter((task) => ["new", "in_progress_task", "review", "returned"].includes(task.status)).length,
+    active: tasks.filter((task) => ["new", "in_progress_task", "review"].includes(task.status)).length,
+    returned: tasks.filter((task) => task.status === "returned").length,
     waiting: tasks.filter((task) => task.status === "completed_pending_acceptance").length,
     accepted: tasks.filter((task) => task.status === "accepted").length,
     overdue: tasks.filter((task) => task.status !== "accepted" && levelByDate(task.due_date) === "danger").length,
@@ -306,6 +307,7 @@ function renderTaskStats(tasks) {
   const total = Math.max(tasks.length, 1);
   const segments = [
     ["active", "В работе", stats.active, "warning"],
+    ["returned", "На доработке", stats.returned, "danger"],
     ["waiting", "Не принято", stats.waiting, "blue"],
     ["accepted", "Принято", stats.accepted, "success"],
     ["overdue", "Просрочено", stats.overdue, "danger"],
@@ -336,6 +338,53 @@ function taskStatusLevel(status) {
   }[status] || "";
 }
 
+function canActAsTaskUser(task, kind) {
+  const userId = currentUserId();
+  const idKey = `${kind}_id`;
+  const roleKey = `${kind}_role`;
+  return task[idKey] === userId || task[roleKey] === state.currentRole;
+}
+
+function canDeleteTask(task) {
+  return ["owner", "construction_manager"].includes(state.currentRole) || canActAsTaskUser(task, "creator") || canActAsTaskUser(task, "reviewer");
+}
+
+function renderTaskCalendar(tasks) {
+  const dated = tasks
+    .filter((task) => task.due_date)
+    .sort((a, b) => new Date(`${a.due_date}T00:00:00`) - new Date(`${b.due_date}T00:00:00`));
+  if (!dated.length) return `<p class="muted">В задачах пока нет сроков для календарного графика.</p>`;
+  const byDate = dated.reduce((acc, task) => {
+    acc[task.due_date] = acc[task.due_date] || [];
+    acc[task.due_date].push(task);
+    return acc;
+  }, {});
+  return `
+    <div class="task-calendar">
+      ${Object.entries(byDate)
+        .slice(0, 10)
+        .map(
+          ([date, rows]) => `
+          <div class="calendar-day ${levelByDate(date)}">
+            <div class="calendar-date">${date}</div>
+            <div class="calendar-items">
+              ${rows
+                .map(
+                  (task) => `
+                  <div class="calendar-task">
+                    ${pill(label(task.status), taskStatusLevel(task.status))}
+                    <span>${task.title}</span>
+                    <small>${task.project_title}</small>
+                  </div>`
+                )
+                .join("")}
+            </div>
+          </div>`
+        )
+        .join("")}
+    </div>`;
+}
+
 async function renderDashboard() {
   const [summary, tasks] = await Promise.all([api("/api/summary"), api("/api/tasks")]);
   qs("#summaryCards").innerHTML = `
@@ -345,6 +394,7 @@ async function renderDashboard() {
     <div class="metric"><span class="muted">Просрочено</span><strong>${taskStats(tasks).overdue}</strong><span>По открытым задачам</span></div>
   `;
   qs("#dashboardTaskStats").innerHTML = renderTaskStats(tasks);
+  qs("#dashboardTaskCalendar").innerHTML = renderTaskCalendar(tasks);
   qs("#dashboardProjects").innerHTML = state.projects
     .slice(0, 4)
     .map(
@@ -699,11 +749,12 @@ function tabTitle(tab) {
 async function renderTasks() {
   const tasks = await api("/api/tasks");
   qs("#taskStats").innerHTML = renderTaskStats(tasks);
+  qs("#taskCalendar").innerHTML = renderTaskCalendar(tasks);
   qs("#taskRows").innerHTML = tasks.length
     ? tasks
         .map((task) => {
-          const canComplete = task.status !== "accepted" && task.status !== "completed_pending_acceptance" && [task.assignee_id, task.creator_id, task.reviewer_id].includes(currentUserId());
-          const canReview = task.status === "completed_pending_acceptance" && (["owner", "construction_manager"].includes(state.currentRole) || task.reviewer_id === currentUserId());
+          const canComplete = task.status !== "accepted" && task.status !== "completed_pending_acceptance" && (canActAsTaskUser(task, "assignee") || ["owner", "construction_manager"].includes(state.currentRole));
+          const canReview = task.status === "completed_pending_acceptance" && (["owner", "construction_manager"].includes(state.currentRole) || canActAsTaskUser(task, "reviewer"));
           return `
             <div class="row task-row">
               <div class="row-grid">
@@ -720,6 +771,7 @@ async function renderTasks() {
               <div class="task-actions">
                 ${canComplete ? `<button class="secondary" data-task-action="complete" data-task-id="${task.id}">Выполнено</button>` : ""}
                 ${canReview ? `<button class="primary" data-task-action="accept" data-task-id="${task.id}">Принять</button><button class="secondary" data-task-action="return" data-task-id="${task.id}">Вернуть</button>` : ""}
+                ${canDeleteTask(task) ? `<button class="danger-button" data-task-action="delete" data-task-id="${task.id}">Удалить</button>` : ""}
               </div>
             </div>`;
         })
@@ -1032,8 +1084,15 @@ async function handleTaskAction(button) {
   if (action === "return") {
     const comment = window.prompt("Что нужно доработать?");
     if (comment === null) return;
-    payload = { comment };
+    const dueDate = window.prompt("Новый срок выполнения в формате ГГГГ-ММ-ДД. Можно оставить пустым.");
+    if (dueDate === null) return;
+    payload = { comment, due_date: dueDate.trim() };
     message = "Задача возвращена на доработку";
+  }
+  if (action === "delete") {
+    const confirmed = window.confirm("Удалить задачу? Это действие нельзя отменить.");
+    if (!confirmed) return;
+    message = "Задача удалена";
   }
   await api(`/api/tasks/${taskId}/${action}`, {
     method: "POST",
@@ -1059,8 +1118,11 @@ function bindEvents() {
     qs("#projectDialog").showModal();
   });
   qs("#newTaskButton").addEventListener("click", () => {
-    qs("#taskForm").reset();
-    qs('#taskForm input[name="creator_role"]').value = state.currentRole;
+    const form = qs("#taskForm");
+    form.reset();
+    form.elements.creator_role.value = state.currentRole;
+    const userId = currentUserId();
+    if (userId && form.elements.reviewer_id) form.elements.reviewer_id.value = String(userId);
     qs("#taskDialog").showModal();
   });
   qs("#newMaterialButton").addEventListener("click", () => qs("#materialDialog").showModal());
