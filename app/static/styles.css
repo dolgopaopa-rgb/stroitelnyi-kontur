@@ -310,6 +310,28 @@ h2 {
   align-items: center;
 }
 
+#projectRows .row-grid {
+  grid-template-columns: 1fr;
+  align-items: start;
+}
+
+#projectRows .row-grid > div {
+  min-width: 0;
+}
+
+#projectRows .row-grid strong,
+#projectRows .row-grid .muted {
+  overflow-wrap: anywhere;
+}
+
+#projectRows .pill {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
 .detail {
   min-height: 560px;
 }
