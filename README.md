@@ -16,6 +16,7 @@
 10. [План разработки MVP по спринтам](docs/10-development-plan.md)
 11. [Executive Summary](docs/11-executive-summary.md)
 12. [Постоянный сервер](docs/12-deployment.md)
+13. [Текущий Selectel VDS](docs/13-selectel-server.md)
 
 ## Прототип
 
