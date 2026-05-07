@@ -118,6 +118,14 @@ function escapeAttr(value) {
     .replace(/>/g, "&gt;");
 }
 
+function externalRefLink(value, fallbackText, level = "") {
+  const text = String(value || "").trim();
+  if (!text) return pill(fallbackText, level);
+  const isUrl = /^https?:\/\//i.test(text);
+  if (!isUrl) return pill(text, level);
+  return `<a class="pill link-pill ${level}" href="${escapeAttr(text)}" target="_blank" rel="noopener noreferrer">${fallbackText}</a>`;
+}
+
 function showToast(message) {
   const toast = qs("#toast");
   toast.textContent = message;
@@ -310,8 +318,8 @@ async function renderProjectDetail(projectId) {
       ${pill(`Сметчик: ${project.estimator_name || "не назначен"}`)}
       ${pill(`Снабжение: ${project.procurement_name || "не назначено"}`)}
       ${pill(`Технадзор: ${project.tech_supervisor_name || "не назначен"}`)}
-      ${pill(project.bitrix_ref || "Bitrix не указан", "blue")}
-      ${pill(project.smetter_ref || "Сметтер не указан", "success")}
+      ${externalRefLink(project.bitrix_ref, project.bitrix_ref ? "Открыть Bitrix" : "Bitrix не указан", "blue")}
+      ${externalRefLink(project.smetter_ref, project.smetter_ref ? "Открыть Сметтер" : "Сметтер не указан", "success")}
     </div>
     ${renderProjectEditPanel(project)}
     ${renderProjectWorkflow(project)}

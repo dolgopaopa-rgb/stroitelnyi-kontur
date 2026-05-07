@@ -197,11 +197,13 @@ h2 {
 }
 
 .segment {
-  min-height: 34px;
+  min-height: 40px;
   border: 0;
   border-right: 1px solid var(--line);
   background: white;
-  padding: 0 12px;
+  padding: 0 16px;
+  white-space: nowrap;
+  line-height: 1;
 }
 
 .segment:last-child {
@@ -405,6 +407,14 @@ h2 {
 .pill.blue {
   background: var(--blue-soft);
   color: var(--blue);
+}
+
+.link-pill {
+  text-decoration: none;
+}
+
+.link-pill:hover {
+  text-decoration: underline;
 }
 
 .stack-line {
