@@ -293,6 +293,29 @@ function renderDocumentSummary(docs) {
     </section>`;
 }
 
+function renderCollapsibleList({ items, visibleCount = 3, emptyText = "Пока пусто.", renderItem, moreLabel = "Показать еще" }) {
+  if (!items.length) return `<p class="muted">${emptyText}</p>`;
+  const visible = items.slice(0, visibleCount).map(renderItem).join("");
+  const hidden = items.slice(visibleCount);
+  if (!hidden.length) return visible;
+  return `
+    ${visible}
+    <details class="inline-collapsible">
+      <summary>${moreLabel}: ${hidden.length}</summary>
+      <div class="list compact-hidden-list">
+        ${hidden.map(renderItem).join("")}
+      </div>
+    </details>`;
+}
+
+function renderDashboardTaskRow(task) {
+  return `
+    <div class="row dashboard-task-row">
+      <div class="stack-line"><strong>${task.title}</strong>${pill(label(task.status), taskStatusLevel(task.status))}${pill(task.due_date || "без срока", levelByDate(task.due_date))}</div>
+      <div class="muted">${task.project_title} · ответственный: ${task.assignee_name || "не назначен"} · принимает: ${task.reviewer_name || task.creator_name || "не назначен"}</div>
+    </div>`;
+}
+
 function showToast(message) {
   const toast = qs("#toast");
   toast.textContent = message;
@@ -960,38 +983,40 @@ async function renderDashboard() {
       </button>`
     )
     .join("");
-  qs("#dashboardTasks").innerHTML = roleTasks
-    .slice(0, 4)
-    .map(
-      (task) => `
-      <div class="row">
-        <div class="stack-line"><strong>${task.title}</strong>${pill(label(task.status), taskStatusLevel(task.status))}${pill(task.due_date || "без срока", levelByDate(task.due_date))}</div>
-        <div class="muted">${task.project_title} · ответственный: ${task.assignee_name || "не назначен"} · принимает: ${task.reviewer_name || task.creator_name || "не назначен"}</div>
-      </div>`
-    )
-    .join("");
+  qs("#dashboardTasks").innerHTML = renderCollapsibleList({
+    items: roleTasks,
+    visibleCount: 3,
+    emptyText: "Задач пока нет.",
+    renderItem: renderDashboardTaskRow,
+    moreLabel: "Остальные задачи",
+  });
   initSortableZones(qs("#dashboardView"));
 }
 
 async function renderNotifications() {
   const rows = await api("/api/notifications");
   qs("#notificationRows").innerHTML = rows.length
-    ? rows
-        .map(
-          (row) => {
-            const target =
-              row.related_type === "material_request_batch" && row.related_id
-                ? `data-open-material-batch="batch-${row.related_id}"`
-                : `data-open-project="${row.project_id}"`;
-            return `
-          <button class="row clickable" ${target}>
-            <div class="stack-line"><strong>${row.title}</strong>${pill(row.user_name || row.role, row.is_read ? "" : "warning")}</div>
-            <div>${row.text}</div>
-            <div class="muted">${row.project_title || "Без объекта"} · ${row.created_at}</div>
-          </button>`;
-          }
-        )
-        .join("")
+    ? `<details class="inline-collapsible notification-collapsible">
+        <summary>Показать уведомления: ${rows.length}</summary>
+        <div class="list compact-hidden-list">
+          ${rows
+            .map(
+              (row) => {
+                const target =
+                  row.related_type === "material_request_batch" && row.related_id
+                    ? `data-open-material-batch="batch-${row.related_id}"`
+                    : `data-open-project="${row.project_id}"`;
+                return `
+              <button class="row clickable notification-row" ${target}>
+                <div class="stack-line"><strong>${row.title}</strong>${pill(row.user_name || row.role, row.is_read ? "" : "warning")}</div>
+                <div class="notification-text">${row.text}</div>
+                <div class="muted">${row.project_title || "Без объекта"} · ${row.created_at}</div>
+              </button>`;
+              }
+            )
+            .join("")}
+        </div>
+      </details>`
     : `<p class="muted">Уведомлений пока нет.</p>`;
 }
 
