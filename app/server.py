@@ -369,6 +369,33 @@ def create_material_batch(
     return int(cursor.lastrowid)
 
 
+def material_batch_watchers(db, batch) -> set[int]:
+    return {
+        int(value)
+        for value in (
+            batch["creator_id"],
+            batch["foreman_id"],
+            batch["construction_manager_id"],
+            user_id_by_role(db, "owner"),
+        )
+        if value
+    }
+
+
+def notify_users(db, user_ids: set[int], project_id: int, title: str, text: str, related_type: str | None = None, related_id: int | None = None) -> None:
+    for user_id in user_ids:
+        create_notification(
+            db,
+            project_id,
+            user_id,
+            role_by_user_id(db, user_id),
+            title,
+            text,
+            related_type,
+            related_id,
+        )
+
+
 def require_fields(data: dict, fields: list[tuple[str, str]]) -> None:
     missing = [label for key, label in fields if not str(data.get(key) or "").strip()]
     if missing:
@@ -507,7 +534,14 @@ def get_project_detail(project_id: int) -> dict | None:
                 SELECT m.*, em.name AS estimate_material_name, em.unit AS estimate_material_unit,
                        em.estimated_quantity, em.unit_price,
                        b.status AS batch_status, b.comment AS batch_comment,
-                       b.revision_comment AS batch_revision_comment, b.created_at AS batch_created_at
+                       b.revision_comment AS batch_revision_comment,
+                       b.foreman_response AS batch_foreman_response,
+                       b.scheduled_delivery_date AS batch_scheduled_delivery_date,
+                       b.procurement_comment AS batch_procurement_comment,
+                       b.received_at AS batch_received_at,
+                       b.receipt_status AS batch_receipt_status,
+                       b.receipt_comment AS batch_receipt_comment,
+                       b.created_at AS batch_created_at
                 FROM material_requests m
                 LEFT JOIN material_request_batches b ON b.id = m.batch_id
                 LEFT JOIN estimate_materials em ON em.id = m.estimate_material_id
@@ -745,7 +779,13 @@ class AppHandler(BaseHTTPRequestHandler):
                            creator.role AS creator_role,
                            b.status AS batch_status, b.comment AS batch_comment,
                            b.revision_comment AS batch_revision_comment, b.created_at AS batch_created_at,
-                           b.delivery_urgency AS batch_delivery_urgency
+                           b.delivery_urgency AS batch_delivery_urgency,
+                           b.foreman_response AS batch_foreman_response,
+                           b.scheduled_delivery_date AS batch_scheduled_delivery_date,
+                           b.procurement_comment AS batch_procurement_comment,
+                           b.received_at AS batch_received_at,
+                           b.receipt_status AS batch_receipt_status,
+                           b.receipt_comment AS batch_receipt_comment
                     FROM material_requests m
                     JOIN projects p ON p.id = m.project_id
                     LEFT JOIN material_request_batches b ON b.id = m.batch_id
@@ -1206,7 +1246,7 @@ class AppHandler(BaseHTTPRequestHandler):
                     json_response(self, {"id": task_id, "status": "returned"})
                     return
 
-            material_batch_action = re.match(r"^/api/material-request-batches/(\d+)/(accept|return)$", path)
+            material_batch_action = re.match(r"^/api/material-request-batches/(\d+)/(accept|return|resubmit|schedule|receive)$", path)
             if material_batch_action:
                 batch_id = int(material_batch_action.group(1))
                 action = material_batch_action.group(2)
@@ -1222,16 +1262,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 if not batch:
                     json_response(self, {"error": "Material request batch not found"}, 404)
                     return
-                watcher_ids = {
-                    int(value)
-                    for value in (
-                        batch["creator_id"],
-                        batch["foreman_id"],
-                        batch["construction_manager_id"],
-                        user_id_by_role(db, "owner"),
-                    )
-                    if value
-                }
+                watcher_ids = material_batch_watchers(db, batch)
                 if action == "accept":
                     db.execute(
                         """
@@ -1269,6 +1300,165 @@ class AppHandler(BaseHTTPRequestHandler):
                         (batch["project_id"], message, user_id_by_role(db, "procurement_manager") or 4),
                     )
                     json_response(self, {"id": batch_id, "status": "in_work"})
+                    return
+                if action == "resubmit":
+                    comment = str(data.get("comment") or "").strip()
+                    db.execute(
+                        """
+                        UPDATE material_request_batches
+                        SET status = 'new',
+                            foreman_response = ?,
+                            revision_comment = NULL,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (comment, batch_id),
+                    )
+                    db.execute(
+                        """
+                        UPDATE material_requests
+                        SET procurement_status = 'new', updated_at = CURRENT_TIMESTAMP
+                        WHERE batch_id = ?
+                        """,
+                        (batch_id,),
+                    )
+                    message = f"{batch['project_title']}: заявка на материалы от {format_date_ru(batch['created_at'])} повторно отправлена снабжению."
+                    if comment:
+                        message += f" Комментарий прораба: {comment}"
+                    create_notification(
+                        db,
+                        batch["project_id"],
+                        user_id_by_role(db, "procurement_manager"),
+                        "procurement_manager",
+                        "Заявка на материалы повторно отправлена",
+                        message,
+                        "material_request_batch",
+                        batch_id,
+                    )
+                    for watcher_id in watcher_ids - {user_id_by_role(db, "procurement_manager") or 0}:
+                        create_notification(
+                            db,
+                            batch["project_id"],
+                            watcher_id,
+                            role_by_user_id(db, watcher_id),
+                            "Заявка на материалы повторно отправлена",
+                            message,
+                            "material_request_batch",
+                            batch_id,
+                        )
+                    json_response(self, {"id": batch_id, "status": "new"})
+                    return
+                if action == "schedule":
+                    delivery_date = data.get("scheduled_delivery_date") or ""
+                    if not delivery_date:
+                        raise ValueError("Укажите дату доставки.")
+                    comment = str(data.get("comment") or "").strip()
+                    db.execute(
+                        """
+                        UPDATE material_request_batches
+                        SET status = 'delivery_scheduled',
+                            scheduled_delivery_date = ?,
+                            procurement_comment = ?,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (delivery_date, comment, batch_id),
+                    )
+                    db.execute(
+                        """
+                        UPDATE material_requests
+                        SET procurement_status = 'delivery', actual_delivery_date = ?, procurement_comment = ?, updated_at = CURRENT_TIMESTAMP
+                        WHERE batch_id = ?
+                        """,
+                        (delivery_date, comment, batch_id),
+                    )
+                    message = f"{batch['project_title']}: заявка на материалы от {format_date_ru(batch['created_at'])} обработана. Доставка состоится {format_date_ru(delivery_date)}."
+                    if comment:
+                        message += f" Комментарий снабжения: {comment}"
+                    notify_users(
+                        db,
+                        watcher_ids,
+                        batch["project_id"],
+                        "Доставка по заявке назначена",
+                        message,
+                        "material_request_batch",
+                        batch_id,
+                    )
+                    db.execute(
+                        """
+                        INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
+                        VALUES (?, 'decision', ?, ?, 'internal', 'material_request')
+                        """,
+                        (batch["project_id"], message, user_id_by_role(db, "procurement_manager") or 4),
+                    )
+                    json_response(self, {"id": batch_id, "status": "delivery_scheduled"})
+                    return
+                if action == "receive":
+                    receipt_status = data.get("receipt_status") or "received"
+                    if receipt_status not in {"received", "issue"}:
+                        raise ValueError("Некорректный статус приемки.")
+                    comment = str(data.get("comment") or "").strip()
+                    if receipt_status == "issue" and not comment:
+                        raise ValueError("Опишите, что именно не так с материалами.")
+                    document_id = None
+                    file_data = data.get("receipt_file") or {}
+                    if file_data.get("file_base64"):
+                        document_id = save_document_file(
+                            db,
+                            batch["project_id"],
+                            file_data,
+                            f"Приемка материалов по заявке от {format_date_ru(batch['created_at'])}",
+                            "other",
+                            "material_receipt",
+                        )
+                    new_status = "received" if receipt_status == "received" else "receipt_issue"
+                    db.execute(
+                        """
+                        UPDATE material_request_batches
+                        SET status = ?,
+                            received_at = CURRENT_TIMESTAMP,
+                            receipt_status = ?,
+                            receipt_comment = ?,
+                            receipt_document_id = COALESCE(?, receipt_document_id),
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (new_status, receipt_status, comment, document_id, batch_id),
+                    )
+                    db.execute(
+                        """
+                        UPDATE material_requests
+                        SET procurement_status = 'delivery_confirmed',
+                            processed_at = CURRENT_TIMESTAMP,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE batch_id = ?
+                        """,
+                        (batch_id,),
+                    )
+                    if receipt_status == "received":
+                        title = "Материалы по заявке получены"
+                        message = f"{batch['project_title']}: материалы по заявке от {format_date_ru(batch['created_at'])} получены прорабом по списку."
+                    else:
+                        title = "Проблема при приемке материалов"
+                        message = f"{batch['project_title']}: при приемке материалов по заявке от {format_date_ru(batch['created_at'])} есть проблема. {comment}"
+                    recipients = {user_id_by_role(db, "procurement_manager")} | watcher_ids
+                    notify_users(
+                        db,
+                        {item for item in recipients if item},
+                        batch["project_id"],
+                        title,
+                        message,
+                        "material_request_batch",
+                        batch_id,
+                    )
+                    db.execute(
+                        """
+                        INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
+                        VALUES (?, 'decision', ?, ?, 'internal', 'material_request')
+                        """,
+                        (batch["project_id"], message, batch["creator_id"] or batch["foreman_id"]),
+                    )
+                    json_response(self, {"id": batch_id, "status": new_status, "document_id": document_id})
                     return
                 comment = str(data.get("comment") or "").strip()
                 if not comment:

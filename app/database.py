@@ -135,10 +135,18 @@ def init_db() -> None:
                 status TEXT NOT NULL DEFAULT 'new',
                 comment TEXT,
                 revision_comment TEXT,
+                foreman_response TEXT,
+                scheduled_delivery_date TEXT,
+                procurement_comment TEXT,
+                received_at TEXT,
+                receipt_status TEXT,
+                receipt_comment TEXT,
+                receipt_document_id INTEGER,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
-                FOREIGN KEY (creator_id) REFERENCES users(id)
+                FOREIGN KEY (creator_id) REFERENCES users(id),
+                FOREIGN KEY (receipt_document_id) REFERENCES documents(id)
             );
 
             CREATE TABLE IF NOT EXISTS estimate_materials (
@@ -277,6 +285,13 @@ def init_db() -> None:
         ensure_column(db, "documents", "file_size", "INTEGER")
         ensure_column(db, "notifications", "related_type", "TEXT")
         ensure_column(db, "notifications", "related_id", "INTEGER")
+        ensure_column(db, "material_request_batches", "foreman_response", "TEXT")
+        ensure_column(db, "material_request_batches", "scheduled_delivery_date", "TEXT")
+        ensure_column(db, "material_request_batches", "procurement_comment", "TEXT")
+        ensure_column(db, "material_request_batches", "received_at", "TEXT")
+        ensure_column(db, "material_request_batches", "receipt_status", "TEXT")
+        ensure_column(db, "material_request_batches", "receipt_comment", "TEXT")
+        ensure_column(db, "material_request_batches", "receipt_document_id", "INTEGER")
         db.execute("CREATE INDEX IF NOT EXISTS idx_materials_batch ON material_requests(batch_id)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_material_batches_project ON material_request_batches(project_id)")
         seed(db)

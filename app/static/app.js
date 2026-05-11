@@ -47,6 +47,9 @@ const statusLabels = {
   ordered: "Заказано",
   delivery: "Доставка",
   delivery_confirmed: "Доставка обработана",
+  delivery_scheduled: "Доставка назначена",
+  received: "Получено",
+  receipt_issue: "Проблема при приемке",
   in_work: "Принята в работу",
   active: "Активен",
   signed: "Подписан",
@@ -572,6 +575,12 @@ function buildMaterialBatches(items) {
         status: item.batch_status || item.procurement_status,
         comment: item.batch_comment || item.comment || "",
         revision_comment: item.batch_revision_comment || "",
+        foreman_response: item.batch_foreman_response || "",
+        scheduled_delivery_date: item.batch_scheduled_delivery_date || "",
+        procurement_comment: item.batch_procurement_comment || "",
+        received_at: item.batch_received_at || "",
+        receipt_status: item.batch_receipt_status || "",
+        receipt_comment: item.batch_receipt_comment || "",
         items: [],
         total_amount: 0,
       });
@@ -595,6 +604,9 @@ function materialBatchLevel(status) {
     in_work: "blue",
     revision_requested: "danger",
     delivery_confirmed: "success",
+    delivery_scheduled: "blue",
+    received: "success",
+    receipt_issue: "danger",
   }[status] || "";
 }
 
@@ -1157,7 +1169,10 @@ async function openMaterialBatchDialog(batchKey) {
     return;
   }
   qs("#materialReviewTitle").textContent = materialBatchTitle(batch, currentRoleBase() === "procurement_manager");
-  const canReview = currentRoleBase() === "procurement_manager" && batch.id && !["in_work", "delivery_confirmed"].includes(batch.status);
+  const canReview = currentRoleBase() === "procurement_manager" && batch.id && ["new", "revision_requested"].includes(batch.status);
+  const canSchedule = currentRoleBase() === "procurement_manager" && batch.id && ["in_work", "delivery_scheduled"].includes(batch.status);
+  const canResubmit = currentRoleBase() === "foreman" && batch.id && batch.status === "revision_requested" && Number(batch.project_foreman_id) === Number(currentUserId());
+  const canReceive = currentRoleBase() === "foreman" && batch.id && batch.status === "delivery_scheduled" && Number(batch.project_foreman_id) === Number(currentUserId());
   qs("#materialReviewContent").innerHTML = `
     <section class="workflow-panel compact-workflow">
       <div class="stack-line">
@@ -1168,6 +1183,10 @@ async function openMaterialBatchDialog(batchKey) {
       <p class="muted">Создал: ${batch.creator_name || "не указано"} · желаемая доставка: ${batch.needed_at || "не указана"} · позиций: ${batch.items.length}</p>
       ${batch.comment ? `<p>${batch.comment}</p>` : ""}
       ${batch.revision_comment ? `<p class="muted">Комментарий по доработке: ${batch.revision_comment}</p>` : ""}
+      ${batch.foreman_response ? `<p class="muted">Ответ прораба: ${batch.foreman_response}</p>` : ""}
+      ${batch.scheduled_delivery_date ? `<p class="muted">Назначенная доставка: ${formatDateRu(batch.scheduled_delivery_date)}</p>` : ""}
+      ${batch.procurement_comment ? `<p class="muted">Комментарий снабжения: ${batch.procurement_comment}</p>` : ""}
+      ${batch.receipt_comment ? `<p class="muted">Приемка: ${batch.receipt_comment}</p>` : ""}
     </section>
     <div class="table material-review-items">
       ${batch.items
@@ -1196,6 +1215,42 @@ async function openMaterialBatchDialog(batchKey) {
             <div class="form-actions">
               <button class="primary" type="button" data-material-batch-action="accept" data-material-batch-id="${batch.id}">Принять в работу</button>
               <button class="secondary" type="button" data-material-batch-action="return" data-material-batch-id="${batch.id}">Вернуть на доработку</button>
+            </div>
+          </section>`
+        : ""
+    }
+    ${
+      canSchedule
+        ? `<section class="workflow-panel">
+            <h3>Доставка</h3>
+            <label>Дата доставки <input id="materialBatchDeliveryDate" type="date" value="${batch.scheduled_delivery_date || batch.needed_at || ""}" /></label>
+            <label>Комментарий снабжения <textarea id="materialBatchScheduleComment" rows="3" placeholder="Например: нужна доверенность или кран">${batch.procurement_comment || ""}</textarea></label>
+            <div class="form-actions">
+              <button class="primary" type="button" data-material-batch-action="schedule" data-material-batch-id="${batch.id}">Уведомить о доставке</button>
+            </div>
+          </section>`
+        : ""
+    }
+    ${
+      canResubmit
+        ? `<section class="workflow-panel">
+            <h3>Доработка заявки</h3>
+            <label>Комментарий прораба <textarea id="materialBatchResubmitComment" rows="3" placeholder="Пояснение для снабжения"></textarea></label>
+            <div class="form-actions">
+              <button class="primary" type="button" data-material-batch-action="resubmit" data-material-batch-id="${batch.id}">Отправить повторно</button>
+            </div>
+          </section>`
+        : ""
+    }
+    ${
+      canReceive
+        ? `<section class="workflow-panel">
+            <h3>Приемка материалов</h3>
+            <label>Если есть проблема <textarea id="materialBatchReceiptComment" rows="3" placeholder="Что именно не так: не довезли, повреждено, не тот материал"></textarea></label>
+            <label>Фото или видео <input id="materialBatchReceiptFile" type="file" accept="image/*,video/*" /></label>
+            <div class="form-actions">
+              <button class="primary" type="button" data-material-batch-action="receive" data-receipt-status="received" data-material-batch-id="${batch.id}">Материал получен по списку</button>
+              <button class="secondary" type="button" data-material-batch-action="receive" data-receipt-status="issue" data-material-batch-id="${batch.id}">Есть проблема</button>
             </div>
           </section>`
         : ""
@@ -1657,17 +1712,50 @@ function bindEvents() {
     if (materialBatchAction) {
       const id = materialBatchAction.dataset.materialBatchId;
       const action = materialBatchAction.dataset.materialBatchAction;
-      const body =
-        action === "return"
-          ? { comment: qs("#materialBatchReturnComment")?.value || "" }
-          : {};
+      let body = {};
+      if (action === "return") {
+        body = { comment: qs("#materialBatchReturnComment")?.value || "" };
+      }
+      if (action === "resubmit") {
+        body = { comment: qs("#materialBatchResubmitComment")?.value || "" };
+      }
+      if (action === "schedule") {
+        body = {
+          scheduled_delivery_date: qs("#materialBatchDeliveryDate")?.value || "",
+          comment: qs("#materialBatchScheduleComment")?.value || "",
+        };
+      }
+      if (action === "receive") {
+        const file = qs("#materialBatchReceiptFile")?.files?.[0];
+        body = {
+          receipt_status: materialBatchAction.dataset.receiptStatus || "received",
+          comment: qs("#materialBatchReceiptComment")?.value || "",
+          receipt_file: file
+            ? {
+                title: file.name,
+                type: "other",
+                file_name: file.name,
+                mime_type: file.type,
+                file_base64: await fileToBase64(file),
+              }
+            : null,
+        };
+      }
       await api(`/api/material-request-batches/${id}/${action}`, {
         method: "POST",
         body: JSON.stringify(body),
       });
       qs("#materialReviewDialog").close();
       await loadAll();
-      showToast(action === "accept" ? "Заявка принята в работу" : "Заявка возвращена на доработку");
+      showToast(
+        {
+          accept: "Заявка принята в работу",
+          return: "Заявка возвращена на доработку",
+          resubmit: "Заявка повторно отправлена снабжению",
+          schedule: "Прораб уведомлен о доставке",
+          receive: "Приемка по заявке отправлена",
+        }[action] || "Заявка обновлена"
+      );
       return;
     }
 
