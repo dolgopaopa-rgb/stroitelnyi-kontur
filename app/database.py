@@ -237,8 +237,6 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
             CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(due_date);
             CREATE INDEX IF NOT EXISTS idx_materials_project ON material_requests(project_id);
-            CREATE INDEX IF NOT EXISTS idx_materials_batch ON material_requests(batch_id);
-            CREATE INDEX IF NOT EXISTS idx_material_batches_project ON material_request_batches(project_id);
             CREATE INDEX IF NOT EXISTS idx_estimate_materials_project ON estimate_materials(project_id);
             CREATE INDEX IF NOT EXISTS idx_variations_project ON variations(project_id);
             CREATE INDEX IF NOT EXISTS idx_contracts_ends ON contracts(ends_at);
@@ -279,6 +277,8 @@ def init_db() -> None:
         ensure_column(db, "documents", "file_size", "INTEGER")
         ensure_column(db, "notifications", "related_type", "TEXT")
         ensure_column(db, "notifications", "related_id", "INTEGER")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_materials_batch ON material_requests(batch_id)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_material_batches_project ON material_request_batches(project_id)")
         seed(db)
         ensure_core_users(db)
         seed_estimate_materials(db)
