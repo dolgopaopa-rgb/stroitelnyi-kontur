@@ -818,10 +818,10 @@ async function renderDashboard() {
   const [summary, tasks] = await Promise.all([api("/api/summary"), api("/api/tasks")]);
   const roleTasks = visibleTasksForRole(tasks);
   qs("#summaryCards").innerHTML = `
-    <div class="metric"><span class="muted">Объекты</span><strong>${summary.projects}</strong><span>В базе MVP</span></div>
-    <div class="metric"><span class="muted">У менеджера</span><strong>${summary.pending_handover}</strong><span>Черновики и доработки</span></div>
-    <div class="metric"><span class="muted">Задачи к приемке</span><strong>${summary.task_done_waiting || 0}</strong><span>Выполнены, но не приняты</span></div>
-    <div class="metric"><span class="muted">Просрочено</span><strong>${taskStats(roleTasks).overdue}</strong><span>По открытым задачам</span></div>
+    <button class="metric clickable" data-view-target="projects" type="button"><span class="muted">Объекты</span><strong>${summary.projects}</strong><span>В базе MVP</span></button>
+    <button class="metric clickable" data-view-target="projects" type="button"><span class="muted">У менеджера</span><strong>${summary.pending_handover}</strong><span>Черновики и доработки</span></button>
+    <button class="metric clickable" data-task-filter="waiting" type="button"><span class="muted">Задачи к приемке</span><strong>${summary.task_done_waiting || 0}</strong><span>Выполнены, но не приняты</span></button>
+    <button class="metric clickable" data-task-filter="overdue" type="button"><span class="muted">Просрочено</span><strong>${taskStats(roleTasks).overdue}</strong><span>По открытым задачам</span></button>
   `;
   qs("#dashboardTaskStats").innerHTML = renderTaskStats(roleTasks);
   qs("#dashboardProjects").innerHTML = state.projects
@@ -881,10 +881,12 @@ async function renderProjects() {
               <div>
                 <strong>${project.title}</strong>
                 <div class="muted">${project.customer_name || ""}</div>
-                <div>${addressLink(project.address, "small-address")}</div>
+                <div class="project-meta-line">
+                  <span>${state.projectListMode === "archive" ? project.archived_at || "без даты" : project.foreman_name || "прораб не назначен"}</span>
+                  ${mapLink(project.address, project.navigator_url, "Я.Карты")}
+                </div>
               </div>
               ${pill(label(project.status), project.status === "revision_requested" ? "danger" : project.status === "submitted_to_construction" ? "warning" : "blue")}
-              <div>${state.projectListMode === "archive" ? project.archived_at || "без даты" : project.foreman_name || "прораб не назначен"}</div>
               ${state.projectListMode === "archive" ? pill(project.archive_reason || "архив", "success") : pill(`Смета: ${money(project.main_estimate_amount)}`, "success")}
             </div>
           </div>`
@@ -926,7 +928,7 @@ async function renderProjectDetail(projectId) {
   };
   qs("#projectDetail").innerHTML = `
     <div class="stack-line"><h2>${project.title}</h2>${pill(label(project.status), "blue")}</div>
-    <p>${addressLink(project.address)}</p>
+    <div class="project-detail-map">${mapLink(project.address, project.navigator_url, "Я.Карты")}<span class="muted">${project.address ? "Адрес объекта" : "Адрес не указан"}</span></div>
     <div class="stack-line">
       ${pill(`Прораб: ${project.foreman_name || "не назначен"}`)}
       ${pill(`Сметчик: ${project.estimator_name || "не назначен"}`)}
@@ -2099,6 +2101,12 @@ function bindEvents() {
   );
 
   document.addEventListener("click", async (event) => {
+    const viewTargetButton = event.target.closest("[data-view-target]");
+    if (viewTargetButton) {
+      switchView(viewTargetButton.dataset.viewTarget);
+      return;
+    }
+
     const taskFilterButton = event.target.closest("[data-task-filter]");
     if (taskFilterButton) {
       state.taskFilter = taskFilterButton.dataset.taskFilter;

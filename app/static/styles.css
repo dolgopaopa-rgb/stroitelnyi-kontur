@@ -244,8 +244,8 @@ h2 {
 .metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
-  margin-bottom: 16px;
+  gap: 10px;
+  margin-bottom: 12px;
 }
 
 .metric,
@@ -259,15 +259,26 @@ h2 {
 }
 
 .metric {
-  min-height: 88px;
-  padding: 12px;
+  min-height: 70px;
+  padding: 10px;
   display: grid;
-  gap: 5px;
+  gap: 4px;
+  text-align: left;
+  color: inherit;
 }
 
 .metric strong {
-  font-size: 24px;
+  font-size: 22px;
   line-height: 1;
+}
+
+.metric span {
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.metric.clickable:hover {
+  border-color: #8dbbb5;
 }
 
 .layout-two,
@@ -336,8 +347,9 @@ h2 {
 }
 
 #projectRows .row-grid {
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: start;
+  gap: 8px;
 }
 
 #projectRows .row-grid > div {
@@ -361,6 +373,24 @@ h2 {
   align-items: flex-start;
 }
 
+#projectsView .split {
+  grid-template-columns: minmax(320px, 0.86fr) minmax(0, 1.14fr);
+  gap: 14px;
+}
+
+#projectsView .panel {
+  padding: 14px;
+}
+
+#projectsView .panel-head {
+  margin-bottom: 10px;
+}
+
+#projectsView .panel-head h2 {
+  font-size: 20px;
+  line-height: 1.15;
+}
+
 #projectsView .segmented-control {
   flex: 0 1 142px;
 }
@@ -369,6 +399,92 @@ h2 {
   flex: 1 1 0;
   font-size: 13px;
   padding: 0 8px;
+}
+
+#projectsView #projectRows {
+  gap: 8px;
+}
+
+#projectsView #projectRows .row {
+  padding: 8px 10px;
+  gap: 5px;
+  font-size: 13px;
+}
+
+#projectsView #projectRows strong {
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+#projectsView #projectRows .muted {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+#projectsView #projectRows .pill {
+  font-size: 11px;
+  min-height: 20px;
+  padding: 0 7px;
+  white-space: nowrap;
+}
+
+.project-meta-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.project-meta-line .inline-link,
+.project-detail-map .inline-link {
+  min-height: 22px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.project-detail-map {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 8px;
+}
+
+.project-detail-map .muted {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+#projectDetail h2 {
+  font-size: 19px;
+  line-height: 1.2;
+}
+
+#projectDetail .stack-line {
+  gap: 6px;
+}
+
+#projectDetail .workflow-panel {
+  margin-top: 10px;
+  padding: 10px;
+  gap: 9px;
+}
+
+#projectDetail .workflow-panel h3 {
+  font-size: 17px;
+}
+
+#projectDetail .tabs {
+  margin: 10px 0;
+  gap: 6px;
+}
+
+#projectDetail .tab {
+  min-height: 30px;
+  padding: 0 9px;
+  font-size: 13px;
 }
 
 .detail {
