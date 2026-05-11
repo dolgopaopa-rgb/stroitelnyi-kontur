@@ -174,6 +174,8 @@ def init_db() -> None:
                 amount REAL NOT NULL DEFAULT 0,
                 due_date TEXT,
                 description TEXT,
+                source_type TEXT,
+                source_id INTEGER,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
@@ -294,6 +296,8 @@ def init_db() -> None:
         ensure_column(db, "material_request_batches", "receipt_comment", "TEXT")
         ensure_column(db, "material_request_batches", "receipt_document_id", "INTEGER")
         ensure_column(db, "material_request_batches", "archived_at", "TEXT")
+        ensure_column(db, "variations", "source_type", "TEXT")
+        ensure_column(db, "variations", "source_id", "INTEGER")
         db.execute("CREATE INDEX IF NOT EXISTS idx_materials_batch ON material_requests(batch_id)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_material_batches_project ON material_request_batches(project_id)")
         seed(db)

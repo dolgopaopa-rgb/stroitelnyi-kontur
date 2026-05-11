@@ -592,6 +592,9 @@ function buildMaterialBatches(items) {
         receipt_document_file_name: item.batch_receipt_document_file_name || "",
         receipt_document_title: item.batch_receipt_document_title || "",
         receipt_document_mime_type: item.batch_receipt_document_mime_type || "",
+        variation_id: item.batch_variation_id || "",
+        variation_title: item.batch_variation_title || "",
+        variation_status: item.batch_variation_status || "",
         archived_at: item.batch_archived_at || "",
         items: [],
         total_amount: 0,
@@ -632,6 +635,14 @@ function materialReceiptAttachment(batch) {
       <a href="${href}" target="_blank" rel="noopener">${fileName}</a>
       ${isImage ? `<a href="${href}" target="_blank" rel="noopener"><img src="${href}" alt="${escapeAttr(fileName)}" /></a>` : ""}
     </div>`;
+}
+
+function materialBatchHasDeviation(batch) {
+  return batch.items.some((item) => item.basis_type && item.basis_type !== "main_estimate");
+}
+
+function canCreateVariationFromBatch(batch) {
+  return batch.id && materialBatchHasDeviation(batch) && !batch.variation_id && ["owner", "construction_manager", "procurement_manager"].includes(currentRoleBase());
 }
 
 function canEditMaterialBatch(batch) {
@@ -1289,6 +1300,7 @@ async function openMaterialBatchDialog(batchKey) {
   const canSchedule = currentRoleBase() === "procurement_manager" && batch.id && ["in_work", "delivery_scheduled"].includes(batch.status);
   const canResolveIssue = currentRoleBase() === "procurement_manager" && batch.id && batch.status === "receipt_issue";
   const canEdit = canEditMaterialBatch(batch);
+  const canCreateVariation = canCreateVariationFromBatch(batch);
   const canReceive = currentRoleBase() === "foreman" && batch.id && batch.status === "delivery_scheduled" && Number(batch.project_foreman_id) === Number(currentUserId());
   qs("#materialReviewContent").innerHTML = `
     <section class="workflow-panel compact-workflow">
@@ -1304,6 +1316,7 @@ async function openMaterialBatchDialog(batchKey) {
       ${batch.scheduled_delivery_date ? `<p class="muted">Назначенная доставка: ${formatDateRu(batch.scheduled_delivery_date)}</p>` : ""}
       ${batch.procurement_comment ? `<p class="muted">Комментарий снабжения: ${batch.procurement_comment}</p>` : ""}
       ${batch.receipt_comment ? `<p class="muted">Приемка: ${batch.receipt_comment}</p>` : ""}
+      ${batch.variation_id ? `<p class="muted">Связана с допработой: ${batch.variation_title || `#${batch.variation_id}`} · ${label(batch.variation_status)}</p>` : ""}
       ${materialReceiptAttachment(batch)}
     </section>
     <div class="table material-review-items">
@@ -1325,6 +1338,17 @@ async function openMaterialBatchDialog(batchKey) {
         )
         .join("")}
     </div>
+    ${
+      canCreateVariation
+        ? `<section class="workflow-panel">
+            <h3>Допработа / отклонение</h3>
+            <p class="muted">В заявке есть позиции сверх основной сметы. Можно создать связанную запись в разделе “Допработы”, чтобы решить, кто оплачивает и как оформляем.</p>
+            <div class="form-actions">
+              <button class="primary" type="button" data-material-batch-action="create_variation" data-material-batch-id="${batch.id}">Создать допработу</button>
+            </div>
+          </section>`
+        : ""
+    }
     ${
       canReview
         ? `<section class="workflow-panel">
@@ -1414,7 +1438,10 @@ async function renderVariations() {
           (row) => `
           <div class="row">
             <div class="row-grid">
-              <div><strong>${row.title}</strong><div class="muted">${row.project_title} · ${variationType(row.type)}</div></div>
+              <div>
+                <strong>${row.title}</strong>
+                <div class="muted">${row.project_title} · ${variationType(row.type)}${row.source_type === "material_request_batch" ? ` · из заявки материалов #${row.source_id}` : ""}</div>
+              </div>
               ${pill(money(row.amount), row.financial_decision === "not_decided" ? "danger" : "warning")}
               <div>${moneyDecision(row.financial_decision)}</div>
               ${pill(row.due_date || "без срока", levelByDate(row.due_date))}
@@ -1921,6 +1948,7 @@ function bindEvents() {
           receive: "Приемка по заявке отправлена",
           update: "Заявка исправлена и отправлена снабжению",
           delete: "Заявка удалена",
+          create_variation: "Допработа создана и связана с заявкой",
         }[action] || "Заявка обновлена"
       );
       return;

@@ -417,6 +417,25 @@ def can_change_material_batch(actor_role: str, actor_id: int | None, batch) -> b
     return actor_role == "foreman" and actor_id and int(actor_id) in {int(batch["foreman_id"] or 0), int(batch["creator_id"] or 0)}
 
 
+def material_variation_type(basis_types: set[str]) -> str:
+    if "additional_work" in basis_types:
+        return "additional_work"
+    if "material_replacement" in basis_types:
+        return "material_replacement"
+    if "over_budget_cost" in basis_types:
+        return "company_cost"
+    return "material_overspend"
+
+
+def material_basis_text(value: str) -> str:
+    return {
+        "main_estimate_overspend": "Превышение по смете",
+        "additional_work": "Дополнительная работа",
+        "material_replacement": "Замена материала",
+        "over_budget_cost": "Сверх бюджета",
+    }.get(value, value or "Основание не указано")
+
+
 def require_fields(data: dict, fields: list[tuple[str, str]]) -> None:
     missing = [label for key, label in fields if not str(data.get(key) or "").strip()]
     if missing:
@@ -566,11 +585,17 @@ def get_project_detail(project_id: int) -> dict | None:
                       receipt_doc.file_name AS batch_receipt_document_file_name,
                       receipt_doc.title AS batch_receipt_document_title,
                       receipt_doc.mime_type AS batch_receipt_document_mime_type,
+                      source_variation.id AS batch_variation_id,
+                      source_variation.title AS batch_variation_title,
+                      source_variation.status AS batch_variation_status,
                       b.created_at AS batch_created_at
                 FROM material_requests m
                 LEFT JOIN material_request_batches b ON b.id = m.batch_id
                 LEFT JOIN estimate_materials em ON em.id = m.estimate_material_id
                 LEFT JOIN documents receipt_doc ON receipt_doc.id = b.receipt_document_id
+                LEFT JOIN variations source_variation
+                  ON source_variation.source_type = 'material_request_batch'
+                 AND source_variation.source_id = b.id
                 WHERE m.project_id = ?
                 ORDER BY COALESCE(b.created_at, m.created_at) DESC, m.id
                 """,
@@ -846,6 +871,9 @@ class AppHandler(BaseHTTPRequestHandler):
                            receipt_doc.file_name AS batch_receipt_document_file_name,
                            receipt_doc.title AS batch_receipt_document_title,
                            receipt_doc.mime_type AS batch_receipt_document_mime_type,
+                           source_variation.id AS batch_variation_id,
+                           source_variation.title AS batch_variation_title,
+                           source_variation.status AS batch_variation_status,
                            b.archived_at AS batch_archived_at
                     FROM material_requests m
                     JOIN projects p ON p.id = m.project_id
@@ -853,6 +881,9 @@ class AppHandler(BaseHTTPRequestHandler):
                     LEFT JOIN estimate_materials em ON em.id = m.estimate_material_id
                     LEFT JOIN users creator ON creator.id = m.creator_id
                     LEFT JOIN documents receipt_doc ON receipt_doc.id = b.receipt_document_id
+                    LEFT JOIN variations source_variation
+                      ON source_variation.source_type = 'material_request_batch'
+                     AND source_variation.source_id = b.id
                     WHERE {archive_filter}
                     ORDER BY COALESCE(b.created_at, m.created_at) DESC, m.id
                     """
@@ -1345,7 +1376,7 @@ class AppHandler(BaseHTTPRequestHandler):
                     json_response(self, {"id": task_id, "status": "returned"})
                     return
 
-            material_batch_action = re.match(r"^/api/material-request-batches/(\d+)/(accept|return|resubmit|schedule|resolve_issue|receive|update|delete)$", path)
+            material_batch_action = re.match(r"^/api/material-request-batches/(\d+)/(accept|return|resubmit|schedule|resolve_issue|receive|update|delete|create_variation)$", path)
             if material_batch_action:
                 batch_id = int(material_batch_action.group(1))
                 action = material_batch_action.group(2)
@@ -1362,6 +1393,89 @@ class AppHandler(BaseHTTPRequestHandler):
                     json_response(self, {"error": "Material request batch not found"}, 404)
                     return
                 watcher_ids = material_batch_watchers(db, batch)
+                if action == "create_variation":
+                    actor_role = str(data.get("actor_role") or "").strip()
+                    actor_id = int(data.get("actor_id") or 0) or None
+                    if actor_role not in {"owner", "construction_manager", "procurement_manager"}:
+                        raise ValueError("Создать допработу из заявки могут ген.директор, руководитель строительства или снабжение.")
+                    existing_variation = db.execute(
+                        "SELECT id FROM variations WHERE source_type = 'material_request_batch' AND source_id = ? ORDER BY id LIMIT 1",
+                        (batch_id,),
+                    ).fetchone()
+                    if existing_variation:
+                        json_response(self, {"id": existing_variation["id"], "exists": True})
+                        return
+                    items = db.execute(
+                        """
+                        SELECT m.*, em.unit AS estimate_material_unit
+                        FROM material_requests m
+                        LEFT JOIN estimate_materials em ON em.id = m.estimate_material_id
+                        WHERE m.batch_id = ?
+                          AND m.basis_type != 'main_estimate'
+                        ORDER BY m.estimate_section, m.title
+                        """,
+                        (batch_id,),
+                    ).fetchall()
+                    if not items:
+                        raise ValueError("В этой заявке нет позиций сверх основной сметы.")
+                    basis_types = {str(item["basis_type"] or "") for item in items}
+                    variation_type = material_variation_type(basis_types)
+                    amount = sum(number_value(item["total_amount"]) for item in items)
+                    title_text = f"Материалы сверх сметы по заявке от {format_date_ru(batch['created_at'])}"
+                    description_lines = [
+                        f"Создано из заявки материалов по объекту: {batch['project_title']}.",
+                        f"Заявка от {format_date_ru(batch['created_at'])}.",
+                        "",
+                        "Позиции:",
+                    ]
+                    for item in items:
+                        unit = item["requested_unit"] or item["estimate_material_unit"] or ""
+                        qty = number_value(item["requested_quantity"])
+                        line = f"- {item['title']} — {qty:g} {unit}".strip()
+                        line += f" — {material_basis_text(item['basis_type'])}"
+                        if number_value(item["total_amount"]):
+                            line += f" — {number_value(item['total_amount']):g} ₽"
+                        if item["comment"]:
+                            line += f". Комментарий: {item['comment']}"
+                        description_lines.append(line)
+                    cursor = db.execute(
+                        """
+                        INSERT INTO variations (
+                            project_id, title, type, status, financial_decision, amount, due_date, description,
+                            source_type, source_id
+                        )
+                        VALUES (?, ?, ?, 'decision_required', 'not_decided', ?, ?, ?, 'material_request_batch', ?)
+                        """,
+                        (
+                            batch["project_id"],
+                            title_text,
+                            variation_type,
+                            amount,
+                            batch["needed_at"] or batch["scheduled_delivery_date"],
+                            "\n".join(description_lines),
+                            batch_id,
+                        ),
+                    )
+                    variation_id = int(cursor.lastrowid)
+                    message = f"{batch['project_title']}: по заявке материалов от {format_date_ru(batch['created_at'])} создано отклонение/допработа «{title_text}»."
+                    notify_users(
+                        db,
+                        {user_id for user_id in (watcher_ids | {user_id_by_role(db, "procurement_manager")}) if user_id},
+                        batch["project_id"],
+                        "Создана допработа из заявки материалов",
+                        message,
+                        "variation",
+                        variation_id,
+                    )
+                    db.execute(
+                        """
+                        INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
+                        VALUES (?, 'decision', ?, ?, 'internal', 'variation')
+                        """,
+                        (batch["project_id"], message, actor_id or user_id_by_role(db, "owner")),
+                    )
+                    json_response(self, {"id": variation_id}, 201)
+                    return
                 actor_role = str(data.get("actor_role") or "").strip()
                 actor_id = int(data.get("actor_id") or 0) or None
                 if action in {"update", "delete"} and not can_change_material_batch(actor_role, actor_id, batch):
