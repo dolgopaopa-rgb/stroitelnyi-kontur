@@ -430,6 +430,10 @@ def seed_estimate_materials(db: sqlite3.Connection) -> None:
 
 
 def seed_related_records(db: sqlite3.Connection) -> None:
+    sample_project_ids = {row["id"] for row in db.execute("SELECT id FROM projects WHERE id IN (1, 2, 3)").fetchall()}
+    if not {1, 2, 3}.issubset(sample_project_ids):
+        return
+
     contract_count = db.execute("SELECT COUNT(*) AS count FROM contracts").fetchone()["count"]
     if not contract_count:
         db.executemany(
