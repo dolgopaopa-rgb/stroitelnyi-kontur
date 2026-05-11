@@ -15,6 +15,7 @@ const state = {
   taskFilter: "all",
   selectedTaskProjectId: null,
   selectedWorkProjectId: null,
+  openWorkStages: {},
 };
 
 const viewTitles = {
@@ -1291,6 +1292,20 @@ function buildWorkTree(works) {
   }, {});
 }
 
+function isWorkStageOpen(projectId, stage) {
+  return Boolean(state.openWorkStages[String(projectId)]?.[stage]);
+}
+
+function setWorkStageOpen(projectId, stage, isOpen) {
+  const projectKey = String(projectId);
+  state.openWorkStages[projectKey] = state.openWorkStages[projectKey] || {};
+  if (isOpen) {
+    state.openWorkStages[projectKey][stage] = true;
+  } else {
+    delete state.openWorkStages[projectKey][stage];
+  }
+}
+
 async function renderWorks() {
   const projectId = workProjectId();
   if (projectId) state.selectedWorkProjectId = Number(projectId);
@@ -1318,7 +1333,7 @@ async function renderWorks() {
       ? Object.entries(workTree)
         .map(
           ([stage, stageData]) => `
-          <details class="estimate-section work-stage">
+          <details class="estimate-section work-stage" data-work-stage="${escapeAttr(stage)}" ${isWorkStageOpen(projectId, stage) ? "open" : ""}>
             <summary>
               <span class="work-section-title">
                 <strong>${stage}</strong>
@@ -2071,6 +2086,17 @@ function bindEvents() {
     const projectId = workProjectId();
     if (projectId) window.open(`/api/work-items/print?project_id=${encodeURIComponent(projectId)}`, "_blank", "noopener");
   });
+  qs("#workRows").addEventListener(
+    "toggle",
+    (event) => {
+      const stage = event.target.closest?.(".work-stage");
+      if (!stage) return;
+      const projectId = workProjectId();
+      if (!projectId) return;
+      setWorkStageOpen(projectId, stage.dataset.workStage || "", stage.open);
+    },
+    true
+  );
 
   document.addEventListener("click", async (event) => {
     const taskFilterButton = event.target.closest("[data-task-filter]");

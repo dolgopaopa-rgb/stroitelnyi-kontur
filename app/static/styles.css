@@ -43,27 +43,27 @@ button {
 .app {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
+  grid-template-columns: 180px minmax(0, 1fr);
 }
 
 .sidebar {
   background: #172026;
   color: white;
-  padding: 20px 14px;
+  padding: 16px 10px;
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 18px;
 }
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
 .brand-mark {
-  width: 42px;
-  height: 42px;
+  width: 36px;
+  height: 36px;
   border-radius: 8px;
   display: grid;
   place-items: center;
@@ -80,7 +80,7 @@ button {
 .brand span {
   display: block;
   color: #9fb0b8;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .nav {
@@ -95,7 +95,8 @@ button {
   min-height: 42px;
   border-radius: 8px;
   text-align: left;
-  padding: 0 12px;
+  padding: 0 10px;
+  font-size: 15px;
 }
 
 .nav-button:hover,
@@ -568,7 +569,7 @@ h2 {
 }
 
 .works-layout {
-  grid-template-columns: minmax(420px, 1.18fr) minmax(300px, 0.82fr);
+  grid-template-columns: minmax(460px, 1.45fr) minmax(260px, 0.55fr);
 }
 
 #worksView .panel {
@@ -705,7 +706,7 @@ h2 {
 }
 
 .work-row {
-  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.54fr);
+  grid-template-columns: minmax(0, 1fr) minmax(250px, 0.58fr);
   gap: 10px;
   padding: 7px 10px;
   border-width: 0;
@@ -726,12 +727,13 @@ h2 {
 
 .work-row-meta {
   display: grid;
-  grid-template-columns: minmax(54px, 0.7fr) minmax(72px, 1fr) minmax(84px, 1fr);
+  grid-template-columns: minmax(62px, 0.7fr) minmax(82px, 0.9fr) minmax(98px, 1fr);
   align-items: start;
   gap: 8px;
   color: var(--muted);
   font-size: 12px;
   text-align: right;
+  white-space: nowrap;
 }
 
 .work-row-meta strong {
