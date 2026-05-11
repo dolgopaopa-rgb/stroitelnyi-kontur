@@ -1052,9 +1052,6 @@ async function renderProjectDetail(projectId) {
     events: renderSmallList(project.events, (event) => `${event.text}`),
   };
   const detailBlocks = [
-    ["edit", renderProjectEditPanel(project)],
-    ["workflow", renderProjectWorkflow(project)],
-    ["documents", renderDocumentSummary(project.documents)],
     [
       "sections",
       `<div class="tabs">
@@ -1064,6 +1061,9 @@ async function renderProjectDetail(projectId) {
       </div>
       <div>${tabData[state.selectedProjectTab]}</div>`,
     ],
+    ["edit", renderProjectEditPanel(project)],
+    ["workflow", renderProjectWorkflow(project)],
+    ["documents", renderDocumentSummary(project.documents)],
   ];
   qs("#projectDetail").innerHTML = `
     <div class="stack-line"><h2>${project.title}</h2>${pill(label(project.status), "blue")}</div>
@@ -1076,7 +1076,7 @@ async function renderProjectDetail(projectId) {
       ${externalRefLink(project.bitrix_ref, project.bitrix_ref ? "Открыть Bitrix" : "Bitrix не указан", "blue")}
       ${externalRefLink(project.smetter_ref, project.smetter_ref ? "Открыть Сметтер" : "Сметтер не указан", "success")}
     </div>
-    <div class="project-detail-blocks sortable-zone" data-sortable-zone="project-detail">
+    <div class="project-detail-blocks sortable-zone" data-sortable-zone="project-detail-v2">
       ${detailBlocks.map(([key, html]) => `<div class="project-detail-block" data-sortable-block="${key}">${html}</div>`).join("")}
     </div>
   `;
