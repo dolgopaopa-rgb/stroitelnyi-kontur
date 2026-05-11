@@ -14,6 +14,7 @@ const state = {
   materialListMode: "active",
   taskFilter: "all",
   selectedTaskProjectId: null,
+  selectedWorkProjectId: null,
 };
 
 const viewTitles = {
@@ -309,6 +310,10 @@ function fillSelects() {
   const userOptions = state.users.map((user) => `<option value="${user.id}">${user.name}</option>`).join("");
   const taskUserOptions = taskParticipantOptions();
   qsa('select[name="project_id"]').forEach((select) => (select.innerHTML = projectOptions));
+  const workProject = workProjectId();
+  qsa('#workProjectForm select[name="project_id"], #workExtraForm select[name="project_id"]').forEach((select) => {
+    if (workProject) select.value = String(workProject);
+  });
   qsa('select[name="owner_id"], select[name="responsible_id"]').forEach((select) => (select.innerHTML = userOptions));
   qsa('#taskForm select[name="assignee_id"], #taskForm select[name="reviewer_id"]').forEach((select) => (select.innerHTML = taskUserOptions));
   updateEstimateMaterialSelect();
@@ -1257,11 +1262,17 @@ async function renderTasks() {
 }
 
 function workProjectId() {
-  return qs('#workProjectForm select[name="project_id"]')?.value || state.selectedProjectId || state.projects[0]?.id || "";
+  const selected = state.selectedWorkProjectId || qs('#workProjectForm select[name="project_id"]')?.value || state.selectedProjectId || state.projects[0]?.id || "";
+  if (!selected) return "";
+  const exists = state.projects.some((project) => Number(project.id) === Number(selected));
+  return exists ? selected : state.projects[0]?.id || "";
 }
 
 async function renderWorks() {
   const projectId = workProjectId();
+  if (projectId) state.selectedWorkProjectId = Number(projectId);
+  const workSelect = qs('#workProjectForm select[name="project_id"]');
+  if (workSelect && projectId) workSelect.value = String(projectId);
   const extraSelect = qs('#workExtraForm select[name="project_id"]');
   if (extraSelect && projectId) extraSelect.value = String(projectId);
   if (!projectId) {
@@ -1970,10 +1981,12 @@ function bindEvents() {
   qs("#refreshEstimateButton").addEventListener("click", renderEstimateMaterials);
   qs("#previewEstimateButton").addEventListener("click", loadEstimatePreview);
   qs('#workProjectForm select[name="project_id"]').addEventListener("change", async (event) => {
+    state.selectedWorkProjectId = Number(event.target.value);
     qs('#workExtraForm select[name="project_id"]').value = event.target.value;
     await renderWorks();
   });
   qs('#workExtraForm select[name="project_id"]').addEventListener("change", async (event) => {
+    state.selectedWorkProjectId = Number(event.target.value);
     qs('#workProjectForm select[name="project_id"]').value = event.target.value;
     await renderWorks();
   });
@@ -2184,6 +2197,7 @@ function bindEvents() {
       }
       if (hasWorkTaskUpload) {
         state.selectedProjectId = savedProjectId;
+        state.selectedWorkProjectId = savedProjectId;
         switchView("works");
         const worksSelect = qs('#workProjectForm select[name="project_id"]');
         if (worksSelect) worksSelect.value = String(savedProjectId);
@@ -2254,7 +2268,8 @@ function bindEvents() {
     payload.creator_id = currentUserId();
     await api("/api/work-extra-items", { method: "POST", body: JSON.stringify(payload) });
     form.reset();
-    form.elements.project_id.value = qs('#workProjectForm select[name="project_id"]').value;
+    state.selectedWorkProjectId = Number(qs('#workProjectForm select[name="project_id"]').value);
+    form.elements.project_id.value = state.selectedWorkProjectId;
     await loadAll();
     showToast("Работа добавлена");
   });
