@@ -76,7 +76,10 @@ def number_value(value: object) -> float:
         cleaned = cleaned.replace(".", "").replace(",", ".")
     else:
         cleaned = cleaned.replace(",", ".")
-    return float(cleaned or 0)
+    try:
+        return float(cleaned or 0)
+    except ValueError:
+        return 0
 
 
 def cell_text(value: object) -> str:
@@ -260,42 +263,48 @@ def parse_smetter_work_task_xlsx(file_bytes: bytes) -> list[dict]:
     rows = parse_xlsx_rows(file_bytes)
     works: list[dict] = []
     stage = ""
-    subsection = ""
-    skip_words = {"итого", "всего", "наименование", "работы", "ед.", "кол-во", "количество"}
+    group = ""
+    skip_words = {"итого", "всего", "наименование", "работы", "выполняемые работы", "ед.", "кол-во", "количество"}
 
     for row in rows:
         cells = row + [""] * 10
         col1 = cell_text(cells[0])
         col2 = cell_text(cells[1])
-        col3 = cell_text(cells[2])
         lower1 = col1.lower()
         lower2 = col2.lower()
 
-        if re.match(r"^\d+\.", col1):
-            stage = col1
-            subsection = ""
+        smetter_unit = cell_text(cells[4])
+        unit = smetter_unit or cell_text(cells[2])
+        quantity = number_value(cells[5]) if smetter_unit else number_value(cells[3])
+        unit_price = number_value(cells[6]) if smetter_unit else number_value(cells[4])
+        total_price = number_value(cells[7]) if smetter_unit else number_value(cells[5])
+
+        if not col1 and col2 and not unit and quantity == 0 and not any(word in lower2 for word in {"итого", "всего"}):
+            stage = col2
+            group = ""
             continue
 
-        if not col1 and col2 and not col3 and not any(word in lower2 for word in {"итого", "всего"}):
-            subsection = col2
+        looks_like_group_number = bool(re.match(r"^\s*\d+(\.0)?\s*$", col1))
+        if col1 and col2 and not unit and quantity == 0 and looks_like_group_number:
+            group = col2
             continue
 
         marker_is_work = lower1 in {"раб", "работа", "работы", "усл", "смр"}
-        looks_like_work = bool(col2 and col3 and number_value(cells[3]) > 0 and not any(word == lower2 for word in skip_words))
+        looks_like_work = bool(col2 and unit and quantity > 0 and not any(word == lower2 for word in skip_words))
         if not marker_is_work and not looks_like_work:
             continue
         if lower1 == "мат":
             continue
 
-        section_parts = [part for part in (stage, subsection) if part]
+        section_parts = [part for part in (stage, group) if part]
         works.append(
             {
                 "section": " / ".join(section_parts) or "Без раздела",
                 "title": col2 or col1,
-                "unit": col3,
-                "estimated_quantity": number_value(cells[3]),
-                "unit_price": number_value(cells[4]),
-                "total_price": number_value(cells[5]),
+                "unit": unit,
+                "estimated_quantity": quantity,
+                "unit_price": unit_price,
+                "total_price": total_price,
             }
         )
 

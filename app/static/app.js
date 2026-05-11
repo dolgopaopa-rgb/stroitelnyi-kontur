@@ -2165,33 +2165,37 @@ function bindEvents() {
   qs("#projectForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = qs("#projectForm");
-    const payload = await projectFormToJson(form);
-    const isEdit = form.dataset.mode === "edit";
-    const projectId = form.dataset.projectId;
-    const hasWorkTaskUpload = payload.initial_documents.some((doc) => doc.type === "smetter_work_task");
-    const savedProject = await api(isEdit ? `/api/projects/${projectId}/update` : "/api/projects", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-    qs("#projectDialog").close();
-    form.reset();
-    await loadAll();
-    const savedProjectId = Number(isEdit ? projectId : savedProject.id);
-    if (isEdit) {
-      state.selectedProjectId = savedProjectId;
-      await renderProjectDetail(state.selectedProjectId);
+    try {
+      const payload = await projectFormToJson(form);
+      const isEdit = form.dataset.mode === "edit";
+      const projectId = form.dataset.projectId;
+      const hasWorkTaskUpload = payload.initial_documents.some((doc) => doc.type === "smetter_work_task");
+      const savedProject = await api(isEdit ? `/api/projects/${projectId}/update` : "/api/projects", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      qs("#projectDialog").close();
+      form.reset();
+      await loadAll();
+      const savedProjectId = Number(isEdit ? projectId : savedProject.id);
+      if (isEdit) {
+        state.selectedProjectId = savedProjectId;
+        await renderProjectDetail(state.selectedProjectId);
+      }
+      if (hasWorkTaskUpload) {
+        state.selectedProjectId = savedProjectId;
+        switchView("works");
+        const worksSelect = qs('#workProjectForm select[name="project_id"]');
+        if (worksSelect) worksSelect.value = String(savedProjectId);
+        await renderWorks();
+        const count = Number(savedProject.imported_works_count || 0);
+        showToast(count ? `Задание на работы загружено: ${count} строк` : "Файл сохранен, но работы не распознаны");
+        return;
+      }
+      showToast(isEdit ? "Карточка объекта сохранена" : "Объект создан как черновик");
+    } catch (error) {
+      showToast(error.message || "Не удалось сохранить карточку объекта");
     }
-    if (hasWorkTaskUpload) {
-      state.selectedProjectId = savedProjectId;
-      switchView("works");
-      const worksSelect = qs('#workProjectForm select[name="project_id"]');
-      if (worksSelect) worksSelect.value = String(savedProjectId);
-      await renderWorks();
-      const count = Number(savedProject.imported_works_count || 0);
-      showToast(count ? `Задание на работы загружено: ${count} строк` : "Файл сохранен, но работы не распознаны");
-      return;
-    }
-    showToast(isEdit ? "Карточка объекта сохранена" : "Объект создан как черновик");
   });
   qs("#taskForm").addEventListener("submit", (event) => {
     event.preventDefault();
