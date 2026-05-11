@@ -643,7 +643,9 @@ function materialBatchHasDeviation(batch) {
 }
 
 function canCreateVariationFromBatch(batch) {
-  return batch.id && materialBatchHasDeviation(batch) && !batch.variation_id && ["owner", "construction_manager", "procurement_manager"].includes(currentRoleBase());
+  if (!batch.id || !materialBatchHasDeviation(batch) || batch.variation_id) return false;
+  if (["owner", "construction_manager"].includes(currentRoleBase())) return true;
+  return currentRoleBase() === "foreman" && [Number(batch.project_foreman_id), Number(batch.creator_id)].includes(Number(currentUserId()));
 }
 
 function canEditMaterialBatch(batch) {

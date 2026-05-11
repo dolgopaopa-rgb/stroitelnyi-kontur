@@ -1396,8 +1396,13 @@ class AppHandler(BaseHTTPRequestHandler):
                 if action == "create_variation":
                     actor_role = str(data.get("actor_role") or "").strip()
                     actor_id = int(data.get("actor_id") or 0) or None
-                    if actor_role not in {"owner", "construction_manager", "procurement_manager"}:
-                        raise ValueError("Создать допработу из заявки могут ген.директор, руководитель строительства или снабжение.")
+                    can_create_variation = actor_role in {"owner", "construction_manager"} or (
+                        actor_role == "foreman"
+                        and actor_id
+                        and int(actor_id) in {int(batch["foreman_id"] or 0), int(batch["creator_id"] or 0)}
+                    )
+                    if not can_create_variation:
+                        raise ValueError("Создать допработу из заявки могут ген.директор, руководитель строительства или прораб объекта.")
                     existing_variation = db.execute(
                         "SELECT id FROM variations WHERE source_type = 'material_request_batch' AND source_id = ? ORDER BY id LIMIT 1",
                         (batch_id,),
