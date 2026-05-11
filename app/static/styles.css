@@ -316,6 +316,23 @@ h2 {
   align-items: center;
 }
 
+.row-grid > * {
+  min-width: 0;
+}
+
+.row-grid strong,
+.row-grid .muted {
+  overflow-wrap: anywhere;
+}
+
+.row-grid .pill {
+  max-width: 100%;
+  white-space: normal;
+  line-height: 1.25;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
 #projectRows .row-grid {
   grid-template-columns: 1fr;
   align-items: start;
@@ -479,6 +496,36 @@ h2 {
   border-radius: 8px;
   background: var(--surface);
   padding: 10px;
+}
+
+.material-request-row,
+.estimate-material-row {
+  align-content: start;
+}
+
+.material-main {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.material-main strong,
+.material-main .muted {
+  overflow-wrap: anywhere;
+}
+
+.material-request-row .stack-line,
+.estimate-material-row .stack-line {
+  align-items: flex-start;
+}
+
+.material-request-row .pill,
+.estimate-material-row .pill {
+  max-width: 100%;
+  white-space: normal;
+  line-height: 1.25;
+  padding-top: 4px;
+  padding-bottom: 4px;
 }
 
 .task-overview-panel {

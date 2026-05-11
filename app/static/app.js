@@ -46,6 +46,10 @@ const statusLabels = {
   delivery: "Доставка",
   active: "Активен",
   signed: "Подписан",
+  waiting_to_enter: "Внести в Сметтер",
+  not_required: "Не требуется",
+  no_basis_decision: "Нет решения",
+  decision_required: "Нужно решение",
 };
 
 function qs(selector) {
@@ -92,6 +96,20 @@ function levelByMoney(value) {
 
 function label(value) {
   return statusLabels[value] || value || "Не задано";
+}
+
+function materialBasisLabel(value) {
+  return {
+    main_estimate: "По смете",
+    main_estimate_overspend: "Перерасход по смете",
+    additional_work: "Допработа",
+    over_budget_cost: "Сверхбюджет",
+    internal_error_or_loss: "За счет компании",
+  }[value] || value || "Основание не указано";
+}
+
+function materialBasisLevel(value) {
+  return value === "main_estimate" ? "success" : "warning";
 }
 
 function canEditProject() {
@@ -320,12 +338,15 @@ async function renderEstimateMaterials() {
     ? rows
         .map(
           (row) => `
-          <div class="row">
-            <div class="row-grid">
-              <div><strong>${row.name}</strong><div class="muted">${row.section || "Без раздела"}</div></div>
+          <div class="row estimate-material-row">
+            <div class="material-main">
+              <strong>${row.name}</strong>
+              <div class="muted">${row.section || "Без раздела"}</div>
+            </div>
+            <div class="stack-line">
               ${pill(`${row.estimated_quantity || 0} ${row.unit || ""}`, "blue")}
-              <div>${money(row.unit_price)}</div>
               ${pill(money(row.total_price), "success")}
+              <span class="muted">Цена: ${money(row.unit_price)}</span>
             </div>
           </div>`
         )
@@ -852,12 +873,15 @@ async function renderTasks() {
 async function renderMaterials() {
   const items = await api("/api/material-requests");
   qs("#materialRows").innerHTML = items.map((item) => `
-    <div class="row">
-      <div class="row-grid">
-        <div><strong>${item.title}</strong><div class="muted">${item.project_title} · ${item.estimate_section || "без раздела"}${item.estimate_material_name ? " · из сметы" : ""}</div></div>
-        ${pill(item.basis_type, item.basis_type === "main_estimate" ? "success" : "warning")}
-        <div>${label(item.procurement_status)}</div>
-        ${pill(item.smetter_status, item.smetter_status === "not_required" ? "success" : "blue")}
+    <div class="row material-request-row">
+      <div class="material-main">
+        <strong>${item.title}</strong>
+        <div class="muted">${item.project_title} · ${item.estimate_section || "без раздела"}${item.estimate_material_name ? " · из сметы" : ""}</div>
+      </div>
+      <div class="stack-line">
+        ${pill(materialBasisLabel(item.basis_type), materialBasisLevel(item.basis_type))}
+        ${pill(label(item.procurement_status), item.procurement_status === "approval" ? "warning" : item.procurement_status === "ordered" ? "success" : "blue")}
+        ${pill(label(item.smetter_status), item.smetter_status === "not_required" ? "success" : "blue")}
       </div>
     </div>`).join("");
 }

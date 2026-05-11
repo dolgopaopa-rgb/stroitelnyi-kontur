@@ -226,6 +226,79 @@ def parse_uploaded_materials(data: dict) -> list[dict]:
     raise ValueError("Поддерживаются файлы .xlsx из Сметтера и .csv")
 
 
+def import_estimate_material_rows(db, project_id: int, rows: list[dict], source: str = "smetter_xlsx", replace: bool = True) -> int:
+    if replace:
+        db.execute("DELETE FROM estimate_materials WHERE project_id = ?", (project_id,))
+    imported = 0
+    for row in rows:
+        quantity = number_value(row.get("estimated_quantity"))
+        unit_price = number_value(row.get("unit_price"))
+        total_price = number_value(row.get("total_price")) or quantity * unit_price
+        db.execute(
+            """
+            INSERT INTO estimate_materials (
+                project_id, section, name, unit, estimated_quantity, unit_price, total_price, source
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                project_id,
+                row.get("section") or "",
+                row.get("name") or "Без названия",
+                row.get("unit") or "",
+                quantity,
+                unit_price,
+                total_price,
+                source,
+            ),
+        )
+        imported += 1
+    return imported
+
+
+def import_smetter_materials_from_documents(db, project_id: int, files: list[dict]) -> int:
+    imported = 0
+    for item in files:
+        if item.get("type") != "smetter_materials" or not item.get("file_base64"):
+            continue
+        rows = parse_uploaded_materials(item)
+        if rows:
+            imported += import_estimate_material_rows(db, project_id, rows, "smetter_xlsx", replace=True)
+    return imported
+
+
+def backfill_estimate_materials_from_saved_documents() -> None:
+    with connect() as db:
+        docs = db.execute(
+            """
+            SELECT d.*
+            FROM documents d
+            WHERE d.type = 'smetter_materials'
+              AND d.file_path IS NOT NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM estimate_materials em WHERE em.project_id = d.project_id
+              )
+            ORDER BY d.created_at DESC
+            """
+        ).fetchall()
+        for doc in docs:
+            file_path = (DATA_DIR / doc["file_path"]).resolve()
+            if DATA_DIR.resolve() not in file_path.parents or not file_path.exists():
+                continue
+            try:
+                rows = parse_uploaded_materials(
+                    {
+                        "file_name": doc["file_name"] or file_path.name,
+                        "file_base64": base64.b64encode(file_path.read_bytes()).decode("ascii"),
+                    }
+                )
+                if rows:
+                    import_estimate_material_rows(db, int(doc["project_id"]), rows, "smetter_xlsx", replace=True)
+            except Exception as exc:
+                print(f"Could not import estimate materials from {file_path}: {exc}")
+        db.commit()
+
+
 def require_fields(data: dict, fields: list[tuple[str, str]]) -> None:
     missing = [label for key, label in fields if not str(data.get(key) or "").strip()]
     if missing:
@@ -613,13 +686,20 @@ class AppHandler(BaseHTTPRequestHandler):
                     ),
                 )
                 project_id = cursor.lastrowid
-                save_initial_documents(db, project_id, data.get("initial_documents") or [])
+                initial_documents = data.get("initial_documents") or []
+                save_initial_documents(db, project_id, initial_documents)
+                imported_materials = import_smetter_materials_from_documents(db, project_id, initial_documents)
                 db.execute(
                     """
                     INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
                     VALUES (?, 'document', ?, 3, 'internal', 'handover')
                     """,
-                    (project_id, "Менеджер создал карточку объекта. Объект еще не передан в строительство."),
+                    (
+                        project_id,
+                        "Менеджер создал карточку объекта. "
+                        + (f"Материалы из Сметтера загружены: {imported_materials} строк. " if imported_materials else "")
+                        + "Объект еще не передан в строительство.",
+                    ),
                 )
                 db.commit()
                 json_response(self, get_project_detail(project_id), 201)
@@ -681,7 +761,17 @@ class AppHandler(BaseHTTPRequestHandler):
                         """,
                         (project_id, "Менеджер обновил данные карточки объекта."),
                     )
-                    save_initial_documents(db, project_id, data.get("initial_documents") or [])
+                    initial_documents = data.get("initial_documents") or []
+                    save_initial_documents(db, project_id, initial_documents)
+                    imported_materials = import_smetter_materials_from_documents(db, project_id, initial_documents)
+                    if imported_materials:
+                        db.execute(
+                            """
+                            INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
+                            VALUES (?, 'document', ?, 3, 'internal', 'handover')
+                            """,
+                            (project_id, f"Материалы из Сметтера обновлены: {imported_materials} строк."),
+                        )
                     db.commit()
                     json_response(self, get_project_detail(project_id))
                     return
@@ -1090,29 +1180,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 if not rows:
                     json_response(self, {"error": "Нет строк для импорта"}, 400)
                     return
-                if data.get("replace", True):
-                    db.execute("DELETE FROM estimate_materials WHERE project_id = ?", (project_id,))
-                for row in rows:
-                    quantity = number_value(row.get("estimated_quantity"))
-                    unit_price = number_value(row.get("unit_price"))
-                    total_price = number_value(row.get("total_price")) or quantity * unit_price
-                    db.execute(
-                        """
-                        INSERT INTO estimate_materials (
-                            project_id, section, name, unit, estimated_quantity, unit_price, total_price, source
-                        )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, 'manual_csv')
-                        """,
-                        (
-                            project_id,
-                            row.get("section") or "",
-                            row.get("name") or "Без названия",
-                            row.get("unit") or "",
-                            quantity,
-                            unit_price,
-                            total_price,
-                        ),
-                    )
+                imported = import_estimate_material_rows(db, project_id, rows, "manual_import", replace=bool(data.get("replace", True)))
                 db.execute(
                     """
                     UPDATE projects
@@ -1139,7 +1207,7 @@ class AppHandler(BaseHTTPRequestHandler):
                         "smetter_materials",
                         "materials",
                     )
-                json_response(self, {"imported": len(rows)}, 201)
+                json_response(self, {"imported": imported}, 201)
                 return
 
             if path == "/api/documents":
@@ -1255,6 +1323,7 @@ class AppHandler(BaseHTTPRequestHandler):
 
 def main() -> None:
     init_db()
+    backfill_estimate_materials_from_saved_documents()
     host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", "8765"))
     server = ThreadingHTTPServer((host, port), AppHandler)
