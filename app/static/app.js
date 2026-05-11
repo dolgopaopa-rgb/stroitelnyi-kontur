@@ -829,15 +829,14 @@ async function renderTasks() {
           return `
             <div class="row task-row">
               <div class="row-grid">
-                <div>
+                <div class="task-main">
                   <strong>${task.title}</strong>
+                  <div class="stack-line">${pill(label(task.status), taskStatusLevel(task.status))}${pill(task.due_date || "без срока", levelByDate(task.due_date))}</div>
                   <div class="muted">${task.project_title} · поставил: ${task.creator_name || "не указано"}</div>
                   ${task.description ? `<div>${task.description}</div>` : ""}
                   ${task.rejection_comment ? `<div class="muted">Комментарий по возврату: ${task.rejection_comment}</div>` : ""}
                 </div>
-                ${pill(label(task.status), taskStatusLevel(task.status))}
-                <div>Ответственный: ${task.assignee_name || "не назначен"}<br /><span class="muted">Принимает: ${task.reviewer_name || task.creator_name || "не назначен"}</span></div>
-                ${pill(task.due_date || "без срока", levelByDate(task.due_date))}
+                <div class="task-people">Ответственный: ${task.assignee_name || "не назначен"}<br /><span class="muted">Принимает: ${task.reviewer_name || task.creator_name || "не назначен"}</span></div>
               </div>
               <div class="task-actions">
                 ${canComplete ? `<button class="secondary" data-task-action="complete" data-task-id="${task.id}">Выполнено</button>` : ""}

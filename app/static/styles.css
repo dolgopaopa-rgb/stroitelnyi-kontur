@@ -551,6 +551,35 @@ h2 {
   gap: 12px;
 }
 
+.task-row .row-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 0.45fr);
+  align-items: start;
+}
+
+.task-main,
+.task-people {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.task-main {
+  display: grid;
+  gap: 8px;
+}
+
+.task-main strong {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.task-main .pill {
+  max-width: 100%;
+  white-space: normal;
+  line-height: 1.25;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
 .task-actions {
   display: flex;
   justify-content: flex-end;
