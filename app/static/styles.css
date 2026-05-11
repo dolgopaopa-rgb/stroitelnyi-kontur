@@ -259,14 +259,15 @@ h2 {
 }
 
 .metric {
-  min-height: 120px;
-  padding: 16px;
+  min-height: 88px;
+  padding: 12px;
   display: grid;
-  gap: 8px;
+  gap: 5px;
 }
 
 .metric strong {
-  font-size: 28px;
+  font-size: 24px;
+  line-height: 1;
 }
 
 .layout-two,
@@ -747,7 +748,7 @@ h2 {
 }
 
 .materials-layout {
-  grid-template-columns: minmax(440px, 1.35fr) minmax(280px, 0.65fr);
+  grid-template-columns: minmax(430px, 1.12fr) minmax(340px, 0.88fr);
 }
 
 #materialsView .panel {
@@ -772,6 +773,7 @@ h2 {
   padding: 10px;
   margin-bottom: 10px;
   gap: 9px;
+  overflow: hidden;
 }
 
 #materialsView label {
@@ -781,8 +783,34 @@ h2 {
 #materialsView input,
 #materialsView select,
 #materialsView textarea {
+  min-width: 0;
   padding: 8px 10px;
   font-size: 14px;
+}
+
+#materialsView input[type="file"] {
+  font-size: 13px;
+}
+
+#materialsView .materials-estimate-panel .panel-head {
+  align-items: flex-start;
+}
+
+#materialsView .materials-estimate-panel .panel-head .stack-line {
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+#materialsView .materials-estimate-panel .secondary {
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 14px;
+}
+
+#materialsView .materials-estimate-panel .form-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
 }
 
 #materialsView .material-request-row,
@@ -823,7 +851,7 @@ h2 {
 }
 
 #materialsView .estimate-material-row .stack-line {
-  grid-template-columns: minmax(62px, max-content) minmax(90px, max-content) minmax(82px, max-content);
+  grid-template-columns: minmax(58px, max-content) minmax(86px, max-content) minmax(82px, max-content);
   align-items: center;
   text-align: right;
 }
@@ -1074,23 +1102,23 @@ h2 {
 }
 
 .task-overview-panel {
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
 .task-stats {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 10px;
-  margin-bottom: 12px;
+  gap: 8px;
+  margin-bottom: 10px;
 }
 
 .task-stat {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
-  padding: 12px;
+  padding: 9px 10px;
   display: grid;
-  gap: 8px;
+  gap: 5px;
   text-align: left;
   color: inherit;
 }
@@ -1102,15 +1130,16 @@ h2 {
 
 .task-stat span {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .task-stat strong {
-  font-size: 24px;
+  font-size: 22px;
+  line-height: 1;
 }
 
 .stat-bar {
-  height: 7px;
+  height: 6px;
   border-radius: 999px;
   background: var(--surface-2);
   overflow: hidden;
@@ -1137,6 +1166,40 @@ h2 {
 
 .task-stat.danger .stat-bar i {
   background: var(--danger);
+}
+
+#dashboardView .panel {
+  padding: 14px;
+}
+
+#dashboardView .panel-head {
+  margin-bottom: 10px;
+}
+
+#dashboardView .panel-head h2 {
+  font-size: 20px;
+}
+
+#dashboardView .row {
+  padding: 8px 10px;
+  gap: 5px;
+  font-size: 13px;
+}
+
+#dashboardView .row strong {
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+#dashboardView .muted {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+#dashboardView .pill {
+  font-size: 11px;
+  line-height: 1.2;
+  padding: 3px 7px;
 }
 
 .task-row {
@@ -1485,11 +1548,11 @@ textarea {
 
   .metric {
     min-height: auto;
-    padding: 14px;
+    padding: 10px;
   }
 
   .metric strong {
-    font-size: 24px;
+    font-size: 22px;
   }
 
   .detail {
