@@ -20,6 +20,7 @@ const viewTitles = {
   dashboard: "Рабочий стол",
   projects: "Объекты",
   tasks: "Задачи",
+  works: "Работы",
   materials: "Материалы",
   variations: "Допработы и отклонения",
   documents: "Документы",
@@ -143,6 +144,15 @@ function urgencyLevel(value) {
   return value === "urgent" ? "danger" : "blue";
 }
 
+function workReasonLabel(value) {
+  return {
+    additional_work: "Доп",
+    main_estimate_overspend: "Превышение",
+    company_cost: "Расходы компании",
+    rework: "Переделка",
+  }[value] || value || "Не указано";
+}
+
 function canEditProject() {
   return ["owner", "sales_manager", "construction_manager"].includes(currentRoleBase());
 }
@@ -211,6 +221,7 @@ function documentType(type) {
     contract: "Договор",
     main_estimate: "Основная смета",
     smetter_materials: "Файл материалов из Сметтера",
+    smetter_work_task: "Задание на работы из Сметтера",
     payment_schedule: "График платежей",
     project_documentation: "Проектная документация",
     variation_estimate: "Смета допработ",
@@ -284,6 +295,7 @@ async function loadAll() {
     renderNotifications(),
     renderProjects(),
     renderTasks(),
+    renderWorks(),
     renderMaterials(),
     renderEstimateMaterials(),
     renderVariations(),
@@ -885,6 +897,13 @@ async function renderProjectDetail(projectId) {
           item.actual_delivery_date ? ` · фактическая: ${item.actual_delivery_date}` : ""
         }${item.procurement_comment ? ` · комментарий снабжения: ${item.procurement_comment}` : ""}`
     ),
+    works: renderSmallList(
+      [...(project.works || []).map((item) => ({ ...item, kind: "plan" })), ...(project.extra_works || []).map((item) => ({ ...item, kind: "extra" }))],
+      (item) =>
+        item.kind === "extra"
+          ? `${item.title} · ${item.quantity || 0} ${item.unit || ""} · ${workReasonLabel(item.reason)}`
+          : `${item.title} · ${item.estimated_quantity || 0} ${item.unit || ""} · ${money(item.total_price)}`
+    ),
     variations: renderSmallList(project.variations, (item) => `${item.title} · ${variationType(item.type)} · ${money(item.amount)} · ${moneyDecision(item.financial_decision)}`),
     documents: renderSmallList(project.documents, (doc) => documentFileLink(doc)),
     events: renderSmallList(project.events, (event) => `${event.text}`),
@@ -904,7 +923,7 @@ async function renderProjectDetail(projectId) {
     ${renderProjectWorkflow(project)}
     ${renderDocumentSummary(project.documents)}
     <div class="tabs">
-      ${["overview", "tasks", "materials", "variations", "documents", "events"]
+      ${["overview", "tasks", "works", "materials", "variations", "documents", "events"]
         .map((tab) => `<button class="tab ${state.selectedProjectTab === tab ? "active" : ""}" data-project-tab="${tab}">${tabTitle(tab)}</button>`)
         .join("")}
     </div>
@@ -1112,10 +1131,13 @@ async function projectFormToJson(form) {
   const data = formToJson(form);
   const files = form.elements;
   const materialFile = files.estimate_file_name.files[0];
+  const workTaskFile = files.work_task_file.files[0];
   data.estimate_file_name = materialFile?.name || form.dataset.existingEstimateFileName || "";
+  data.work_task_file_name = workTaskFile?.name || form.dataset.existingWorkTaskFileName || "";
   data.initial_documents = (
     await Promise.all([
       fileDocumentPayload(materialFile, "Файл материалов из Сметтера", "smetter_materials"),
+      fileDocumentPayload(workTaskFile, "Задание на работы из Сметтера", "smetter_work_task"),
       fileDocumentPayload(files.contract_file.files[0], "Договор", "contract"),
       fileDocumentPayload(files.estimate_doc_file.files[0], "Смета", "main_estimate"),
       fileDocumentPayload(files.payment_schedule_file.files[0], "График платежей", "payment_schedule"),
@@ -1152,6 +1174,7 @@ function tabTitle(tab) {
   return {
     overview: "Обзор",
     tasks: "Задачи",
+    works: "Работы",
     materials: "Материалы",
     variations: "Допработы",
     documents: "Документы",
@@ -1231,6 +1254,72 @@ async function renderTasks() {
         })
         .join("")
     : `<p class="muted">${tasks.length ? "В этом фильтре задач нет." : "Задач пока нет."}</p>`;
+}
+
+function workProjectId() {
+  return qs('#workProjectForm select[name="project_id"]')?.value || state.selectedProjectId || state.projects[0]?.id || "";
+}
+
+async function renderWorks() {
+  const projectId = workProjectId();
+  const extraSelect = qs('#workExtraForm select[name="project_id"]');
+  if (extraSelect && projectId) extraSelect.value = String(projectId);
+  if (!projectId) {
+    qs("#workRows").innerHTML = `<p class="muted">Сначала создайте объект.</p>`;
+    qs("#workExtraRows").innerHTML = "";
+    return;
+  }
+  const [works, extraWorks] = await Promise.all([
+    api(`/api/work-items?project_id=${projectId}`),
+    api(`/api/work-extra-items?project_id=${projectId}`),
+  ]);
+  const grouped = groupBySection(works);
+  qs("#workRows").innerHTML = works.length
+    ? Object.entries(grouped)
+        .map(
+          ([section, rows]) => `
+          <details class="estimate-section">
+            <summary>${section} <span>${rows.length} позиций</span></summary>
+            <div class="table">
+              ${rows
+                .map(
+                  (row) => `
+                  <div class="row estimate-material-row">
+                    <div class="material-main">
+                      <strong>${row.title}</strong>
+                      <div class="muted">${row.estimated_quantity || 0} ${row.unit || ""}</div>
+                    </div>
+                    <div class="stack-line">
+                      ${pill(money(row.unit_price), "blue")}
+                      ${pill(money(row.total_price), "success")}
+                    </div>
+                  </div>`
+                )
+                .join("")}
+            </div>
+          </details>`
+        )
+        .join("")
+    : `<p class="muted">По этому объекту задание на работы еще не загружено.</p>`;
+
+  qs("#workExtraRows").innerHTML = extraWorks.length
+    ? extraWorks
+        .map(
+          (row) => `
+          <div class="row estimate-material-row">
+            <div class="material-main">
+              <strong>${row.title}</strong>
+              <div class="muted">${row.project_title || ""} · ${row.creator_name || "автор не указан"}</div>
+              ${row.comment ? `<div class="muted">${row.comment}</div>` : ""}
+            </div>
+            <div class="stack-line">
+              ${pill(`${row.quantity || 0} ${row.unit || ""}`, "blue")}
+              ${pill(workReasonLabel(row.reason), row.reason === "company_cost" || row.reason === "rework" ? "danger" : "warning")}
+            </div>
+          </div>`
+        )
+        .join("")
+    : `<p class="muted">Появившихся работ по объекту пока нет.</p>`;
 }
 
 async function renderMaterials() {
@@ -1640,7 +1729,7 @@ async function refreshLiveData() {
 }
 
 function setProjectFileFieldsRequired(required) {
-  ["estimate_file_name", "contract_file", "estimate_doc_file", "payment_schedule_file", "project_docs_file"].forEach((name) => {
+  ["estimate_file_name", "work_task_file", "contract_file", "estimate_doc_file", "payment_schedule_file", "project_docs_file"].forEach((name) => {
     const input = qs(`#projectForm input[name="${name}"]`);
     if (input) input.required = required;
   });
@@ -1652,6 +1741,7 @@ function resetProjectDialog() {
   form.dataset.mode = "create";
   form.dataset.projectId = "";
   form.dataset.existingEstimateFileName = "";
+  form.dataset.existingWorkTaskFileName = "";
   qs("#projectDialogTitle").textContent = "Новый объект";
   qs("#projectSubmitButton").textContent = "Создать";
   setProjectFileFieldsRequired(true);
@@ -1664,6 +1754,7 @@ async function openProjectEditDialog(projectId) {
   form.dataset.mode = "edit";
   form.dataset.projectId = project.id;
   form.dataset.existingEstimateFileName = project.estimate_file_name || "";
+  form.dataset.existingWorkTaskFileName = project.work_task_file_name || "";
   qs("#projectDialogTitle").textContent = "Редактирование объекта";
   qs("#projectSubmitButton").textContent = "Сохранить";
   setProjectFileFieldsRequired(false);
@@ -1872,6 +1963,18 @@ function bindEvents() {
   qs('#estimateImportForm select[name="project_id"]').addEventListener("change", renderEstimateMaterials);
   qs("#refreshEstimateButton").addEventListener("click", renderEstimateMaterials);
   qs("#previewEstimateButton").addEventListener("click", loadEstimatePreview);
+  qs('#workProjectForm select[name="project_id"]').addEventListener("change", async (event) => {
+    qs('#workExtraForm select[name="project_id"]').value = event.target.value;
+    await renderWorks();
+  });
+  qs('#workExtraForm select[name="project_id"]').addEventListener("change", async (event) => {
+    qs('#workProjectForm select[name="project_id"]').value = event.target.value;
+    await renderWorks();
+  });
+  qs("#printWorksButton").addEventListener("click", () => {
+    const projectId = workProjectId();
+    if (projectId) window.open(`/api/work-items/print?project_id=${encodeURIComponent(projectId)}`, "_blank", "noopener");
+  });
 
   document.addEventListener("click", async (event) => {
     const taskFilterButton = event.target.closest("[data-task-filter]");
@@ -2120,6 +2223,18 @@ function bindEvents() {
   qs("#variationForm").addEventListener("submit", (event) => {
     event.preventDefault();
     submitForm("variationDialog", "variationForm", "/api/variations", "Допработа добавлена");
+  });
+
+  qs("#workExtraForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = qs("#workExtraForm");
+    const payload = formToJson(form);
+    payload.creator_id = currentUserId();
+    await api("/api/work-extra-items", { method: "POST", body: JSON.stringify(payload) });
+    form.reset();
+    form.elements.project_id.value = qs('#workProjectForm select[name="project_id"]').value;
+    await loadAll();
+    showToast("Работа добавлена");
   });
   qs("#estimateImportForm").addEventListener("submit", async (event) => {
     event.preventDefault();

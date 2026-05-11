@@ -49,6 +49,7 @@ def init_db() -> None:
                 bitrix_ref TEXT,
                 smetter_ref TEXT,
                 estimate_file_name TEXT,
+                work_task_file_name TEXT,
                 estimate_version TEXT,
                 estimate_uploaded_by INTEGER,
                 sales_manager_id INTEGER,
@@ -164,6 +165,36 @@ def init_db() -> None:
                 FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS work_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER NOT NULL,
+                section TEXT,
+                title TEXT NOT NULL,
+                unit TEXT,
+                estimated_quantity REAL NOT NULL DEFAULT 0,
+                unit_price REAL NOT NULL DEFAULT 0,
+                total_price REAL NOT NULL DEFAULT 0,
+                source TEXT NOT NULL DEFAULT 'smetter_work_task',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS work_extra_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER NOT NULL,
+                creator_id INTEGER,
+                title TEXT NOT NULL,
+                unit TEXT,
+                quantity REAL NOT NULL DEFAULT 0,
+                reason TEXT NOT NULL DEFAULT 'additional_work',
+                comment TEXT,
+                status TEXT NOT NULL DEFAULT 'new',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+                FOREIGN KEY (creator_id) REFERENCES users(id)
+            );
+
             CREATE TABLE IF NOT EXISTS variations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 project_id INTEGER NOT NULL,
@@ -249,6 +280,8 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(due_date);
             CREATE INDEX IF NOT EXISTS idx_materials_project ON material_requests(project_id);
             CREATE INDEX IF NOT EXISTS idx_estimate_materials_project ON estimate_materials(project_id);
+            CREATE INDEX IF NOT EXISTS idx_work_items_project ON work_items(project_id);
+            CREATE INDEX IF NOT EXISTS idx_work_extra_items_project ON work_extra_items(project_id);
             CREATE INDEX IF NOT EXISTS idx_variations_project ON variations(project_id);
             CREATE INDEX IF NOT EXISTS idx_contracts_ends ON contracts(ends_at);
             CREATE INDEX IF NOT EXISTS idx_documents_project ON documents(project_id);
@@ -266,6 +299,7 @@ def init_db() -> None:
         ensure_column(db, "material_requests", "procurement_comment", "TEXT")
         ensure_column(db, "material_requests", "processed_at", "TEXT")
         ensure_column(db, "projects", "estimate_file_name", "TEXT")
+        ensure_column(db, "projects", "work_task_file_name", "TEXT")
         ensure_column(db, "projects", "estimate_version", "TEXT")
         ensure_column(db, "projects", "estimate_uploaded_by", "INTEGER")
         ensure_column(db, "projects", "sales_manager_id", "INTEGER")

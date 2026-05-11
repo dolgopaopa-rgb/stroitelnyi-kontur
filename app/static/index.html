@@ -20,6 +20,7 @@
           <button class="nav-button active" data-view="dashboard">Рабочий стол</button>
           <button class="nav-button" data-view="projects">Объекты</button>
           <button class="nav-button" data-view="tasks">Задачи</button>
+          <button class="nav-button" data-view="works">Работы</button>
           <button class="nav-button" data-view="materials">Материалы</button>
           <button class="nav-button" data-view="variations">Допработы</button>
           <button class="nav-button" data-view="documents">Документы</button>
@@ -168,6 +169,48 @@
           </section>
         </section>
 
+        <section class="view" id="worksView">
+          <div class="layout-two">
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Работы по объекту</h2>
+                <button class="secondary" id="printWorksButton" type="button">Печать / PDF</button>
+              </div>
+              <form class="form embedded compact-form" id="workProjectForm">
+                <label>Объект <select name="project_id" required></select></label>
+              </form>
+              <div class="table" id="workRows"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Появившиеся работы</h2>
+              </div>
+              <form class="form embedded compact-form" id="workExtraForm">
+                <label>Объект <select name="project_id" required></select></label>
+                <label>Наименование <input name="title" required placeholder="Например: демонтаж старого основания" /></label>
+                <div class="grid-2">
+                  <label>Ед. измерения <input name="unit" required placeholder="м2, м.п., шт" /></label>
+                  <label>Количество <input name="quantity" type="number" min="0" step="0.001" required /></label>
+                </div>
+                <label>
+                  Причина
+                  <select name="reason" required>
+                    <option value="additional_work">Доп</option>
+                    <option value="main_estimate_overspend">Превышение</option>
+                    <option value="company_cost">Расходы компании</option>
+                    <option value="rework">Переделка</option>
+                  </select>
+                </label>
+                <label>Комментарий <textarea name="comment" rows="3" placeholder="Причина появления, кто согласовал, что нужно решить"></textarea></label>
+                <div class="form-actions">
+                  <button class="primary" type="submit">Добавить работу</button>
+                </div>
+              </form>
+              <div class="table" id="workExtraRows"></div>
+            </section>
+          </div>
+        </section>
+
         <section class="view" id="documentsView">
           <div class="panel">
             <div class="panel-head">
@@ -244,6 +287,7 @@
           <p>На старте это делает Алексей: выгружает материалы из сметы в Excel и прикладывает при создании карточки. Файл сохраняется в документах объекта, а позиции автоматически появляются во вкладке “Материалы”.</p>
         </section>
         <label>Файл материалов из Сметтера / Excel <input name="estimate_file_name" type="file" accept=".xlsx,.csv" required /></label>
+        <label>Задание на работы из Сметтера / Excel <input name="work_task_file" type="file" accept=".xlsx,.csv" required /></label>
         <div class="grid-2">
           <label>Договор <input name="contract_file" type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" required /></label>
           <label>Смета <input name="estimate_doc_file" type="file" accept=".pdf,.xlsx,.xls,.doc,.docx" required /></label>

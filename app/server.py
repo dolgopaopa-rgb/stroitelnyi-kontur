@@ -256,6 +256,52 @@ def parse_smetter_purchase_xlsx(file_bytes: bytes) -> list[dict]:
     return [row for row in materials if row["name"]]
 
 
+def parse_smetter_work_task_xlsx(file_bytes: bytes) -> list[dict]:
+    rows = parse_xlsx_rows(file_bytes)
+    works: list[dict] = []
+    stage = ""
+    subsection = ""
+    skip_words = {"итого", "всего", "наименование", "работы", "ед.", "кол-во", "количество"}
+
+    for row in rows:
+        cells = row + [""] * 10
+        col1 = cell_text(cells[0])
+        col2 = cell_text(cells[1])
+        col3 = cell_text(cells[2])
+        lower1 = col1.lower()
+        lower2 = col2.lower()
+
+        if re.match(r"^\d+\.", col1):
+            stage = col1
+            subsection = ""
+            continue
+
+        if not col1 and col2 and not col3 and not any(word in lower2 for word in {"итого", "всего"}):
+            subsection = col2
+            continue
+
+        marker_is_work = lower1 in {"раб", "работа", "работы", "усл", "смр"}
+        looks_like_work = bool(col2 and col3 and number_value(cells[3]) > 0 and not any(word == lower2 for word in skip_words))
+        if not marker_is_work and not looks_like_work:
+            continue
+        if lower1 == "мат":
+            continue
+
+        section_parts = [part for part in (stage, subsection) if part]
+        works.append(
+            {
+                "section": " / ".join(section_parts) or "Без раздела",
+                "title": col2 or col1,
+                "unit": col3,
+                "estimated_quantity": number_value(cells[3]),
+                "unit_price": number_value(cells[4]),
+                "total_price": number_value(cells[5]),
+            }
+        )
+
+    return [row for row in works if row["title"] and row["estimated_quantity"] > 0]
+
+
 def parse_csv_materials(file_bytes: bytes) -> list[dict]:
     text = file_bytes.decode("utf-8-sig", errors="replace")
     sample = text[:2048]
@@ -277,6 +323,27 @@ def parse_csv_materials(file_bytes: bytes) -> list[dict]:
     return [row for row in rows if row["name"]]
 
 
+def parse_csv_works(file_bytes: bytes) -> list[dict]:
+    text = file_bytes.decode("utf-8-sig", errors="replace")
+    sample = text[:2048]
+    delimiter = ";" if sample.count(";") > sample.count(",") else ","
+    reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
+    rows = []
+    for item in reader:
+        normalized = {re.sub(r"\s+", "", key.lower()): value for key, value in item.items() if key}
+        rows.append(
+            {
+                "section": normalized.get("раздел") or normalized.get("section") or normalized.get("этап") or "",
+                "title": normalized.get("наименование") or normalized.get("работа") or normalized.get("название") or normalized.get("name") or "",
+                "unit": normalized.get("ед") or normalized.get("ед.") or normalized.get("единица") or normalized.get("unit") or "",
+                "estimated_quantity": number_value(normalized.get("количество") or normalized.get("кол-во") or normalized.get("колво") or normalized.get("quantity") or 0),
+                "unit_price": number_value(normalized.get("цена") or normalized.get("расценка") or normalized.get("price") or 0),
+                "total_price": number_value(normalized.get("сумма") or normalized.get("итого") or normalized.get("total") or 0),
+            }
+        )
+    return [row for row in rows if row["title"]]
+
+
 def parse_uploaded_materials(data: dict) -> list[dict]:
     file_name = str(data.get("file_name") or "").lower()
     encoded = data.get("file_base64") or ""
@@ -287,6 +354,19 @@ def parse_uploaded_materials(data: dict) -> list[dict]:
         return parse_smetter_purchase_xlsx(file_bytes)
     if file_name.endswith(".csv"):
         return parse_csv_materials(file_bytes)
+    raise ValueError("Поддерживаются файлы .xlsx из Сметтера и .csv")
+
+
+def parse_uploaded_works(data: dict) -> list[dict]:
+    file_name = str(data.get("file_name") or "").lower()
+    encoded = data.get("file_base64") or ""
+    if "," in encoded:
+        encoded = encoded.split(",", 1)[1]
+    file_bytes = base64.b64decode(encoded)
+    if file_name.endswith(".xlsx"):
+        return parse_smetter_work_task_xlsx(file_bytes)
+    if file_name.endswith(".csv"):
+        return parse_csv_works(file_bytes)
     raise ValueError("Поддерживаются файлы .xlsx из Сметтера и .csv")
 
 
@@ -341,6 +421,36 @@ def import_smetter_materials_from_documents(db, project_id: int, files: list[dic
         rows = parse_uploaded_materials(item)
         if rows:
             imported += import_estimate_material_rows(db, project_id, rows, "smetter_xlsx", replace=True)
+    return imported
+
+
+def import_smetter_works_from_documents(db, project_id: int, files: list[dict]) -> int:
+    imported = 0
+    for item in files:
+        if item.get("type") != "smetter_work_task" or not item.get("file_base64"):
+            continue
+        rows = parse_uploaded_works(item)
+        if rows:
+            db.execute("DELETE FROM work_items WHERE project_id = ?", (project_id,))
+            for row in rows:
+                db.execute(
+                    """
+                    INSERT INTO work_items (
+                        project_id, section, title, unit, estimated_quantity, unit_price, total_price, source
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'smetter_work_task')
+                    """,
+                    (
+                        project_id,
+                        row.get("section") or "",
+                        row.get("title") or "Работа без названия",
+                        row.get("unit") or "",
+                        number_value(row.get("estimated_quantity")),
+                        number_value(row.get("unit_price")),
+                        number_value(row.get("total_price")),
+                    ),
+                )
+                imported += 1
     return imported
 
 
@@ -666,6 +776,8 @@ def get_project_detail(project_id: int) -> dict | None:
             ).fetchall()
         )
         detail["variations"] = rows_to_dicts(db.execute("SELECT * FROM variations WHERE project_id = ? ORDER BY due_date", (project_id,)).fetchall())
+        detail["works"] = rows_to_dicts(db.execute("SELECT * FROM work_items WHERE project_id = ? ORDER BY section, title", (project_id,)).fetchall())
+        detail["extra_works"] = rows_to_dicts(db.execute("SELECT * FROM work_extra_items WHERE project_id = ? ORDER BY created_at DESC", (project_id,)).fetchall())
         detail["contracts"] = rows_to_dicts(db.execute("SELECT * FROM contracts WHERE project_id = ? ORDER BY ends_at", (project_id,)).fetchall())
         detail["documents"] = rows_to_dicts(db.execute("SELECT * FROM documents WHERE project_id = ? ORDER BY created_at DESC", (project_id,)).fetchall())
         detail["events"] = rows_to_dicts(db.execute("SELECT * FROM events WHERE project_id = ? ORDER BY created_at DESC", (project_id,)).fetchall())
@@ -692,6 +804,9 @@ class AppHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/material-requests/export":
             self.serve_material_requests_export(parse_qs(parsed.query))
+            return
+        if path == "/api/work-items/print":
+            self.serve_work_items_print(parse_qs(parsed.query))
             return
         variation_export = re.match(r"^/api/variations/(\d+)/export$", path)
         if variation_export:
@@ -891,6 +1006,41 @@ class AppHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def serve_work_items_print(self, query: dict[str, list[str]]) -> None:
+        project_id = int(query.get("project_id", ["0"])[0] or 0)
+        with connect() as db:
+            project = db.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+            rows = db.execute("SELECT * FROM work_items WHERE project_id = ? ORDER BY section, title", (project_id,)).fetchall()
+        if not project:
+            self.send_error(404)
+            return
+        grouped: dict[str, list[dict]] = {}
+        for row in rows_to_dicts(rows):
+            grouped.setdefault(row.get("section") or "Без раздела", []).append(row)
+        sections = []
+        for section, items in grouped.items():
+            item_rows = "".join(
+                f"<tr><td>{escape_xml(item['title'])}</td><td>{escape_xml(item.get('unit') or '')}</td><td>{item.get('estimated_quantity') or 0:g}</td></tr>"
+                for item in items
+            )
+            sections.append(f"<h2>{escape_xml(section)}</h2><table><thead><tr><th>Работа</th><th>Ед.</th><th>Кол-во</th></tr></thead><tbody>{item_rows}</tbody></table>")
+        html = f"""<!doctype html>
+<html lang="ru"><head><meta charset="utf-8" />
+<title>Работы - {escape_xml(project['title'])}</title>
+<style>
+body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h2{{font-size:16px;margin-top:24px}}table{{width:100%;border-collapse:collapse;margin-top:8px}}th,td{{border:1px solid #ccc;padding:6px 8px;text-align:left;vertical-align:top}}th{{background:#f0f3f4}}@media print{{button{{display:none}}}}
+</style></head><body>
+<button onclick="window.print()">Сохранить в PDF / печать</button>
+<h1>{escape_xml(project['title'])}: задание на работы</h1>
+{''.join(sections) if sections else '<p>Работы по объекту не загружены.</p>'}
+</body></html>"""
+        body = html.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def handle_api_get(self, path: str, query: dict[str, list[str]]) -> None:
         with connect() as db:
             archive_completed_material_batches(db)
@@ -981,6 +1131,39 @@ class AppHandler(BaseHTTPRequestHandler):
                     ORDER BY section, name
                     """,
                     (int(project_id),),
+                ).fetchall()
+                json_response(self, rows_to_dicts(rows))
+                return
+
+            if path == "/api/work-items":
+                project_id = query.get("project_id", [""])[0]
+                if not project_id:
+                    json_response(self, [])
+                    return
+                rows = db.execute(
+                    "SELECT * FROM work_items WHERE project_id = ? ORDER BY section, title",
+                    (int(project_id),),
+                ).fetchall()
+                json_response(self, rows_to_dicts(rows))
+                return
+
+            if path == "/api/work-extra-items":
+                project_id = query.get("project_id", [""])[0]
+                params: list[object] = []
+                where = ""
+                if project_id:
+                    where = "WHERE w.project_id = ?"
+                    params.append(int(project_id))
+                rows = db.execute(
+                    f"""
+                    SELECT w.*, p.title AS project_title, u.name AS creator_name
+                    FROM work_extra_items w
+                    JOIN projects p ON p.id = w.project_id
+                    LEFT JOIN users u ON u.id = w.creator_id
+                    {where}
+                    ORDER BY w.created_at DESC
+                    """,
+                    params,
                 ).fetchall()
                 json_response(self, rows_to_dicts(rows))
                 return
@@ -1094,17 +1277,18 @@ class AppHandler(BaseHTTPRequestHandler):
                         ("planned_end_date", "Плановый срок окончания работ по договору"),
                         ("main_estimate_amount", "Смета"),
                         ("estimate_file_name", "Файл материалов из Сметтера"),
+                        ("work_task_file_name", "Задание на работы из Сметтера"),
                     ],
                 )
                 cursor = db.execute(
                     """
                     INSERT INTO projects (
                         title, customer_name, status, address, navigator_url, bitrix_ref,
-                        smetter_ref, estimate_file_name, estimate_version, estimate_uploaded_by,
+                        smetter_ref, estimate_file_name, work_task_file_name, estimate_version, estimate_uploaded_by,
                         sales_manager_id, construction_manager_id, foreman_id, estimator_id,
                         procurement_manager_id, tech_supervisor_id, planned_end_date, main_estimate_amount
                     )
-                    VALUES (?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?)
+                    VALUES (?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?)
                     """,
                     (
                         data.get("title"),
@@ -1114,6 +1298,7 @@ class AppHandler(BaseHTTPRequestHandler):
                         data.get("bitrix_ref"),
                         data.get("smetter_ref"),
                         data.get("estimate_file_name"),
+                        data.get("work_task_file_name"),
                         data.get("estimate_version") or "",
                         3,
                         3,
@@ -1126,6 +1311,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 initial_documents = data.get("initial_documents") or []
                 save_initial_documents(db, project_id, initial_documents)
                 imported_materials = import_smetter_materials_from_documents(db, project_id, initial_documents)
+                imported_works = import_smetter_works_from_documents(db, project_id, initial_documents)
                 db.execute(
                     """
                     INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
@@ -1135,6 +1321,7 @@ class AppHandler(BaseHTTPRequestHandler):
                         project_id,
                         "Менеджер создал карточку объекта. "
                         + (f"Материалы из Сметтера загружены: {imported_materials} строк. " if imported_materials else "")
+                        + (f"Задание на работы загружено: {imported_works} строк. " if imported_works else "")
                         + "Объект еще не передан в строительство.",
                     ),
                 )
@@ -1163,6 +1350,7 @@ class AppHandler(BaseHTTPRequestHandler):
                             ("planned_end_date", "Плановый срок окончания работ по договору"),
                             ("main_estimate_amount", "Смета"),
                             ("estimate_file_name", "Файл материалов из Сметтера"),
+                            ("work_task_file_name", "Задание на работы из Сметтера"),
                         ],
                     )
                     db.execute(
@@ -1176,6 +1364,7 @@ class AppHandler(BaseHTTPRequestHandler):
                             planned_end_date = ?,
                             main_estimate_amount = ?,
                             estimate_file_name = ?,
+                            work_task_file_name = ?,
                             updated_at = CURRENT_TIMESTAMP
                         WHERE id = ?
                         """,
@@ -1188,6 +1377,7 @@ class AppHandler(BaseHTTPRequestHandler):
                             data.get("planned_end_date"),
                             number_value(data.get("main_estimate_amount")),
                             data.get("estimate_file_name"),
+                            data.get("work_task_file_name"),
                             project_id,
                         ),
                     )
@@ -1201,6 +1391,7 @@ class AppHandler(BaseHTTPRequestHandler):
                     initial_documents = data.get("initial_documents") or []
                     save_initial_documents(db, project_id, initial_documents)
                     imported_materials = import_smetter_materials_from_documents(db, project_id, initial_documents)
+                    imported_works = import_smetter_works_from_documents(db, project_id, initial_documents)
                     if imported_materials:
                         db.execute(
                             """
@@ -1208,6 +1399,14 @@ class AppHandler(BaseHTTPRequestHandler):
                             VALUES (?, 'document', ?, 3, 'internal', 'handover')
                             """,
                             (project_id, f"Материалы из Сметтера обновлены: {imported_materials} строк."),
+                        )
+                    if imported_works:
+                        db.execute(
+                            """
+                            INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
+                            VALUES (?, 'document', ?, 3, 'internal', 'handover')
+                            """,
+                            (project_id, f"Задание на работы из Сметтера обновлено: {imported_works} строк."),
                         )
                     db.commit()
                     json_response(self, get_project_detail(project_id))
@@ -1222,6 +1421,7 @@ class AppHandler(BaseHTTPRequestHandler):
                         ("smetter_ref", "Сметтер"),
                         ("planned_end_date", "Плановый срок окончания работ по договору"),
                         ("estimate_file_name", "Файл материалов из Сметтера"),
+                        ("work_task_file_name", "Задание на работы из Сметтера"),
                     ]
                     missing = [label for key, label in required if not str(project[key] or "").strip()]
                     if not number_value(project["main_estimate_amount"]):
@@ -2442,6 +2642,37 @@ class AppHandler(BaseHTTPRequestHandler):
                         number_value(data.get("amount")),
                         data.get("due_date") or None,
                         data.get("description") or "",
+                    ),
+                )
+                json_response(self, {"id": cursor.lastrowid}, 201)
+                return
+
+            if path == "/api/work-extra-items":
+                require_fields(
+                    data,
+                    [
+                        ("project_id", "Объект"),
+                        ("title", "Наименование работы"),
+                        ("unit", "Ед. измерения"),
+                        ("quantity", "Количество"),
+                        ("reason", "Причина"),
+                    ],
+                )
+                cursor = db.execute(
+                    """
+                    INSERT INTO work_extra_items (
+                        project_id, creator_id, title, unit, quantity, reason, comment, status
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'new')
+                    """,
+                    (
+                        int(data["project_id"]),
+                        int(data.get("creator_id") or 0) or None,
+                        data.get("title"),
+                        data.get("unit"),
+                        number_value(data.get("quantity")),
+                        data.get("reason") or "additional_work",
+                        data.get("comment") or "",
                     ),
                 )
                 json_response(self, {"id": cursor.lastrowid}, 201)
