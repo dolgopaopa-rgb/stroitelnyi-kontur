@@ -134,7 +134,10 @@
             <section class="panel">
               <div class="panel-head">
                 <h2>Сметные материалы объекта</h2>
-                <button class="secondary" id="refreshEstimateButton">Обновить</button>
+                <div class="stack-line">
+                  <button class="secondary" id="toggleEstimateMaterialsButton" type="button">Материалы по смете</button>
+                  <button class="secondary" id="refreshEstimateButton" type="button">Обновить</button>
+                </div>
               </div>
               <form class="form embedded compact-form" id="estimateImportForm">
                 <label>Объект <select name="project_id" required></select></label>
@@ -279,34 +282,15 @@
           <button type="button" class="icon" data-close="materialDialog">×</button>
         </div>
         <label>Объект <select name="project_id" required></select></label>
-        <label>
-          Материал из сметы
-          <select name="estimate_material_id" id="estimateMaterialSelect">
-            <option value="">Сначала выберите объект</option>
-          </select>
-        </label>
-        <label>Материалы <input name="title" placeholder="Можно дописать вручную, если позиции нет в смете" /></label>
-        <div class="grid-2">
-          <label>
-            Основание
-            <select name="basis_type">
-              <option value="main_estimate">Основная смета</option>
-              <option value="main_estimate_overspend">Перерасход по смете</option>
-              <option value="additional_work">Допработа</option>
-              <option value="over_budget_cost">Сверхбюджет</option>
-              <option value="internal_error_or_loss">За счет компании</option>
-            </select>
-          </label>
-          <label>Нужно к <input name="needed_at" type="date" /></label>
+        <button class="secondary" id="loadMaterialEstimateButton" type="button">Материалы по смете</button>
+        <div class="estimate-picker" id="materialEstimatePicker">
+          <p class="muted">Выберите объект и нажмите “Материалы по смете”.</p>
         </div>
-        <div class="grid-2">
-          <label>Раздел сметы <input name="estimate_section" /></label>
-          <label>Сумма, ₽ <input name="total_amount" type="number" min="0" step="1000" /></label>
-        </div>
-        <label>Комментарий <textarea name="comment" rows="3"></textarea></label>
+        <label>Желаемая дата доставки <input name="needed_at" type="date" required /></label>
+        <label>Комментарий к заявке <textarea name="comment" rows="3" placeholder="Например: нужна доставка до 10:00, разгрузка вручную"></textarea></label>
         <div class="form-actions">
           <button type="button" class="secondary" data-close="materialDialog">Отмена</button>
-          <button class="primary" type="submit">Создать</button>
+          <button class="primary" type="submit">Отправить заявку</button>
         </div>
       </form>
     </dialog>

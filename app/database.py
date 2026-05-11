@@ -228,6 +228,12 @@ def init_db() -> None:
             """
         )
         ensure_column(db, "material_requests", "estimate_material_id", "INTEGER")
+        ensure_column(db, "material_requests", "requested_quantity", "REAL NOT NULL DEFAULT 0")
+        ensure_column(db, "material_requests", "requested_unit", "TEXT")
+        ensure_column(db, "material_requests", "delivery_urgency", "TEXT NOT NULL DEFAULT 'standard'")
+        ensure_column(db, "material_requests", "actual_delivery_date", "TEXT")
+        ensure_column(db, "material_requests", "procurement_comment", "TEXT")
+        ensure_column(db, "material_requests", "processed_at", "TEXT")
         ensure_column(db, "projects", "estimate_file_name", "TEXT")
         ensure_column(db, "projects", "estimate_version", "TEXT")
         ensure_column(db, "projects", "estimate_uploaded_by", "INTEGER")

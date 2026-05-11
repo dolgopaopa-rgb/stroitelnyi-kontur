@@ -528,6 +528,106 @@ h2 {
   padding-bottom: 4px;
 }
 
+.estimate-section {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.estimate-section + .estimate-section {
+  margin-top: 10px;
+}
+
+.estimate-section summary {
+  min-height: 42px;
+  padding: 10px 12px;
+  cursor: pointer;
+  font-weight: 700;
+  background: var(--surface-2);
+}
+
+.estimate-section summary span {
+  color: var(--muted);
+  font-weight: 400;
+  margin-left: 6px;
+}
+
+.estimate-section .table {
+  padding: 10px;
+}
+
+.estimate-picker {
+  display: grid;
+  gap: 10px;
+  max-height: min(60vh, 620px);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--surface-2);
+}
+
+.estimate-choice-row {
+  border-left: 4px solid transparent;
+}
+
+.estimate-choice-row.success {
+  border-left-color: var(--success);
+  background: var(--success-soft);
+}
+
+.estimate-choice-row.warning {
+  border-left-color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.estimate-choice-row.danger {
+  border-left-color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.estimate-choice-title {
+  display: flex;
+  grid-template-columns: none;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--text);
+}
+
+.estimate-choice-title input {
+  width: auto;
+  margin-top: 4px;
+}
+
+.estimate-choice-title span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.estimate-choice-title strong,
+.estimate-choice-title small {
+  overflow-wrap: anywhere;
+}
+
+.estimate-choice-title small {
+  color: var(--muted);
+}
+
+.estimate-over-reason {
+  margin-top: 4px;
+}
+
+.material-process {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  display: grid;
+  grid-template-columns: minmax(160px, 0.6fr) minmax(220px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
 .task-overview-panel {
   margin-bottom: 16px;
 }
@@ -975,6 +1075,10 @@ textarea {
   }
 
   .grid-2 {
+    grid-template-columns: 1fr;
+  }
+
+  .material-process {
     grid-template-columns: 1fr;
   }
 

@@ -1,11 +1,12 @@
 const state = {
-  view: "dashboard",
+  view: localStorage.getItem("currentView") || "dashboard",
   currentRole: "owner",
   users: [],
   projects: [],
   archivedProjects: [],
   estimateMaterials: [],
   estimatePreviewRows: [],
+  showEstimateMaterials: false,
   selectedProjectId: null,
   selectedProjectTab: "overview",
   projectListMode: "active",
@@ -44,6 +45,7 @@ const statusLabels = {
   approval: "Согласование",
   ordered: "Заказано",
   delivery: "Доставка",
+  delivery_confirmed: "Доставка обработана",
   active: "Активен",
   signed: "Подписан",
   waiting_to_enter: "Внести в Сметтер",
@@ -110,6 +112,14 @@ function materialBasisLabel(value) {
 
 function materialBasisLevel(value) {
   return value === "main_estimate" ? "success" : "warning";
+}
+
+function urgencyLabel(value) {
+  return value === "urgent" ? "Срочно" : "Стандартная";
+}
+
+function urgencyLevel(value) {
+  return value === "urgent" ? "danger" : "blue";
 }
 
 function canEditProject() {
@@ -232,7 +242,9 @@ function showToast(message) {
 }
 
 function switchView(view) {
+  if (!viewTitles[view]) view = "dashboard";
   state.view = view;
+  localStorage.setItem("currentView", view);
   qsa(".nav-button").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
   qsa(".view").forEach((node) => node.classList.remove("active"));
   qs(`#${view}View`).classList.add("active");
@@ -329,29 +341,57 @@ async function updateEstimateMaterialSelect() {
   ].join("");
 }
 
+function groupBySection(rows) {
+  return rows.reduce((acc, row) => {
+    const section = row.section || "Без раздела";
+    acc[section] = acc[section] || [];
+    acc[section].push(row);
+    return acc;
+  }, {});
+}
+
 async function renderEstimateMaterials() {
   const projectSelect = qs('#estimateImportForm select[name="project_id"]');
   const projectId = projectSelect?.value || state.selectedProjectId || state.projects[0]?.id;
   if (!projectId) return;
   const rows = await api(`/api/estimate-materials?project_id=${projectId}`);
-  qs("#estimateMaterialRows").innerHTML = rows.length
-    ? rows
-        .map(
-          (row) => `
-          <div class="row estimate-material-row">
-            <div class="material-main">
-              <strong>${row.name}</strong>
-              <div class="muted">${row.section || "Без раздела"}</div>
-            </div>
-            <div class="stack-line">
-              ${pill(`${row.estimated_quantity || 0} ${row.unit || ""}`, "blue")}
-              ${pill(money(row.total_price), "success")}
-              <span class="muted">Цена: ${money(row.unit_price)}</span>
-            </div>
-          </div>`
-        )
-        .join("")
-    : `<p class="muted">По этому объекту материалы сметы еще не загружены.</p>`;
+  qs("#toggleEstimateMaterialsButton").textContent = state.showEstimateMaterials ? "Скрыть материалы" : "Материалы по смете";
+  if (!rows.length) {
+    qs("#estimateMaterialRows").innerHTML = `<p class="muted">По этому объекту материалы сметы еще не загружены.</p>`;
+    return;
+  }
+  if (!state.showEstimateMaterials) {
+    const sections = Object.keys(groupBySection(rows)).length;
+    qs("#estimateMaterialRows").innerHTML = `<p class="muted">Загружено ${rows.length} позиций в ${sections} разделах. Нажмите “Материалы по смете”, чтобы открыть список по разделам.</p>`;
+    return;
+  }
+  const grouped = groupBySection(rows);
+  qs("#estimateMaterialRows").innerHTML = Object.entries(grouped)
+    .map(
+      ([section, sectionRows]) => `
+      <details class="estimate-section" open>
+        <summary>${section} <span>${sectionRows.length} позиций</span></summary>
+        <div class="table">
+          ${sectionRows
+            .map(
+              (row) => `
+              <div class="row estimate-material-row">
+                <div class="material-main">
+                  <strong>${row.name}</strong>
+                  <div class="muted">${row.section || "Без раздела"}</div>
+                </div>
+                <div class="stack-line">
+                  ${pill(`${row.estimated_quantity || 0} ${row.unit || ""}`, "blue")}
+                  ${pill(money(row.total_price), "success")}
+                  <span class="muted">Цена: ${money(row.unit_price)}</span>
+                </div>
+              </div>`
+            )
+            .join("")}
+        </div>
+      </details>`
+    )
+    .join("");
 }
 
 function applySelectedEstimateMaterial() {
@@ -360,6 +400,65 @@ function applySelectedEstimateMaterial() {
   qs('#materialForm input[name="title"]').value = selected.dataset.name || "";
   qs('#materialForm input[name="estimate_section"]').value = selected.dataset.section || "";
   qs('#materialForm input[name="total_amount"]').value = selected.dataset.total || "";
+}
+
+function materialRowTone(quantity, estimated) {
+  const qty = Number(quantity || 0);
+  const est = Number(estimated || 0);
+  if (!qty) return "";
+  if (est && qty > est) return "danger";
+  if (est && qty < est) return "warning";
+  return "success";
+}
+
+function updateMaterialEstimateRow(row) {
+  const checkbox = row.querySelector('[data-material-check]');
+  const quantityInput = row.querySelector('[data-material-quantity]');
+  const reason = row.querySelector('[data-material-reason]');
+  const estimated = Number(row.dataset.estimated || 0);
+  const quantity = Number(quantityInput.value || 0);
+  quantityInput.disabled = !checkbox.checked;
+  reason.hidden = !(checkbox.checked && estimated && quantity > estimated);
+  reason.querySelector("textarea").required = checkbox.checked && estimated && quantity > estimated;
+  row.classList.remove("success", "warning", "danger");
+  if (checkbox.checked) row.classList.add(materialRowTone(quantity, estimated));
+}
+
+async function loadMaterialEstimatePicker() {
+  const form = qs("#materialForm");
+  const projectId = form.elements.project_id.value;
+  const rows = await api(`/api/estimate-materials?project_id=${projectId}`);
+  const target = qs("#materialEstimatePicker");
+  if (!rows.length) {
+    target.innerHTML = `<p class="muted">По этому объекту нет загруженных материалов сметы.</p>`;
+    return;
+  }
+  const grouped = groupBySection(rows);
+  target.innerHTML = Object.entries(grouped)
+    .map(
+      ([section, sectionRows]) => `
+      <details class="estimate-section" open>
+        <summary>${section} <span>${sectionRows.length} позиций</span></summary>
+        <div class="table">
+          ${sectionRows
+            .map(
+              (row) => `
+              <div class="row estimate-choice-row" data-estimate-id="${row.id}" data-estimated="${row.estimated_quantity || 0}">
+                <label class="estimate-choice-title">
+                  <input type="checkbox" data-material-check />
+                  <span><strong>${row.name}</strong><small>${row.estimated_quantity || 0} ${row.unit || ""} по смете · ${money(row.total_price)}</small></span>
+                </label>
+                <label>Количество к заказу <input data-material-quantity type="number" min="0" step="0.001" value="${row.estimated_quantity || 0}" disabled /></label>
+                <div class="estimate-over-reason" data-material-reason hidden>
+                  <label>Причина превышения <textarea rows="2" placeholder="Почему заказываем сверх сметы"></textarea></label>
+                </div>
+              </div>`
+            )
+            .join("")}
+        </div>
+      </details>`
+    )
+    .join("");
 }
 
 function taskStats(tasks) {
@@ -521,7 +620,13 @@ async function renderProjectDetail(projectId) {
         <div class="info"><span>Срок</span><strong>${project.planned_end_date || "не задан"}</strong></div>
       </div>`,
     tasks: renderSmallList(project.tasks, (task) => `${task.title} · ${label(task.status)} · ${task.due_date || "без срока"}`),
-    materials: renderSmallList(project.materials, (item) => `${item.title} · ${label(item.procurement_status)} · ${item.basis_type}`),
+    materials: renderSmallList(
+      project.materials,
+      (item) =>
+        `${item.title} · ${item.requested_quantity || item.estimated_quantity || 0} ${item.requested_unit || item.estimate_material_unit || ""} · ${label(item.procurement_status)} · желаемая доставка: ${item.needed_at || "не указана"}${
+          item.actual_delivery_date ? ` · фактическая: ${item.actual_delivery_date}` : ""
+        }${item.procurement_comment ? ` · комментарий снабжения: ${item.procurement_comment}` : ""}`
+    ),
     variations: renderSmallList(project.variations, (item) => `${item.title} · ${variationType(item.type)} · ${money(item.amount)} · ${moneyDecision(item.financial_decision)}`),
     documents: renderSmallList(project.documents, (doc) => documentFileLink(doc)),
     events: renderSmallList(project.events, (event) => `${event.text}`),
@@ -872,18 +977,34 @@ async function renderTasks() {
 
 async function renderMaterials() {
   const items = await api("/api/material-requests");
-  qs("#materialRows").innerHTML = items.map((item) => `
-    <div class="row material-request-row">
-      <div class="material-main">
-        <strong>${item.title}</strong>
-        <div class="muted">${item.project_title} · ${item.estimate_section || "без раздела"}${item.estimate_material_name ? " · из сметы" : ""}</div>
-      </div>
-      <div class="stack-line">
-        ${pill(materialBasisLabel(item.basis_type), materialBasisLevel(item.basis_type))}
-        ${pill(label(item.procurement_status), item.procurement_status === "approval" ? "warning" : item.procurement_status === "ordered" ? "success" : "blue")}
-        ${pill(label(item.smetter_status), item.smetter_status === "not_required" ? "success" : "blue")}
-      </div>
-    </div>`).join("");
+  qs("#materialRows").innerHTML = items.map((item) => {
+    const canProcess = currentRoleBase() === "procurement_manager" && item.procurement_status !== "delivery_confirmed";
+    return `
+      <div class="row material-request-row">
+        <div class="material-main">
+          <strong>${item.title}</strong>
+          <div class="muted">${item.project_title} · ${item.estimate_section || "без раздела"}${item.estimate_material_name ? " · из сметы" : ""}</div>
+          <div class="muted">Заказано: ${item.requested_quantity || item.estimated_quantity || 0} ${item.requested_unit || item.estimate_material_unit || ""} · желаемая дата: ${item.needed_at || "не указана"}</div>
+          ${item.actual_delivery_date ? `<div class="muted">Фактическая доставка: ${item.actual_delivery_date}</div>` : ""}
+          ${item.procurement_comment ? `<div class="muted">Комментарий снабжения: ${item.procurement_comment}</div>` : ""}
+        </div>
+        <div class="stack-line">
+          ${pill(materialBasisLabel(item.basis_type), materialBasisLevel(item.basis_type))}
+          ${pill(urgencyLabel(item.delivery_urgency), urgencyLevel(item.delivery_urgency))}
+          ${pill(label(item.procurement_status), item.procurement_status === "approval" ? "warning" : item.procurement_status === "delivery_confirmed" ? "success" : item.procurement_status === "ordered" ? "success" : "blue")}
+          ${pill(label(item.smetter_status), item.smetter_status === "not_required" ? "success" : "blue")}
+        </div>
+        ${
+          canProcess
+            ? `<div class="material-process">
+                <label>Фактическая дата доставки <input type="date" data-material-actual="${item.id}" value="${item.actual_delivery_date || item.needed_at || ""}" /></label>
+                <label>Комментарий снабжения <textarea rows="2" data-material-comment="${item.id}" placeholder="Например: нужна доверенность или кран для разгрузки">${item.procurement_comment || ""}</textarea></label>
+                <button class="primary" type="button" data-material-deliver="${item.id}">Отправить</button>
+              </div>`
+            : ""
+        }
+      </div>`;
+  }).join("");
 }
 
 function variationType(type) {
@@ -1233,6 +1354,7 @@ function bindEvents() {
     state.selectedTaskProjectId = null;
     await renderTasks();
     await renderDashboard();
+    await renderMaterials();
     showToast(`Роль: ${roleLabel(state.currentRole)}`);
   });
 
@@ -1249,15 +1371,34 @@ function bindEvents() {
     if (userId && form.elements.reviewer_id) form.elements.reviewer_id.value = String(userId);
     qs("#taskDialog").showModal();
   });
-  qs("#newMaterialButton").addEventListener("click", () => qs("#materialDialog").showModal());
+  qs("#newMaterialButton").addEventListener("click", async () => {
+    const form = qs("#materialForm");
+    form.reset();
+    qs("#materialEstimatePicker").innerHTML = `<p class="muted">Выберите объект и нажмите “Материалы по смете”.</p>`;
+    if (state.selectedProjectId && form.elements.project_id) form.elements.project_id.value = String(state.selectedProjectId);
+    await loadMaterialEstimatePicker();
+    qs("#materialDialog").showModal();
+  });
   qs("#newVariationButton").addEventListener("click", () => qs("#variationDialog").showModal());
   qs("#newDocumentButton").addEventListener("click", () => qs("#documentDialog").showModal());
   qs("#newEventButton").addEventListener("click", () => qs("#eventDialog").showModal());
 
   qsa("[data-close]").forEach((button) => button.addEventListener("click", () => qs(`#${button.dataset.close}`).close()));
 
-  qs('#materialForm select[name="project_id"]').addEventListener("change", updateEstimateMaterialSelect);
-  qs("#estimateMaterialSelect").addEventListener("change", applySelectedEstimateMaterial);
+  qs('#materialForm select[name="project_id"]').addEventListener("change", loadMaterialEstimatePicker);
+  qs("#loadMaterialEstimateButton").addEventListener("click", loadMaterialEstimatePicker);
+  qs("#materialEstimatePicker").addEventListener("input", (event) => {
+    const row = event.target.closest(".estimate-choice-row");
+    if (row) updateMaterialEstimateRow(row);
+  });
+  qs("#materialEstimatePicker").addEventListener("change", (event) => {
+    const row = event.target.closest(".estimate-choice-row");
+    if (row) updateMaterialEstimateRow(row);
+  });
+  qs("#toggleEstimateMaterialsButton").addEventListener("click", async () => {
+    state.showEstimateMaterials = !state.showEstimateMaterials;
+    await renderEstimateMaterials();
+  });
   qs('#estimateImportForm select[name="project_id"]').addEventListener("change", renderEstimateMaterials);
   qs("#refreshEstimateButton").addEventListener("click", renderEstimateMaterials);
   qs("#previewEstimateButton").addEventListener("click", loadEstimatePreview);
@@ -1295,6 +1436,21 @@ function bindEvents() {
     const taskActionButton = event.target.closest("[data-task-action]");
     if (taskActionButton) {
       await handleTaskAction(taskActionButton);
+      return;
+    }
+
+    const materialDeliverButton = event.target.closest("[data-material-deliver]");
+    if (materialDeliverButton) {
+      const id = materialDeliverButton.dataset.materialDeliver;
+      await api(`/api/material-requests/${id}/deliver`, {
+        method: "POST",
+        body: JSON.stringify({
+          actual_delivery_date: qs(`[data-material-actual="${id}"]`)?.value || "",
+          procurement_comment: qs(`[data-material-comment="${id}"]`)?.value || "",
+        }),
+      });
+      await loadAll();
+      showToast("Доставка материалов отправлена");
       return;
     }
 
@@ -1347,7 +1503,34 @@ function bindEvents() {
   });
   qs("#materialForm").addEventListener("submit", (event) => {
     event.preventDefault();
-    submitForm("materialDialog", "materialForm", "/api/material-requests", "Заявка создана");
+    const form = qs("#materialForm");
+    const selectedRows = qsa("#materialEstimatePicker .estimate-choice-row").filter((row) => row.querySelector("[data-material-check]").checked);
+    const items = selectedRows.map((row) => ({
+      estimate_material_id: row.dataset.estimateId,
+      quantity: row.querySelector("[data-material-quantity]").value,
+      reason: row.querySelector("[data-material-reason] textarea").value,
+    }));
+    if (!items.length) {
+      showToast("Выберите материалы по смете");
+      return;
+    }
+    api("/api/material-requests/bulk", {
+      method: "POST",
+      body: JSON.stringify({
+        project_id: form.elements.project_id.value,
+        needed_at: form.elements.needed_at.value,
+        comment: form.elements.comment.value,
+        creator_id: currentUserId(),
+        items,
+      }),
+    })
+      .then(async () => {
+        qs("#materialDialog").close();
+        form.reset();
+        await loadAll();
+        showToast("Заявка на материалы отправлена снабжению");
+      })
+      .catch((error) => showToast(error.message));
   });
   qs("#variationForm").addEventListener("submit", (event) => {
     event.preventDefault();
@@ -1400,6 +1583,7 @@ function bindEvents() {
 }
 
 bindEvents();
+switchView(state.view);
 loadAll().catch((error) => showToast(error.message));
 setInterval(() => {
   if (document.hidden) return;

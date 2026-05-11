@@ -10,6 +10,7 @@ import re
 import time
 import zipfile
 import xml.etree.ElementTree as ET
+from datetime import date, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
@@ -299,6 +300,52 @@ def backfill_estimate_materials_from_saved_documents() -> None:
         db.commit()
 
 
+def create_material_request(
+    db,
+    *,
+    project_id: int,
+    creator_id: int | None,
+    estimate_material_id: int | None,
+    title: str,
+    basis_type: str,
+    estimate_section: str,
+    needed_at: str | None,
+    requested_quantity: float,
+    requested_unit: str,
+    total_amount: float,
+    comment: str,
+) -> int:
+    urgency = delivery_urgency(needed_at)
+    smetter_status = "not_required" if basis_type == "main_estimate" else "waiting_to_enter"
+    cursor = db.execute(
+        """
+        INSERT INTO material_requests (
+            project_id, creator_id, estimate_material_id, title, basis_type, estimate_section, needed_at,
+            procurement_status, smetter_status, supplier, total_amount, comment,
+            requested_quantity, requested_unit, delivery_urgency
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            project_id,
+            creator_id,
+            estimate_material_id,
+            title,
+            basis_type,
+            estimate_section,
+            needed_at or None,
+            smetter_status,
+            "",
+            total_amount,
+            comment,
+            requested_quantity,
+            requested_unit,
+            urgency,
+        ),
+    )
+    return int(cursor.lastrowid)
+
+
 def require_fields(data: dict, fields: list[tuple[str, str]]) -> None:
     missing = [label for key, label in fields if not str(data.get(key) or "").strip()]
     if missing:
@@ -325,6 +372,17 @@ def role_by_user_id(db, user_id: int | None) -> str:
         return ""
     row = db.execute("SELECT role FROM users WHERE id = ?", (user_id,)).fetchone()
     return str(row["role"]) if row else ""
+
+
+def delivery_urgency(needed_at: str | None) -> str:
+    if not needed_at:
+        return "standard"
+    try:
+        delivery_date = datetime.strptime(needed_at, "%Y-%m-%d").date()
+    except ValueError:
+        return "standard"
+    days = (delivery_date - date.today()).days
+    return "urgent" if days <= 1 else "standard"
 
 
 def safe_file_name(file_name: str) -> str:
@@ -402,7 +460,19 @@ def get_project_detail(project_id: int) -> dict | None:
             return None
         detail = row_to_dict(project)
         detail["tasks"] = rows_to_dicts(db.execute("SELECT * FROM tasks WHERE project_id = ? ORDER BY due_date", (project_id,)).fetchall())
-        detail["materials"] = rows_to_dicts(db.execute("SELECT * FROM material_requests WHERE project_id = ? ORDER BY needed_at", (project_id,)).fetchall())
+        detail["materials"] = rows_to_dicts(
+            db.execute(
+                """
+                SELECT m.*, em.name AS estimate_material_name, em.unit AS estimate_material_unit,
+                       em.estimated_quantity, em.unit_price
+                FROM material_requests m
+                LEFT JOIN estimate_materials em ON em.id = m.estimate_material_id
+                WHERE m.project_id = ?
+                ORDER BY m.needed_at
+                """,
+                (project_id,),
+            ).fetchall()
+        )
         detail["variations"] = rows_to_dicts(db.execute("SELECT * FROM variations WHERE project_id = ? ORDER BY due_date", (project_id,)).fetchall())
         detail["contracts"] = rows_to_dicts(db.execute("SELECT * FROM contracts WHERE project_id = ? ORDER BY ends_at", (project_id,)).fetchall())
         detail["documents"] = rows_to_dicts(db.execute("SELECT * FROM documents WHERE project_id = ? ORDER BY created_at DESC", (project_id,)).fetchall())
@@ -626,7 +696,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 """,
                 "/api/material-requests": """
                     SELECT m.*, p.title AS project_title, em.name AS estimate_material_name,
-                           em.unit AS estimate_material_unit, em.estimated_quantity
+                           em.unit AS estimate_material_unit, em.estimated_quantity, em.unit_price
                     FROM material_requests m
                     JOIN projects p ON p.id = m.project_id
                     LEFT JOIN estimate_materials em ON em.id = m.estimate_material_id
@@ -1084,6 +1154,58 @@ class AppHandler(BaseHTTPRequestHandler):
                     json_response(self, {"id": task_id, "status": "returned"})
                     return
 
+            material_action = re.match(r"^/api/material-requests/(\d+)/deliver$", path)
+            if material_action:
+                request_id = int(material_action.group(1))
+                material = db.execute(
+                    """
+                    SELECT m.*, p.title AS project_title, p.foreman_id
+                    FROM material_requests m
+                    JOIN projects p ON p.id = m.project_id
+                    WHERE m.id = ?
+                    """,
+                    (request_id,),
+                ).fetchone()
+                if not material:
+                    json_response(self, {"error": "Material request not found"}, 404)
+                    return
+                actual_date = data.get("actual_delivery_date") or material["needed_at"]
+                comment = data.get("procurement_comment") or ""
+                db.execute(
+                    """
+                    UPDATE material_requests
+                    SET actual_delivery_date = ?,
+                        procurement_comment = ?,
+                        procurement_status = 'delivery_confirmed',
+                        processed_at = CURRENT_TIMESTAMP,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                    """,
+                    (actual_date or None, comment, request_id),
+                )
+                message = f"{material['project_title']}: {material['title']}. Доставка: {actual_date or 'дата не указана'}"
+                if comment:
+                    message += f". Комментарий снабжения: {comment}"
+                for watcher_id in (material["foreman_id"], user_id_by_role(db, "construction_manager"), user_id_by_role(db, "owner")):
+                    if watcher_id:
+                        create_notification(
+                            db,
+                            material["project_id"],
+                            watcher_id,
+                            role_by_user_id(db, watcher_id),
+                            "Доставка материалов обработана",
+                            message,
+                        )
+                db.execute(
+                    """
+                    INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
+                    VALUES (?, 'decision', ?, ?, 'internal', 'material_request')
+                    """,
+                    (material["project_id"], message, user_id_by_role(db, "procurement_manager") or 4),
+                )
+                json_response(self, {"id": request_id, "status": "delivery_confirmed"})
+                return
+
             if path == "/api/tasks":
                 creator_role = data.get("creator_role") or "construction_manager"
                 creator_id = int(data.get("creator_id") or 0) or user_id_by_role(db, creator_role) or user_id_by_role(db, "construction_manager") or 2
@@ -1131,6 +1253,90 @@ class AppHandler(BaseHTTPRequestHandler):
                 json_response(self, {"id": cursor.lastrowid}, 201)
                 return
 
+            if path == "/api/material-requests/bulk":
+                project_id = int(data["project_id"])
+                needed_at = data.get("needed_at") or None
+                creator_id = int(data.get("creator_id") or user_id_by_role(db, "foreman") or 7)
+                base_comment = data.get("comment") or ""
+                items = data.get("items") or []
+                if not items:
+                    raise ValueError("Выберите хотя бы один материал.")
+                created: list[int] = []
+                project = db.execute("SELECT title FROM projects WHERE id = ?", (project_id,)).fetchone()
+                for item in items:
+                    estimate_material_id = int(item.get("estimate_material_id") or 0)
+                    quantity = number_value(item.get("quantity"))
+                    if not estimate_material_id or quantity <= 0:
+                        continue
+                    material = db.execute("SELECT * FROM estimate_materials WHERE id = ? AND project_id = ?", (estimate_material_id, project_id)).fetchone()
+                    if not material:
+                        continue
+                    estimated_quantity = number_value(material["estimated_quantity"])
+                    unit_price = number_value(material["unit_price"])
+                    unit = material["unit"] or ""
+                    section = material["section"] or ""
+                    reason = str(item.get("reason") or "").strip()
+                    main_quantity = min(quantity, estimated_quantity) if estimated_quantity > 0 else quantity
+                    if main_quantity > 0:
+                        created.append(
+                            create_material_request(
+                                db,
+                                project_id=project_id,
+                                creator_id=creator_id,
+                                estimate_material_id=estimate_material_id,
+                                title=material["name"],
+                                basis_type="main_estimate",
+                                estimate_section=section,
+                                needed_at=needed_at,
+                                requested_quantity=main_quantity,
+                                requested_unit=unit,
+                                total_amount=main_quantity * unit_price,
+                                comment=f"По смете. Заказано: {main_quantity:g} {unit}. {base_comment}".strip(),
+                            )
+                        )
+                    if estimated_quantity > 0 and quantity > estimated_quantity:
+                        extra_quantity = quantity - estimated_quantity
+                        if not reason:
+                            raise ValueError(f"Укажите причину превышения по материалу: {material['name']}")
+                        created.append(
+                            create_material_request(
+                                db,
+                                project_id=project_id,
+                                creator_id=creator_id,
+                                estimate_material_id=estimate_material_id,
+                                title=f"{material['name']} - сверх сметы",
+                                basis_type="main_estimate_overspend",
+                                estimate_section=section,
+                                needed_at=needed_at,
+                                requested_quantity=extra_quantity,
+                                requested_unit=unit,
+                                total_amount=extra_quantity * unit_price,
+                                comment=f"Причина превышения: {reason}. {base_comment}".strip(),
+                            )
+                        )
+                if not created:
+                    raise ValueError("Не удалось создать заявку: проверьте количество и выбранные материалы.")
+                urgency = delivery_urgency(needed_at)
+                title = "Срочная заявка на материалы" if urgency == "urgent" else "Новая заявка на материалы"
+                text = f"{project['title'] if project else 'Объект'}: {len(created)} позиций, желаемая дата доставки: {needed_at or 'не указана'}"
+                create_notification(
+                    db,
+                    project_id,
+                    user_id_by_role(db, "procurement_manager"),
+                    "procurement_manager",
+                    title,
+                    text,
+                )
+                db.execute(
+                    """
+                    INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
+                    VALUES (?, 'document', ?, ?, 'internal', 'material_request')
+                    """,
+                    (project_id, text, creator_id),
+                )
+                json_response(self, {"created": created, "urgency": urgency}, 201)
+                return
+
             if path == "/api/material-requests":
                 estimate_material_id = data.get("estimate_material_id") or None
                 estimate_material = None
@@ -1144,29 +1350,21 @@ class AppHandler(BaseHTTPRequestHandler):
                 total_amount = data.get("total_amount")
                 if (total_amount is None or total_amount == "") and estimate_material:
                     total_amount = estimate_material["total_price"]
-                cursor = db.execute(
-                    """
-                    INSERT INTO material_requests (
-                        project_id, creator_id, estimate_material_id, title, basis_type, estimate_section, needed_at,
-                        procurement_status, smetter_status, supplier, total_amount, comment
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?)
-                    """,
-                    (
-                        int(data["project_id"]),
-                        int(data.get("creator_id") or 7),
-                        int(estimate_material_id) if estimate_material_id else None,
-                        title,
-                        data.get("basis_type") or "main_estimate",
-                        estimate_section,
-                        data.get("needed_at") or None,
-                        "not_required" if data.get("basis_type") == "main_estimate" else "waiting_to_enter",
-                        data.get("supplier") or "",
-                        number_value(total_amount),
-                        data.get("comment") or "",
-                    ),
+                request_id = create_material_request(
+                    db,
+                    project_id=int(data["project_id"]),
+                    creator_id=int(data.get("creator_id") or 7),
+                    estimate_material_id=int(estimate_material_id) if estimate_material_id else None,
+                    title=title,
+                    basis_type=data.get("basis_type") or "main_estimate",
+                    estimate_section=estimate_section,
+                    needed_at=data.get("needed_at") or None,
+                    requested_quantity=number_value(data.get("requested_quantity") or (estimate_material["estimated_quantity"] if estimate_material else 0)),
+                    requested_unit=(estimate_material["unit"] if estimate_material else ""),
+                    total_amount=number_value(total_amount),
+                    comment=data.get("comment") or "",
                 )
-                json_response(self, {"id": cursor.lastrowid}, 201)
+                json_response(self, {"id": request_id}, 201)
                 return
 
             if path == "/api/estimate-materials/preview-file":
