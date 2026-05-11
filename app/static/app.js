@@ -10,6 +10,7 @@ const state = {
   selectedProjectTab: "overview",
   projectListMode: "active",
   taskFilter: "all",
+  selectedTaskProjectId: null,
 };
 
 const viewTitles = {
@@ -94,14 +95,18 @@ function label(value) {
 }
 
 function canEditProject() {
-  return ["owner", "sales_manager", "construction_manager"].includes(state.currentRole);
+  return ["owner", "sales_manager", "construction_manager"].includes(currentRoleBase());
 }
 
 function canDeleteForever() {
-  return state.currentRole === "owner";
+  return currentRoleBase() === "owner";
 }
 
 function roleLabel(role) {
+  if (String(role || "").startsWith("foreman:")) {
+    const user = state.users.find((item) => item.id === Number(String(role).split(":")[1]));
+    return `Прораб ${user?.name || ""}`.trim();
+  }
   return {
     owner: "Ген.директор",
     sales_manager: "Менеджер",
@@ -113,8 +118,13 @@ function roleLabel(role) {
   }[role] || role;
 }
 
+function currentRoleBase() {
+  return String(state.currentRole || "").split(":")[0];
+}
+
 function currentUserId() {
-  return state.users.find((user) => user.role === state.currentRole)?.id || null;
+  if (String(state.currentRole || "").includes(":")) return Number(String(state.currentRole).split(":")[1]);
+  return state.users.find((user) => user.role === currentRoleBase())?.id || null;
 }
 
 function escapeAttr(value) {
@@ -239,6 +249,25 @@ function fillSelects() {
   qsa('select[name="owner_id"], select[name="responsible_id"]').forEach((select) => (select.innerHTML = userOptions));
   qsa('#taskForm select[name="assignee_id"], #taskForm select[name="reviewer_id"]').forEach((select) => (select.innerHTML = taskUserOptions));
   updateEstimateMaterialSelect();
+  fillRoleSwitcher();
+}
+
+function fillRoleSwitcher() {
+  const select = qs("#currentRoleSelect");
+  if (!select) return;
+  const selected = state.currentRole;
+  const options = [
+    ["owner", "Ген.директор"],
+    ["sales_manager", "Менеджер"],
+    ["construction_manager", "Рук. строительства"],
+    ...usersByRole("foreman").map((user) => [`foreman:${user.id}`, `Прораб ${user.name}`]),
+    ["procurement_manager", "Снабжение"],
+    ["estimator", "Сметчик"],
+    ["technical_supervisor", "Технадзор"],
+  ];
+  select.innerHTML = options.map(([value, title]) => `<option value="${value}">${title}</option>`).join("");
+  select.value = options.some(([value]) => value === selected) ? selected : "owner";
+  state.currentRole = select.value;
 }
 
 function usersByRole(role) {
@@ -331,6 +360,12 @@ function taskMatchesFilter(task, filter) {
   return true;
 }
 
+function visibleTasksForRole(tasks) {
+  if (currentRoleBase() !== "foreman") return tasks;
+  const userId = currentUserId();
+  return tasks.filter((task) => task.project_foreman_id === userId || task.assignee_id === userId || task.reviewer_id === userId);
+}
+
 function renderTaskStats(tasks, activeFilter = state.taskFilter) {
   const stats = taskStats(tasks);
   const total = Math.max(tasks.length, 1);
@@ -368,63 +403,113 @@ function taskStatusLevel(status) {
   }[status] || "";
 }
 
+function parseTaskDate(value) {
+  if (!value) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  const date = new Date(`${String(value).slice(0, 10)}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function taskDateOnly(value) {
+  return String(value || "").slice(0, 10);
+}
+
+function daysBetween(start, end) {
+  return Math.round((end - start) / 86400000);
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function formatDateRu(value) {
+  const date = parseTaskDate(value);
+  if (!date) return "без срока";
+  return date.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
+}
+
 function canActAsTaskUser(task, kind) {
   const userId = currentUserId();
   const idKey = `${kind}_id`;
   const roleKey = `${kind}_role`;
-  return task[idKey] === userId || task[roleKey] === state.currentRole;
+  return task[idKey] === userId || task[roleKey] === currentRoleBase();
 }
 
 function canDeleteTask(task) {
-  return ["owner", "construction_manager"].includes(state.currentRole);
+  return ["owner", "construction_manager"].includes(currentRoleBase());
 }
 
 function renderTaskCalendar(tasks) {
   const dated = tasks
     .filter((task) => task.due_date)
     .sort((a, b) => new Date(`${a.due_date}T00:00:00`) - new Date(`${b.due_date}T00:00:00`));
-  if (!dated.length) return `<p class="muted">В задачах пока нет сроков для календарного графика.</p>`;
-  const byDate = dated.reduce((acc, task) => {
-    acc[task.due_date] = acc[task.due_date] || [];
-    acc[task.due_date].push(task);
-    return acc;
-  }, {});
+  if (!dated.length) {
+    return `
+      <div class="task-calendar-head">
+        <h3>Календарный график задач</h3>
+        <span class="muted">Появится после указания сроков</span>
+      </div>
+      <p class="muted">В задачах пока нет сроков для календарного графика.</p>`;
+  }
+
+  const today = new Date();
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const startDates = dated.map((task) => parseTaskDate(taskDateOnly(task.created_at)) || todayStart);
+  const dueDates = dated.map((task) => parseTaskDate(task.due_date)).filter(Boolean);
+  const rangeStart = new Date(Math.min(...startDates.map((date) => date.getTime()), todayStart.getTime()));
+  const rangeEnd = new Date(Math.max(...dueDates.map((date) => date.getTime()), todayStart.getTime()));
+  const totalDays = Math.max(daysBetween(rangeStart, rangeEnd), 1);
+  const checkpoints = [rangeStart, new Date(rangeStart.getTime() + (totalDays * 86400000) / 2), rangeEnd];
+
   return `
-    <div class="task-calendar">
-      ${Object.entries(byDate)
-        .slice(0, 10)
-        .map(
-          ([date, rows]) => `
-          <div class="calendar-day ${levelByDate(date)}">
-            <div class="calendar-date">${date}</div>
-            <div class="calendar-items">
-              ${rows
-                .map(
-                  (task) => `
-                  <div class="calendar-task">
-                    ${pill(label(task.status), taskStatusLevel(task.status))}
-                    <span>${task.title}</span>
-                    <small>${task.project_title}</small>
-                  </div>`
-                )
-                .join("")}
-            </div>
-          </div>`
-        )
+    <div class="task-calendar-head">
+      <h3>Календарный график задач</h3>
+      <span class="muted">Сроки и текущий статус выполнения</span>
+    </div>
+    <div class="task-gantt">
+      <div class="task-gantt-scale">
+        <span>${formatDateRu(rangeStart)}</span>
+        <span>${formatDateRu(checkpoints[1])}</span>
+        <span>${formatDateRu(rangeEnd)}</span>
+      </div>
+      ${dated
+        .map((task) => {
+          const createdDate = parseTaskDate(taskDateOnly(task.created_at)) || rangeStart;
+          const dueDate = parseTaskDate(task.due_date) || rangeEnd;
+          const startOffset = clamp((daysBetween(rangeStart, createdDate) / totalDays) * 100, 0, 100);
+          const endOffset = clamp((daysBetween(rangeStart, dueDate) / totalDays) * 100, 0, 100);
+          const width = Math.max(endOffset - startOffset, 4);
+          const statusClass = taskStatusLevel(task.status) || levelByDate(task.due_date);
+          return `
+            <div class="task-gantt-row">
+              <div class="task-gantt-meta">
+                <strong>${task.title}</strong>
+                <span>${task.project_title} · ${task.assignee_name || "исполнитель не назначен"}</span>
+              </div>
+              <div class="task-gantt-track">
+                <div class="task-gantt-bar ${statusClass}" style="left: ${startOffset}%; width: ${width}%;">
+                  <span>${label(task.status)}</span>
+                </div>
+                <i class="task-gantt-deadline ${levelByDate(task.due_date)}" style="left: ${endOffset}%"></i>
+              </div>
+              <div class="task-gantt-date">${formatDateRu(task.due_date)}</div>
+            </div>`;
+        })
         .join("")}
     </div>`;
 }
 
 async function renderDashboard() {
   const [summary, tasks] = await Promise.all([api("/api/summary"), api("/api/tasks")]);
+  const roleTasks = visibleTasksForRole(tasks);
   qs("#summaryCards").innerHTML = `
     <div class="metric"><span class="muted">Объекты</span><strong>${summary.projects}</strong><span>В базе MVP</span></div>
     <div class="metric"><span class="muted">У менеджера</span><strong>${summary.pending_handover}</strong><span>Черновики и доработки</span></div>
     <div class="metric"><span class="muted">Задачи к приемке</span><strong>${summary.task_done_waiting || 0}</strong><span>Выполнены, но не приняты</span></div>
-    <div class="metric"><span class="muted">Просрочено</span><strong>${taskStats(tasks).overdue}</strong><span>По открытым задачам</span></div>
+    <div class="metric"><span class="muted">Просрочено</span><strong>${taskStats(roleTasks).overdue}</strong><span>По открытым задачам</span></div>
   `;
-  qs("#dashboardTaskStats").innerHTML = renderTaskStats(tasks);
-  qs("#dashboardTaskCalendar").innerHTML = renderTaskCalendar(tasks);
+  qs("#dashboardTaskStats").innerHTML = renderTaskStats(roleTasks);
+  qs("#dashboardTaskCalendar").innerHTML = renderTaskCalendar(roleTasks);
   qs("#dashboardProjects").innerHTML = state.projects
     .slice(0, 4)
     .map(
@@ -435,7 +520,7 @@ async function renderDashboard() {
       </button>`
     )
     .join("");
-  qs("#dashboardTasks").innerHTML = tasks
+  qs("#dashboardTasks").innerHTML = roleTasks
     .slice(0, 4)
     .map(
       (task) => `
@@ -777,15 +862,57 @@ function tabTitle(tab) {
 }
 
 async function renderTasks() {
-  const tasks = await api("/api/tasks");
+  const allTasks = visibleTasksForRole(await api("/api/tasks"));
+  const grouped = allTasks.reduce((acc, task) => {
+    acc[task.project_id] = acc[task.project_id] || {
+      id: task.project_id,
+      title: task.project_title,
+      foremanId: task.project_foreman_id,
+      tasks: [],
+    };
+    acc[task.project_id].tasks.push(task);
+    return acc;
+  }, {});
+  if (currentRoleBase() === "foreman") {
+    const userId = currentUserId();
+    state.projects
+      .filter((project) => project.foreman_id === userId)
+      .forEach((project) => {
+        grouped[project.id] = grouped[project.id] || {
+          id: project.id,
+          title: project.title,
+          foremanId: project.foreman_id,
+          tasks: [],
+        };
+      });
+  }
+  const taskProjects = Object.values(grouped).sort((a, b) => a.title.localeCompare(b.title, "ru"));
+  if (!state.selectedTaskProjectId && taskProjects.length) state.selectedTaskProjectId = taskProjects[0].id;
+  if (state.selectedTaskProjectId && !grouped[state.selectedTaskProjectId] && taskProjects.length) state.selectedTaskProjectId = taskProjects[0].id;
+  if (!taskProjects.length) state.selectedTaskProjectId = null;
+  const selectedGroup = grouped[state.selectedTaskProjectId] || null;
+  const tasks = selectedGroup ? selectedGroup.tasks : [];
+  qs("#taskProjectRows").innerHTML = taskProjects.length
+    ? taskProjects
+        .map((project) => {
+          const stats = taskStats(project.tasks);
+          const newCount = project.tasks.filter((task) => ["new", "returned", "completed_pending_acceptance"].includes(task.status)).length;
+          return `
+            <button class="row clickable task-project-row ${state.selectedTaskProjectId === project.id ? "active" : ""}" data-task-project="${project.id}">
+              <div class="stack-line"><strong>${project.title}</strong>${newCount ? pill(`${newCount} требует внимания`, "warning") : ""}</div>
+              <div class="muted">Задач: ${project.tasks.length} · в работе: ${stats.active} · на доработке: ${stats.returned} · не принято: ${stats.waiting}</div>
+            </button>`;
+        })
+        .join("")
+    : `<p class="muted">${currentRoleBase() === "foreman" ? "За этим прорабом пока нет объектов с задачами." : "Задач пока нет."}</p>`;
   qs("#taskStats").innerHTML = renderTaskStats(tasks);
   qs("#taskCalendar").innerHTML = renderTaskCalendar(tasks);
   const visibleTasks = tasks.filter((task) => taskMatchesFilter(task, state.taskFilter));
   qs("#taskRows").innerHTML = visibleTasks.length
     ? visibleTasks
         .map((task) => {
-          const canComplete = task.status !== "accepted" && task.status !== "completed_pending_acceptance" && (canActAsTaskUser(task, "assignee") || ["owner", "construction_manager"].includes(state.currentRole));
-          const canReview = task.status === "completed_pending_acceptance" && (["owner", "construction_manager"].includes(state.currentRole) || canActAsTaskUser(task, "reviewer"));
+          const canComplete = task.status !== "accepted" && task.status !== "completed_pending_acceptance" && (canActAsTaskUser(task, "assignee") || ["owner", "construction_manager"].includes(currentRoleBase()));
+          const canReview = task.status === "completed_pending_acceptance" && (["owner", "construction_manager"].includes(currentRoleBase()) || canActAsTaskUser(task, "reviewer"));
           return `
             <div class="row task-row">
               <div class="row-grid">
@@ -986,6 +1113,21 @@ async function submitForm(dialogId, formId, endpoint, successMessage) {
   showToast(successMessage);
 }
 
+function hasOpenDialog() {
+  return Boolean(document.querySelector("dialog[open]"));
+}
+
+async function refreshLiveData() {
+  if (hasOpenDialog()) return;
+  const selectedProjectId = state.selectedProjectId;
+  const selectedTaskProjectId = state.selectedTaskProjectId;
+  await loadAll();
+  state.selectedProjectId = selectedProjectId;
+  state.selectedTaskProjectId = selectedTaskProjectId;
+  if (selectedProjectId) await renderProjectDetail(selectedProjectId);
+  if (state.view === "tasks") await renderTasks();
+}
+
 function setProjectFileFieldsRequired(required) {
   ["estimate_file_name", "contract_file", "estimate_doc_file", "payment_schedule_file", "project_docs_file"].forEach((name) => {
     const input = qs(`#projectForm input[name="${name}"]`);
@@ -1082,6 +1224,7 @@ async function handleProjectAction(button) {
     method: "POST",
     body: JSON.stringify(payload),
   });
+  const numericProjectId = Number(projectId);
   if (action === "delete") {
     state.selectedProjectId = null;
     state.projectListMode = "archive";
@@ -1094,9 +1237,11 @@ async function handleProjectAction(button) {
   if (action === "restore") {
     state.projectListMode = "active";
   }
+  state.selectedProjectId = numericProjectId;
   await loadAll();
-  state.selectedProjectId = Number(projectId);
+  state.selectedProjectId = numericProjectId;
   switchView("projects");
+  await renderProjects();
   await renderProjectDetail(state.selectedProjectId);
   showToast(message);
 }
@@ -1124,13 +1269,20 @@ async function handleTaskAction(button) {
     const confirmed = window.confirm("Удалить задачу? Это действие нельзя отменить.");
     if (!confirmed) return;
     message = "Задача удалена";
-    payload = { actor_role: state.currentRole };
+    payload = { actor_role: currentRoleBase() };
   }
   await api(`/api/tasks/${taskId}/${action}`, {
     method: "POST",
     body: JSON.stringify(payload),
   });
-  await Promise.all([renderTasks(), renderDashboard(), renderNotifications()]);
+  const selectedProjectId = state.selectedProjectId;
+  const selectedTaskProjectId = state.selectedTaskProjectId;
+  state.selectedProjectId = selectedProjectId;
+  state.selectedTaskProjectId = selectedTaskProjectId;
+  await loadAll();
+  state.selectedProjectId = selectedProjectId;
+  state.selectedTaskProjectId = selectedTaskProjectId;
+  if (state.view === "tasks") await renderTasks();
   if (state.selectedProjectId) await renderProjectDetail(state.selectedProjectId);
   showToast(message);
 }
@@ -1142,6 +1294,9 @@ function bindEvents() {
   qs("#currentRoleSelect").addEventListener("change", async (event) => {
     state.currentRole = event.target.value;
     if (state.selectedProjectId) await renderProjectDetail(state.selectedProjectId);
+    state.selectedTaskProjectId = null;
+    await renderTasks();
+    await renderDashboard();
     showToast(`Роль: ${roleLabel(state.currentRole)}`);
   });
 
@@ -1152,8 +1307,9 @@ function bindEvents() {
   qs("#newTaskButton").addEventListener("click", () => {
     const form = qs("#taskForm");
     form.reset();
-    form.elements.creator_role.value = state.currentRole;
+    form.elements.creator_role.value = currentRoleBase();
     const userId = currentUserId();
+    form.elements.creator_id.value = userId || "";
     if (userId && form.elements.reviewer_id) form.elements.reviewer_id.value = String(userId);
     qs("#taskDialog").showModal();
   });
@@ -1175,6 +1331,14 @@ function bindEvents() {
     if (taskFilterButton) {
       state.taskFilter = taskFilterButton.dataset.taskFilter;
       switchView("tasks");
+      await renderTasks();
+      return;
+    }
+
+    const taskProjectButton = event.target.closest("[data-task-project]");
+    if (taskProjectButton) {
+      state.selectedTaskProjectId = Number(taskProjectButton.dataset.taskProject);
+      state.taskFilter = "all";
       await renderTasks();
       return;
     }
@@ -1241,7 +1405,8 @@ function bindEvents() {
   });
   qs("#taskForm").addEventListener("submit", (event) => {
     event.preventDefault();
-    qs('#taskForm input[name="creator_role"]').value = state.currentRole;
+    qs('#taskForm input[name="creator_role"]').value = currentRoleBase();
+    qs('#taskForm input[name="creator_id"]').value = currentUserId() || "";
     submitForm("taskDialog", "taskForm", "/api/tasks", "Задача создана");
   });
   qs("#materialForm").addEventListener("submit", (event) => {
@@ -1300,3 +1465,7 @@ function bindEvents() {
 
 bindEvents();
 loadAll().catch((error) => showToast(error.message));
+setInterval(() => {
+  if (document.hidden) return;
+  refreshLiveData().catch((error) => showToast(error.message));
+}, 10000);

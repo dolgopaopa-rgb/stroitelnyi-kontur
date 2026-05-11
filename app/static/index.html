@@ -40,7 +40,8 @@
                 <option value="owner">Ген.директор</option>
                 <option value="sales_manager">Менеджер</option>
                 <option value="construction_manager">Рук. строительства</option>
-                <option value="foreman">Прораб</option>
+                <option value="foreman:7">Прораб Андрей</option>
+                <option value="foreman:8">Прораб Сергей</option>
                 <option value="procurement_manager">Снабжение</option>
                 <option value="estimator">Сметчик</option>
                 <option value="technical_supervisor">Технадзор</option>
@@ -110,8 +111,16 @@
               <button class="primary" id="newTaskButton">Добавить задачу</button>
             </div>
             <div id="taskStats"></div>
-            <div id="taskCalendar"></div>
-            <div class="table" id="taskRows"></div>
+            <div class="task-workspace">
+              <section class="task-object-panel">
+                <h3>Объекты</h3>
+                <div class="table" id="taskProjectRows"></div>
+              </section>
+              <section class="task-detail-panel">
+                <div id="taskCalendar"></div>
+                <div class="table" id="taskRows"></div>
+              </section>
+            </div>
           </div>
         </section>
 
@@ -256,6 +265,7 @@
         </div>
         <label>Кому сдать выполнение <select name="reviewer_id"></select></label>
         <input name="creator_role" type="hidden" />
+        <input name="creator_id" type="hidden" />
         <label>Комментарий <textarea name="description" rows="3"></textarea></label>
         <div class="form-actions">
           <button type="button" class="secondary" data-close="taskDialog">Отмена</button>

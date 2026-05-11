@@ -529,7 +529,7 @@ class AppHandler(BaseHTTPRequestHandler):
 
             endpoints = {
                 "/api/tasks": """
-                    SELECT t.*, p.title AS project_title,
+                    SELECT t.*, p.title AS project_title, p.foreman_id AS project_foreman_id,
                            assignee.name AS assignee_name, assignee.role AS assignee_role,
                            creator.name AS creator_name, creator.role AS creator_role,
                            reviewer.name AS reviewer_name, reviewer.role AS reviewer_role
@@ -996,7 +996,7 @@ class AppHandler(BaseHTTPRequestHandler):
 
             if path == "/api/tasks":
                 creator_role = data.get("creator_role") or "construction_manager"
-                creator_id = user_id_by_role(db, creator_role) or user_id_by_role(db, "construction_manager") or 2
+                creator_id = int(data.get("creator_id") or 0) or user_id_by_role(db, creator_role) or user_id_by_role(db, "construction_manager") or 2
                 reviewer_id = int(data.get("reviewer_id") or creator_id)
                 assignee_id = int(data.get("assignee_id") or 2)
                 cursor = db.execute(
