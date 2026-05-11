@@ -680,7 +680,22 @@ def safe_file_name(file_name: str) -> str:
     return re.sub(r"[^A-Za-zА-Яа-я0-9._() -]+", "_", name)[:140]
 
 
-def save_document_file(db, project_id: int | None, file_data: dict, title: str, doc_type: str, related_type: str = "project") -> int | None:
+def knowledge_base_project_id(db) -> int:
+    row = db.execute("SELECT id FROM projects WHERE bitrix_ref = '__knowledge_base__' LIMIT 1").fetchone()
+    if row:
+        return int(row["id"])
+    cursor = db.execute(
+        """
+        INSERT INTO projects (
+            title, customer_name, status, bitrix_ref, archive_reason, archived_at
+        )
+        VALUES ('База знаний', 'Служебный раздел', 'archived', '__knowledge_base__', 'Служебный объект для базы знаний', CURRENT_TIMESTAMP)
+        """
+    )
+    return int(cursor.lastrowid)
+
+
+def save_document_file(db, project_id: int, file_data: dict, title: str, doc_type: str, related_type: str = "project") -> int | None:
     file_name = safe_file_name(file_data.get("file_name") or title)
     encoded = file_data.get("file_base64") or ""
     if not encoded:
@@ -688,7 +703,7 @@ def save_document_file(db, project_id: int | None, file_data: dict, title: str, 
     if "," in encoded:
         encoded = encoded.split(",", 1)[1]
     raw = base64.b64decode(encoded)
-    project_dir = UPLOAD_DIR / (f"project_{project_id}" if project_id else "knowledge_base")
+    project_dir = UPLOAD_DIR / f"project_{project_id}"
     project_dir.mkdir(parents=True, exist_ok=True)
     target_name = f"{int(time.time() * 1000)}_{file_name}"
     target_path = project_dir / target_name
@@ -702,7 +717,7 @@ def save_document_file(db, project_id: int | None, file_data: dict, title: str, 
         VALUES (?, ?, ?, '', 'active', ?, NULL, ?, ?, ?, ?, ?)
         """,
         (
-            project_id or 0,
+            project_id,
             title,
             doc_type,
             user_id_by_role(db, "sales_manager") or 3,
@@ -1121,6 +1136,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     LEFT JOIN users tech ON tech.id = p.tech_supervisor_id
                     LEFT JOIN users sales ON sales.id = p.sales_manager_id
                     WHERE p.status = 'archived'
+                      AND COALESCE(p.bitrix_ref, '') != '__knowledge_base__'
                     ORDER BY p.archived_at DESC, p.updated_at DESC
                     """
                 ).fetchall()
@@ -2645,6 +2661,8 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 if project_id is None:
                     json_response(self, {"error": "Для документа объекта нужно выбрать объект"}, 400)
                     return
+                if related_type == "knowledge_base":
+                    project_id = knowledge_base_project_id(db)
                 if file_data.get("file_base64"):
                     document_id = save_document_file(
                         db,
