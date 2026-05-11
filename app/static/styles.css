@@ -469,34 +469,98 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+#projectDetail {
+  font-size: 13px;
+}
+
 #projectDetail h2 {
-  font-size: 19px;
-  line-height: 1.2;
+  font-size: 17px;
+  line-height: 1.15;
 }
 
 #projectDetail .stack-line {
-  gap: 6px;
+  gap: 5px;
+}
+
+#projectDetail .pill {
+  min-height: 20px;
+  padding: 0 7px;
+  font-size: 11px;
 }
 
 #projectDetail .workflow-panel {
-  margin-top: 10px;
-  padding: 10px;
-  gap: 9px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  gap: 7px;
 }
 
 #projectDetail .workflow-panel h3 {
-  font-size: 17px;
+  font-size: 15px;
+  line-height: 1.15;
+}
+
+#projectDetail .workflow-panel p,
+#projectDetail .workflow-panel .muted {
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+#projectDetail .form-actions {
+  gap: 8px;
+}
+
+#projectDetail .primary,
+#projectDetail .secondary,
+#projectDetail .danger-button,
+#projectDetail .link-button {
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+#projectDetail .project-detail-map .inline-link {
+  min-height: 22px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+#projectDetail textarea {
+  min-height: 54px;
+  padding: 8px;
+  font-size: 13px;
 }
 
 #projectDetail .tabs {
-  margin: 10px 0;
+  margin: 8px 0;
   gap: 6px;
 }
 
 #projectDetail .tab {
-  min-height: 30px;
-  padding: 0 9px;
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+#projectDetail .document-list {
+  gap: 6px;
+}
+
+#projectDetail .document-row {
+  padding: 7px 8px;
+}
+
+#projectDetail .document-link {
+  gap: 2px;
+}
+
+#projectDetail .document-link strong {
   font-size: 13px;
+  line-height: 1.2;
+}
+
+#projectDetail .document-link span {
+  font-size: 12px;
+  line-height: 1.25;
 }
 
 .detail {

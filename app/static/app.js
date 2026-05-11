@@ -245,19 +245,31 @@ function documentType(type) {
   }[type] || type || "Документ";
 }
 
+function isBrokenText(value) {
+  const text = String(value || "").trim();
+  return Boolean(text) && /^[?\s.,:;!()[\]-]+$/.test(text);
+}
+
+function documentTitle(doc) {
+  const title = String(doc.title || "").trim();
+  if (title && !isBrokenText(title)) return title;
+  return documentType(doc.type) || doc.file_name || "Документ";
+}
+
 function documentFileLink(doc) {
   const type = documentType(doc.type);
+  const title = documentTitle(doc);
   const file = doc.file_name || "";
   if (!doc.file_path) {
     return `
       <div>
-        <strong>${doc.title}</strong>
+        <strong>${title}</strong>
         <div class="muted">${type} · файл не загружен</div>
       </div>`;
   }
   return `
     <a class="document-link" href="/api/documents/${doc.id}/download" target="_blank" rel="noopener noreferrer">
-      <strong>${doc.title}</strong>
+      <strong>${title}</strong>
       <span>${type}${file ? ` · ${file}` : ""}</span>
     </a>`;
 }
@@ -1780,7 +1792,7 @@ async function renderDocuments() {
   const docs = await api("/api/documents");
   qs("#documentCards").innerHTML = docs.map((doc) => `
     <article class="card">
-      <div class="stack-line"><strong>${doc.title}</strong>${pill(documentType(doc.type), "blue")}${pill(label(doc.status))}</div>
+      <div class="stack-line"><strong>${documentTitle(doc)}</strong>${pill(documentType(doc.type), "blue")}${pill(label(doc.status))}</div>
       <div class="muted">${doc.project_title} · ответственный: ${doc.owner_name || "не назначен"}</div>
       ${doc.file_path ? documentFileLink(doc) : `<div class="muted">${doc.file_name || "Файл не загружен"}</div>`}
       <div class="stack-line">${doc.version ? pill(`Версия: ${doc.version}`) : ""}${doc.due_date ? pill(`Срок: ${doc.due_date}`, levelByDate(doc.due_date)) : ""}</div>
