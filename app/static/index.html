@@ -129,6 +129,13 @@
                 <h2>Заявки на материалы</h2>
                 <button class="primary" id="newMaterialButton">Добавить заявку</button>
               </div>
+              <div class="material-list-toolbar">
+                <div class="segmented-control" role="tablist" aria-label="Режим списка заявок">
+                  <button class="segment active" type="button" data-material-list-mode="active">Активные</button>
+                  <button class="segment" type="button" data-material-list-mode="archive">Архив</button>
+                </div>
+                <button class="secondary" id="exportCompletedMaterialsButton" type="button">Выгрузить выполненные</button>
+              </div>
               <div class="table" id="materialRows"></div>
             </section>
             <section class="panel">

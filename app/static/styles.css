@@ -640,9 +640,68 @@ h2 {
   text-align: left;
 }
 
+.material-archive-group {
+  display: grid;
+  gap: 8px;
+}
+
+.material-archive-group + .material-archive-group {
+  margin-top: 12px;
+}
+
+.material-archive-group h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.material-list-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 12px;
+  flex-wrap: wrap;
+}
+
 .material-review-items {
   max-height: min(48vh, 520px);
   overflow: auto;
+}
+
+.material-batch-edit-panel h4 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.material-batch-edit-list {
+  max-height: min(42vh, 460px);
+  overflow: auto;
+}
+
+.material-batch-edit-row {
+  grid-template-columns: minmax(220px, 1fr) minmax(110px, 0.35fr) minmax(130px, 0.45fr);
+  align-items: start;
+}
+
+.material-batch-edit-row .wide-field,
+.material-batch-edit-row .check-line {
+  grid-column: 1 / -1;
+}
+
+.check-line {
+  display: flex;
+  grid-template-columns: none;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.check-line input {
+  width: auto;
+}
+
+.material-extra-head {
+  margin: 12px 0 8px;
 }
 
 .extra-material-row {
@@ -1109,6 +1168,10 @@ textarea {
   }
 
   .extra-material-row {
+    grid-template-columns: 1fr;
+  }
+
+  .material-batch-edit-row {
     grid-template-columns: 1fr;
   }
 

@@ -11,6 +11,7 @@ const state = {
   selectedProjectId: null,
   selectedProjectTab: "overview",
   projectListMode: "active",
+  materialListMode: "active",
   taskFilter: "all",
   selectedTaskProjectId: null,
 };
@@ -491,16 +492,16 @@ function renderExtraMaterialRow() {
     </div>`;
 }
 
-function addExtraMaterialRow() {
-  qs("#extraMaterialRows").insertAdjacentHTML("beforeend", renderExtraMaterialRow());
+function addExtraMaterialRow(containerSelector = "#extraMaterialRows") {
+  qs(containerSelector)?.insertAdjacentHTML("beforeend", renderExtraMaterialRow());
 }
 
 function resetExtraMaterials() {
   qs("#extraMaterialRows").innerHTML = "";
 }
 
-function collectExtraMaterials() {
-  return qsa("#extraMaterialRows .extra-material-row")
+function collectExtraMaterials(containerSelector = "#extraMaterialRows") {
+  return qsa(`${containerSelector} .extra-material-row`)
     .map((row) => ({
       material: row.querySelector('[data-extra-material-field="material"]').value.trim(),
       name: row.querySelector('[data-extra-material-field="name"]').value.trim(),
@@ -581,6 +582,7 @@ function buildMaterialBatches(items) {
         received_at: item.batch_received_at || "",
         receipt_status: item.batch_receipt_status || "",
         receipt_comment: item.batch_receipt_comment || "",
+        archived_at: item.batch_archived_at || "",
         items: [],
         total_amount: 0,
       });
@@ -608,6 +610,71 @@ function materialBatchLevel(status) {
     received: "success",
     receipt_issue: "danger",
   }[status] || "";
+}
+
+function canEditMaterialBatch(batch) {
+  if (!batch.id || !["new", "revision_requested"].includes(batch.status)) return false;
+  if (["owner", "construction_manager"].includes(currentRoleBase())) return true;
+  return currentRoleBase() === "foreman" && [Number(batch.project_foreman_id), Number(batch.creator_id)].includes(Number(currentUserId()));
+}
+
+function renderMaterialBatchEditSection(batch) {
+  return `
+    <section class="workflow-panel material-batch-edit-panel">
+      <h3>Исправление заявки</h3>
+      <p class="muted">Пока снабжение не взяло заявку в работу, ее можно изменить или удалить. После принятия в работу правки блокируются.</p>
+      <div class="table material-batch-edit-list" id="materialBatchEditRows">
+        ${batch.items
+          .map(
+            (item) => `
+            <div class="row material-batch-edit-row" data-edit-item-id="${item.id}">
+              <div class="material-main">
+                <strong>${item.title}</strong>
+                <div class="muted">${item.estimate_section || "без раздела"}</div>
+                ${!item.estimate_material_id ? `<label>Наименование <input data-edit-item-title value="${escapeAttr(item.title)}" /></label>` : ""}
+              </div>
+              <label>Количество <input data-edit-item-quantity type="number" min="0" step="0.001" value="${item.requested_quantity || item.estimated_quantity || 0}" /></label>
+              ${
+                !item.estimate_material_id
+                  ? `<label>Причина
+                      <select data-edit-item-basis>
+                        <option value="additional_work" ${item.basis_type === "additional_work" ? "selected" : ""}>Доп</option>
+                        <option value="material_replacement" ${item.basis_type === "material_replacement" ? "selected" : ""}>Замена</option>
+                        <option value="main_estimate_overspend" ${item.basis_type === "main_estimate_overspend" ? "selected" : ""}>Превышение</option>
+                        <option value="over_budget_cost" ${item.basis_type === "over_budget_cost" ? "selected" : ""}>Сверх бюджета</option>
+                      </select>
+                    </label>`
+                  : `<div>${pill(materialBasisLabel(item.basis_type), materialBasisLevel(item.basis_type))}</div>`
+              }
+              <label class="wide-field">Комментарий <textarea data-edit-item-comment rows="2">${item.comment || ""}</textarea></label>
+              <label class="check-line"><input data-edit-item-remove type="checkbox" /> Удалить позицию</label>
+            </div>`
+          )
+          .join("")}
+      </div>
+      <div class="stack-line material-extra-head">
+        <h4>Добавить новые материалы</h4>
+        <button class="secondary" type="button" data-add-batch-extra-material>Добавить строку</button>
+      </div>
+      <div class="table" id="batchExtraMaterialRows"></div>
+      <label>Желаемая дата доставки <input id="materialBatchUpdateNeededAt" type="date" value="${batch.needed_at || ""}" /></label>
+      <label>Комментарий к исправлению <textarea id="materialBatchUpdateComment" rows="3" placeholder="Например: уточнил длину арматуры, добавил замену"></textarea></label>
+      <div class="form-actions">
+        <button class="primary" type="button" data-material-batch-action="update" data-material-batch-id="${batch.id}">Сохранить и отправить снова</button>
+        <button class="danger-button" type="button" data-material-batch-action="delete" data-material-batch-id="${batch.id}">Удалить заявку</button>
+      </div>
+    </section>`;
+}
+
+function collectMaterialBatchEdits() {
+  return qsa("#materialBatchEditRows .material-batch-edit-row").map((row) => ({
+    id: row.dataset.editItemId,
+    title: row.querySelector("[data-edit-item-title]")?.value.trim(),
+    quantity: row.querySelector("[data-edit-item-quantity]")?.value,
+    basis_type: row.querySelector("[data-edit-item-basis]")?.value,
+    comment: row.querySelector("[data-edit-item-comment]")?.value.trim(),
+    remove: row.querySelector("[data-edit-item-remove]")?.checked || false,
+  }));
 }
 
 function taskStats(tasks) {
@@ -1131,28 +1198,55 @@ async function renderTasks() {
 }
 
 async function renderMaterials() {
-  const items = await api("/api/material-requests");
+  qsa("[data-material-list-mode]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.materialListMode === state.materialListMode);
+  });
+  const exportButton = qs("#exportCompletedMaterialsButton");
+  if (exportButton) exportButton.hidden = !["owner", "construction_manager", "procurement_manager"].includes(currentRoleBase());
+  const items = await api(`/api/material-requests?archive=${state.materialListMode === "archive" ? "1" : "0"}`);
   state.materialRequests = items;
   const visibleItems =
     currentRoleBase() === "foreman"
       ? items.filter((item) => Number(item.project_foreman_id) === Number(currentUserId()) || Number(item.creator_id) === Number(currentUserId()))
       : items;
   const batches = buildMaterialBatches(visibleItems);
-  qs("#materialRows").innerHTML = batches.length ? batches.map((batch) => {
-    return `
+  const renderBatchCard = (batch) => `
       <button class="row clickable material-request-row material-batch-row" type="button" data-open-material-batch="${batch.key}">
         <div class="material-main">
           <strong>${materialBatchTitle(batch, currentRoleBase() === "procurement_manager")}</strong>
           <div class="muted">Объект: ${batch.project_title || "не указан"} · создал: ${batch.creator_name || "не указано"}</div>
           <div class="muted">Позиций: ${batch.items.length} · желаемая доставка: ${batch.needed_at || "не указана"} · сумма: ${money(batch.total_amount)}</div>
           ${batch.revision_comment ? `<div class="muted">Комментарий по доработке: ${batch.revision_comment}</div>` : ""}
+          ${state.materialListMode === "archive" && batch.archived_at ? `<div class="muted">В архиве с ${formatDateRu(batch.archived_at)}</div>` : ""}
         </div>
         <div class="stack-line">
           ${pill(urgencyLabel(batch.delivery_urgency), urgencyLevel(batch.delivery_urgency))}
           ${pill(label(batch.status), materialBatchLevel(batch.status))}
         </div>
       </button>`;
-  }).join("") : `<p class="muted">${currentRoleBase() === "foreman" ? "По объектам этого прораба заявок пока нет. Нажмите “Добавить заявку”, чтобы заказать материалы." : "Заявок на материалы пока нет."}</p>`;
+  if (!batches.length) {
+    qs("#materialRows").innerHTML = `<p class="muted">${state.materialListMode === "archive" ? "В архиве заявок пока нет." : currentRoleBase() === "foreman" ? "По объектам этого прораба заявок пока нет. Нажмите “Добавить заявку”, чтобы заказать материалы." : "Заявок на материалы пока нет."}</p>`;
+    return;
+  }
+  if (state.materialListMode === "archive") {
+    const grouped = batches.reduce((acc, batch) => {
+      const title = batch.project_title || "Объект не указан";
+      acc[title] = acc[title] || [];
+      acc[title].push(batch);
+      return acc;
+    }, {});
+    qs("#materialRows").innerHTML = Object.entries(grouped)
+      .map(
+        ([projectTitle, projectBatches]) => `
+        <section class="material-archive-group">
+          <h3>${projectTitle}</h3>
+          <div class="table">${projectBatches.map(renderBatchCard).join("")}</div>
+        </section>`
+      )
+      .join("");
+    return;
+  }
+  qs("#materialRows").innerHTML = batches.map(renderBatchCard).join("");
 }
 
 function findMaterialBatch(batchKey) {
@@ -1161,7 +1255,7 @@ function findMaterialBatch(batchKey) {
 
 async function openMaterialBatchDialog(batchKey) {
   if (!state.materialRequests.length) {
-    state.materialRequests = await api("/api/material-requests");
+    state.materialRequests = await api(`/api/material-requests?archive=${state.materialListMode === "archive" ? "1" : "0"}`);
   }
   const batch = findMaterialBatch(batchKey);
   if (!batch) {
@@ -1171,7 +1265,7 @@ async function openMaterialBatchDialog(batchKey) {
   qs("#materialReviewTitle").textContent = materialBatchTitle(batch, currentRoleBase() === "procurement_manager");
   const canReview = currentRoleBase() === "procurement_manager" && batch.id && ["new", "revision_requested"].includes(batch.status);
   const canSchedule = currentRoleBase() === "procurement_manager" && batch.id && ["in_work", "delivery_scheduled"].includes(batch.status);
-  const canResubmit = currentRoleBase() === "foreman" && batch.id && batch.status === "revision_requested" && Number(batch.project_foreman_id) === Number(currentUserId());
+  const canEdit = canEditMaterialBatch(batch);
   const canReceive = currentRoleBase() === "foreman" && batch.id && batch.status === "delivery_scheduled" && Number(batch.project_foreman_id) === Number(currentUserId());
   qs("#materialReviewContent").innerHTML = `
     <section class="workflow-panel compact-workflow">
@@ -1232,14 +1326,8 @@ async function openMaterialBatchDialog(batchKey) {
         : ""
     }
     ${
-      canResubmit
-        ? `<section class="workflow-panel">
-            <h3>Доработка заявки</h3>
-            <label>Комментарий прораба <textarea id="materialBatchResubmitComment" rows="3" placeholder="Пояснение для снабжения"></textarea></label>
-            <div class="form-actions">
-              <button class="primary" type="button" data-material-batch-action="resubmit" data-material-batch-id="${batch.id}">Отправить повторно</button>
-            </div>
-          </section>`
+      canEdit
+        ? renderMaterialBatchEditSection(batch)
         : ""
     }
     ${
@@ -1656,6 +1744,17 @@ function bindEvents() {
     state.showEstimateMaterials = !state.showEstimateMaterials;
     await renderEstimateMaterials();
   });
+  qsa("[data-material-list-mode]").forEach((button) =>
+    button.addEventListener("click", async () => {
+      state.materialListMode = button.dataset.materialListMode;
+      await renderMaterials();
+    })
+  );
+  qs("#exportCompletedMaterialsButton").addEventListener("click", () => {
+    const projectId = qs('#estimateImportForm select[name="project_id"]')?.value || "";
+    const suffix = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
+    window.open(`/api/material-requests/export${suffix}`, "_blank", "noopener");
+  });
   qs('#estimateImportForm select[name="project_id"]').addEventListener("change", renderEstimateMaterials);
   qs("#refreshEstimateButton").addEventListener("click", renderEstimateMaterials);
   qs("#previewEstimateButton").addEventListener("click", loadEstimatePreview);
@@ -1690,6 +1789,12 @@ function bindEvents() {
       return;
     }
 
+    const addBatchExtraMaterial = event.target.closest("[data-add-batch-extra-material]");
+    if (addBatchExtraMaterial) {
+      addExtraMaterialRow("#batchExtraMaterialRows");
+      return;
+    }
+
     const actionButton = event.target.closest("[data-project-action]");
     if (actionButton) {
       await handleProjectAction(actionButton);
@@ -1713,11 +1818,20 @@ function bindEvents() {
       const id = materialBatchAction.dataset.materialBatchId;
       const action = materialBatchAction.dataset.materialBatchAction;
       let body = {};
+      if (action === "delete" && !confirm("Удалить заявку на материалы? Это можно сделать только до принятия снабжением в работу.")) return;
       if (action === "return") {
         body = { comment: qs("#materialBatchReturnComment")?.value || "" };
       }
       if (action === "resubmit") {
         body = { comment: qs("#materialBatchResubmitComment")?.value || "" };
+      }
+      if (action === "update") {
+        body = {
+          comment: qs("#materialBatchUpdateComment")?.value || "",
+          needed_at: qs("#materialBatchUpdateNeededAt")?.value || "",
+          items: collectMaterialBatchEdits(),
+          extra_items: collectExtraMaterials("#batchExtraMaterialRows"),
+        };
       }
       if (action === "schedule") {
         body = {
@@ -1741,6 +1855,8 @@ function bindEvents() {
             : null,
         };
       }
+      body.actor_role = currentRoleBase();
+      body.actor_id = currentUserId();
       await api(`/api/material-request-batches/${id}/${action}`, {
         method: "POST",
         body: JSON.stringify(body),
@@ -1754,6 +1870,8 @@ function bindEvents() {
           resubmit: "Заявка повторно отправлена снабжению",
           schedule: "Прораб уведомлен о доставке",
           receive: "Приемка по заявке отправлена",
+          update: "Заявка исправлена и отправлена снабжению",
+          delete: "Заявка удалена",
         }[action] || "Заявка обновлена"
       );
       return;
