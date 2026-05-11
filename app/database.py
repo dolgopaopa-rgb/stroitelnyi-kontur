@@ -105,6 +105,7 @@ def init_db() -> None:
 
             CREATE TABLE IF NOT EXISTS material_requests (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                batch_id INTEGER,
                 project_id INTEGER NOT NULL,
                 creator_id INTEGER,
                 estimate_material_id INTEGER,
@@ -119,9 +120,25 @@ def init_db() -> None:
                 comment TEXT,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (batch_id) REFERENCES material_request_batches(id),
                 FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
                 FOREIGN KEY (creator_id) REFERENCES users(id),
                 FOREIGN KEY (estimate_material_id) REFERENCES estimate_materials(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS material_request_batches (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER NOT NULL,
+                creator_id INTEGER,
+                needed_at TEXT,
+                delivery_urgency TEXT NOT NULL DEFAULT 'standard',
+                status TEXT NOT NULL DEFAULT 'new',
+                comment TEXT,
+                revision_comment TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+                FOREIGN KEY (creator_id) REFERENCES users(id)
             );
 
             CREATE TABLE IF NOT EXISTS estimate_materials (
@@ -209,6 +226,8 @@ def init_db() -> None:
                 title TEXT NOT NULL,
                 text TEXT NOT NULL,
                 is_read INTEGER NOT NULL DEFAULT 0,
+                related_type TEXT,
+                related_id INTEGER,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
                 FOREIGN KEY (user_id) REFERENCES users(id)
@@ -218,6 +237,8 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
             CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(due_date);
             CREATE INDEX IF NOT EXISTS idx_materials_project ON material_requests(project_id);
+            CREATE INDEX IF NOT EXISTS idx_materials_batch ON material_requests(batch_id);
+            CREATE INDEX IF NOT EXISTS idx_material_batches_project ON material_request_batches(project_id);
             CREATE INDEX IF NOT EXISTS idx_estimate_materials_project ON estimate_materials(project_id);
             CREATE INDEX IF NOT EXISTS idx_variations_project ON variations(project_id);
             CREATE INDEX IF NOT EXISTS idx_contracts_ends ON contracts(ends_at);
@@ -227,6 +248,7 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_notifications_role ON notifications(role, is_read);
             """
         )
+        ensure_column(db, "material_requests", "batch_id", "INTEGER")
         ensure_column(db, "material_requests", "estimate_material_id", "INTEGER")
         ensure_column(db, "material_requests", "requested_quantity", "REAL NOT NULL DEFAULT 0")
         ensure_column(db, "material_requests", "requested_unit", "TEXT")
@@ -255,16 +277,79 @@ def init_db() -> None:
         ensure_column(db, "documents", "file_path", "TEXT")
         ensure_column(db, "documents", "mime_type", "TEXT")
         ensure_column(db, "documents", "file_size", "INTEGER")
+        ensure_column(db, "notifications", "related_type", "TEXT")
+        ensure_column(db, "notifications", "related_id", "INTEGER")
         seed(db)
         ensure_core_users(db)
         seed_estimate_materials(db)
         seed_related_records(db)
+        backfill_material_request_batches(db)
 
 
 def ensure_column(db: sqlite3.Connection, table: str, column: str, definition: str) -> None:
     columns = {row["name"] for row in db.execute(f"PRAGMA table_info({table})").fetchall()}
     if column not in columns:
         db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
+def backfill_material_request_batches(db: sqlite3.Connection) -> None:
+    rows = db.execute(
+        """
+        SELECT project_id, creator_id, needed_at, delivery_urgency, created_at,
+               MIN(comment) AS comment,
+               GROUP_CONCAT(procurement_status) AS statuses
+        FROM material_requests
+        WHERE batch_id IS NULL
+        GROUP BY project_id, creator_id, needed_at, delivery_urgency, created_at
+        """
+    ).fetchall()
+    for row in rows:
+        statuses = set((row["statuses"] or "").split(","))
+        if "delivery_confirmed" in statuses:
+            status = "delivery_confirmed"
+        elif "returned" in statuses or "revision_requested" in statuses:
+            status = "revision_requested"
+        elif "ordered" in statuses or "in_work" in statuses:
+            status = "in_work"
+        else:
+            status = "new"
+        cursor = db.execute(
+            """
+            INSERT INTO material_request_batches (
+                project_id, creator_id, needed_at, delivery_urgency, status, comment, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """,
+            (
+                row["project_id"],
+                row["creator_id"],
+                row["needed_at"],
+                row["delivery_urgency"] or "standard",
+                status,
+                row["comment"] or "",
+                row["created_at"],
+            ),
+        )
+        db.execute(
+            """
+            UPDATE material_requests
+            SET batch_id = ?
+            WHERE batch_id IS NULL
+              AND project_id = ?
+              AND COALESCE(creator_id, 0) = COALESCE(?, 0)
+              AND COALESCE(needed_at, '') = COALESCE(?, '')
+              AND COALESCE(delivery_urgency, '') = COALESCE(?, '')
+              AND created_at = ?
+            """,
+            (
+                cursor.lastrowid,
+                row["project_id"],
+                row["creator_id"],
+                row["needed_at"],
+                row["delivery_urgency"] or "standard",
+                row["created_at"],
+            ),
+        )
 
 
 def ensure_core_users(db: sqlite3.Connection) -> None:

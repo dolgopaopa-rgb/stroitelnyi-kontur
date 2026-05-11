@@ -303,6 +303,7 @@ def backfill_estimate_materials_from_saved_documents() -> None:
 def create_material_request(
     db,
     *,
+    batch_id: int | None = None,
     project_id: int,
     creator_id: int | None,
     estimate_material_id: int | None,
@@ -320,13 +321,14 @@ def create_material_request(
     cursor = db.execute(
         """
         INSERT INTO material_requests (
-            project_id, creator_id, estimate_material_id, title, basis_type, estimate_section, needed_at,
+            batch_id, project_id, creator_id, estimate_material_id, title, basis_type, estimate_section, needed_at,
             procurement_status, smetter_status, supplier, total_amount, comment,
             requested_quantity, requested_unit, delivery_urgency
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?, ?, ?, ?)
         """,
         (
+            batch_id,
             project_id,
             creator_id,
             estimate_material_id,
@@ -346,19 +348,49 @@ def create_material_request(
     return int(cursor.lastrowid)
 
 
+def create_material_batch(
+    db,
+    *,
+    project_id: int,
+    creator_id: int | None,
+    needed_at: str | None,
+    comment: str,
+) -> int:
+    urgency = delivery_urgency(needed_at)
+    cursor = db.execute(
+        """
+        INSERT INTO material_request_batches (
+            project_id, creator_id, needed_at, delivery_urgency, status, comment
+        )
+        VALUES (?, ?, ?, ?, 'new', ?)
+        """,
+        (project_id, creator_id, needed_at or None, urgency, comment),
+    )
+    return int(cursor.lastrowid)
+
+
 def require_fields(data: dict, fields: list[tuple[str, str]]) -> None:
     missing = [label for key, label in fields if not str(data.get(key) or "").strip()]
     if missing:
         raise ValueError("Заполните обязательные поля: " + ", ".join(missing))
 
 
-def create_notification(db, project_id: int, user_id: int | None, role: str, title: str, text: str) -> None:
+def create_notification(
+    db,
+    project_id: int,
+    user_id: int | None,
+    role: str,
+    title: str,
+    text: str,
+    related_type: str | None = None,
+    related_id: int | None = None,
+) -> None:
     db.execute(
         """
-        INSERT INTO notifications (project_id, user_id, role, title, text)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO notifications (project_id, user_id, role, title, text, related_type, related_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        (project_id, user_id, role, title, text),
+        (project_id, user_id, role, title, text, related_type, related_id),
     )
 
 
@@ -383,6 +415,15 @@ def delivery_urgency(needed_at: str | None) -> str:
         return "standard"
     days = (delivery_date - date.today()).days
     return "urgent" if days <= 1 else "standard"
+
+
+def format_date_ru(value: str | None = None) -> str:
+    if value:
+        try:
+            return datetime.strptime(value[:10], "%Y-%m-%d").strftime("%d.%m.%Y")
+        except ValueError:
+            pass
+    return date.today().strftime("%d.%m.%Y")
 
 
 def safe_file_name(file_name: str) -> str:
@@ -464,11 +505,14 @@ def get_project_detail(project_id: int) -> dict | None:
             db.execute(
                 """
                 SELECT m.*, em.name AS estimate_material_name, em.unit AS estimate_material_unit,
-                       em.estimated_quantity, em.unit_price
+                       em.estimated_quantity, em.unit_price,
+                       b.status AS batch_status, b.comment AS batch_comment,
+                       b.revision_comment AS batch_revision_comment, b.created_at AS batch_created_at
                 FROM material_requests m
+                LEFT JOIN material_request_batches b ON b.id = m.batch_id
                 LEFT JOIN estimate_materials em ON em.id = m.estimate_material_id
                 WHERE m.project_id = ?
-                ORDER BY m.needed_at
+                ORDER BY COALESCE(b.created_at, m.created_at) DESC, m.id
                 """,
                 (project_id,),
             ).fetchall()
@@ -698,13 +742,17 @@ class AppHandler(BaseHTTPRequestHandler):
                     SELECT m.*, p.title AS project_title, em.name AS estimate_material_name,
                            em.unit AS estimate_material_unit, em.estimated_quantity, em.unit_price,
                            p.foreman_id AS project_foreman_id, creator.name AS creator_name,
-                           creator.role AS creator_role
+                           creator.role AS creator_role,
+                           b.status AS batch_status, b.comment AS batch_comment,
+                           b.revision_comment AS batch_revision_comment, b.created_at AS batch_created_at,
+                           b.delivery_urgency AS batch_delivery_urgency
                     FROM material_requests m
                     JOIN projects p ON p.id = m.project_id
+                    LEFT JOIN material_request_batches b ON b.id = m.batch_id
                     LEFT JOIN estimate_materials em ON em.id = m.estimate_material_id
                     LEFT JOIN users creator ON creator.id = m.creator_id
                     WHERE p.status != 'archived'
-                    ORDER BY m.needed_at
+                    ORDER BY COALESCE(b.created_at, m.created_at) DESC, m.id
                 """,
                 "/api/variations": "SELECT v.*, p.title AS project_title FROM variations v JOIN projects p ON p.id = v.project_id ORDER BY v.due_date",
                 "/api/contracts": "SELECT c.*, p.title AS project_title, u.name AS responsible_name FROM contracts c JOIN projects p ON p.id = c.project_id LEFT JOIN users u ON u.id = c.responsible_id ORDER BY c.ends_at",
@@ -1158,6 +1206,111 @@ class AppHandler(BaseHTTPRequestHandler):
                     json_response(self, {"id": task_id, "status": "returned"})
                     return
 
+            material_batch_action = re.match(r"^/api/material-request-batches/(\d+)/(accept|return)$", path)
+            if material_batch_action:
+                batch_id = int(material_batch_action.group(1))
+                action = material_batch_action.group(2)
+                batch = db.execute(
+                    """
+                    SELECT b.*, p.title AS project_title, p.foreman_id, p.construction_manager_id
+                    FROM material_request_batches b
+                    JOIN projects p ON p.id = b.project_id
+                    WHERE b.id = ?
+                    """,
+                    (batch_id,),
+                ).fetchone()
+                if not batch:
+                    json_response(self, {"error": "Material request batch not found"}, 404)
+                    return
+                watcher_ids = {
+                    int(value)
+                    for value in (
+                        batch["creator_id"],
+                        batch["foreman_id"],
+                        batch["construction_manager_id"],
+                        user_id_by_role(db, "owner"),
+                    )
+                    if value
+                }
+                if action == "accept":
+                    db.execute(
+                        """
+                        UPDATE material_request_batches
+                        SET status = 'in_work', revision_comment = NULL, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (batch_id,),
+                    )
+                    db.execute(
+                        """
+                        UPDATE material_requests
+                        SET procurement_status = 'ordered', updated_at = CURRENT_TIMESTAMP
+                        WHERE batch_id = ?
+                        """,
+                        (batch_id,),
+                    )
+                    message = f"{batch['project_title']}: заявка на материалы от {format_date_ru(batch['created_at'])} принята снабжением в работу."
+                    for watcher_id in watcher_ids:
+                        create_notification(
+                            db,
+                            batch["project_id"],
+                            watcher_id,
+                            role_by_user_id(db, watcher_id),
+                            "Заявка на материалы принята в работу",
+                            message,
+                            "material_request_batch",
+                            batch_id,
+                        )
+                    db.execute(
+                        """
+                        INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
+                        VALUES (?, 'decision', ?, ?, 'internal', 'material_request')
+                        """,
+                        (batch["project_id"], message, user_id_by_role(db, "procurement_manager") or 4),
+                    )
+                    json_response(self, {"id": batch_id, "status": "in_work"})
+                    return
+                comment = str(data.get("comment") or "").strip()
+                if not comment:
+                    raise ValueError("Укажите комментарий, почему заявка возвращается на доработку.")
+                db.execute(
+                    """
+                    UPDATE material_request_batches
+                    SET status = 'revision_requested', revision_comment = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                    """,
+                    (comment, batch_id),
+                )
+                db.execute(
+                    """
+                    UPDATE material_requests
+                    SET procurement_status = 'returned', updated_at = CURRENT_TIMESTAMP
+                    WHERE batch_id = ?
+                    """,
+                    (batch_id,),
+                )
+                message = f"{batch['project_title']}: заявка на материалы от {format_date_ru(batch['created_at'])} возвращена на доработку. {comment}"
+                for watcher_id in watcher_ids:
+                    create_notification(
+                        db,
+                        batch["project_id"],
+                        watcher_id,
+                        role_by_user_id(db, watcher_id),
+                        "Заявка на материалы возвращена на доработку",
+                        message,
+                        "material_request_batch",
+                        batch_id,
+                    )
+                db.execute(
+                    """
+                    INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
+                    VALUES (?, 'decision', ?, ?, 'internal', 'material_request')
+                    """,
+                    (batch["project_id"], message, user_id_by_role(db, "procurement_manager") or 4),
+                )
+                json_response(self, {"id": batch_id, "status": "revision_requested"})
+                return
+
             material_action = re.match(r"^/api/material-requests/(\d+)/deliver$", path)
             if material_action:
                 request_id = int(material_action.group(1))
@@ -1271,6 +1424,13 @@ class AppHandler(BaseHTTPRequestHandler):
                 creator = db.execute("SELECT name, role FROM users WHERE id = ?", (creator_id,)).fetchone()
                 if creator_role == "foreman" and project and int(project["foreman_id"] or 0) != creator_id:
                     raise ValueError("Этот объект не закреплен за выбранным прорабом.")
+                batch_id = create_material_batch(
+                    db,
+                    project_id=project_id,
+                    creator_id=creator_id,
+                    needed_at=needed_at,
+                    comment=base_comment,
+                )
                 for item in items:
                     estimate_material_id = int(item.get("estimate_material_id") or 0)
                     quantity = number_value(item.get("quantity"))
@@ -1289,6 +1449,7 @@ class AppHandler(BaseHTTPRequestHandler):
                         created.append(
                             create_material_request(
                                 db,
+                                batch_id=batch_id,
                                 project_id=project_id,
                                 creator_id=creator_id,
                                 estimate_material_id=estimate_material_id,
@@ -1309,6 +1470,7 @@ class AppHandler(BaseHTTPRequestHandler):
                         created.append(
                             create_material_request(
                                 db,
+                                batch_id=batch_id,
                                 project_id=project_id,
                                 creator_id=creator_id,
                                 estimate_material_id=estimate_material_id,
@@ -1325,7 +1487,11 @@ class AppHandler(BaseHTTPRequestHandler):
                 if not created:
                     raise ValueError("Не удалось создать заявку: проверьте количество и выбранные материалы.")
                 urgency = delivery_urgency(needed_at)
-                title = "Срочная заявка на материалы" if urgency == "urgent" else "Новая заявка на материалы"
+                title = (
+                    f"Получена срочная заявка на материалы от {format_date_ru()}"
+                    if urgency == "urgent"
+                    else f"Получена заявка на материалы от {format_date_ru()}"
+                )
                 creator_label = f" от {creator['name']}" if creator else ""
                 text = f"{project['title'] if project else 'Объект'}: {len(created)} позиций{creator_label}, желаемая дата доставки: {needed_at or 'не указана'}"
                 create_notification(
@@ -1335,6 +1501,8 @@ class AppHandler(BaseHTTPRequestHandler):
                     "procurement_manager",
                     title,
                     text,
+                    "material_request_batch",
+                    batch_id,
                 )
                 db.execute(
                     """
@@ -1343,7 +1511,7 @@ class AppHandler(BaseHTTPRequestHandler):
                     """,
                     (project_id, text, creator_id),
                 )
-                json_response(self, {"created": created, "urgency": urgency}, 201)
+                json_response(self, {"batch_id": batch_id, "created": created, "urgency": urgency}, 201)
                 return
 
             if path == "/api/material-requests":
@@ -1359,8 +1527,16 @@ class AppHandler(BaseHTTPRequestHandler):
                 total_amount = data.get("total_amount")
                 if (total_amount is None or total_amount == "") and estimate_material:
                     total_amount = estimate_material["total_price"]
+                batch_id = create_material_batch(
+                    db,
+                    project_id=int(data["project_id"]),
+                    creator_id=int(data.get("creator_id") or 7),
+                    needed_at=data.get("needed_at") or None,
+                    comment=data.get("comment") or "",
+                )
                 request_id = create_material_request(
                     db,
+                    batch_id=batch_id,
                     project_id=int(data["project_id"]),
                     creator_id=int(data.get("creator_id") or 7),
                     estimate_material_id=int(estimate_material_id) if estimate_material_id else None,

@@ -636,6 +636,15 @@ h2 {
   align-items: end;
 }
 
+.material-batch-row {
+  text-align: left;
+}
+
+.material-review-items {
+  max-height: min(48vh, 520px);
+  overflow: auto;
+}
+
 .task-overview-panel {
   margin-bottom: 16px;
 }

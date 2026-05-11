@@ -4,6 +4,7 @@ const state = {
   users: [],
   projects: [],
   archivedProjects: [],
+  materialRequests: [],
   estimateMaterials: [],
   estimatePreviewRows: [],
   showEstimateMaterials: false,
@@ -27,7 +28,7 @@ const viewTitles = {
 const statusLabels = {
   draft: "Черновик менеджера",
   submitted_to_construction: "На проверке строительства",
-  revision_requested: "Возвращен на доработку",
+  revision_requested: "Возвращена на доработку",
   transferred_to_construction: "Передан",
   preparation: "Подготовка",
   in_progress: "В работе",
@@ -46,6 +47,7 @@ const statusLabels = {
   ordered: "Заказано",
   delivery: "Доставка",
   delivery_confirmed: "Доставка обработана",
+  in_work: "Принята в работу",
   active: "Активен",
   signed: "Подписан",
   waiting_to_enter: "Внести в Сметтер",
@@ -90,6 +92,14 @@ function levelByDate(date) {
   if (diff < 0) return "danger";
   if (diff <= 7) return "warning";
   return "blue";
+}
+
+function formatDateRu(value) {
+  if (!value) return "";
+  const datePart = String(value).slice(0, 10);
+  const parts = datePart.split("-");
+  if (parts.length !== 3) return value;
+  return `${parts[2]}.${parts[1]}.${parts[0]}`;
 }
 
 function levelByMoney(value) {
@@ -501,6 +511,54 @@ async function loadMaterialEstimatePicker() {
     .join("");
 }
 
+function materialBatchKey(item) {
+  return item.batch_id ? `batch-${item.batch_id}` : `item-${item.id}`;
+}
+
+function buildMaterialBatches(items) {
+  const map = new Map();
+  items.forEach((item) => {
+    const key = materialBatchKey(item);
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        id: item.batch_id,
+        project_id: item.project_id,
+        project_title: item.project_title,
+        project_foreman_id: item.project_foreman_id,
+        creator_id: item.creator_id,
+        creator_name: item.creator_name,
+        created_at: item.batch_created_at || item.created_at,
+        needed_at: item.needed_at,
+        delivery_urgency: item.batch_delivery_urgency || item.delivery_urgency,
+        status: item.batch_status || item.procurement_status,
+        comment: item.batch_comment || item.comment || "",
+        revision_comment: item.batch_revision_comment || "",
+        items: [],
+        total_amount: 0,
+      });
+    }
+    const batch = map.get(key);
+    batch.items.push(item);
+    batch.total_amount += Number(item.total_amount || 0);
+  });
+  return [...map.values()].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+}
+
+function materialBatchTitle(batch) {
+  const urgent = batch.delivery_urgency === "urgent" ? "Срочная заявка" : "Заявка";
+  return `${urgent} на материалы от ${formatDateRu(batch.created_at) || "без даты"}`;
+}
+
+function materialBatchLevel(status) {
+  return {
+    new: "warning",
+    in_work: "blue",
+    revision_requested: "danger",
+    delivery_confirmed: "success",
+  }[status] || "";
+}
+
 function taskStats(tasks) {
   return {
     active: tasks.filter((task) => ["new", "in_progress_task", "review"].includes(task.status)).length,
@@ -611,12 +669,18 @@ async function renderNotifications() {
   qs("#notificationRows").innerHTML = rows.length
     ? rows
         .map(
-          (row) => `
-          <button class="row clickable" data-open-project="${row.project_id}">
+          (row) => {
+            const target =
+              row.related_type === "material_request_batch" && row.related_id
+                ? `data-open-material-batch="batch-${row.related_id}"`
+                : `data-open-project="${row.project_id}"`;
+            return `
+          <button class="row clickable" ${target}>
             <div class="stack-line"><strong>${row.title}</strong>${pill(row.user_name || row.role, row.is_read ? "" : "warning")}</div>
             <div>${row.text}</div>
             <div class="muted">${row.project_title || "Без объекта"} · ${row.created_at}</div>
-          </button>`
+          </button>`;
+          }
         )
         .join("")
     : `<p class="muted">Уведомлений пока нет.</p>`;
@@ -1017,39 +1081,88 @@ async function renderTasks() {
 
 async function renderMaterials() {
   const items = await api("/api/material-requests");
+  state.materialRequests = items;
   const visibleItems =
     currentRoleBase() === "foreman"
       ? items.filter((item) => Number(item.project_foreman_id) === Number(currentUserId()) || Number(item.creator_id) === Number(currentUserId()))
       : items;
-  qs("#materialRows").innerHTML = visibleItems.length ? visibleItems.map((item) => {
-    const canProcess = currentRoleBase() === "procurement_manager" && item.procurement_status !== "delivery_confirmed";
+  const batches = buildMaterialBatches(visibleItems);
+  qs("#materialRows").innerHTML = batches.length ? batches.map((batch) => {
     return `
-      <div class="row material-request-row">
+      <button class="row clickable material-request-row material-batch-row" type="button" data-open-material-batch="${batch.key}">
         <div class="material-main">
-          <strong>${item.title}</strong>
-          <div class="muted">${item.project_title} · ${item.estimate_section || "без раздела"}${item.estimate_material_name ? " · из сметы" : ""}</div>
-          <div class="muted">Заказано: ${item.requested_quantity || item.estimated_quantity || 0} ${item.requested_unit || item.estimate_material_unit || ""} · желаемая дата: ${item.needed_at || "не указана"}</div>
-          <div class="muted">Создал: ${item.creator_name || "не указано"}</div>
-          ${item.actual_delivery_date ? `<div class="muted">Фактическая доставка: ${item.actual_delivery_date}</div>` : ""}
-          ${item.procurement_comment ? `<div class="muted">Комментарий снабжения: ${item.procurement_comment}</div>` : ""}
+          <strong>${materialBatchTitle(batch)}</strong>
+          <div class="muted">Объект: ${batch.project_title || "не указан"} · создал: ${batch.creator_name || "не указано"}</div>
+          <div class="muted">Позиций: ${batch.items.length} · желаемая доставка: ${batch.needed_at || "не указана"} · сумма: ${money(batch.total_amount)}</div>
+          ${batch.revision_comment ? `<div class="muted">Комментарий по доработке: ${batch.revision_comment}</div>` : ""}
         </div>
         <div class="stack-line">
-          ${pill(materialBasisLabel(item.basis_type), materialBasisLevel(item.basis_type))}
-          ${pill(urgencyLabel(item.delivery_urgency), urgencyLevel(item.delivery_urgency))}
-          ${pill(label(item.procurement_status), item.procurement_status === "approval" ? "warning" : item.procurement_status === "delivery_confirmed" ? "success" : item.procurement_status === "ordered" ? "success" : "blue")}
-          ${pill(label(item.smetter_status), item.smetter_status === "not_required" ? "success" : "blue")}
+          ${pill(urgencyLabel(batch.delivery_urgency), urgencyLevel(batch.delivery_urgency))}
+          ${pill(label(batch.status), materialBatchLevel(batch.status))}
         </div>
-        ${
-          canProcess
-            ? `<div class="material-process">
-                <label>Фактическая дата доставки <input type="date" data-material-actual="${item.id}" value="${item.actual_delivery_date || item.needed_at || ""}" /></label>
-                <label>Комментарий снабжения <textarea rows="2" data-material-comment="${item.id}" placeholder="Например: нужна доверенность или кран для разгрузки">${item.procurement_comment || ""}</textarea></label>
-                <button class="primary" type="button" data-material-deliver="${item.id}">Отправить</button>
-              </div>`
-            : ""
-        }
-      </div>`;
+      </button>`;
   }).join("") : `<p class="muted">${currentRoleBase() === "foreman" ? "По объектам этого прораба заявок пока нет. Нажмите “Добавить заявку”, чтобы заказать материалы." : "Заявок на материалы пока нет."}</p>`;
+}
+
+function findMaterialBatch(batchKey) {
+  return buildMaterialBatches(state.materialRequests).find((batch) => batch.key === batchKey);
+}
+
+async function openMaterialBatchDialog(batchKey) {
+  if (!state.materialRequests.length) {
+    state.materialRequests = await api("/api/material-requests");
+  }
+  const batch = findMaterialBatch(batchKey);
+  if (!batch) {
+    showToast("Заявка не найдена");
+    return;
+  }
+  qs("#materialReviewTitle").textContent = materialBatchTitle(batch);
+  const canReview = currentRoleBase() === "procurement_manager" && batch.id && !["in_work", "delivery_confirmed"].includes(batch.status);
+  qs("#materialReviewContent").innerHTML = `
+    <section class="workflow-panel compact-workflow">
+      <div class="stack-line">
+        <h3>${batch.project_title || "Объект не указан"}</h3>
+        ${pill(urgencyLabel(batch.delivery_urgency), urgencyLevel(batch.delivery_urgency))}
+        ${pill(label(batch.status), materialBatchLevel(batch.status))}
+      </div>
+      <p class="muted">Создал: ${batch.creator_name || "не указано"} · желаемая доставка: ${batch.needed_at || "не указана"} · позиций: ${batch.items.length}</p>
+      ${batch.comment ? `<p>${batch.comment}</p>` : ""}
+      ${batch.revision_comment ? `<p class="muted">Комментарий по доработке: ${batch.revision_comment}</p>` : ""}
+    </section>
+    <div class="table material-review-items">
+      ${batch.items
+        .map(
+          (item) => `
+          <div class="row estimate-material-row">
+            <div class="material-main">
+              <strong>${item.title}</strong>
+              <div class="muted">${item.estimate_section || "без раздела"}</div>
+              ${item.comment ? `<div class="muted">${item.comment}</div>` : ""}
+            </div>
+            <div class="stack-line">
+              ${pill(`${item.requested_quantity || item.estimated_quantity || 0} ${item.requested_unit || item.estimate_material_unit || ""}`, "blue")}
+              ${pill(materialBasisLabel(item.basis_type), materialBasisLevel(item.basis_type))}
+              ${pill(money(item.total_amount), "success")}
+            </div>
+          </div>`
+        )
+        .join("")}
+    </div>
+    ${
+      canReview
+        ? `<section class="workflow-panel">
+            <h3>Решение снабжения</h3>
+            <label>Комментарий при возврате <textarea id="materialBatchReturnComment" rows="3" placeholder="Например: не понятно количество, уточните позицию"></textarea></label>
+            <div class="form-actions">
+              <button class="primary" type="button" data-material-batch-action="accept" data-material-batch-id="${batch.id}">Принять в работу</button>
+              <button class="secondary" type="button" data-material-batch-action="return" data-material-batch-id="${batch.id}">Вернуть на доработку</button>
+            </div>
+          </section>`
+        : ""
+    }
+  `;
+  qs("#materialReviewDialog").showModal();
 }
 
 function variationType(type) {
@@ -1484,6 +1597,30 @@ function bindEvents() {
     const taskActionButton = event.target.closest("[data-task-action]");
     if (taskActionButton) {
       await handleTaskAction(taskActionButton);
+      return;
+    }
+
+    const materialBatchButton = event.target.closest("[data-open-material-batch]");
+    if (materialBatchButton) {
+      await openMaterialBatchDialog(materialBatchButton.dataset.openMaterialBatch);
+      return;
+    }
+
+    const materialBatchAction = event.target.closest("[data-material-batch-action]");
+    if (materialBatchAction) {
+      const id = materialBatchAction.dataset.materialBatchId;
+      const action = materialBatchAction.dataset.materialBatchAction;
+      const body =
+        action === "return"
+          ? { comment: qs("#materialBatchReturnComment")?.value || "" }
+          : {};
+      await api(`/api/material-request-batches/${id}/${action}`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      qs("#materialReviewDialog").close();
+      await loadAll();
+      showToast(action === "accept" ? "Заявка принята в работу" : "Заявка возвращена на доработку");
       return;
     }
 
