@@ -567,6 +567,143 @@ h2 {
   padding: 10px;
 }
 
+.works-layout {
+  grid-template-columns: minmax(420px, 1.18fr) minmax(300px, 0.82fr);
+}
+
+#worksView .panel {
+  padding: 14px;
+}
+
+#worksView .panel-head {
+  margin-bottom: 10px;
+}
+
+#worksView .panel-head h2 {
+  font-size: 20px;
+  line-height: 1.15;
+}
+
+#worksView .compact-form {
+  padding: 10px;
+  margin-bottom: 10px;
+}
+
+#worksView label {
+  gap: 4px;
+}
+
+#worksView input,
+#worksView select,
+#worksView textarea {
+  padding: 8px 10px;
+  font-size: 14px;
+}
+
+.work-file-note p {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.work-section {
+  border-radius: 6px;
+}
+
+.work-section + .work-section {
+  margin-top: 6px;
+}
+
+.work-section summary {
+  min-height: 0;
+  padding: 7px 10px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.work-section summary span {
+  margin-left: 0;
+}
+
+.work-section-title {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.work-section-title small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.work-section-title strong {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.work-section-count {
+  min-width: 28px;
+  border-radius: 999px;
+  background: #dfeceb;
+  color: #31534f;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 22px;
+  text-align: center;
+}
+
+.work-section .work-items {
+  gap: 0;
+  padding: 0;
+}
+
+.work-row {
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.54fr);
+  gap: 10px;
+  padding: 7px 10px;
+  border-width: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  font-size: 13px;
+}
+
+.work-row .material-main {
+  gap: 2px;
+}
+
+.work-row .material-main strong {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.work-row-meta {
+  display: grid;
+  grid-template-columns: minmax(54px, 0.7fr) minmax(72px, 1fr) minmax(84px, 1fr);
+  align-items: start;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+.work-row-meta strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+#worksView .works-extra-panel .compact-form {
+  display: grid;
+  gap: 9px;
+}
+
 .estimate-picker {
   display: grid;
   gap: 10px;
@@ -1199,6 +1336,15 @@ textarea {
 
   .material-batch-edit-row {
     grid-template-columns: 1fr;
+  }
+
+  .work-row {
+    grid-template-columns: 1fr;
+  }
+
+  .work-row-meta {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    text-align: left;
   }
 
   .task-stats {

@@ -1290,31 +1290,42 @@ async function renderWorks() {
     : `<p class="muted">Файл задания на работы по этому объекту еще не загружен.</p>`;
   const grouped = groupBySection(works);
   qs("#workRows").innerHTML =
-    fileNote +
+    `<div class="work-file-note">${fileNote}</div>` +
     (works.length
       ? Object.entries(grouped)
         .map(
-          ([section, rows]) => `
-          <details class="estimate-section">
-            <summary>${section} <span>${rows.length} позиций</span></summary>
-            <div class="table">
+          ([section, rows]) => {
+            const sectionParts = section.split(" / ");
+            const sectionTitle = sectionParts.pop() || section;
+            const sectionParent = sectionParts.join(" / ");
+            return `
+          <details class="estimate-section work-section">
+            <summary>
+              <span class="work-section-title">
+                ${sectionParent ? `<small>${sectionParent}</small>` : ""}
+                <strong>${sectionTitle}</strong>
+              </span>
+              <span class="work-section-count">${rows.length}</span>
+            </summary>
+            <div class="table work-items">
               ${rows
                 .map(
                   (row) => `
-                  <div class="row estimate-material-row">
+                  <div class="row estimate-material-row work-row">
                     <div class="material-main">
                       <strong>${row.title}</strong>
-                      <div class="muted">${row.estimated_quantity || 0} ${row.unit || ""}</div>
                     </div>
-                    <div class="stack-line">
-                      ${pill(money(row.unit_price), "blue")}
-                      ${pill(money(row.total_price), "success")}
+                    <div class="work-row-meta">
+                      <span>${row.estimated_quantity || 0} ${row.unit || ""}</span>
+                      <span>${money(row.unit_price)}</span>
+                      <strong>${money(row.total_price)}</strong>
                     </div>
                   </div>`
                 )
                 .join("")}
             </div>
-          </details>`
+          </details>`;
+          }
         )
         .join("")
       : `<p class="muted">Список работ пока пуст. Если файл уже выбран и сохранен, значит программа не распознала строки в этой выгрузке.</p>`);
