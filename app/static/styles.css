@@ -746,6 +746,145 @@ h2 {
   gap: 9px;
 }
 
+.materials-layout {
+  grid-template-columns: minmax(440px, 1.35fr) minmax(280px, 0.65fr);
+}
+
+#materialsView .panel {
+  padding: 14px;
+}
+
+#materialsView .panel-head {
+  margin-bottom: 10px;
+}
+
+#materialsView .panel-head h2 {
+  font-size: 20px;
+  line-height: 1.15;
+}
+
+#materialsView .material-list-toolbar {
+  margin-bottom: 10px;
+  gap: 8px;
+}
+
+#materialsView .compact-form {
+  padding: 10px;
+  margin-bottom: 10px;
+  gap: 9px;
+}
+
+#materialsView label {
+  gap: 4px;
+}
+
+#materialsView input,
+#materialsView select,
+#materialsView textarea {
+  padding: 8px 10px;
+  font-size: 14px;
+}
+
+#materialsView .material-request-row,
+#materialsView .estimate-material-row,
+#materialDialog .estimate-material-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+#materialsView .material-main,
+#materialDialog .material-main {
+  gap: 3px;
+}
+
+#materialsView .material-main strong,
+#materialDialog .material-main strong {
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+#materialsView .material-main .muted,
+#materialDialog .material-main .muted {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+#materialsView .material-request-row .stack-line,
+#materialsView .estimate-material-row .stack-line,
+#materialDialog .estimate-material-row .stack-line {
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
+  justify-content: end;
+  gap: 5px;
+  min-width: 150px;
+}
+
+#materialsView .estimate-material-row .stack-line {
+  grid-template-columns: minmax(62px, max-content) minmax(90px, max-content) minmax(82px, max-content);
+  align-items: center;
+  text-align: right;
+}
+
+#materialsView .material-request-row .pill,
+#materialsView .estimate-material-row .pill,
+#materialDialog .estimate-material-row .pill {
+  font-size: 11px;
+  line-height: 1.2;
+  padding: 3px 7px;
+  white-space: nowrap;
+}
+
+#materialsView .estimate-section,
+#materialDialog .estimate-section {
+  border-radius: 6px;
+}
+
+#materialsView .estimate-section + .estimate-section,
+#materialDialog .estimate-section + .estimate-section {
+  margin-top: 6px;
+}
+
+#materialsView .estimate-section summary,
+#materialDialog .estimate-section summary {
+  min-height: 0;
+  padding: 7px 10px;
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+#materialsView .estimate-section .table,
+#materialDialog .estimate-section .table {
+  padding: 6px;
+  gap: 6px;
+}
+
+#materialDialog .estimate-picker {
+  gap: 6px;
+  padding: 8px;
+}
+
+#materialDialog .estimate-choice-row {
+  padding: 8px 10px;
+  gap: 8px;
+  font-size: 13px;
+}
+
+#materialDialog .estimate-choice-title span {
+  gap: 2px;
+}
+
+#materialDialog .estimate-choice-title strong {
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+#materialDialog .estimate-choice-title small {
+  font-size: 12px;
+}
+
 .locations-layout {
   align-items: start;
 }
@@ -1398,6 +1537,20 @@ textarea {
 
   .work-row {
     grid-template-columns: 1fr;
+  }
+
+  #materialsView .material-request-row,
+  #materialsView .estimate-material-row,
+  #materialDialog .estimate-material-row {
+    grid-template-columns: 1fr;
+  }
+
+  #materialsView .material-request-row .stack-line,
+  #materialsView .estimate-material-row .stack-line,
+  #materialDialog .estimate-material-row .stack-line {
+    justify-content: start;
+    min-width: 0;
+    text-align: left;
   }
 
   .location-row {
