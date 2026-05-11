@@ -499,6 +499,7 @@ function renderExtraMaterialRow() {
 }
 
 function addExtraMaterialRow(containerSelector = "#extraMaterialRows") {
+  if (typeof containerSelector !== "string") containerSelector = "#extraMaterialRows";
   qs(containerSelector)?.insertAdjacentHTML("beforeend", renderExtraMaterialRow());
 }
 
@@ -1795,7 +1796,7 @@ function bindEvents() {
 
   qs('#materialForm select[name="project_id"]').addEventListener("change", loadMaterialEstimatePicker);
   qs("#loadMaterialEstimateButton").addEventListener("click", loadMaterialEstimatePicker);
-  qs("#addExtraMaterialButton").addEventListener("click", addExtraMaterialRow);
+  qs("#addExtraMaterialButton").addEventListener("click", () => addExtraMaterialRow());
   qs("#materialEstimatePicker").addEventListener("input", (event) => {
     const row = event.target.closest(".estimate-choice-row");
     if (row) updateMaterialEstimateRow(row);
