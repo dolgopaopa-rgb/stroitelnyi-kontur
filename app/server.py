@@ -696,10 +696,14 @@ class AppHandler(BaseHTTPRequestHandler):
                 """,
                 "/api/material-requests": """
                     SELECT m.*, p.title AS project_title, em.name AS estimate_material_name,
-                           em.unit AS estimate_material_unit, em.estimated_quantity, em.unit_price
+                           em.unit AS estimate_material_unit, em.estimated_quantity, em.unit_price,
+                           p.foreman_id AS project_foreman_id, creator.name AS creator_name,
+                           creator.role AS creator_role
                     FROM material_requests m
                     JOIN projects p ON p.id = m.project_id
                     LEFT JOIN estimate_materials em ON em.id = m.estimate_material_id
+                    LEFT JOIN users creator ON creator.id = m.creator_id
+                    WHERE p.status != 'archived'
                     ORDER BY m.needed_at
                 """,
                 "/api/variations": "SELECT v.*, p.title AS project_title FROM variations v JOIN projects p ON p.id = v.project_id ORDER BY v.due_date",
@@ -1256,13 +1260,17 @@ class AppHandler(BaseHTTPRequestHandler):
             if path == "/api/material-requests/bulk":
                 project_id = int(data["project_id"])
                 needed_at = data.get("needed_at") or None
+                creator_role = data.get("creator_role") or ""
                 creator_id = int(data.get("creator_id") or user_id_by_role(db, "foreman") or 7)
                 base_comment = data.get("comment") or ""
                 items = data.get("items") or []
                 if not items:
                     raise ValueError("Выберите хотя бы один материал.")
                 created: list[int] = []
-                project = db.execute("SELECT title FROM projects WHERE id = ?", (project_id,)).fetchone()
+                project = db.execute("SELECT title, foreman_id FROM projects WHERE id = ?", (project_id,)).fetchone()
+                creator = db.execute("SELECT name, role FROM users WHERE id = ?", (creator_id,)).fetchone()
+                if creator_role == "foreman" and project and int(project["foreman_id"] or 0) != creator_id:
+                    raise ValueError("Этот объект не закреплен за выбранным прорабом.")
                 for item in items:
                     estimate_material_id = int(item.get("estimate_material_id") or 0)
                     quantity = number_value(item.get("quantity"))
@@ -1318,7 +1326,8 @@ class AppHandler(BaseHTTPRequestHandler):
                     raise ValueError("Не удалось создать заявку: проверьте количество и выбранные материалы.")
                 urgency = delivery_urgency(needed_at)
                 title = "Срочная заявка на материалы" if urgency == "urgent" else "Новая заявка на материалы"
-                text = f"{project['title'] if project else 'Объект'}: {len(created)} позиций, желаемая дата доставки: {needed_at or 'не указана'}"
+                creator_label = f" от {creator['name']}" if creator else ""
+                text = f"{project['title'] if project else 'Объект'}: {len(created)} позиций{creator_label}, желаемая дата доставки: {needed_at or 'не указана'}"
                 create_notification(
                     db,
                     project_id,

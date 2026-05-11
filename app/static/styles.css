@@ -568,6 +568,11 @@ h2 {
   background: var(--surface-2);
 }
 
+.compact-note {
+  margin: -4px 0 2px;
+  font-size: 13px;
+}
+
 .estimate-choice-row {
   border-left: 4px solid transparent;
 }

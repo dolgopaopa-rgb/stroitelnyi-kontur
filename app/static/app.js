@@ -280,6 +280,8 @@ function fillSelects() {
   qsa('#taskForm select[name="assignee_id"], #taskForm select[name="reviewer_id"]').forEach((select) => (select.innerHTML = taskUserOptions));
   updateEstimateMaterialSelect();
   fillRoleSwitcher();
+  fillMaterialProjectSelect();
+  updateMaterialActorHint();
 }
 
 function fillRoleSwitcher() {
@@ -323,6 +325,39 @@ function taskParticipantOptions() {
     .sort((a, b) => (order[a.role] || 99) - (order[b.role] || 99) || a.name.localeCompare(b.name, "ru"))
     .map((user) => `<option value="${user.id}">${taskParticipantLabel(user)}</option>`)
     .join("");
+}
+
+function materialProjectsForRole() {
+  if (currentRoleBase() !== "foreman") return state.projects;
+  const userId = currentUserId();
+  return state.projects.filter((project) => Number(project.foreman_id) === Number(userId));
+}
+
+function fillMaterialProjectSelect(preferredProjectId = state.selectedProjectId) {
+  const select = qs('#materialForm select[name="project_id"]');
+  if (!select) return null;
+  const projects = materialProjectsForRole();
+  if (!projects.length) {
+    select.innerHTML = `<option value="">Нет объектов, закрепленных за этой ролью</option>`;
+    select.disabled = true;
+    return null;
+  }
+  select.disabled = false;
+  select.innerHTML = projects.map((project) => `<option value="${project.id}">${project.title}</option>`).join("");
+  const preferred = projects.find((project) => Number(project.id) === Number(preferredProjectId));
+  select.value = String((preferred || projects[0]).id);
+  return Number(select.value);
+}
+
+function updateMaterialActorHint() {
+  const hint = qs("#materialActorHint");
+  if (!hint) return;
+  const role = roleLabel(state.currentRole);
+  if (currentRoleBase() === "foreman") {
+    hint.textContent = `Заявка уйдет от роли: ${role}. В списке доступны только объекты, закрепленные за этим прорабом.`;
+    return;
+  }
+  hint.textContent = `Заявка уйдет от роли: ${role}.`;
 }
 
 async function updateEstimateMaterialSelect() {
@@ -427,8 +462,13 @@ function updateMaterialEstimateRow(row) {
 async function loadMaterialEstimatePicker() {
   const form = qs("#materialForm");
   const projectId = form.elements.project_id.value;
-  const rows = await api(`/api/estimate-materials?project_id=${projectId}`);
   const target = qs("#materialEstimatePicker");
+  updateMaterialActorHint();
+  if (!projectId) {
+    target.innerHTML = `<p class="muted">У выбранной роли нет объектов для заявки.</p>`;
+    return;
+  }
+  const rows = await api(`/api/estimate-materials?project_id=${projectId}`);
   if (!rows.length) {
     target.innerHTML = `<p class="muted">По этому объекту нет загруженных материалов сметы.</p>`;
     return;
@@ -977,7 +1017,11 @@ async function renderTasks() {
 
 async function renderMaterials() {
   const items = await api("/api/material-requests");
-  qs("#materialRows").innerHTML = items.map((item) => {
+  const visibleItems =
+    currentRoleBase() === "foreman"
+      ? items.filter((item) => Number(item.project_foreman_id) === Number(currentUserId()) || Number(item.creator_id) === Number(currentUserId()))
+      : items;
+  qs("#materialRows").innerHTML = visibleItems.length ? visibleItems.map((item) => {
     const canProcess = currentRoleBase() === "procurement_manager" && item.procurement_status !== "delivery_confirmed";
     return `
       <div class="row material-request-row">
@@ -985,6 +1029,7 @@ async function renderMaterials() {
           <strong>${item.title}</strong>
           <div class="muted">${item.project_title} · ${item.estimate_section || "без раздела"}${item.estimate_material_name ? " · из сметы" : ""}</div>
           <div class="muted">Заказано: ${item.requested_quantity || item.estimated_quantity || 0} ${item.requested_unit || item.estimate_material_unit || ""} · желаемая дата: ${item.needed_at || "не указана"}</div>
+          <div class="muted">Создал: ${item.creator_name || "не указано"}</div>
           ${item.actual_delivery_date ? `<div class="muted">Фактическая доставка: ${item.actual_delivery_date}</div>` : ""}
           ${item.procurement_comment ? `<div class="muted">Комментарий снабжения: ${item.procurement_comment}</div>` : ""}
         </div>
@@ -1004,7 +1049,7 @@ async function renderMaterials() {
             : ""
         }
       </div>`;
-  }).join("");
+  }).join("") : `<p class="muted">${currentRoleBase() === "foreman" ? "По объектам этого прораба заявок пока нет. Нажмите “Добавить заявку”, чтобы заказать материалы." : "Заявок на материалы пока нет."}</p>`;
 }
 
 function variationType(type) {
@@ -1355,6 +1400,8 @@ function bindEvents() {
     await renderTasks();
     await renderDashboard();
     await renderMaterials();
+    fillMaterialProjectSelect();
+    updateMaterialActorHint();
     showToast(`Роль: ${roleLabel(state.currentRole)}`);
   });
 
@@ -1375,7 +1422,8 @@ function bindEvents() {
     const form = qs("#materialForm");
     form.reset();
     qs("#materialEstimatePicker").innerHTML = `<p class="muted">Выберите объект и нажмите “Материалы по смете”.</p>`;
-    if (state.selectedProjectId && form.elements.project_id) form.elements.project_id.value = String(state.selectedProjectId);
+    fillMaterialProjectSelect(state.selectedProjectId);
+    updateMaterialActorHint();
     await loadMaterialEstimatePicker();
     qs("#materialDialog").showModal();
   });
@@ -1520,6 +1568,7 @@ function bindEvents() {
         project_id: form.elements.project_id.value,
         needed_at: form.elements.needed_at.value,
         comment: form.elements.comment.value,
+        creator_role: currentRoleBase(),
         creator_id: currentUserId(),
         items,
       }),
