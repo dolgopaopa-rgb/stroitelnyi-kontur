@@ -335,12 +335,16 @@ function applySortableOrder(zone) {
   const order = storedSortableOrder(zone.dataset.sortableZone);
   if (!order.length) return;
   const blocks = new Map([...zone.querySelectorAll(":scope > [data-sortable-block]")].map((block) => [block.dataset.sortableBlock, block]));
+  const placed = new Set();
   order.forEach((key) => {
     const block = blocks.get(key);
-    if (block) zone.appendChild(block);
+    if (block) {
+      zone.appendChild(block);
+      placed.add(key);
+    }
   });
-  blocks.forEach((block) => {
-    if (block.parentElement === zone) zone.appendChild(block);
+  blocks.forEach((block, key) => {
+    if (!placed.has(key)) zone.appendChild(block);
   });
 }
 
