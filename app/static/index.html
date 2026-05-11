@@ -287,6 +287,16 @@
         <div class="estimate-picker" id="materialEstimatePicker">
           <p class="muted">Выберите объект и нажмите “Материалы по смете”.</p>
         </div>
+        <section class="workflow-panel compact-workflow">
+          <div class="form-actions">
+            <div>
+              <h3>Дополнительные материалы</h3>
+              <p class="muted">Для материалов сверх сметы, замен или допработ.</p>
+            </div>
+            <button class="secondary" id="addExtraMaterialButton" type="button">Добавить</button>
+          </div>
+          <div class="table extra-material-rows" id="extraMaterialRows"></div>
+        </section>
         <label>Желаемая дата доставки <input name="needed_at" type="date" required /></label>
         <label>Комментарий к заявке <textarea name="comment" rows="3" placeholder="Например: нужна доставка до 10:00, разгрузка вручную"></textarea></label>
         <div class="form-actions">

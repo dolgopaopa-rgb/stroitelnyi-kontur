@@ -1417,7 +1417,8 @@ class AppHandler(BaseHTTPRequestHandler):
                 creator_id = int(data.get("creator_id") or user_id_by_role(db, "foreman") or 7)
                 base_comment = data.get("comment") or ""
                 items = data.get("items") or []
-                if not items:
+                extra_items = data.get("extra_items") or []
+                if not items and not extra_items:
                     raise ValueError("Выберите хотя бы один материал.")
                 created: list[int] = []
                 project = db.execute("SELECT title, foreman_id FROM projects WHERE id = ?", (project_id,)).fetchone()
@@ -1484,6 +1485,40 @@ class AppHandler(BaseHTTPRequestHandler):
                                 comment=f"Причина превышения: {reason}. {base_comment}".strip(),
                             )
                         )
+                extra_reason_labels = {
+                    "additional_work": "Доп",
+                    "material_replacement": "Замена",
+                    "main_estimate_overspend": "Превышение",
+                    "over_budget_cost": "Сверхбюджет",
+                }
+                allowed_extra_reasons = set(extra_reason_labels)
+                for item in extra_items:
+                    material_name = str(item.get("material") or "").strip()
+                    item_name = str(item.get("name") or "").strip()
+                    quantity = number_value(item.get("quantity"))
+                    reason = str(item.get("reason") or "").strip()
+                    if not material_name and not item_name and quantity <= 0:
+                        continue
+                    if not material_name or not item_name or quantity <= 0 or reason not in allowed_extra_reasons:
+                        raise ValueError("Заполните материал, наименование, количество и причину для дополнительных материалов.")
+                    title_text = f"{material_name}: {item_name}"
+                    created.append(
+                        create_material_request(
+                            db,
+                            batch_id=batch_id,
+                            project_id=project_id,
+                            creator_id=creator_id,
+                            estimate_material_id=None,
+                            title=title_text,
+                            basis_type=reason,
+                            estimate_section="Дополнительные материалы",
+                            needed_at=needed_at,
+                            requested_quantity=quantity,
+                            requested_unit="",
+                            total_amount=0,
+                            comment=f"{extra_reason_labels[reason]}. {base_comment}".strip(),
+                        )
+                    )
                 if not created:
                     raise ValueError("Не удалось создать заявку: проверьте количество и выбранные материалы.")
                 urgency = delivery_urgency(needed_at)

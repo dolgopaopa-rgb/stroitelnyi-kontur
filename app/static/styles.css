@@ -645,6 +645,15 @@ h2 {
   overflow: auto;
 }
 
+.extra-material-row {
+  grid-template-columns: minmax(130px, 1fr) minmax(150px, 1.2fr) minmax(100px, 0.55fr) minmax(130px, 0.75fr) auto;
+  align-items: end;
+}
+
+.extra-material-row .icon {
+  align-self: end;
+}
+
 .task-overview-panel {
   margin-bottom: 16px;
 }
@@ -1096,6 +1105,10 @@ textarea {
   }
 
   .material-process {
+    grid-template-columns: 1fr;
+  }
+
+  .extra-material-row {
     grid-template-columns: 1fr;
   }
 

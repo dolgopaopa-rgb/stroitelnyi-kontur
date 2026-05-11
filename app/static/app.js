@@ -115,6 +115,7 @@ function materialBasisLabel(value) {
     main_estimate: "По смете",
     main_estimate_overspend: "Перерасход по смете",
     additional_work: "Допработа",
+    material_replacement: "Замена материала",
     over_budget_cost: "Сверхбюджет",
     internal_error_or_loss: "За счет компании",
   }[value] || value || "Основание не указано";
@@ -414,7 +415,7 @@ async function renderEstimateMaterials() {
   qs("#estimateMaterialRows").innerHTML = Object.entries(grouped)
     .map(
       ([section, sectionRows]) => `
-      <details class="estimate-section" open>
+      <details class="estimate-section">
         <summary>${section} <span>${sectionRows.length} позиций</span></summary>
         <div class="table">
           ${sectionRows
@@ -467,6 +468,43 @@ function updateMaterialEstimateRow(row) {
   reason.querySelector("textarea").required = checkbox.checked && estimated && quantity > estimated;
   row.classList.remove("success", "warning", "danger");
   if (checkbox.checked) row.classList.add(materialRowTone(quantity, estimated));
+}
+
+function renderExtraMaterialRow() {
+  return `
+    <div class="row extra-material-row">
+      <label>Материал <input data-extra-material-field="material" placeholder="Например: плиточный клей" /></label>
+      <label>Наименование <input data-extra-material-field="name" placeholder="Марка, размер, артикул" /></label>
+      <label>Количество <input data-extra-material-field="quantity" type="number" min="0" step="0.001" placeholder="0" /></label>
+      <label>
+        Причина
+        <select data-extra-material-field="reason">
+          <option value="additional_work">Доп</option>
+          <option value="material_replacement">Замена</option>
+          <option value="main_estimate_overspend">Превышение</option>
+        </select>
+      </label>
+      <button class="icon" type="button" data-remove-extra-material>×</button>
+    </div>`;
+}
+
+function addExtraMaterialRow() {
+  qs("#extraMaterialRows").insertAdjacentHTML("beforeend", renderExtraMaterialRow());
+}
+
+function resetExtraMaterials() {
+  qs("#extraMaterialRows").innerHTML = "";
+}
+
+function collectExtraMaterials() {
+  return qsa("#extraMaterialRows .extra-material-row")
+    .map((row) => ({
+      material: row.querySelector('[data-extra-material-field="material"]').value.trim(),
+      name: row.querySelector('[data-extra-material-field="name"]').value.trim(),
+      quantity: row.querySelector('[data-extra-material-field="quantity"]').value,
+      reason: row.querySelector('[data-extra-material-field="reason"]').value,
+    }))
+    .filter((item) => item.material || item.name || Number(item.quantity || 0) > 0);
 }
 
 async function loadMaterialEstimatePicker() {
@@ -1535,6 +1573,7 @@ function bindEvents() {
   qs("#newMaterialButton").addEventListener("click", async () => {
     const form = qs("#materialForm");
     form.reset();
+    resetExtraMaterials();
     qs("#materialEstimatePicker").innerHTML = `<p class="muted">Выберите объект и нажмите “Материалы по смете”.</p>`;
     fillMaterialProjectSelect(state.selectedProjectId);
     updateMaterialActorHint();
@@ -1549,6 +1588,7 @@ function bindEvents() {
 
   qs('#materialForm select[name="project_id"]').addEventListener("change", loadMaterialEstimatePicker);
   qs("#loadMaterialEstimateButton").addEventListener("click", loadMaterialEstimatePicker);
+  qs("#addExtraMaterialButton").addEventListener("click", addExtraMaterialRow);
   qs("#materialEstimatePicker").addEventListener("input", (event) => {
     const row = event.target.closest(".estimate-choice-row");
     if (row) updateMaterialEstimateRow(row);
@@ -1586,6 +1626,12 @@ function bindEvents() {
     if (projectListButton) {
       state.projectListMode = projectListButton.dataset.projectList;
       await renderProjects();
+      return;
+    }
+
+    const removeExtraMaterial = event.target.closest("[data-remove-extra-material]");
+    if (removeExtraMaterial) {
+      removeExtraMaterial.closest(".extra-material-row")?.remove();
       return;
     }
 
@@ -1696,8 +1742,14 @@ function bindEvents() {
       quantity: row.querySelector("[data-material-quantity]").value,
       reason: row.querySelector("[data-material-reason] textarea").value,
     }));
-    if (!items.length) {
-      showToast("Выберите материалы по смете");
+    const extra_items = collectExtraMaterials();
+    const incompleteExtra = extra_items.some((item) => !item.material || !item.name || Number(item.quantity || 0) <= 0 || !item.reason);
+    if (incompleteExtra) {
+      showToast("Заполните все 4 поля в дополнительных материалах");
+      return;
+    }
+    if (!items.length && !extra_items.length) {
+      showToast("Выберите материалы по смете или добавьте дополнительный материал");
       return;
     }
     api("/api/material-requests/bulk", {
@@ -1709,6 +1761,7 @@ function bindEvents() {
         creator_role: currentRoleBase(),
         creator_id: currentUserId(),
         items,
+        extra_items,
       }),
     })
       .then(async () => {
