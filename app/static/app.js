@@ -166,6 +166,10 @@ function canDeleteForever() {
   return currentRoleBase() === "owner";
 }
 
+function canManageKnowledgeBase() {
+  return ["owner", "construction_manager"].includes(currentRoleBase());
+}
+
 function roleLabel(role) {
   if (String(role || "").startsWith("foreman:")) {
     const user = state.users.find((item) => item.id === Number(String(role).split(":")[1]));
@@ -1942,11 +1946,18 @@ async function renderContracts() {
 async function renderDocuments() {
   const docs = await api("/api/documents?related_type=knowledge_base");
   qs("#documentCards").innerHTML = docs.length
-    ? docs.map((doc) => `
-    <article class="card">
-      <div class="stack-line"><strong>${documentTitle(doc)}</strong>${pill(documentType(doc.type), "blue")}${pill(label(doc.status))}</div>
-      ${doc.file_path ? documentFileLink(doc) : `<div class="muted">${doc.file_name || "Файл не загружен"}</div>`}
-    </article>`).join("")
+    ? docs
+        .map(
+          (doc) => `
+          <article class="card">
+            <div class="document-card-head">
+              <div class="stack-line"><strong>${documentTitle(doc)}</strong>${pill(documentType(doc.type), "blue")}${pill(label(doc.status))}</div>
+              ${canManageKnowledgeBase() ? `<button class="danger-button tiny" type="button" data-document-action="delete" data-document-id="${doc.id}">Удалить</button>` : ""}
+            </div>
+            ${doc.file_path ? documentFileLink(doc) : `<div class="muted">${doc.file_name || "Файл не загружен"}</div>`}
+          </article>`
+        )
+        .join("")
     : `<p class="muted">База знаний пока пустая. Загружайте сюда регламенты, проектные решения, узлы и общую документацию.</p>`;
 }
 
@@ -2335,6 +2346,27 @@ function bindEvents() {
     if (variationExportButton) {
       window.open(`/api/variations/${variationExportButton.dataset.exportVariation}/export`, "_blank", "noopener");
       return;
+    }
+
+    const documentActionButton = event.target.closest("[data-document-action]");
+    if (documentActionButton) {
+      const action = documentActionButton.dataset.documentAction;
+      const id = documentActionButton.dataset.documentId;
+      if (action === "delete") {
+        const confirmed = confirm("Удалить материал из базы знаний? Файл также будет удалён из хранилища.");
+        if (!confirmed) return;
+        try {
+          await api(`/api/documents/${id}/delete`, {
+            method: "POST",
+            body: JSON.stringify({ actor_role: currentRoleBase() }),
+          });
+          await renderDocuments();
+          showToast("Материал удалён из базы знаний");
+        } catch (error) {
+          showToast(error.message || "Не удалось удалить материал");
+        }
+        return;
+      }
     }
 
     const materialBatchAction = event.target.closest("[data-material-batch-action]");

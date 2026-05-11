@@ -780,6 +780,22 @@ def download_from_yandex_disk(file_path: str) -> bytes:
         return response.read()
 
 
+def delete_stored_file(file_path: str | None) -> None:
+    if not file_path:
+        return
+    if str(file_path).startswith(YANDEX_DISK_FILE_PREFIX):
+        remote_path = str(file_path).removeprefix(YANDEX_DISK_FILE_PREFIX)
+        try:
+            yandex_api_request("DELETE", "/resources", {"path": remote_path, "permanently": "true"})
+        except HTTPError as exc:
+            if exc.code != 404:
+                raise
+        return
+    local_path = (DATA_DIR / str(file_path)).resolve()
+    if DATA_DIR.resolve() in local_path.parents and local_path.is_file():
+        local_path.unlink()
+
+
 def knowledge_base_project_id(db) -> int:
     row = db.execute("SELECT id FROM projects WHERE bitrix_ref = '__knowledge_base__' LIMIT 1").fetchone()
     if row:
@@ -1798,6 +1814,27 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     db.commit()
                     json_response(self, {"deleted": project_id})
                     return
+
+            document_action = re.match(r"^/api/documents/(\d+)/delete$", path)
+            if document_action:
+                document_id = int(document_action.group(1))
+                actor_role = data.get("actor_role") or ""
+                if actor_role not in {"owner", "construction_manager"}:
+                    raise ValueError("Удалять материалы базы знаний может только ген.директор или руководитель строительства.")
+                document = db.execute("SELECT * FROM documents WHERE id = ?", (document_id,)).fetchone()
+                if not document:
+                    json_response(self, {"error": "Document not found"}, 404)
+                    return
+                if (document["related_type"] or "") != "knowledge_base":
+                    raise ValueError("Через эту кнопку удаляются только материалы базы знаний.")
+                try:
+                    delete_stored_file(document["file_path"])
+                except (HTTPError, URLError, TimeoutError, RuntimeError, OSError) as exc:
+                    print(f"Could not delete stored knowledge base file: {exc}")
+                db.execute("DELETE FROM documents WHERE id = ?", (document_id,))
+                db.commit()
+                json_response(self, {"deleted": document_id})
+                return
 
             task_action = re.match(r"^/api/tasks/(\d+)/(complete|accept|return|delete)$", path)
             if task_action:

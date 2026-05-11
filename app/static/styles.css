@@ -1514,6 +1514,25 @@ h2 {
   font-size: 11px;
 }
 
+.document-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.document-card-head .stack-line {
+  flex: 1;
+  min-width: 0;
+}
+
+.danger-button.tiny {
+  min-height: 28px;
+  padding: 5px 9px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 #locationsView input,
 #locationsView textarea,
 #documentsView input,
