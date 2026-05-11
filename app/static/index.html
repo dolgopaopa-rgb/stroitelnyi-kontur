@@ -23,6 +23,7 @@
           <button class="nav-button" data-view="works">Работы</button>
           <button class="nav-button" data-view="materials">Материалы</button>
           <button class="nav-button" data-view="variations">Допработы</button>
+          <button class="nav-button" data-view="locations">Локации</button>
           <button class="nav-button" data-view="documents">Документы</button>
           <button class="nav-button" data-view="events">Журнал</button>
         </nav>
@@ -62,15 +63,15 @@
             </div>
             <div id="dashboardTaskStats"></div>
           </section>
-          <div class="layout-two works-layout">
-            <section class="panel works-list-panel">
+          <div class="layout-two">
+            <section class="panel">
               <div class="panel-head">
                 <h2>Объекты</h2>
                 <button class="link-button" data-view-target="projects">Открыть</button>
               </div>
               <div class="list" id="dashboardProjects"></div>
             </section>
-            <section class="panel works-extra-panel">
+            <section class="panel">
               <div class="panel-head">
                 <h2>Срочные задачи</h2>
                 <button class="link-button" data-view-target="tasks">Открыть</button>
@@ -170,8 +171,8 @@
         </section>
 
         <section class="view" id="worksView">
-          <div class="layout-two">
-            <section class="panel">
+          <div class="layout-two works-layout">
+            <section class="panel works-list-panel">
               <div class="panel-head">
                 <h2>Работы по объекту</h2>
                 <button class="secondary" id="printWorksButton" type="button">Печать / PDF</button>
@@ -181,7 +182,7 @@
               </form>
               <div class="table" id="workRows"></div>
             </section>
-            <section class="panel">
+            <section class="panel works-extra-panel">
               <div class="panel-head">
                 <h2>Появившиеся работы</h2>
               </div>
@@ -207,6 +208,32 @@
                 </div>
               </form>
               <div class="table" id="workExtraRows"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="locationsView">
+          <div class="layout-two locations-layout">
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Локации объектов</h2>
+              </div>
+              <div class="table location-list" id="objectLocationRows"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Локации поставщиков</h2>
+              </div>
+              <form class="form embedded compact-form" id="supplierLocationForm">
+                <label>Поставщик <input name="title" required placeholder="Например: БетонПрофи" /></label>
+                <label>Адрес <input name="address" placeholder="Адрес склада или офиса" /></label>
+                <label>Ссылка на Яндекс.Карты <input name="maps_url" placeholder="https://yandex.ru/maps/..." /></label>
+                <label>Комментарий <textarea name="comment" rows="2" placeholder="Что покупаем, режим работы, контакт"></textarea></label>
+                <div class="form-actions">
+                  <button class="primary" type="submit">Добавить локацию</button>
+                </div>
+              </form>
+              <div class="table location-list" id="supplierLocationRows"></div>
             </section>
           </div>
         </section>

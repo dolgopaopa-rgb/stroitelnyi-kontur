@@ -24,6 +24,7 @@ const viewTitles = {
   works: "Работы",
   materials: "Материалы",
   variations: "Допработы и отклонения",
+  locations: "Локации",
   documents: "Документы",
   events: "Журнал событий",
 };
@@ -217,6 +218,14 @@ function addressLink(address, className = "") {
   return `<a class="address-link ${className}" href="${escapeAttr(yandexMapsUrl(text))}" target="_blank" rel="noopener noreferrer">${text}</a>`;
 }
 
+function mapLink(address, mapsUrl, label = "Открыть в Яндекс.Картах") {
+  const url = String(mapsUrl || "").trim();
+  const addressText = String(address || "").trim();
+  const href = /^https?:\/\//i.test(url) && !/^https?:\/\/yandex\.ru\/maps\/?$/i.test(url) ? url : yandexMapsUrl(addressText);
+  if (!href) return `<span class="muted">Локация не указана</span>`;
+  return `<a class="link-button inline-link" href="${escapeAttr(href)}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+}
+
 function documentType(type) {
   return {
     contract: "Договор",
@@ -298,6 +307,7 @@ async function loadAll() {
     renderTasks(),
     renderWorks(),
     renderMaterials(),
+    renderLocations(),
     renderEstimateMaterials(),
     renderVariations(),
     renderDocuments(),
@@ -1268,6 +1278,19 @@ function workProjectId() {
   return exists ? selected : state.projects[0]?.id || "";
 }
 
+function buildWorkTree(works) {
+  return works.reduce((acc, row) => {
+    const parts = String(row.section || "Без раздела").split(" / ").filter(Boolean);
+    const stage = parts[0] || "Без раздела";
+    const group = parts.slice(1).join(" / ") || "Работы";
+    acc[stage] = acc[stage] || { total: 0, groups: {} };
+    acc[stage].total += 1;
+    acc[stage].groups[group] = acc[stage].groups[group] || [];
+    acc[stage].groups[group].push(row);
+    return acc;
+  }, {});
+}
+
 async function renderWorks() {
   const projectId = workProjectId();
   if (projectId) state.selectedWorkProjectId = Number(projectId);
@@ -1288,44 +1311,50 @@ async function renderWorks() {
   const fileNote = project?.work_task_file_name
     ? `<p class="muted">Файл задания: ${project.work_task_file_name} · загружено работ: ${works.length}</p>`
     : `<p class="muted">Файл задания на работы по этому объекту еще не загружен.</p>`;
-  const grouped = groupBySection(works);
+  const workTree = buildWorkTree(works);
   qs("#workRows").innerHTML =
     `<div class="work-file-note">${fileNote}</div>` +
     (works.length
-      ? Object.entries(grouped)
+      ? Object.entries(workTree)
         .map(
-          ([section, rows]) => {
-            const sectionParts = section.split(" / ");
-            const sectionTitle = sectionParts.pop() || section;
-            const sectionParent = sectionParts.join(" / ");
-            return `
-          <details class="estimate-section work-section">
+          ([stage, stageData]) => `
+          <details class="estimate-section work-stage">
             <summary>
               <span class="work-section-title">
-                ${sectionParent ? `<small>${sectionParent}</small>` : ""}
-                <strong>${sectionTitle}</strong>
+                <strong>${stage}</strong>
               </span>
-              <span class="work-section-count">${rows.length}</span>
+              <span class="work-section-count">${stageData.total}</span>
             </summary>
-            <div class="table work-items">
-              ${rows
-                .map(
-                  (row) => `
-                  <div class="row estimate-material-row work-row">
-                    <div class="material-main">
-                      <strong>${row.title}</strong>
+            <div class="work-groups">
+              ${Object.entries(stageData.groups)
+                .map(([group, rows]) => `
+                  <section class="work-group">
+                    <div class="work-group-head">
+                      <strong>${group}</strong>
+                      <span>${rows.length}</span>
                     </div>
-                    <div class="work-row-meta">
-                      <span>${row.estimated_quantity || 0} ${row.unit || ""}</span>
-                      <span>${money(row.unit_price)}</span>
-                      <strong>${money(row.total_price)}</strong>
+                    <div class="table work-items">
+                      ${rows
+                        .map(
+                          (row) => `
+                          <div class="row estimate-material-row work-row">
+                            <div class="material-main">
+                              <strong>${row.title}</strong>
+                            </div>
+                            <div class="work-row-meta">
+                              <span>${row.estimated_quantity || 0} ${row.unit || ""}</span>
+                              <span>${money(row.unit_price)}</span>
+                              <strong>${money(row.total_price)}</strong>
+                            </div>
+                          </div>`
+                        )
+                        .join("")}
                     </div>
-                  </div>`
+                  </section>`
                 )
                 .join("")}
             </div>
-          </details>`;
-          }
+          </details>`
         )
         .join("")
       : `<p class="muted">Список работ пока пуст. Если файл уже выбран и сохранен, значит программа не распознала строки в этой выгрузке.</p>`);
@@ -1348,6 +1377,43 @@ async function renderWorks() {
         )
         .join("")
     : `<p class="muted">Появившихся работ по объекту пока нет.</p>`;
+}
+
+async function renderLocations() {
+  const payload = await api("/api/locations");
+  const projects = payload.projects || [];
+  const suppliers = payload.suppliers || [];
+  qs("#objectLocationRows").innerHTML = projects.length
+    ? projects
+        .map(
+          (project) => `
+          <div class="row location-row">
+            <div>
+              <strong>${project.title}</strong>
+              <div class="muted">${project.customer_name || ""}</div>
+              <div class="muted">${project.address || "Адрес не указан"}</div>
+            </div>
+            ${mapLink(project.address, project.navigator_url)}
+          </div>`
+        )
+        .join("")
+    : `<p class="muted">Активных объектов пока нет.</p>`;
+
+  qs("#supplierLocationRows").innerHTML = suppliers.length
+    ? suppliers
+        .map(
+          (supplier) => `
+          <div class="row location-row">
+            <div>
+              <strong>${supplier.title}</strong>
+              <div class="muted">${supplier.address || "Адрес не указан"}</div>
+              ${supplier.comment ? `<div class="muted">${supplier.comment}</div>` : ""}
+            </div>
+            ${mapLink(supplier.address, supplier.maps_url)}
+          </div>`
+        )
+        .join("")
+    : `<p class="muted">Локации поставщиков пока не добавлены.</p>`;
 }
 
 async function renderMaterials() {
@@ -2283,6 +2349,14 @@ function bindEvents() {
     form.elements.project_id.value = state.selectedWorkProjectId;
     await loadAll();
     showToast("Работа добавлена");
+  });
+  qs("#supplierLocationForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = qs("#supplierLocationForm");
+    await api("/api/supplier-locations", { method: "POST", body: JSON.stringify(formToJson(form)) });
+    form.reset();
+    await renderLocations();
+    showToast("Локация поставщика добавлена");
   });
   qs("#estimateImportForm").addEventListener("submit", async (event) => {
     event.preventDefault();

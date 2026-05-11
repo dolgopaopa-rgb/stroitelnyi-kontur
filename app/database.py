@@ -195,6 +195,17 @@ def init_db() -> None:
                 FOREIGN KEY (creator_id) REFERENCES users(id)
             );
 
+            CREATE TABLE IF NOT EXISTS supplier_locations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                address TEXT,
+                maps_url TEXT,
+                comment TEXT,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
             CREATE TABLE IF NOT EXISTS variations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 project_id INTEGER NOT NULL,
@@ -282,6 +293,7 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_estimate_materials_project ON estimate_materials(project_id);
             CREATE INDEX IF NOT EXISTS idx_work_items_project ON work_items(project_id);
             CREATE INDEX IF NOT EXISTS idx_work_extra_items_project ON work_extra_items(project_id);
+            CREATE INDEX IF NOT EXISTS idx_supplier_locations_active ON supplier_locations(is_active);
             CREATE INDEX IF NOT EXISTS idx_variations_project ON variations(project_id);
             CREATE INDEX IF NOT EXISTS idx_contracts_ends ON contracts(ends_at);
             CREATE INDEX IF NOT EXISTS idx_documents_project ON documents(project_id);

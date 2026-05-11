@@ -1177,6 +1177,26 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 json_response(self, rows_to_dicts(rows))
                 return
 
+            if path == "/api/locations":
+                projects = db.execute(
+                    """
+                    SELECT id, title, customer_name, address, navigator_url, foreman_id, status
+                    FROM projects
+                    WHERE status != 'archived'
+                    ORDER BY title
+                    """
+                ).fetchall()
+                suppliers = db.execute(
+                    """
+                    SELECT *
+                    FROM supplier_locations
+                    WHERE is_active = 1
+                    ORDER BY title
+                    """
+                ).fetchall()
+                json_response(self, {"projects": rows_to_dicts(projects), "suppliers": rows_to_dicts(suppliers)})
+                return
+
             variation_detail = re.match(r"^/api/variations/(\d+)$", path)
             if variation_detail:
                 payload = self.variation_detail_payload(db, int(variation_detail.group(1)))
@@ -2687,6 +2707,23 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         data.get("unit"),
                         number_value(data.get("quantity")),
                         data.get("reason") or "additional_work",
+                        data.get("comment") or "",
+                    ),
+                )
+                json_response(self, {"id": cursor.lastrowid}, 201)
+                return
+
+            if path == "/api/supplier-locations":
+                require_fields(data, [("title", "Поставщик")])
+                cursor = db.execute(
+                    """
+                    INSERT INTO supplier_locations (title, address, maps_url, comment)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (
+                        data.get("title") or "",
+                        data.get("address") or "",
+                        data.get("maps_url") or "",
                         data.get("comment") or "",
                     ),
                 )
