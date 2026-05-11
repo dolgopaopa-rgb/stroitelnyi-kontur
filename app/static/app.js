@@ -1287,6 +1287,7 @@ async function openMaterialBatchDialog(batchKey) {
   qs("#materialReviewTitle").textContent = materialBatchTitle(batch, currentRoleBase() === "procurement_manager");
   const canReview = currentRoleBase() === "procurement_manager" && batch.id && ["new", "revision_requested"].includes(batch.status);
   const canSchedule = currentRoleBase() === "procurement_manager" && batch.id && ["in_work", "delivery_scheduled"].includes(batch.status);
+  const canResolveIssue = currentRoleBase() === "procurement_manager" && batch.id && batch.status === "receipt_issue";
   const canEdit = canEditMaterialBatch(batch);
   const canReceive = currentRoleBase() === "foreman" && batch.id && batch.status === "delivery_scheduled" && Number(batch.project_foreman_id) === Number(currentUserId());
   qs("#materialReviewContent").innerHTML = `
@@ -1344,6 +1345,19 @@ async function openMaterialBatchDialog(batchKey) {
             <label>Комментарий снабжения <textarea id="materialBatchScheduleComment" rows="3" placeholder="Например: нужна доверенность или кран">${batch.procurement_comment || ""}</textarea></label>
             <div class="form-actions">
               <button class="primary" type="button" data-material-batch-action="schedule" data-material-batch-id="${batch.id}">Уведомить о доставке</button>
+            </div>
+          </section>`
+        : ""
+    }
+    ${
+      canResolveIssue
+        ? `<section class="workflow-panel">
+            <h3>Исправление проблемы</h3>
+            <p class="muted">Укажите, когда будет повторная доставка, замена или довоз материала. Прораб и руководители получат уведомление.</p>
+            <label>Дата повторной доставки <input id="materialBatchResolveDate" type="date" value="${batch.scheduled_delivery_date || ""}" /></label>
+            <label>Комментарий снабжения <textarea id="materialBatchResolveComment" rows="3" placeholder="Например: заменили позицию, довезем недостающий материал, поставщик подтвердил замену"></textarea></label>
+            <div class="form-actions">
+              <button class="primary" type="button" data-material-batch-action="resolve_issue" data-material-batch-id="${batch.id}">Уведомить о повторной доставке</button>
             </div>
           </section>`
         : ""
@@ -1862,6 +1876,12 @@ function bindEvents() {
           comment: qs("#materialBatchScheduleComment")?.value || "",
         };
       }
+      if (action === "resolve_issue") {
+        body = {
+          scheduled_delivery_date: qs("#materialBatchResolveDate")?.value || "",
+          comment: qs("#materialBatchResolveComment")?.value || "",
+        };
+      }
       if (action === "receive") {
         const file = qs("#materialBatchReceiptFile")?.files?.[0];
         body = {
@@ -1897,6 +1917,7 @@ function bindEvents() {
           return: "Заявка возвращена на доработку",
           resubmit: "Заявка повторно отправлена снабжению",
           schedule: "Прораб уведомлен о доставке",
+          resolve_issue: "Прораб уведомлен о повторной доставке",
           receive: "Приемка по заявке отправлена",
           update: "Заявка исправлена и отправлена снабжению",
           delete: "Заявка удалена",

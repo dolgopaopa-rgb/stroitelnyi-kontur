@@ -1345,7 +1345,7 @@ class AppHandler(BaseHTTPRequestHandler):
                     json_response(self, {"id": task_id, "status": "returned"})
                     return
 
-            material_batch_action = re.match(r"^/api/material-request-batches/(\d+)/(accept|return|resubmit|schedule|receive|update|delete)$", path)
+            material_batch_action = re.match(r"^/api/material-request-batches/(\d+)/(accept|return|resubmit|schedule|resolve_issue|receive|update|delete)$", path)
             if material_batch_action:
                 batch_id = int(material_batch_action.group(1))
                 action = material_batch_action.group(2)
@@ -1621,6 +1621,59 @@ class AppHandler(BaseHTTPRequestHandler):
                         watcher_ids,
                         batch["project_id"],
                         "Доставка по заявке назначена",
+                        message,
+                        "material_request_batch",
+                        batch_id,
+                    )
+                    db.execute(
+                        """
+                        INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
+                        VALUES (?, 'decision', ?, ?, 'internal', 'material_request')
+                        """,
+                        (batch["project_id"], message, user_id_by_role(db, "procurement_manager") or 4),
+                    )
+                    json_response(self, {"id": batch_id, "status": "delivery_scheduled"})
+                    return
+                if action == "resolve_issue":
+                    if str(batch["status"] or "") != "receipt_issue":
+                        raise ValueError("Исправить можно только заявку со статусом проблемы при приемке.")
+                    if str(data.get("actor_role") or "") != "procurement_manager":
+                        raise ValueError("Исправление проблемы по материалам может отправить только снабжение.")
+                    delivery_date = data.get("scheduled_delivery_date") or ""
+                    if not delivery_date:
+                        raise ValueError("Укажите дату повторной доставки или замены.")
+                    comment = str(data.get("comment") or "").strip()
+                    procurement_comment = f"Исправление проблемы: {comment}".strip()
+                    db.execute(
+                        """
+                        UPDATE material_request_batches
+                        SET status = 'delivery_scheduled',
+                            scheduled_delivery_date = ?,
+                            procurement_comment = ?,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (delivery_date, procurement_comment, batch_id),
+                    )
+                    db.execute(
+                        """
+                        UPDATE material_requests
+                        SET procurement_status = 'delivery',
+                            actual_delivery_date = ?,
+                            procurement_comment = ?,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE batch_id = ?
+                        """,
+                        (delivery_date, procurement_comment, batch_id),
+                    )
+                    message = f"{batch['project_title']}: снабжение обработало проблему по заявке на материалы от {format_date_ru(batch['created_at'])}. Повторная доставка/замена назначена на {format_date_ru(delivery_date)}."
+                    if comment:
+                        message += f" Комментарий снабжения: {comment}"
+                    notify_users(
+                        db,
+                        watcher_ids,
+                        batch["project_id"],
+                        "Проблема по заявке на материалы исправляется",
                         message,
                         "material_request_batch",
                         batch_id,
