@@ -28,7 +28,7 @@ const viewTitles = {
   materials: "Материалы",
   variations: "Допработы и отклонения",
   locations: "Локации",
-  documents: "Документы",
+  documents: "База знаний",
   events: "Журнал событий",
 };
 
@@ -242,6 +242,9 @@ function documentType(type) {
     ks_2: "КС-2",
     ks_3: "КС-3",
     detail_node: "Узел",
+    regulation: "Регламент",
+    standard: "Стандарт компании",
+    instruction: "Инструкция",
     invoice: "Счет",
     other: "Документ",
   }[type] || type || "Документ";
@@ -1937,14 +1940,16 @@ async function renderContracts() {
 }
 
 async function renderDocuments() {
-  const docs = await api("/api/documents");
-  qs("#documentCards").innerHTML = docs.map((doc) => `
+  const docs = await api("/api/documents?related_type=knowledge_base");
+  qs("#documentCards").innerHTML = docs.length
+    ? docs.map((doc) => `
     <article class="card">
       <div class="stack-line"><strong>${documentTitle(doc)}</strong>${pill(documentType(doc.type), "blue")}${pill(label(doc.status))}</div>
-      <div class="muted">${doc.project_title} · ответственный: ${doc.owner_name || "не назначен"}</div>
+      <div class="muted">База знаний · ответственный: ${doc.owner_name || "не назначен"}</div>
       ${doc.file_path ? documentFileLink(doc) : `<div class="muted">${doc.file_name || "Файл не загружен"}</div>`}
       <div class="stack-line">${doc.version ? pill(`Версия: ${doc.version}`) : ""}${doc.due_date ? pill(`Срок: ${doc.due_date}`, levelByDate(doc.due_date)) : ""}</div>
-    </article>`).join("");
+    </article>`).join("")
+    : `<p class="muted">База знаний пока пустая. Загружайте сюда регламенты, проектные решения, узлы и общую документацию.</p>`;
 }
 
 async function renderEvents() {
@@ -2584,15 +2589,17 @@ function bindEvents() {
     event.preventDefault();
     const form = qs("#documentForm");
     const data = formToJson(form);
+    data.related_type = "knowledge_base";
+    delete data.project_id;
     const file = form.elements.document_file.files[0];
     if (file) {
-      data.document_file = await fileDocumentPayload(file, data.title || file.name, data.type || "other", "project");
+      data.document_file = await fileDocumentPayload(file, data.title || file.name, data.type || "other", "knowledge_base");
     }
     await api("/api/documents", { method: "POST", body: JSON.stringify(data) });
     qs("#documentDialog").close();
     form.reset();
     await loadAll();
-    showToast("Документ добавлен");
+    showToast("Материал добавлен в базу знаний");
   });
   qs("#eventForm").addEventListener("submit", (event) => {
     event.preventDefault();

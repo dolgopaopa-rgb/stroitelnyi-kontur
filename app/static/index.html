@@ -10,29 +10,27 @@
     <div class="app">
       <aside class="sidebar">
         <div class="brand">
-          <div class="brand-mark">СК</div>
+          <img class="brand-mark" src="/static/assets/g2-logo.png" alt="" />
           <div>
             <strong>Строительный контур</strong>
-            <span>Рабочий MVP</span>
           </div>
         </div>
         <nav class="nav">
-          <button class="nav-button active" data-view="dashboard">Рабочий стол</button>
-          <button class="nav-button" data-view="projects">Объекты</button>
-          <button class="nav-button" data-view="tasks">Задачи</button>
-          <button class="nav-button" data-view="works">Работы</button>
-          <button class="nav-button" data-view="materials">Материалы</button>
-          <button class="nav-button" data-view="variations">Допработы</button>
-          <button class="nav-button" data-view="locations">Локации</button>
-          <button class="nav-button" data-view="documents">Документы</button>
-          <button class="nav-button" data-view="events">Журнал</button>
+          <button class="nav-button active" data-view="dashboard"><span class="nav-icon">⌂</span><span>Рабочий стол</span></button>
+          <button class="nav-button" data-view="projects"><span class="nav-icon">▦</span><span>Объекты</span></button>
+          <button class="nav-button" data-view="tasks"><span class="nav-icon">✓</span><span>Задачи</span></button>
+          <button class="nav-button" data-view="works"><span class="nav-icon">▤</span><span>Работы</span></button>
+          <button class="nav-button" data-view="materials"><span class="nav-icon">◫</span><span>Материалы</span></button>
+          <button class="nav-button" data-view="variations"><span class="nav-icon">＋</span><span>Допработы</span></button>
+          <button class="nav-button" data-view="locations"><span class="nav-icon">⌖</span><span>Локации</span></button>
+          <button class="nav-button" data-view="documents"><span class="nav-icon">◧</span><span>База знаний</span></button>
+          <button class="nav-button" data-view="events"><span class="nav-icon">◷</span><span>Журнал</span></button>
         </nav>
       </aside>
 
       <main class="main">
         <header class="topbar">
           <div>
-            <p class="eyebrow">Локальная версия с базой SQLite</p>
             <h1 id="pageTitle">Рабочий стол</h1>
           </div>
           <div class="actions">
@@ -241,8 +239,8 @@
         <section class="view" id="documentsView">
           <div class="panel">
             <div class="panel-head">
-              <h2>Документы</h2>
-              <button class="primary" id="newDocumentButton">Добавить документ</button>
+              <h2>База знаний</h2>
+              <button class="primary" id="newDocumentButton">Добавить материал</button>
             </div>
             <div class="cards" id="documentCards"></div>
           </div>
@@ -400,26 +398,20 @@
     <dialog id="documentDialog">
       <form method="dialog" class="form" id="documentForm">
         <div class="modal-head">
-          <h2>Новый документ</h2>
+          <h2>Новый материал базы знаний</h2>
           <button type="button" class="icon" data-close="documentDialog">×</button>
         </div>
-        <label>Объект <select name="project_id" required></select></label>
-        <label>Название <input name="title" required placeholder="Смета, акт, договор..." /></label>
+        <label>Название <input name="title" required placeholder="Регламент, узел, проектное решение..." /></label>
         <div class="grid-2">
           <label>
             Тип
             <select name="type">
-              <option value="contract">Договор</option>
-              <option value="main_estimate">Основная смета</option>
-              <option value="smetter_materials">Файл материалов из Сметтера</option>
-              <option value="payment_schedule">График платежей</option>
               <option value="project_documentation">Проектная документация</option>
-              <option value="variation_estimate">Смета допработ</option>
-              <option value="act">Акт</option>
-              <option value="ks_2">КС-2</option>
-              <option value="ks_3">КС-3</option>
-              <option value="detail_node">Узел</option>
-              <option value="invoice">Счет</option>
+              <option value="detail_node">Узел / решение</option>
+              <option value="regulation">Регламент</option>
+              <option value="standard">Стандарт компании</option>
+              <option value="instruction">Инструкция</option>
+              <option value="other">Другое</option>
             </select>
           </label>
           <label>Версия <input name="version" placeholder="v1, v2, финальная" /></label>

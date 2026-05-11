@@ -680,7 +680,7 @@ def safe_file_name(file_name: str) -> str:
     return re.sub(r"[^A-Za-zА-Яа-я0-9._() -]+", "_", name)[:140]
 
 
-def save_document_file(db, project_id: int, file_data: dict, title: str, doc_type: str, related_type: str = "project") -> int | None:
+def save_document_file(db, project_id: int | None, file_data: dict, title: str, doc_type: str, related_type: str = "project") -> int | None:
     file_name = safe_file_name(file_data.get("file_name") or title)
     encoded = file_data.get("file_base64") or ""
     if not encoded:
@@ -688,7 +688,7 @@ def save_document_file(db, project_id: int, file_data: dict, title: str, doc_typ
     if "," in encoded:
         encoded = encoded.split(",", 1)[1]
     raw = base64.b64decode(encoded)
-    project_dir = UPLOAD_DIR / f"project_{project_id}"
+    project_dir = UPLOAD_DIR / (f"project_{project_id}" if project_id else "knowledge_base")
     project_dir.mkdir(parents=True, exist_ok=True)
     target_name = f"{int(time.time() * 1000)}_{file_name}"
     target_path = project_dir / target_name
@@ -1283,11 +1283,37 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 """,
                 "/api/variations": "SELECT v.*, p.title AS project_title FROM variations v JOIN projects p ON p.id = v.project_id ORDER BY v.due_date",
                 "/api/contracts": "SELECT c.*, p.title AS project_title, u.name AS responsible_name FROM contracts c JOIN projects p ON p.id = c.project_id LEFT JOIN users u ON u.id = c.responsible_id ORDER BY c.ends_at",
-                "/api/documents": "SELECT d.*, p.title AS project_title, u.name AS owner_name FROM documents d JOIN projects p ON p.id = d.project_id LEFT JOIN users u ON u.id = d.owner_id ORDER BY d.created_at DESC",
                 "/api/events": "SELECT e.*, p.title AS project_title, u.name AS author_name FROM events e JOIN projects p ON p.id = e.project_id LEFT JOIN users u ON u.id = e.author_id ORDER BY e.created_at DESC",
             }
             if path in endpoints:
                 json_response(self, rows_to_dicts(db.execute(endpoints[path]).fetchall()))
+                return
+
+            if path == "/api/documents":
+                related_type = (query.get("related_type") or ["project"])[0]
+                if related_type == "knowledge_base":
+                    rows = db.execute(
+                        """
+                        SELECT d.*, p.title AS project_title, u.name AS owner_name
+                        FROM documents d
+                        LEFT JOIN projects p ON p.id = d.project_id
+                        LEFT JOIN users u ON u.id = d.owner_id
+                        WHERE d.related_type = 'knowledge_base'
+                        ORDER BY d.created_at DESC
+                        """
+                    ).fetchall()
+                else:
+                    rows = db.execute(
+                        """
+                        SELECT d.*, p.title AS project_title, u.name AS owner_name
+                        FROM documents d
+                        JOIN projects p ON p.id = d.project_id
+                        LEFT JOIN users u ON u.id = d.owner_id
+                        WHERE COALESCE(d.related_type, 'project') != 'knowledge_base'
+                        ORDER BY d.created_at DESC
+                        """
+                    ).fetchall()
+                json_response(self, rows_to_dicts(rows))
                 return
 
         self.send_error(404)
@@ -2614,14 +2640,16 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
 
             if path == "/api/documents":
                 file_data = data.get("document_file") or {}
+                related_type = data.get("related_type") or "project"
+                project_id = int(data["project_id"]) if data.get("project_id") else None
                 if file_data.get("file_base64"):
                     document_id = save_document_file(
                         db,
-                        int(data["project_id"]),
+                        project_id,
                         file_data,
                         data.get("title") or "Документ",
                         data.get("type") or "other",
-                        data.get("related_type") or "project",
+                        related_type,
                     )
                     db.execute(
                         """
@@ -2648,14 +2676,14 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL)
                     """,
                     (
-                        int(data["project_id"]),
+                        project_id,
                         data.get("title") or "Новый документ",
                         data.get("type") or "other",
                         data.get("version") or "",
                         data.get("status") or "draft",
                         int(data.get("owner_id") or 2),
                         data.get("due_date") or None,
-                        data.get("related_type") or "project",
+                        related_type,
                     ),
                 )
                 json_response(self, {"id": cursor.lastrowid}, 201)
