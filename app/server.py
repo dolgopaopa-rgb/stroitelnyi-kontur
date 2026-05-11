@@ -702,7 +702,7 @@ def save_document_file(db, project_id: int | None, file_data: dict, title: str, 
         VALUES (?, ?, ?, '', 'active', ?, NULL, ?, ?, ?, ?, ?)
         """,
         (
-            project_id,
+            project_id or 0,
             title,
             doc_type,
             user_id_by_role(db, "sales_manager") or 3,
@@ -2641,7 +2641,10 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
             if path == "/api/documents":
                 file_data = data.get("document_file") or {}
                 related_type = data.get("related_type") or "project"
-                project_id = int(data["project_id"]) if data.get("project_id") else None
+                project_id = int(data["project_id"]) if data.get("project_id") else (0 if related_type == "knowledge_base" else None)
+                if project_id is None:
+                    json_response(self, {"error": "Для документа объекта нужно выбрать объект"}, 400)
+                    return
                 if file_data.get("file_base64"):
                     document_id = save_document_file(
                         db,

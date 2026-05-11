@@ -2586,18 +2586,22 @@ function bindEvents() {
   qs("#documentForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = qs("#documentForm");
-    const data = formToJson(form);
-    data.related_type = "knowledge_base";
-    delete data.project_id;
-    const file = form.elements.document_file.files[0];
-    if (file) {
-      data.document_file = await fileDocumentPayload(file, data.title || file.name, data.type || "other", "knowledge_base");
+    try {
+      const data = formToJson(form);
+      data.related_type = "knowledge_base";
+      delete data.project_id;
+      const file = form.elements.document_file.files[0];
+      if (file) {
+        data.document_file = await fileDocumentPayload(file, data.title || file.name, data.type || "other", "knowledge_base");
+      }
+      await api("/api/documents", { method: "POST", body: JSON.stringify(data) });
+      qs("#documentDialog").close();
+      form.reset();
+      await loadAll();
+      showToast("Материал добавлен в базу знаний");
+    } catch (error) {
+      showToast(error.message || "Не удалось сохранить материал");
     }
-    await api("/api/documents", { method: "POST", body: JSON.stringify(data) });
-    qs("#documentDialog").close();
-    form.reset();
-    await loadAll();
-    showToast("Материал добавлен в базу знаний");
   });
   qs("#eventForm").addEventListener("submit", (event) => {
     event.preventDefault();
