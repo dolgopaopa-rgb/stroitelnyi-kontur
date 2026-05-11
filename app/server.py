@@ -1326,7 +1326,10 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     ),
                 )
                 db.commit()
-                json_response(self, get_project_detail(project_id), 201)
+                detail = get_project_detail(project_id)
+                detail["imported_materials_count"] = imported_materials
+                detail["imported_works_count"] = imported_works
+                json_response(self, detail, 201)
                 return
 
             project_action = re.match(r"^/api/projects/(\d+)/(update|submit|accept|return|archive|restore|delete)$", path)
@@ -1409,7 +1412,10 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             (project_id, f"Задание на работы из Сметтера обновлено: {imported_works} строк."),
                         )
                     db.commit()
-                    json_response(self, get_project_detail(project_id))
+                    detail = get_project_detail(project_id)
+                    detail["imported_materials_count"] = imported_materials
+                    detail["imported_works_count"] = imported_works
+                    json_response(self, detail)
                     return
 
                 if action == "submit":

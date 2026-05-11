@@ -1273,9 +1273,15 @@ async function renderWorks() {
     api(`/api/work-items?project_id=${projectId}`),
     api(`/api/work-extra-items?project_id=${projectId}`),
   ]);
+  const project = state.projects.find((item) => Number(item.id) === Number(projectId));
+  const fileNote = project?.work_task_file_name
+    ? `<p class="muted">Файл задания: ${project.work_task_file_name} · загружено работ: ${works.length}</p>`
+    : `<p class="muted">Файл задания на работы по этому объекту еще не загружен.</p>`;
   const grouped = groupBySection(works);
-  qs("#workRows").innerHTML = works.length
-    ? Object.entries(grouped)
+  qs("#workRows").innerHTML =
+    fileNote +
+    (works.length
+      ? Object.entries(grouped)
         .map(
           ([section, rows]) => `
           <details class="estimate-section">
@@ -1300,7 +1306,7 @@ async function renderWorks() {
           </details>`
         )
         .join("")
-    : `<p class="muted">По этому объекту задание на работы еще не загружено.</p>`;
+      : `<p class="muted">Список работ пока пуст. Если файл уже выбран и сохранен, значит программа не распознала строки в этой выгрузке.</p>`);
 
   qs("#workExtraRows").innerHTML = extraWorks.length
     ? extraWorks
@@ -2162,16 +2168,28 @@ function bindEvents() {
     const payload = await projectFormToJson(form);
     const isEdit = form.dataset.mode === "edit";
     const projectId = form.dataset.projectId;
-    await api(isEdit ? `/api/projects/${projectId}/update` : "/api/projects", {
+    const hasWorkTaskUpload = payload.initial_documents.some((doc) => doc.type === "smetter_work_task");
+    const savedProject = await api(isEdit ? `/api/projects/${projectId}/update` : "/api/projects", {
       method: "POST",
       body: JSON.stringify(payload),
     });
     qs("#projectDialog").close();
     form.reset();
     await loadAll();
+    const savedProjectId = Number(isEdit ? projectId : savedProject.id);
     if (isEdit) {
-      state.selectedProjectId = Number(projectId);
+      state.selectedProjectId = savedProjectId;
       await renderProjectDetail(state.selectedProjectId);
+    }
+    if (hasWorkTaskUpload) {
+      state.selectedProjectId = savedProjectId;
+      switchView("works");
+      const worksSelect = qs('#workProjectForm select[name="project_id"]');
+      if (worksSelect) worksSelect.value = String(savedProjectId);
+      await renderWorks();
+      const count = Number(savedProject.imported_works_count || 0);
+      showToast(count ? `Задание на работы загружено: ${count} строк` : "Файл сохранен, но работы не распознаны");
+      return;
     }
     showToast(isEdit ? "Карточка объекта сохранена" : "Объект создан как черновик");
   });
