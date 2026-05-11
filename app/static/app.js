@@ -403,31 +403,6 @@ function taskStatusLevel(status) {
   }[status] || "";
 }
 
-function parseTaskDate(value) {
-  if (!value) return null;
-  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
-  const date = new Date(`${String(value).slice(0, 10)}T00:00:00`);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function taskDateOnly(value) {
-  return String(value || "").slice(0, 10);
-}
-
-function daysBetween(start, end) {
-  return Math.round((end - start) / 86400000);
-}
-
-function clamp(value, min, max) {
-  return Math.min(Math.max(value, min), max);
-}
-
-function formatDateRu(value) {
-  const date = parseTaskDate(value);
-  if (!date) return "без срока";
-  return date.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
-}
-
 function canActAsTaskUser(task, kind) {
   const userId = currentUserId();
   const idKey = `${kind}_id`;
@@ -437,66 +412,6 @@ function canActAsTaskUser(task, kind) {
 
 function canDeleteTask(task) {
   return ["owner", "construction_manager"].includes(currentRoleBase());
-}
-
-function renderTaskCalendar(tasks) {
-  const dated = tasks
-    .filter((task) => task.due_date)
-    .sort((a, b) => new Date(`${a.due_date}T00:00:00`) - new Date(`${b.due_date}T00:00:00`));
-  if (!dated.length) {
-    return `
-      <div class="task-calendar-head">
-        <h3>Календарный график задач</h3>
-        <span class="muted">Появится после указания сроков</span>
-      </div>
-      <p class="muted">В задачах пока нет сроков для календарного графика.</p>`;
-  }
-
-  const today = new Date();
-  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const startDates = dated.map((task) => parseTaskDate(taskDateOnly(task.created_at)) || todayStart);
-  const dueDates = dated.map((task) => parseTaskDate(task.due_date)).filter(Boolean);
-  const rangeStart = new Date(Math.min(...startDates.map((date) => date.getTime()), todayStart.getTime()));
-  const rangeEnd = new Date(Math.max(...dueDates.map((date) => date.getTime()), todayStart.getTime()));
-  const totalDays = Math.max(daysBetween(rangeStart, rangeEnd), 1);
-  const checkpoints = [rangeStart, new Date(rangeStart.getTime() + (totalDays * 86400000) / 2), rangeEnd];
-
-  return `
-    <div class="task-calendar-head">
-      <h3>Календарный график задач</h3>
-      <span class="muted">Сроки и текущий статус выполнения</span>
-    </div>
-    <div class="task-gantt">
-      <div class="task-gantt-scale">
-        <span>${formatDateRu(rangeStart)}</span>
-        <span>${formatDateRu(checkpoints[1])}</span>
-        <span>${formatDateRu(rangeEnd)}</span>
-      </div>
-      ${dated
-        .map((task) => {
-          const createdDate = parseTaskDate(taskDateOnly(task.created_at)) || rangeStart;
-          const dueDate = parseTaskDate(task.due_date) || rangeEnd;
-          const startOffset = clamp((daysBetween(rangeStart, createdDate) / totalDays) * 100, 0, 100);
-          const endOffset = clamp((daysBetween(rangeStart, dueDate) / totalDays) * 100, 0, 100);
-          const width = Math.max(endOffset - startOffset, 4);
-          const statusClass = taskStatusLevel(task.status) || levelByDate(task.due_date);
-          return `
-            <div class="task-gantt-row">
-              <div class="task-gantt-meta">
-                <strong>${task.title}</strong>
-                <span>${task.project_title} · ${task.assignee_name || "исполнитель не назначен"}</span>
-              </div>
-              <div class="task-gantt-track">
-                <div class="task-gantt-bar ${statusClass}" style="left: ${startOffset}%; width: ${width}%;">
-                  <span>${label(task.status)}</span>
-                </div>
-                <i class="task-gantt-deadline ${levelByDate(task.due_date)}" style="left: ${endOffset}%"></i>
-              </div>
-              <div class="task-gantt-date">${formatDateRu(task.due_date)}</div>
-            </div>`;
-        })
-        .join("")}
-    </div>`;
 }
 
 async function renderDashboard() {
@@ -509,7 +424,6 @@ async function renderDashboard() {
     <div class="metric"><span class="muted">Просрочено</span><strong>${taskStats(roleTasks).overdue}</strong><span>По открытым задачам</span></div>
   `;
   qs("#dashboardTaskStats").innerHTML = renderTaskStats(roleTasks);
-  qs("#dashboardTaskCalendar").innerHTML = renderTaskCalendar(roleTasks);
   qs("#dashboardProjects").innerHTML = state.projects
     .slice(0, 4)
     .map(
@@ -906,7 +820,6 @@ async function renderTasks() {
         .join("")
     : `<p class="muted">${currentRoleBase() === "foreman" ? "За этим прорабом пока нет объектов с задачами." : "Задач пока нет."}</p>`;
   qs("#taskStats").innerHTML = renderTaskStats(tasks);
-  qs("#taskCalendar").innerHTML = renderTaskCalendar(tasks);
   const visibleTasks = tasks.filter((task) => taskMatchesFilter(task, state.taskFilter));
   qs("#taskRows").innerHTML = visibleTasks.length
     ? visibleTasks
