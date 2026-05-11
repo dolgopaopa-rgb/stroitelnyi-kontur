@@ -147,7 +147,70 @@ def parse_xlsx_rows(file_bytes: bytes) -> list[list[object]]:
             if values:
                 max_col = max(values)
                 rows.append([values.get(col, "") for col in range(1, max_col + 1)])
-        return rows
+    return rows
+
+
+def xlsx_column_name(index: int) -> str:
+    name = ""
+    while index:
+        index, remainder = divmod(index - 1, 26)
+        name = chr(65 + remainder) + name
+    return name
+
+
+def make_xlsx(rows: list[list[object]]) -> bytes:
+    def cell_xml(row_index: int, column_index: int, value: object) -> str:
+        cell_ref = f"{xlsx_column_name(column_index)}{row_index}"
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return f'<c r="{cell_ref}"><v>{value}</v></c>'
+        text = "" if value is None else str(value)
+        return f'<c r="{cell_ref}" t="inlineStr"><is><t>{escape_xml(text)}</t></is></c>'
+
+    sheet_rows = []
+    for row_index, row in enumerate(rows, start=1):
+        cells = "".join(cell_xml(row_index, column_index, value) for column_index, value in enumerate(row, start=1))
+        sheet_rows.append(f'<row r="{row_index}">{cells}</row>')
+    worksheet = f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>{"".join(sheet_rows)}</sheetData>
+</worksheet>'''
+    workbook = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Материалы" sheetId="1" r:id="rId1"/></sheets>
+</workbook>'''
+    content_types = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>'''
+    root_rels = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>'''
+    workbook_rels = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>'''
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("[Content_Types].xml", content_types)
+        archive.writestr("_rels/.rels", root_rels)
+        archive.writestr("xl/workbook.xml", workbook)
+        archive.writestr("xl/_rels/workbook.xml.rels", workbook_rels)
+        archive.writestr("xl/worksheets/sheet1.xml", worksheet)
+    return output.getvalue()
+
+
+def escape_xml(value: str) -> str:
+    return (
+        value.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&apos;")
+    )
 
 
 def parse_smetter_purchase_xlsx(file_bytes: bytes) -> list[dict]:
@@ -630,6 +693,10 @@ class AppHandler(BaseHTTPRequestHandler):
         if path == "/api/material-requests/export":
             self.serve_material_requests_export(parse_qs(parsed.query))
             return
+        variation_export = re.match(r"^/api/variations/(\d+)/export$", path)
+        if variation_export:
+            self.serve_variation_export(int(variation_export.group(1)))
+            return
         document_download = re.match(r"^/api/documents/(\d+)/download$", path)
         if document_download:
             self.serve_document_download(int(document_download.group(1)))
@@ -755,6 +822,75 @@ class AppHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def variation_detail_payload(self, db, variation_id: int) -> dict | None:
+        variation = db.execute(
+            """
+            SELECT v.*, p.title AS project_title
+            FROM variations v
+            JOIN projects p ON p.id = v.project_id
+            WHERE v.id = ?
+            """,
+            (variation_id,),
+        ).fetchone()
+        if not variation:
+            return None
+        payload = row_to_dict(variation)
+        materials = []
+        if variation["source_type"] == "material_request_batch" and variation["source_id"]:
+            materials = db.execute(
+                """
+                SELECT m.*, em.unit AS estimate_material_unit, em.unit_price,
+                       b.created_at AS batch_created_at, b.needed_at AS batch_needed_at,
+                       b.scheduled_delivery_date AS batch_scheduled_delivery_date
+                FROM material_requests m
+                JOIN material_request_batches b ON b.id = m.batch_id
+                LEFT JOIN estimate_materials em ON em.id = m.estimate_material_id
+                WHERE m.batch_id = ?
+                  AND m.basis_type != 'main_estimate'
+                ORDER BY m.estimate_section, m.title
+                """,
+                (variation["source_id"],),
+            ).fetchall()
+        payload["materials"] = rows_to_dicts(materials)
+        return payload
+
+    def serve_variation_export(self, variation_id: int) -> None:
+        with connect() as db:
+            payload = self.variation_detail_payload(db, variation_id)
+            if not payload:
+                self.send_error(404)
+                return
+        rows: list[list[object]] = [
+            ["Допработа / отклонение", payload["title"]],
+            ["Объект", payload["project_title"]],
+            ["Тип", material_basis_text(payload["type"]) if str(payload["type"]).startswith("material") else payload["type"]],
+            ["Решение по деньгам", payload["financial_decision"]],
+            ["Сумма", payload["amount"]],
+            [],
+            ["Раздел", "Материал", "Основание", "Количество", "Ед.", "Цена", "Сумма", "Комментарий"],
+        ]
+        for item in payload["materials"]:
+            rows.append(
+                [
+                    item.get("estimate_section") or "Без раздела",
+                    item.get("title") or "",
+                    material_basis_text(item.get("basis_type") or ""),
+                    item.get("requested_quantity") or 0,
+                    item.get("requested_unit") or item.get("estimate_material_unit") or "",
+                    item.get("unit_price") or 0,
+                    item.get("total_amount") or 0,
+                    item.get("comment") or "",
+                ]
+            )
+        body = make_xlsx(rows)
+        file_name = f"variation-{variation_id}-materials.xlsx"
+        self.send_response(200)
+        self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{quote(file_name)}")
+        self.end_headers()
+        self.wfile.write(body)
+
     def handle_api_get(self, path: str, query: dict[str, list[str]]) -> None:
         with connect() as db:
             archive_completed_material_batches(db)
@@ -847,6 +983,15 @@ class AppHandler(BaseHTTPRequestHandler):
                     (int(project_id),),
                 ).fetchall()
                 json_response(self, rows_to_dicts(rows))
+                return
+
+            variation_detail = re.match(r"^/api/variations/(\d+)$", path)
+            if variation_detail:
+                payload = self.variation_detail_payload(db, int(variation_detail.group(1)))
+                if not payload:
+                    json_response(self, {"error": "Variation not found"}, 404)
+                    return
+                json_response(self, payload)
                 return
 
             if path == "/api/material-requests":

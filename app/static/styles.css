@@ -499,8 +499,18 @@ h2 {
 }
 
 .material-request-row,
-.estimate-material-row {
+.estimate-material-row,
+.variation-row {
   align-content: start;
+}
+
+.variation-row {
+  width: 100%;
+  text-align: left;
+}
+
+.preserve-lines {
+  white-space: pre-wrap;
 }
 
 .material-main {

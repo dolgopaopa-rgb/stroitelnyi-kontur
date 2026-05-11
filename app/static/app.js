@@ -1439,7 +1439,7 @@ async function renderVariations() {
     ? rows
         .map(
           (row) => `
-          <div class="row">
+          <button class="row clickable variation-row" type="button" data-open-variation="${row.id}">
             <div class="row-grid">
               <div>
                 <strong>${row.title}</strong>
@@ -1449,10 +1449,57 @@ async function renderVariations() {
               <div>${moneyDecision(row.financial_decision)}</div>
               ${pill(row.due_date || "без срока", levelByDate(row.due_date))}
             </div>
-          </div>`
+          </button>`
         )
         .join("")
     : `<p class="muted">Допработ и отклонений пока нет.</p>`;
+}
+
+async function openVariationDialog(variationId) {
+  const variation = await api(`/api/variations/${variationId}`);
+  qs("#variationDetailTitle").textContent = variation.title || "Допработа";
+  const materials = variation.materials || [];
+  qs("#variationDetailContent").innerHTML = `
+    <section class="workflow-panel compact-workflow">
+      <div class="stack-line">
+        <h3>${variation.project_title || "Объект не указан"}</h3>
+        ${pill(variationType(variation.type), "blue")}
+        ${pill(moneyDecision(variation.financial_decision), variation.financial_decision === "not_decided" ? "danger" : "warning")}
+      </div>
+      <p class="muted">Сумма: ${money(variation.amount)} · срок решения: ${variation.due_date || "не указан"}</p>
+      ${variation.source_type === "material_request_batch" ? `<p class="muted">Источник: заявка материалов #${variation.source_id}</p>` : ""}
+      ${variation.description ? `<p class="preserve-lines">${variation.description}</p>` : ""}
+      <div class="form-actions">
+        <button class="secondary" type="button" data-export-variation="${variation.id}" ${materials.length ? "" : "disabled"}>Выгрузить Excel</button>
+      </div>
+    </section>
+    <section class="workflow-panel">
+      <h3>Материалы</h3>
+      ${
+        materials.length
+          ? `<div class="table variation-materials">
+              ${materials
+                .map(
+                  (item) => `
+                  <div class="row estimate-material-row">
+                    <div class="material-main">
+                      <strong>${item.title}</strong>
+                      <div class="muted">${item.estimate_section || "без раздела"}</div>
+                      ${item.comment ? `<div class="muted">${item.comment}</div>` : ""}
+                    </div>
+                    <div class="stack-line">
+                      ${pill(materialBasisLabel(item.basis_type), materialBasisLevel(item.basis_type))}
+                      ${pill(`${item.requested_quantity || 0} ${item.requested_unit || item.estimate_material_unit || ""}`, "blue")}
+                      ${pill(money(item.total_amount), "success")}
+                    </div>
+                  </div>`
+                )
+                .join("")}
+            </div>`
+          : `<p class="muted">К этой допработе пока не привязан список материалов.</p>`
+      }
+    </section>`;
+  qs("#variationDetailDialog").showModal();
 }
 
 function contractType(type) {
@@ -1877,6 +1924,18 @@ function bindEvents() {
     const materialBatchButton = event.target.closest("[data-open-material-batch]");
     if (materialBatchButton) {
       await openMaterialBatchDialog(materialBatchButton.dataset.openMaterialBatch);
+      return;
+    }
+
+    const variationButton = event.target.closest("[data-open-variation]");
+    if (variationButton) {
+      await openVariationDialog(variationButton.dataset.openVariation);
+      return;
+    }
+
+    const variationExportButton = event.target.closest("[data-export-variation]");
+    if (variationExportButton) {
+      window.open(`/api/variations/${variationExportButton.dataset.exportVariation}/export`, "_blank", "noopener");
       return;
     }
 
