@@ -248,6 +248,23 @@ h2 {
   margin-bottom: 12px;
 }
 
+.dashboard-sortable {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.dashboard-sortable > .metrics,
+.dashboard-sortable > .task-overview-panel,
+.dashboard-sortable > .notifications-panel {
+  grid-column: 1 / -1;
+}
+
+.dashboard-sortable > .metrics,
+#dashboardView .notifications-panel {
+  margin: 0;
+}
+
 .metric,
 .panel,
 .card,
@@ -444,10 +461,17 @@ h2 {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 10px;
   margin-top: 0;
   color: var(--muted);
   font-size: 12px;
+  line-height: 1;
+}
+
+.project-meta-line span,
+.project-meta-line .inline-link {
+  display: inline-flex;
+  align-items: center;
 }
 
 .project-meta-line .inline-link,
@@ -530,6 +554,16 @@ h2 {
   font-size: 13px;
 }
 
+.project-detail-blocks {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.project-detail-block > .workflow-panel {
+  margin-top: 0;
+}
+
 #projectDetail .tabs {
   margin: 8px 0;
   gap: 6px;
@@ -561,6 +595,69 @@ h2 {
 #projectDetail .document-link span {
   font-size: 12px;
   line-height: 1.25;
+}
+
+.compact-collapsible details {
+  display: grid;
+  gap: 8px;
+}
+
+.compact-collapsible summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  font-weight: 700;
+  list-style: none;
+}
+
+.compact-collapsible summary::-webkit-details-marker {
+  display: none;
+}
+
+.compact-collapsible summary::before {
+  content: "▸";
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.compact-collapsible details[open] summary::before {
+  content: "▾";
+}
+
+.compact-collapsible details[open] .document-list,
+.compact-collapsible details[open] .muted {
+  margin-top: 8px;
+}
+
+.sortable-block {
+  position: relative;
+}
+
+.sortable-block.dragging {
+  opacity: 0.55;
+}
+
+.drag-handle {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  min-height: 22px;
+  width: 22px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--muted);
+  cursor: grab;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
 }
 
 .detail {
@@ -1623,6 +1720,7 @@ textarea {
   }
 
   .metrics,
+  .dashboard-sortable,
   .layout-two,
   .split,
   .task-workspace,

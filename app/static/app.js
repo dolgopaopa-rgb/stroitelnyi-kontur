@@ -18,6 +18,8 @@ const state = {
   openWorkStages: {},
 };
 
+let sortableDragSource = null;
+
 const viewTitles = {
   dashboard: "Рабочий стол",
   projects: "Объекты",
@@ -276,16 +278,18 @@ function documentFileLink(doc) {
 
 function renderDocumentSummary(docs) {
   return `
-    <section class="workflow-panel document-summary">
-      <div class="stack-line">
-        <h3>Документы объекта</h3>
-        ${pill(`${docs.length} шт.`, docs.length ? "blue" : "")}
-      </div>
-      ${
-        docs.length
-          ? `<div class="document-list">${docs.map((doc) => `<div class="document-row">${documentFileLink(doc)}</div>`).join("")}</div>`
-          : `<p class="muted">Документы пока не загружены. Добавить договор, смету, график платежей или проект можно через кнопку “Редактировать”.</p>`
-      }
+    <section class="workflow-panel document-summary compact-collapsible">
+      <details>
+        <summary>
+          <span>Документы объекта</span>
+          ${pill(`${docs.length} шт.`, docs.length ? "blue" : "")}
+        </summary>
+        ${
+          docs.length
+            ? `<div class="document-list">${docs.map((doc) => `<div class="document-row">${documentFileLink(doc)}</div>`).join("")}</div>`
+            : `<p class="muted">Документы пока не загружены. Добавить договор, смету, график платежей или проект можно через кнопку “Редактировать”.</p>`
+        }
+      </details>
     </section>`;
 }
 
@@ -304,6 +308,111 @@ function switchView(view) {
   qsa(".view").forEach((node) => node.classList.remove("active"));
   qs(`#${view}View`).classList.add("active");
   qs("#pageTitle").textContent = viewTitles[view];
+  initSortableZones();
+}
+
+function sortableOrderKey(zoneId) {
+  return `sortable-order:${zoneId}`;
+}
+
+function storedSortableOrder(zoneId) {
+  try {
+    const order = JSON.parse(localStorage.getItem(sortableOrderKey(zoneId)) || "[]");
+    return Array.isArray(order) ? order : [];
+  } catch (error) {
+    return [];
+  }
+}
+
+function saveSortableOrder(zone) {
+  const zoneId = zone.dataset.sortableZone;
+  if (!zoneId) return;
+  const order = [...zone.querySelectorAll(":scope > [data-sortable-block]")].map((block) => block.dataset.sortableBlock);
+  localStorage.setItem(sortableOrderKey(zoneId), JSON.stringify(order));
+}
+
+function applySortableOrder(zone) {
+  const order = storedSortableOrder(zone.dataset.sortableZone);
+  if (!order.length) return;
+  const blocks = new Map([...zone.querySelectorAll(":scope > [data-sortable-block]")].map((block) => [block.dataset.sortableBlock, block]));
+  order.forEach((key) => {
+    const block = blocks.get(key);
+    if (block) zone.appendChild(block);
+  });
+  blocks.forEach((block) => {
+    if (block.parentElement === zone) zone.appendChild(block);
+  });
+}
+
+function sortableAfterElement(zone, x, y) {
+  const blocks = [...zone.querySelectorAll(":scope > [data-sortable-block]:not(.dragging)")];
+  return blocks.reduce(
+    (closest, block) => {
+      const box = block.getBoundingClientRect();
+      const offset = (y - box.top - box.height / 2) * 10000 + (x - box.left - box.width / 2);
+      if (offset < 0 && offset > closest.offset) return { offset, element: block };
+      return closest;
+    },
+    { offset: Number.NEGATIVE_INFINITY, element: null }
+  ).element;
+}
+
+function ensureDragHandle(block) {
+  if (block.querySelector(":scope > .drag-handle")) return;
+  const handle = document.createElement("button");
+  handle.className = "drag-handle";
+  handle.type = "button";
+  handle.title = "Переместить блок";
+  handle.setAttribute("aria-label", "Переместить блок");
+  handle.textContent = "↕";
+  block.prepend(handle);
+}
+
+function initSortableZones(scope = document) {
+  const zones = [...scope.querySelectorAll("[data-sortable-zone]")];
+  zones.forEach((zone) => {
+    applySortableOrder(zone);
+    zone.querySelectorAll(":scope > [data-sortable-block]").forEach((block) => {
+      block.classList.add("sortable-block");
+      block.draggable = true;
+      ensureDragHandle(block);
+      if (block.dataset.sortableBound) return;
+      block.dataset.sortableBound = "1";
+      block.addEventListener("dragstart", (event) => {
+        const interactive = event.target.closest("a, button, input, select, textarea, label, summary");
+        if (interactive && !event.target.closest(".drag-handle")) {
+          event.preventDefault();
+          return;
+        }
+        sortableDragSource = block;
+        block.classList.add("dragging");
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", block.dataset.sortableBlock || "");
+      });
+      block.addEventListener("dragend", () => {
+        block.classList.remove("dragging");
+        if (block.parentElement?.dataset.sortableZone) saveSortableOrder(block.parentElement);
+        sortableDragSource = null;
+      });
+    });
+    if (zone.dataset.sortableZoneBound) return;
+    zone.dataset.sortableZoneBound = "1";
+    zone.addEventListener("dragover", (event) => {
+      if (!sortableDragSource || sortableDragSource.parentElement !== zone) return;
+      event.preventDefault();
+      const after = sortableAfterElement(zone, event.clientX, event.clientY);
+      if (!after) {
+        zone.appendChild(sortableDragSource);
+      } else if (after !== sortableDragSource.nextElementSibling) {
+        zone.insertBefore(sortableDragSource, after);
+      }
+    });
+    zone.addEventListener("drop", (event) => {
+      if (!sortableDragSource || sortableDragSource.parentElement !== zone) return;
+      event.preventDefault();
+      saveSortableOrder(zone);
+    });
+  });
 }
 
 async function loadAll() {
@@ -326,6 +435,7 @@ async function loadAll() {
     renderDocuments(),
     renderEvents(),
   ]);
+  initSortableZones();
 }
 
 function fillSelects() {
@@ -856,6 +966,7 @@ async function renderDashboard() {
       </div>`
     )
     .join("");
+  initSortableZones(qs("#dashboardView"));
 }
 
 async function renderNotifications() {
@@ -899,7 +1010,7 @@ async function renderProjects() {
                 ${state.projectListMode === "archive" ? pill(project.archive_reason || "архив", "success") : pill(`Смета: ${money(project.main_estimate_amount)}`, "success")}
               </div>
               <div class="project-meta-line">
-                <span>${state.projectListMode === "archive" ? project.archived_at || "без даты" : project.foreman_name || "прораб не назначен"}</span>
+                <span>${state.projectListMode === "archive" ? project.archived_at || "без даты" : `Прораб: ${project.foreman_name || "не назначен"}`}</span>
                 ${mapLink(project.address, project.navigator_url, "Я.Карты")}
               </div>
             </div>
@@ -940,6 +1051,20 @@ async function renderProjectDetail(projectId) {
     documents: renderSmallList(project.documents, (doc) => documentFileLink(doc)),
     events: renderSmallList(project.events, (event) => `${event.text}`),
   };
+  const detailBlocks = [
+    ["edit", renderProjectEditPanel(project)],
+    ["workflow", renderProjectWorkflow(project)],
+    ["documents", renderDocumentSummary(project.documents)],
+    [
+      "sections",
+      `<div class="tabs">
+        ${["overview", "tasks", "works", "materials", "variations", "documents", "events"]
+          .map((tab) => `<button class="tab ${state.selectedProjectTab === tab ? "active" : ""}" data-project-tab="${tab}">${tabTitle(tab)}</button>`)
+          .join("")}
+      </div>
+      <div>${tabData[state.selectedProjectTab]}</div>`,
+    ],
+  ];
   qs("#projectDetail").innerHTML = `
     <div class="stack-line"><h2>${project.title}</h2>${pill(label(project.status), "blue")}</div>
     <div class="project-detail-map">${mapLink(project.address, project.navigator_url, "Я.Карты")}<span class="muted">${project.address ? "Адрес объекта" : "Адрес не указан"}</span></div>
@@ -951,16 +1076,11 @@ async function renderProjectDetail(projectId) {
       ${externalRefLink(project.bitrix_ref, project.bitrix_ref ? "Открыть Bitrix" : "Bitrix не указан", "blue")}
       ${externalRefLink(project.smetter_ref, project.smetter_ref ? "Открыть Сметтер" : "Сметтер не указан", "success")}
     </div>
-    ${renderProjectEditPanel(project)}
-    ${renderProjectWorkflow(project)}
-    ${renderDocumentSummary(project.documents)}
-    <div class="tabs">
-      ${["overview", "tasks", "works", "materials", "variations", "documents", "events"]
-        .map((tab) => `<button class="tab ${state.selectedProjectTab === tab ? "active" : ""}" data-project-tab="${tab}">${tabTitle(tab)}</button>`)
-        .join("")}
+    <div class="project-detail-blocks sortable-zone" data-sortable-zone="project-detail">
+      ${detailBlocks.map(([key, html]) => `<div class="project-detail-block" data-sortable-block="${key}">${html}</div>`).join("")}
     </div>
-    <div>${tabData[state.selectedProjectTab]}</div>
   `;
+  initSortableZones(qs("#projectDetail"));
 }
 
 function renderProjectEditPanel(project) {
@@ -1033,7 +1153,6 @@ function renderProjectWorkflow(project) {
     <section class="workflow-panel">
       <div class="stack-line"><h3>Объект в работе</h3>${pill("Ответственные назначены", "success")}</div>
       <p class="muted">После принятия уведомления получают прораб, снабжение, сметчик и технадзор.</p>
-      <label>Причина архивации <textarea id="archiveReason" rows="2" placeholder="Например: работы завершены, документы закрыты"></textarea></label>
       <button class="secondary" data-project-action="archive" data-project-id="${project.id}">Отправить в архив</button>
     </section>`;
 }

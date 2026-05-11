@@ -55,36 +55,36 @@
         </header>
 
         <section class="view active" id="dashboardView">
-          <div class="metrics" id="summaryCards"></div>
-          <section class="panel task-overview-panel">
-            <div class="panel-head">
-              <h2>Реестр задач</h2>
-              <button class="link-button" data-view-target="tasks">Открыть</button>
-            </div>
-            <div id="dashboardTaskStats"></div>
-          </section>
-          <div class="layout-two">
-            <section class="panel">
+          <div class="dashboard-sortable sortable-zone" data-sortable-zone="dashboard">
+            <div class="metrics" id="summaryCards" data-sortable-block="summary"></div>
+            <section class="panel task-overview-panel" data-sortable-block="task-overview">
+              <div class="panel-head">
+                <h2>Реестр задач</h2>
+                <button class="link-button" data-view-target="tasks">Открыть</button>
+              </div>
+              <div id="dashboardTaskStats"></div>
+            </section>
+            <section class="panel" data-sortable-block="dashboard-projects">
               <div class="panel-head">
                 <h2>Объекты</h2>
                 <button class="link-button" data-view-target="projects">Открыть</button>
               </div>
               <div class="list" id="dashboardProjects"></div>
             </section>
-            <section class="panel">
+            <section class="panel" data-sortable-block="dashboard-tasks">
               <div class="panel-head">
                 <h2>Срочные задачи</h2>
                 <button class="link-button" data-view-target="tasks">Открыть</button>
               </div>
               <div class="list" id="dashboardTasks"></div>
             </section>
+            <section class="panel notifications-panel" data-sortable-block="notifications">
+              <div class="panel-head">
+                <h2>Уведомления</h2>
+              </div>
+              <div class="list" id="notificationRows"></div>
+            </section>
           </div>
-          <section class="panel notifications-panel">
-            <div class="panel-head">
-              <h2>Уведомления</h2>
-            </div>
-            <div class="list" id="notificationRows"></div>
-          </section>
         </section>
 
         <section class="view" id="projectsView">
