@@ -75,7 +75,13 @@ async function api(path, options = {}) {
   });
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(text || `Ошибка ${response.status}`);
+    let message = text;
+    try {
+      message = JSON.parse(text).error || text;
+    } catch (error) {
+      message = text;
+    }
+    throw new Error(message || `Ошибка ${response.status}`);
   }
   return response.json();
 }
@@ -582,6 +588,10 @@ function buildMaterialBatches(items) {
         received_at: item.batch_received_at || "",
         receipt_status: item.batch_receipt_status || "",
         receipt_comment: item.batch_receipt_comment || "",
+        receipt_document_id: item.batch_receipt_document_id || "",
+        receipt_document_file_name: item.batch_receipt_document_file_name || "",
+        receipt_document_title: item.batch_receipt_document_title || "",
+        receipt_document_mime_type: item.batch_receipt_document_mime_type || "",
         archived_at: item.batch_archived_at || "",
         items: [],
         total_amount: 0,
@@ -610,6 +620,18 @@ function materialBatchLevel(status) {
     received: "success",
     receipt_issue: "danger",
   }[status] || "";
+}
+
+function materialReceiptAttachment(batch) {
+  if (!batch.receipt_document_id) return "";
+  const fileName = batch.receipt_document_file_name || batch.receipt_document_title || "Файл приемки";
+  const href = `/api/documents/${batch.receipt_document_id}/download`;
+  const isImage = String(batch.receipt_document_mime_type || "").startsWith("image/");
+  return `
+    <div class="receipt-attachment">
+      <a href="${href}" target="_blank" rel="noopener">${fileName}</a>
+      ${isImage ? `<a href="${href}" target="_blank" rel="noopener"><img src="${href}" alt="${escapeAttr(fileName)}" /></a>` : ""}
+    </div>`;
 }
 
 function canEditMaterialBatch(batch) {
@@ -1281,6 +1303,7 @@ async function openMaterialBatchDialog(batchKey) {
       ${batch.scheduled_delivery_date ? `<p class="muted">Назначенная доставка: ${formatDateRu(batch.scheduled_delivery_date)}</p>` : ""}
       ${batch.procurement_comment ? `<p class="muted">Комментарий снабжения: ${batch.procurement_comment}</p>` : ""}
       ${batch.receipt_comment ? `<p class="muted">Приемка: ${batch.receipt_comment}</p>` : ""}
+      ${materialReceiptAttachment(batch)}
     </section>
     <div class="table material-review-items">
       ${batch.items
@@ -1857,10 +1880,15 @@ function bindEvents() {
       }
       body.actor_role = currentRoleBase();
       body.actor_id = currentUserId();
-      await api(`/api/material-request-batches/${id}/${action}`, {
-        method: "POST",
-        body: JSON.stringify(body),
-      });
+      try {
+        await api(`/api/material-request-batches/${id}/${action}`, {
+          method: "POST",
+          body: JSON.stringify(body),
+        });
+      } catch (error) {
+        showToast(error.message || "Не удалось обновить заявку");
+        return;
+      }
       qs("#materialReviewDialog").close();
       await loadAll();
       showToast(

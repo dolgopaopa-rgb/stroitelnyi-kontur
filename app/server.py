@@ -560,12 +560,17 @@ def get_project_detail(project_id: int) -> dict | None:
                        b.scheduled_delivery_date AS batch_scheduled_delivery_date,
                        b.procurement_comment AS batch_procurement_comment,
                        b.received_at AS batch_received_at,
-                       b.receipt_status AS batch_receipt_status,
-                       b.receipt_comment AS batch_receipt_comment,
-                       b.created_at AS batch_created_at
+                      b.receipt_status AS batch_receipt_status,
+                      b.receipt_comment AS batch_receipt_comment,
+                      b.receipt_document_id AS batch_receipt_document_id,
+                      receipt_doc.file_name AS batch_receipt_document_file_name,
+                      receipt_doc.title AS batch_receipt_document_title,
+                      receipt_doc.mime_type AS batch_receipt_document_mime_type,
+                      b.created_at AS batch_created_at
                 FROM material_requests m
                 LEFT JOIN material_request_batches b ON b.id = m.batch_id
                 LEFT JOIN estimate_materials em ON em.id = m.estimate_material_id
+                LEFT JOIN documents receipt_doc ON receipt_doc.id = b.receipt_document_id
                 WHERE m.project_id = ?
                 ORDER BY COALESCE(b.created_at, m.created_at) DESC, m.id
                 """,
@@ -837,12 +842,17 @@ class AppHandler(BaseHTTPRequestHandler):
                            b.received_at AS batch_received_at,
                            b.receipt_status AS batch_receipt_status,
                            b.receipt_comment AS batch_receipt_comment,
+                           b.receipt_document_id AS batch_receipt_document_id,
+                           receipt_doc.file_name AS batch_receipt_document_file_name,
+                           receipt_doc.title AS batch_receipt_document_title,
+                           receipt_doc.mime_type AS batch_receipt_document_mime_type,
                            b.archived_at AS batch_archived_at
                     FROM material_requests m
                     JOIN projects p ON p.id = m.project_id
                     LEFT JOIN material_request_batches b ON b.id = m.batch_id
                     LEFT JOIN estimate_materials em ON em.id = m.estimate_material_id
                     LEFT JOIN users creator ON creator.id = m.creator_id
+                    LEFT JOIN documents receipt_doc ON receipt_doc.id = b.receipt_document_id
                     WHERE {archive_filter}
                     ORDER BY COALESCE(b.created_at, m.created_at) DESC, m.id
                     """
@@ -1629,10 +1639,10 @@ class AppHandler(BaseHTTPRequestHandler):
                     if receipt_status not in {"received", "issue"}:
                         raise ValueError("Некорректный статус приемки.")
                     comment = str(data.get("comment") or "").strip()
-                    if receipt_status == "issue" and not comment:
-                        raise ValueError("Опишите, что именно не так с материалами.")
                     document_id = None
                     file_data = data.get("receipt_file") or {}
+                    if receipt_status == "issue" and not comment and not file_data.get("file_base64"):
+                        raise ValueError("Опишите проблему или прикрепите фото/видео.")
                     if file_data.get("file_base64"):
                         document_id = save_document_file(
                             db,
@@ -1671,7 +1681,8 @@ class AppHandler(BaseHTTPRequestHandler):
                         message = f"{batch['project_title']}: материалы по заявке от {format_date_ru(batch['created_at'])} получены прорабом по списку."
                     else:
                         title = "Проблема при приемке материалов"
-                        message = f"{batch['project_title']}: при приемке материалов по заявке от {format_date_ru(batch['created_at'])} есть проблема. {comment}"
+                        attachment_note = " Приложен файл." if document_id else ""
+                        message = f"{batch['project_title']}: при приемке материалов по заявке от {format_date_ru(batch['created_at'])} есть проблема. {comment}{attachment_note}"
                     recipients = {user_id_by_role(db, "procurement_manager")} | watcher_ids
                     notify_users(
                         db,
