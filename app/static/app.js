@@ -1945,9 +1945,7 @@ async function renderDocuments() {
     ? docs.map((doc) => `
     <article class="card">
       <div class="stack-line"><strong>${documentTitle(doc)}</strong>${pill(documentType(doc.type), "blue")}${pill(label(doc.status))}</div>
-      <div class="muted">База знаний · ответственный: ${doc.owner_name || "не назначен"}</div>
       ${doc.file_path ? documentFileLink(doc) : `<div class="muted">${doc.file_name || "Файл не загружен"}</div>`}
-      <div class="stack-line">${doc.version ? pill(`Версия: ${doc.version}`) : ""}${doc.due_date ? pill(`Срок: ${doc.due_date}`, levelByDate(doc.due_date)) : ""}</div>
     </article>`).join("")
     : `<p class="muted">База знаний пока пустая. Загружайте сюда регламенты, проектные решения, узлы и общую документацию.</p>`;
 }

@@ -402,24 +402,17 @@
           <button type="button" class="icon" data-close="documentDialog">×</button>
         </div>
         <label>Название <input name="title" required placeholder="Регламент, узел, проектное решение..." /></label>
-        <div class="grid-2">
-          <label>
-            Тип
-            <select name="type">
-              <option value="project_documentation">Проектная документация</option>
-              <option value="detail_node">Узел / решение</option>
-              <option value="regulation">Регламент</option>
-              <option value="standard">Стандарт компании</option>
-              <option value="instruction">Инструкция</option>
-              <option value="other">Другое</option>
-            </select>
-          </label>
-          <label>Версия <input name="version" placeholder="v1, v2, финальная" /></label>
-        </div>
-        <div class="grid-2">
-          <label>Ответственный <select name="owner_id"></select></label>
-          <label>Срок <input name="due_date" type="date" /></label>
-        </div>
+        <label>
+          Тип
+          <select name="type">
+            <option value="project_documentation">Проектная документация</option>
+            <option value="detail_node">Узел / решение</option>
+            <option value="regulation">Регламент</option>
+            <option value="standard">Стандарт компании</option>
+            <option value="instruction">Инструкция</option>
+            <option value="other">Другое</option>
+          </select>
+        </label>
         <label>Файл <input name="document_file" type="file" accept=".pdf,.xlsx,.xls,.csv,.doc,.docx,.jpg,.jpeg,.png,.zip,.rar,.7z,.dwg,.dxf" /></label>
         <div class="form-actions">
           <button type="button" class="secondary" data-close="documentDialog">Отмена</button>
