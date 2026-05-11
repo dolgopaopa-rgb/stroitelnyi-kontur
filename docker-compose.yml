@@ -9,6 +9,9 @@ services:
       BACKUP_DIR: /backups
       APP_BASIC_AUTH_USER: ${APP_BASIC_AUTH_USER:-admin}
       APP_BASIC_AUTH_PASSWORD: ${APP_BASIC_AUTH_PASSWORD:?Set APP_BASIC_AUTH_PASSWORD in .env}
+      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
+      YANDEX_DISK_TOKEN: ${YANDEX_DISK_TOKEN:-}
+      YANDEX_DISK_ROOT: ${YANDEX_DISK_ROOT:-/Stroitelnyi kontur}
     volumes:
       - app_data:/data
       - ./data/backups:/backups

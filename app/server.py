@@ -13,7 +13,9 @@ import xml.etree.ElementTree as ET
 from datetime import date, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, quote, urlparse
+from urllib.error import HTTPError, URLError
+from urllib.parse import parse_qs, quote, urlencode, urlparse
+from urllib.request import Request, urlopen
 
 from database import DATA_DIR, connect, init_db, row_to_dict, rows_to_dicts
 
@@ -22,6 +24,7 @@ APP_DIR = Path(__file__).resolve().parent
 STATIC_DIR = APP_DIR / "static"
 UPLOAD_DIR = DATA_DIR / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+YANDEX_DISK_FILE_PREFIX = "yadisk:"
 
 
 def json_response(handler: BaseHTTPRequestHandler, payload: object, status: int = 200) -> None:
@@ -478,6 +481,8 @@ def backfill_estimate_materials_from_saved_documents() -> None:
             """
         ).fetchall()
         for doc in docs:
+            if str(doc["file_path"]).startswith(YANDEX_DISK_FILE_PREFIX):
+                continue
             file_path = (DATA_DIR / doc["file_path"]).resolve()
             if DATA_DIR.resolve() not in file_path.parents or not file_path.exists():
                 continue
@@ -680,6 +685,101 @@ def safe_file_name(file_name: str) -> str:
     return re.sub(r"[^A-Za-zА-Яа-я0-9._() -]+", "_", name)[:140]
 
 
+def yandex_disk_configured() -> bool:
+    return (
+        os.environ.get("STORAGE_PROVIDER", "").strip().lower() == "yandex_disk"
+        and bool(os.environ.get("YANDEX_DISK_TOKEN", "").strip())
+    )
+
+
+def yandex_disk_root() -> str:
+    root = os.environ.get("YANDEX_DISK_ROOT", "/Stroitelnyi kontur").strip() or "/Stroitelnyi kontur"
+    return "/" + root.strip("/")
+
+
+def yandex_path_part(value: object, fallback: str = "folder") -> str:
+    text = str(value or fallback).strip() or fallback
+    text = re.sub(r'[\\/:*?"<>|\r\n\t]+', " ", text)
+    text = re.sub(r"\s+", " ", text).strip(" .")
+    return text[:90] or fallback
+
+
+def yandex_api_request(method: str, resource: str, params: dict[str, str] | None = None) -> dict:
+    token = os.environ.get("YANDEX_DISK_TOKEN", "").strip()
+    query = f"?{urlencode(params or {})}" if params else ""
+    request = Request(
+        f"https://cloud-api.yandex.net/v1/disk{resource}{query}",
+        method=method,
+        headers={"Authorization": f"OAuth {token}"},
+    )
+    with urlopen(request, timeout=45) as response:
+        body = response.read()
+    if not body:
+        return {}
+    return json.loads(body.decode("utf-8"))
+
+
+def ensure_yandex_folder(folder_path: str) -> None:
+    current = ""
+    for part in [segment for segment in folder_path.strip("/").split("/") if segment]:
+        current = f"{current}/{part}"
+        try:
+            yandex_api_request("PUT", "/resources", {"path": current})
+        except HTTPError as exc:
+            if exc.code != 409:
+                raise
+
+
+def project_upload_folder(db, project_id: int, related_type: str, doc_type: str) -> str:
+    root = yandex_disk_root()
+    if related_type == "knowledge_base":
+        return f"{root}/База знаний/{yandex_path_part(doc_type, 'documents')}"
+    row = db.execute("SELECT title FROM projects WHERE id = ?", (project_id,)).fetchone()
+    project_title = row["title"] if row else f"project_{project_id}"
+    return f"{root}/Объекты/{yandex_path_part(project_title, f'project_{project_id}')}/{yandex_path_part(doc_type, 'documents')}"
+
+
+def upload_to_yandex_disk(db, project_id: int, related_type: str, doc_type: str, target_name: str, raw: bytes) -> str:
+    folder = project_upload_folder(db, project_id, related_type, doc_type)
+    ensure_yandex_folder(folder)
+    remote_path = f"{folder}/{target_name}"
+    payload = yandex_api_request("GET", "/resources/upload", {"path": remote_path, "overwrite": "true"})
+    href = payload.get("href")
+    if not href:
+        raise RuntimeError("Yandex Disk did not return upload URL")
+    upload_request = Request(href, data=raw, method="PUT")
+    with urlopen(upload_request, timeout=120) as response:
+        response.read()
+    return f"{YANDEX_DISK_FILE_PREFIX}{remote_path}"
+
+
+def save_to_local_uploads(project_id: int, target_name: str, raw: bytes) -> str:
+    project_dir = UPLOAD_DIR / f"project_{project_id}"
+    project_dir.mkdir(parents=True, exist_ok=True)
+    target_path = project_dir / target_name
+    target_path.write_bytes(raw)
+    return str(target_path.relative_to(DATA_DIR))
+
+
+def save_uploaded_file(db, project_id: int, related_type: str, doc_type: str, target_name: str, raw: bytes) -> str:
+    if yandex_disk_configured():
+        try:
+            return upload_to_yandex_disk(db, project_id, related_type, doc_type, target_name, raw)
+        except (HTTPError, URLError, TimeoutError, RuntimeError, OSError) as exc:
+            print(f"Yandex Disk upload failed, saved locally instead: {exc}")
+    return save_to_local_uploads(project_id, target_name, raw)
+
+
+def download_from_yandex_disk(file_path: str) -> bytes:
+    remote_path = file_path.removeprefix(YANDEX_DISK_FILE_PREFIX)
+    payload = yandex_api_request("GET", "/resources/download", {"path": remote_path})
+    href = payload.get("href")
+    if not href:
+        raise RuntimeError("Yandex Disk did not return download URL")
+    with urlopen(href, timeout=120) as response:
+        return response.read()
+
+
 def knowledge_base_project_id(db) -> int:
     row = db.execute("SELECT id FROM projects WHERE bitrix_ref = '__knowledge_base__' LIMIT 1").fetchone()
     if row:
@@ -703,11 +803,8 @@ def save_document_file(db, project_id: int, file_data: dict, title: str, doc_typ
     if "," in encoded:
         encoded = encoded.split(",", 1)[1]
     raw = base64.b64decode(encoded)
-    project_dir = UPLOAD_DIR / f"project_{project_id}"
-    project_dir.mkdir(parents=True, exist_ok=True)
     target_name = f"{int(time.time() * 1000)}_{file_name}"
-    target_path = project_dir / target_name
-    target_path.write_bytes(raw)
+    stored_path = save_uploaded_file(db, project_id, related_type, doc_type, target_name, raw)
     cursor = db.execute(
         """
         INSERT INTO documents (
@@ -723,7 +820,7 @@ def save_document_file(db, project_id: int, file_data: dict, title: str, doc_typ
             user_id_by_role(db, "sales_manager") or 3,
             related_type,
             file_name,
-            str(target_path.relative_to(DATA_DIR)),
+            stored_path,
             file_data.get("mime_type") or mimetypes.guess_type(file_name)[0] or "application/octet-stream",
             len(raw),
         ),
@@ -889,15 +986,24 @@ class AppHandler(BaseHTTPRequestHandler):
             if not document or not document["file_path"]:
                 self.send_error(404)
                 return
-            file_path = (DATA_DIR / document["file_path"]).resolve()
-            if DATA_DIR.resolve() not in file_path.parents and file_path != DATA_DIR.resolve():
-                self.send_error(403)
-                return
-            if not file_path.exists() or not file_path.is_file():
-                self.send_error(404)
-                return
-            body = file_path.read_bytes()
-            file_name = document["file_name"] or file_path.name
+            stored_path = str(document["file_path"])
+            if stored_path.startswith(YANDEX_DISK_FILE_PREFIX):
+                try:
+                    body = download_from_yandex_disk(stored_path)
+                except (HTTPError, URLError, TimeoutError, RuntimeError, OSError):
+                    self.send_error(502)
+                    return
+                file_name = document["file_name"] or Path(stored_path.removeprefix(YANDEX_DISK_FILE_PREFIX)).name
+            else:
+                file_path = (DATA_DIR / stored_path).resolve()
+                if DATA_DIR.resolve() not in file_path.parents and file_path != DATA_DIR.resolve():
+                    self.send_error(403)
+                    return
+                if not file_path.exists() or not file_path.is_file():
+                    self.send_error(404)
+                    return
+                body = file_path.read_bytes()
+                file_name = document["file_name"] or file_path.name
             content_type = document["mime_type"] or mimetypes.guess_type(file_name)[0] or "application/octet-stream"
             self.send_response(200)
             self.send_header("Content-Type", content_type)
