@@ -87,6 +87,9 @@ async function api(path, options = {}) {
     } catch (error) {
       message = text;
     }
+    if (/^\s*</.test(String(message))) {
+      message = `Ошибка ${response.status}`;
+    }
     throw new Error(message || `Ошибка ${response.status}`);
   }
   return response.json();
