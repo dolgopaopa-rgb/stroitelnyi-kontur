@@ -877,17 +877,19 @@ async function renderProjects() {
         .map(
           (project) => `
           <div class="row clickable" data-open-project="${project.id}">
-            <div class="row-grid">
-              <div>
+            <div class="row-grid project-list-card">
+              <div class="project-card-main">
                 <strong>${project.title}</strong>
                 <div class="muted">${project.customer_name || ""}</div>
-                <div class="project-meta-line">
-                  <span>${state.projectListMode === "archive" ? project.archived_at || "без даты" : project.foreman_name || "прораб не назначен"}</span>
-                  ${mapLink(project.address, project.navigator_url, "Я.Карты")}
-                </div>
               </div>
-              ${pill(label(project.status), project.status === "revision_requested" ? "danger" : project.status === "submitted_to_construction" ? "warning" : "blue")}
-              ${state.projectListMode === "archive" ? pill(project.archive_reason || "архив", "success") : pill(`Смета: ${money(project.main_estimate_amount)}`, "success")}
+              <div class="project-card-badges">
+                ${pill(label(project.status), project.status === "revision_requested" ? "danger" : project.status === "submitted_to_construction" ? "warning" : "blue")}
+                ${state.projectListMode === "archive" ? pill(project.archive_reason || "архив", "success") : pill(`Смета: ${money(project.main_estimate_amount)}`, "success")}
+              </div>
+              <div class="project-meta-line">
+                <span>${state.projectListMode === "archive" ? project.archived_at || "без даты" : project.foreman_name || "прораб не назначен"}</span>
+                ${mapLink(project.address, project.navigator_url, "Я.Карты")}
+              </div>
             </div>
           </div>`
         )
