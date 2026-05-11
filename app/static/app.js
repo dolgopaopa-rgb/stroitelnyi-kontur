@@ -525,7 +525,7 @@ async function loadMaterialEstimatePicker() {
   target.innerHTML = Object.entries(grouped)
     .map(
       ([section, sectionRows]) => `
-      <details class="estimate-section" open>
+      <details class="estimate-section">
         <summary>${section} <span>${sectionRows.length} позиций</span></summary>
         <div class="table">
           ${sectionRows
