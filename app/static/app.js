@@ -545,9 +545,10 @@ function buildMaterialBatches(items) {
   return [...map.values()].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
 }
 
-function materialBatchTitle(batch) {
-  const urgent = batch.delivery_urgency === "urgent" ? "Срочная заявка" : "Заявка";
-  return `${urgent} на материалы от ${formatDateRu(batch.created_at) || "без даты"}`;
+function materialBatchTitle(batch, received = false) {
+  const title = batch.delivery_urgency === "urgent" ? "срочная заявка" : "заявка";
+  const prefix = received ? `Получена ${title}` : title[0].toUpperCase() + title.slice(1);
+  return `${prefix} на материалы от ${formatDateRu(batch.created_at) || "без даты"}`;
 }
 
 function materialBatchLevel(status) {
@@ -1091,7 +1092,7 @@ async function renderMaterials() {
     return `
       <button class="row clickable material-request-row material-batch-row" type="button" data-open-material-batch="${batch.key}">
         <div class="material-main">
-          <strong>${materialBatchTitle(batch)}</strong>
+          <strong>${materialBatchTitle(batch, currentRoleBase() === "procurement_manager")}</strong>
           <div class="muted">Объект: ${batch.project_title || "не указан"} · создал: ${batch.creator_name || "не указано"}</div>
           <div class="muted">Позиций: ${batch.items.length} · желаемая доставка: ${batch.needed_at || "не указана"} · сумма: ${money(batch.total_amount)}</div>
           ${batch.revision_comment ? `<div class="muted">Комментарий по доработке: ${batch.revision_comment}</div>` : ""}
@@ -1117,7 +1118,7 @@ async function openMaterialBatchDialog(batchKey) {
     showToast("Заявка не найдена");
     return;
   }
-  qs("#materialReviewTitle").textContent = materialBatchTitle(batch);
+  qs("#materialReviewTitle").textContent = materialBatchTitle(batch, currentRoleBase() === "procurement_manager");
   const canReview = currentRoleBase() === "procurement_manager" && batch.id && !["in_work", "delivery_confirmed"].includes(batch.status);
   qs("#materialReviewContent").innerHTML = `
     <section class="workflow-panel compact-workflow">
