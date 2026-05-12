@@ -2379,6 +2379,79 @@ textarea {
     min-height: auto;
   }
 
+  .main,
+  .view,
+  .panel,
+  #projectsView,
+  #projectsView .split,
+  #projectRows,
+  #projectDetail,
+  #projectDetail > *,
+  .project-detail-blocks,
+  .project-detail-block,
+  .workflow-panel,
+  .detail-grid,
+  .info {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  #projectDetail {
+    overflow: hidden;
+  }
+
+  #projectDetail .stack-line,
+  #projectDetail .workflow-panel,
+  #projectDetail .workflow-panel *,
+  #projectDetail .info,
+  #projectDetail .info *,
+  #projectDetail .document-link,
+  #projectDetail .document-link * {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
+  #projectDetail .project-detail-blocks {
+    width: 100%;
+    overflow: hidden;
+  }
+
+  #projectDetail .form-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #projectDetail .form-actions > *,
+  #projectDetail .workflow-panel button,
+  #projectDetail .workflow-panel textarea {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  #projectDetail .tabs {
+    width: 100%;
+    max-width: 100%;
+    margin-right: 0;
+    overflow-x: auto;
+  }
+
+  #projectDetail .tab {
+    flex: 0 0 auto;
+  }
+
+  #projectDetail .detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #projectDetail .info {
+    width: 100%;
+    padding: 10px;
+  }
+
+  #projectDetail .compact-collapsible summary {
+    justify-content: flex-start;
+  }
+
   #projectsView .segmented-control {
     flex: 0 0 auto;
     width: 100%;
