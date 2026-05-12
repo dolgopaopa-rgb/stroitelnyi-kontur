@@ -37,18 +37,7 @@ def json_response(handler: BaseHTTPRequestHandler, payload: object, status: int 
 
 
 def is_authorized(handler: BaseHTTPRequestHandler) -> bool:
-    username = os.environ.get("APP_BASIC_AUTH_USER")
-    password = os.environ.get("APP_BASIC_AUTH_PASSWORD")
-    if not username or not password:
-        return True
-    header = handler.headers.get("Authorization", "")
-    if not header.startswith("Basic "):
-        return False
-    try:
-        decoded = base64.b64decode(header.removeprefix("Basic ").strip()).decode("utf-8")
-    except Exception:
-        return False
-    return decoded == f"{username}:{password}"
+    return current_access_account(handler) is not None
 
 
 def auth_required_response(handler: BaseHTTPRequestHandler) -> None:
@@ -56,6 +45,57 @@ def auth_required_response(handler: BaseHTTPRequestHandler) -> None:
     handler.send_header("WWW-Authenticate", 'Basic realm="Stroitelnyi Kontur"')
     handler.send_header("Content-Length", "0")
     handler.end_headers()
+
+
+def basic_auth_pair(handler: BaseHTTPRequestHandler) -> tuple[str, str] | None:
+    header = handler.headers.get("Authorization", "")
+    if not header.startswith("Basic "):
+        return None
+    try:
+        decoded = base64.b64decode(header.removeprefix("Basic ").strip()).decode("utf-8")
+    except Exception:
+        return None
+    if ":" not in decoded:
+        return None
+    return tuple(decoded.split(":", 1))
+
+
+def configured_access_accounts() -> list[dict]:
+    accounts = []
+    raw = os.environ.get("APP_ACCESS_ACCOUNTS", "").strip()
+    for chunk in [item.strip() for item in raw.split(";") if item.strip()]:
+        parts = chunk.split("|")
+        if len(parts) < 4:
+            continue
+        login, password, user_id, role = parts[:4]
+        can_switch = len(parts) >= 5 and parts[4].strip() in {"1", "true", "yes"}
+        accounts.append(
+            {
+                "login": login.strip(),
+                "password": password.strip(),
+                "user_id": int(user_id or 0),
+                "role": role.strip(),
+                "can_switch_role": can_switch,
+            }
+        )
+    return accounts
+
+
+def current_access_account(handler: BaseHTTPRequestHandler) -> dict | None:
+    username = os.environ.get("APP_BASIC_AUTH_USER")
+    password = os.environ.get("APP_BASIC_AUTH_PASSWORD")
+    pair = basic_auth_pair(handler)
+    if not pair:
+        if not username and not password and not configured_access_accounts():
+            return {"login": "local", "user_id": 1, "role": "owner", "can_switch_role": True}
+        return None
+    login, supplied_password = pair
+    for account in configured_access_accounts():
+        if login == account["login"] and supplied_password == account["password"]:
+            return account
+    if username and password and login == username and supplied_password == password:
+        return {"login": login, "user_id": 1, "role": "owner", "can_switch_role": True}
+    return None
 
 
 def read_json(handler: BaseHTTPRequestHandler) -> dict:
@@ -1190,6 +1230,23 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
     def handle_api_get(self, path: str, query: dict[str, list[str]]) -> None:
         with connect() as db:
             archive_completed_material_batches(db)
+            if path == "/api/session":
+                account = current_access_account(self) or {}
+                user = None
+                if account.get("user_id"):
+                    user = db.execute("SELECT id, name, role, email FROM users WHERE id = ?", (account["user_id"],)).fetchone()
+                json_response(
+                    self,
+                    {
+                        "login": account.get("login") or "",
+                        "role": account.get("role") or (user["role"] if user else "owner"),
+                        "user_id": account.get("user_id") or (user["id"] if user else 1),
+                        "can_switch_role": bool(account.get("can_switch_role")),
+                        "user": row_to_dict(user) if user else None,
+                    },
+                )
+                return
+
             if path == "/api/users":
                 rows = db.execute("SELECT * FROM users WHERE is_active = 1 ORDER BY id").fetchall()
                 json_response(self, rows_to_dicts(rows))

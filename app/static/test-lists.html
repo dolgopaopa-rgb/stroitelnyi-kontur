@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Тест-листы Строительного контура</title>
+    <style>
+      body { margin: 0; background: #f4f6f8; color: #172026; font-family: "Segoe UI", Arial, sans-serif; }
+      main { max-width: 980px; margin: 0 auto; padding: 24px; }
+      h1 { margin: 0 0 8px; font-size: 28px; }
+      p { color: #66737c; line-height: 1.45; }
+      section { margin: 16px 0; padding: 18px; background: white; border: 1px solid #d9e0e4; border-radius: 8px; }
+      h2 { margin: 0 0 12px; font-size: 20px; }
+      label { display: block; padding: 7px 0; line-height: 1.35; }
+      input { margin-right: 8px; }
+      textarea { width: 100%; min-height: 96px; margin-top: 10px; padding: 10px; border: 1px solid #d9e0e4; border-radius: 8px; font: inherit; }
+      @media print { body { background: white; } main { max-width: none; padding: 0; } section { break-inside: avoid; } textarea { min-height: 70px; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Тест-листы для проверки MVP</h1>
+      <p>Каждый участник заходит под своим логином, проходит свой список и заполняет замечания. Страницу можно открыть с телефона или распечатать в PDF.</p>
+
+      <section>
+        <h2>Алексей, менеджер</h2>
+        <label><input type="checkbox" /> Создал новый объект без пропуска обязательных полей.</label>
+        <label><input type="checkbox" /> Добавил ссылки Bitrix и Smetter.</label>
+        <label><input type="checkbox" /> Загрузил договор, смету, график платежей, проектную документацию, файл материалов и задание на работы.</label>
+        <label><input type="checkbox" /> Проверил, что объект появился в списке объектов.</label>
+        <label><input type="checkbox" /> Передал объект в работу.</label>
+        <textarea placeholder="Замечания менеджера"></textarea>
+      </section>
+
+      <section>
+        <h2>Артем, руководитель строительства</h2>
+        <label><input type="checkbox" /> Увидел объект, переданный менеджером.</label>
+        <label><input type="checkbox" /> Проверил карточку объекта и документы.</label>
+        <label><input type="checkbox" /> Вернул объект менеджеру на доработку с комментарием.</label>
+        <label><input type="checkbox" /> Принял объект в работу и назначил ответственных.</label>
+        <label><input type="checkbox" /> Создал, принял и вернул задачу.</label>
+        <label><input type="checkbox" /> Проверил архив объекта.</label>
+        <textarea placeholder="Замечания руководителя строительства"></textarea>
+      </section>
+
+      <section>
+        <h2>Андрей и Сергей, прорабы</h2>
+        <label><input type="checkbox" /> Увидел только свои объекты.</label>
+        <label><input type="checkbox" /> Открыл задачи по объекту.</label>
+        <label><input type="checkbox" /> Отметил задачу выполненной.</label>
+        <label><input type="checkbox" /> Создал заявку на материалы по сметному разделу.</label>
+        <label><input type="checkbox" /> Добавил дополнительный материал с причиной.</label>
+        <label><input type="checkbox" /> Подтвердил получение материалов или сообщил о проблеме с фото.</label>
+        <textarea placeholder="Замечания прораба"></textarea>
+      </section>
+
+      <section>
+        <h2>Анастасия, снабжение</h2>
+        <label><input type="checkbox" /> Увидела заявку с объектом, датой и срочностью.</label>
+        <label><input type="checkbox" /> Приняла заявку в работу.</label>
+        <label><input type="checkbox" /> Вернула заявку на доработку с комментарием.</label>
+        <label><input type="checkbox" /> Назначила дату доставки и добавила комментарий.</label>
+        <label><input type="checkbox" /> Проверила проблемную приемку с фото.</label>
+        <label><input type="checkbox" /> Выгрузила выполненные заявки.</label>
+        <textarea placeholder="Замечания снабжения"></textarea>
+      </section>
+
+      <section>
+        <h2>Ксения и Илья, сметчики</h2>
+        <label><input type="checkbox" /> Открыли объект и документы.</label>
+        <label><input type="checkbox" /> Проверили смету, материалы, работы и допработы.</label>
+        <label><input type="checkbox" /> Проверили допматериалы и допработы по объектам.</label>
+        <label><input type="checkbox" /> Проверили выгрузку выполненных заявок.</label>
+        <textarea placeholder="Замечания сметчика"></textarea>
+      </section>
+
+      <section>
+        <h2>Технадзор</h2>
+        <label><input type="checkbox" /> Открыл задачи, где он указан принимающим.</label>
+        <label><input type="checkbox" /> Поставил задачу прорабу.</label>
+        <label><input type="checkbox" /> Принял выполненную задачу.</label>
+        <label><input type="checkbox" /> Вернул задачу на доработку с комментарием.</label>
+        <label><input type="checkbox" /> Проверил журнал событий по объекту.</label>
+        <textarea placeholder="Замечания технадзора"></textarea>
+      </section>
+
+      <section>
+        <h2>Ген.директор</h2>
+        <label><input type="checkbox" /> Проверил рабочий стол.</label>
+        <label><input type="checkbox" /> Проверил объекты, задачи, материалы, работы, допработы, базу знаний.</label>
+        <label><input type="checkbox" /> Проверил удаление материала из базы знаний.</label>
+        <label><input type="checkbox" /> Проверил архив объектов.</label>
+        <label><input type="checkbox" /> Проверил отдельные логины ролей.</label>
+        <textarea placeholder="Замечания ген.директора"></textarea>
+      </section>
+    </main>
+  </body>
+</html>

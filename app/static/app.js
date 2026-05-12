@@ -1,6 +1,8 @@
 const state = {
   view: localStorage.getItem("currentView") || "dashboard",
   currentRole: "owner",
+  session: null,
+  canSwitchRole: true,
   users: [],
   projects: [],
   archivedProjects: [],
@@ -196,6 +198,18 @@ function currentRoleBase() {
 function currentUserId() {
   if (String(state.currentRole || "").includes(":")) return Number(String(state.currentRole).split(":")[1]);
   return state.users.find((user) => user.role === currentRoleBase())?.id || null;
+}
+
+function roleValueForUser(user, fallbackRole = "owner") {
+  if (!user) return fallbackRole || "owner";
+  return user.role === "foreman" ? `foreman:${user.id}` : user.role;
+}
+
+async function loadSession() {
+  const session = await api("/api/session");
+  state.session = session;
+  state.canSwitchRole = Boolean(session.can_switch_role);
+  state.currentRole = roleValueForUser(session.user, session.role);
 }
 
 function escapeAttr(value) {
@@ -496,6 +510,19 @@ function fillRoleSwitcher() {
   const select = qs("#currentRoleSelect");
   if (!select) return;
   const selected = state.currentRole;
+  if (!state.canSwitchRole) {
+    const sessionUser = state.session?.user || state.users.find((user) => user.id === Number(state.session?.user_id));
+    const value = roleValueForUser(sessionUser, state.session?.role);
+    const title = roleLabel(value);
+    select.innerHTML = `<option value="${value}">${title}</option>`;
+    select.value = value;
+    select.disabled = true;
+    select.closest(".role-switcher")?.classList.add("locked");
+    state.currentRole = value;
+    return;
+  }
+  select.disabled = false;
+  select.closest(".role-switcher")?.classList.remove("locked");
   const options = [
     ["owner", "Ген.директор"],
     ["sales_manager", "Менеджер"],
@@ -2644,9 +2671,14 @@ function bindEvents() {
   });
 }
 
-bindEvents();
-switchView(state.view);
-loadAll().catch((error) => showToast(error.message));
+async function boot() {
+  await loadSession();
+  bindEvents();
+  switchView(state.view);
+  await loadAll();
+}
+
+boot().catch((error) => showToast(error.message));
 setInterval(() => {
   if (document.hidden) return;
   refreshLiveData().catch((error) => showToast(error.message));

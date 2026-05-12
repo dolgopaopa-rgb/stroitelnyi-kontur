@@ -216,6 +216,11 @@ h2 {
   padding: 0 10px;
 }
 
+.role-switcher.locked select {
+  color: var(--text);
+  background: #eef3f5;
+}
+
 .segmented-control {
   display: inline-flex;
   border: 1px solid var(--line);
