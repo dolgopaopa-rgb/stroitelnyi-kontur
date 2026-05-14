@@ -16,6 +16,7 @@ const state = {
   materialListMode: "active",
   taskFilter: "all",
   feedbackFilter: "all",
+  selectedFeedbackIds: new Set(),
   selectedTaskProjectId: null,
   selectedWorkProjectId: null,
   openWorkStages: {},
@@ -2199,7 +2200,7 @@ async function renderFeedback() {
           return `
           <article class="row feedback-row">
             <label class="feedback-select">
-              <input type="checkbox" data-feedback-check="${item.id}" />
+              <input type="checkbox" data-feedback-check="${item.id}" ${state.selectedFeedbackIds.has(Number(item.id)) ? "checked" : ""} />
             </label>
             <div class="feedback-main">
               <div class="stack-line">
@@ -2482,7 +2483,7 @@ function bindEvents() {
   qs("#newEventButton").addEventListener("click", () => qs("#eventDialog").showModal());
   qs("#refreshFeedbackButton")?.addEventListener("click", () => renderFeedback().then(() => showToast("Обратная связь обновлена")));
   qs("#deleteSelectedFeedbackButton")?.addEventListener("click", async () => {
-    const ids = qsa("[data-feedback-check]:checked").map((input) => Number(input.dataset.feedbackCheck)).filter(Boolean);
+    const ids = [...state.selectedFeedbackIds].filter(Boolean);
     if (!ids.length) {
       showToast("Выберите сообщения для удаления");
       return;
@@ -2493,6 +2494,7 @@ function bindEvents() {
       method: "POST",
       body: JSON.stringify({ ids }),
     });
+    ids.forEach((id) => state.selectedFeedbackIds.delete(Number(id)));
     await renderFeedback();
     showToast(`Удалено сообщений: ${result.deleted || ids.length}`);
   });
@@ -2581,6 +2583,17 @@ function bindEvents() {
     if (feedbackFilterButton) {
       state.feedbackFilter = feedbackFilterButton.dataset.feedbackFilter;
       await renderFeedback();
+      return;
+    }
+
+    const feedbackCheck = event.target.closest("[data-feedback-check]");
+    if (feedbackCheck) {
+      const id = Number(feedbackCheck.dataset.feedbackCheck);
+      if (feedbackCheck.checked) {
+        state.selectedFeedbackIds.add(id);
+      } else {
+        state.selectedFeedbackIds.delete(id);
+      }
       return;
     }
 
