@@ -286,6 +286,23 @@ def init_db() -> None:
                 FOREIGN KEY (user_id) REFERENCES users(id)
             );
 
+            CREATE TABLE IF NOT EXISTS feedback_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source TEXT NOT NULL DEFAULT 'max',
+                external_id TEXT,
+                chat_id TEXT,
+                chat_title TEXT,
+                sender_id TEXT,
+                sender_name TEXT,
+                text TEXT,
+                attachments_json TEXT,
+                status TEXT NOT NULL DEFAULT 'new',
+                decision_comment TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(source, external_id)
+            );
+
             CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
             CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
             CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(due_date);
@@ -300,6 +317,7 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_events_project ON events(project_id);
             CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read);
             CREATE INDEX IF NOT EXISTS idx_notifications_role ON notifications(role, is_read);
+            CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback_items(status, created_at);
             """
         )
         ensure_column(db, "material_requests", "batch_id", "INTEGER")

@@ -711,6 +711,10 @@ def account_user_id(account: dict | None) -> int:
         return 0
 
 
+def can_manage_feedback(account: dict | None) -> bool:
+    return account_role(account) in {"owner", "construction_manager", "sales_manager"}
+
+
 def project_visible_for_account(project: dict, account: dict | None) -> bool:
     role = account_role(account)
     if role == "foreman":
@@ -1360,6 +1364,36 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 json_response(self, rows_to_dicts(rows))
                 return
 
+            if path == "/api/feedback":
+                if not can_manage_feedback(account):
+                    json_response(self, [], 200)
+                    return
+                status = (query.get("status") or ["all"])[0]
+                where = ""
+                params: list[object] = []
+                if status and status != "all":
+                    where = "WHERE status = ?"
+                    params.append(status)
+                rows = db.execute(
+                    f"""
+                    SELECT *
+                    FROM feedback_items
+                    {where}
+                    ORDER BY created_at DESC, id DESC
+                    LIMIT 200
+                    """,
+                    params,
+                ).fetchall()
+                items = rows_to_dicts(rows)
+                for item in items:
+                    try:
+                        item["attachments"] = json.loads(item.get("attachments_json") or "[]")
+                    except json.JSONDecodeError:
+                        item["attachments"] = []
+                    item.pop("attachments_json", None)
+                json_response(self, items)
+                return
+
             if path == "/api/summary":
                 payload = {
                     "projects": db.execute("SELECT COUNT(*) AS count FROM projects WHERE status != 'archived'").fetchone()["count"],
@@ -1661,6 +1695,62 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
     def handle_api_post(self, path: str, data: dict) -> None:
         with connect() as db:
             account = current_access_account(self) or {}
+            if path == "/api/feedback":
+                if not can_manage_feedback(account):
+                    json_response(self, {"error": "Forbidden"}, 403)
+                    return
+                source = str(data.get("source") or "max").strip() or "max"
+                external_id = str(data.get("external_id") or "").strip() or None
+                if external_id:
+                    existing = db.execute(
+                        "SELECT id FROM feedback_items WHERE source = ? AND external_id = ?",
+                        (source, external_id),
+                    ).fetchone()
+                    if existing:
+                        json_response(self, {"id": existing["id"], "duplicate": True}, 200)
+                        return
+                cursor = db.execute(
+                    """
+                    INSERT INTO feedback_items (
+                        source, external_id, chat_id, chat_title, sender_id, sender_name,
+                        text, attachments_json, status, decision_comment
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new', '')
+                    """,
+                    (
+                        source,
+                        external_id,
+                        str(data.get("chat_id") or ""),
+                        str(data.get("chat_title") or ""),
+                        str(data.get("sender_id") or ""),
+                        str(data.get("sender_name") or ""),
+                        str(data.get("text") or ""),
+                        json.dumps(data.get("attachments") or [], ensure_ascii=False),
+                    ),
+                )
+                json_response(self, {"id": cursor.lastrowid}, 201)
+                return
+
+            feedback_action = re.match(r"^/api/feedback/(\d+)/status$", path)
+            if feedback_action:
+                if not can_manage_feedback(account):
+                    json_response(self, {"error": "Forbidden"}, 403)
+                    return
+                status = str(data.get("status") or "new")
+                if status not in {"new", "in_work", "done", "rejected"}:
+                    json_response(self, {"error": "Unknown status"}, 400)
+                    return
+                db.execute(
+                    """
+                    UPDATE feedback_items
+                    SET status = ?, decision_comment = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                    """,
+                    (status, str(data.get("comment") or ""), int(feedback_action.group(1))),
+                )
+                json_response(self, {"ok": True})
+                return
+
             if path == "/api/projects":
                 ensure_project_action_allowed(account, "update")
                 if data.get("save_mode") == "draft":

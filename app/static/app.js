@@ -15,6 +15,7 @@ const state = {
   projectListMode: "active",
   materialListMode: "active",
   taskFilter: "all",
+  feedbackFilter: "all",
   selectedTaskProjectId: null,
   selectedWorkProjectId: null,
   openWorkStages: {},
@@ -31,6 +32,7 @@ const viewTitles = {
   variations: "Допработы и отклонения",
   locations: "Локации",
   documents: "База знаний",
+  feedback: "Обратная связь",
   events: "Журнал событий",
 };
 
@@ -66,6 +68,10 @@ const statusLabels = {
   not_required: "Не требуется",
   no_basis_decision: "Нет решения",
   decision_required: "Нужно решение",
+  feedback_new: "Новое",
+  feedback_in_work: "В работе",
+  feedback_done: "Обработано",
+  feedback_rejected: "Отклонено",
 };
 
 function qs(selector) {
@@ -188,9 +194,9 @@ function canManageKnowledgeBase() {
 }
 
 const viewAccess = {
-  owner: ["dashboard", "projects", "tasks", "works", "materials", "variations", "locations", "documents", "events"],
-  construction_manager: ["dashboard", "projects", "tasks", "works", "materials", "variations", "locations", "documents", "events"],
-  sales_manager: ["dashboard", "projects", "locations", "documents"],
+  owner: ["dashboard", "projects", "tasks", "works", "materials", "variations", "locations", "documents", "feedback", "events"],
+  construction_manager: ["dashboard", "projects", "tasks", "works", "materials", "variations", "locations", "documents", "feedback", "events"],
+  sales_manager: ["dashboard", "projects", "locations", "documents", "feedback"],
   foreman: ["dashboard", "projects", "tasks", "works", "materials", "locations", "documents"],
   procurement_manager: ["dashboard", "projects", "materials", "locations", "documents"],
   estimator: ["dashboard", "projects", "works", "materials", "variations", "documents"],
@@ -296,6 +302,13 @@ function escapeAttr(value) {
   return String(value || "")
     .replace(/&/g, "&amp;")
     .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 }
@@ -573,6 +586,7 @@ async function loadAll() {
     renderEstimateMaterials(),
     renderVariations(),
     renderDocuments(),
+    renderFeedback(),
     renderEvents(),
   ]);
   initSortableZones();
@@ -2104,6 +2118,86 @@ async function renderDocuments() {
     : `<p class="muted">База знаний пока пустая. Загружайте сюда регламенты, проектные решения, узлы и общую документацию.</p>`;
 }
 
+function feedbackStatusLabel(status) {
+  return {
+    new: "Новое",
+    in_work: "В работе",
+    done: "Обработано",
+    rejected: "Отклонено",
+  }[status] || status || "Новое";
+}
+
+function feedbackStatusLevel(status) {
+  return {
+    new: "warning",
+    in_work: "blue",
+    done: "success",
+    rejected: "danger",
+  }[status] || "";
+}
+
+async function renderFeedback() {
+  const rowsNode = qs("#feedbackRows");
+  const statsNode = qs("#feedbackStats");
+  if (!rowsNode || !statsNode) return;
+  if (!canView("feedback")) {
+    rowsNode.innerHTML = "";
+    statsNode.innerHTML = "";
+    return;
+  }
+  const items = await api("/api/feedback");
+  const counts = items.reduce(
+    (acc, item) => {
+      acc.all += 1;
+      acc[item.status] = (acc[item.status] || 0) + 1;
+      return acc;
+    },
+    { all: 0, new: 0, in_work: 0, done: 0, rejected: 0 }
+  );
+  const statItems = [
+    ["all", "Все"],
+    ["new", "Новые"],
+    ["in_work", "В работе"],
+    ["done", "Обработано"],
+    ["rejected", "Отклонено"],
+  ];
+  statsNode.innerHTML = statItems
+    .map(
+      ([key, title]) => `
+      <button class="task-stat ${state.feedbackFilter === key ? "active" : ""}" type="button" data-feedback-filter="${key}">
+        <span>${title}</span>
+        <strong>${counts[key] || 0}</strong>
+      </button>`
+    )
+    .join("");
+  const filtered = state.feedbackFilter === "all" ? items : items.filter((item) => item.status === state.feedbackFilter);
+  rowsNode.innerHTML = filtered.length
+    ? filtered
+        .map((item) => {
+          const attachments = Array.isArray(item.attachments) ? item.attachments : [];
+          return `
+          <article class="row feedback-row">
+            <div class="feedback-main">
+              <div class="stack-line">
+                <strong>${escapeHtml(item.sender_name || item.sender_id || "MAX")}</strong>
+                ${pill(feedbackStatusLabel(item.status), feedbackStatusLevel(item.status))}
+              </div>
+              <div class="muted">${escapeHtml(item.chat_title || item.chat_id || "Чат MAX")} · ${formatDateRu(item.created_at)}</div>
+              <p>${escapeHtml(item.text || "Без текста").replace(/\n/g, "<br>")}</p>
+              ${attachments.length ? `<div class="muted">Вложений: ${attachments.length}</div>` : ""}
+              ${item.decision_comment ? `<div class="muted">Комментарий: ${escapeHtml(item.decision_comment)}</div>` : ""}
+            </div>
+            <div class="feedback-actions">
+              <button class="secondary tiny" type="button" data-feedback-status="in_work" data-feedback-id="${item.id}">В работу</button>
+              <button class="secondary tiny" type="button" data-feedback-status="done" data-feedback-id="${item.id}">Готово</button>
+              <button class="danger-button tiny" type="button" data-feedback-status="rejected" data-feedback-id="${item.id}">Отклонить</button>
+            </div>
+          </article>`;
+        })
+        .join("")
+    : `<p class="muted">Сообщений из MAX пока нет.</p>`;
+}
+
 async function renderEvents() {
   const events = await api("/api/events");
   qs("#eventTimeline").innerHTML = events.map((event) => `
@@ -2362,6 +2456,7 @@ function bindEvents() {
   qs("#newVariationButton").addEventListener("click", () => qs("#variationDialog").showModal());
   qs("#newDocumentButton").addEventListener("click", () => qs("#documentDialog").showModal());
   qs("#newEventButton").addEventListener("click", () => qs("#eventDialog").showModal());
+  qs("#refreshFeedbackButton")?.addEventListener("click", () => renderFeedback().then(() => showToast("Обратная связь обновлена")));
 
   qsa("[data-close]").forEach((button) => button.addEventListener("click", () => qs(`#${button.dataset.close}`).close()));
 
@@ -2440,6 +2535,25 @@ function bindEvents() {
       state.selectedTaskProjectId = Number(taskProjectButton.dataset.taskProject);
       state.taskFilter = "all";
       await renderTasks();
+      return;
+    }
+
+    const feedbackFilterButton = event.target.closest("[data-feedback-filter]");
+    if (feedbackFilterButton) {
+      state.feedbackFilter = feedbackFilterButton.dataset.feedbackFilter;
+      await renderFeedback();
+      return;
+    }
+
+    const feedbackStatusButton = event.target.closest("[data-feedback-status]");
+    if (feedbackStatusButton) {
+      const comment = feedbackStatusButton.dataset.feedbackStatus === "done" ? "" : prompt("Комментарий к обратной связи", "") || "";
+      await api(`/api/feedback/${feedbackStatusButton.dataset.feedbackId}/status`, {
+        method: "POST",
+        body: JSON.stringify({ status: feedbackStatusButton.dataset.feedbackStatus, comment }),
+      });
+      await renderFeedback();
+      showToast("Статус обратной связи обновлен");
       return;
     }
 

@@ -6,7 +6,7 @@
     <title>Строительный контур MVP</title>
     <link rel="icon" type="image/png" href="/static/assets/g2-logo.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo.png" />
-    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260514-feedback" />
   </head>
   <body>
     <div class="app">
@@ -26,6 +26,7 @@
           <button class="nav-button" data-view="variations"><span class="nav-icon">＋</span><span>Допработы</span></button>
           <button class="nav-button" data-view="locations"><span class="nav-icon">⌖</span><span>Локации</span></button>
           <button class="nav-button" data-view="documents"><span class="nav-icon">◧</span><span>База знаний</span></button>
+          <button class="nav-button" data-view="feedback"><span class="nav-icon">✉</span><span>Обратная связь</span></button>
           <button class="nav-button" data-view="events"><span class="nav-icon">◷</span><span>Журнал</span></button>
         </nav>
       </aside>
@@ -245,6 +246,17 @@
               <button class="primary" id="newDocumentButton">Добавить материал</button>
             </div>
             <div class="cards" id="documentCards"></div>
+          </div>
+        </section>
+
+        <section class="view" id="feedbackView">
+          <div class="panel">
+            <div class="panel-head">
+              <h2>Обратная связь из MAX</h2>
+              <button class="secondary" id="refreshFeedbackButton" type="button">Обновить</button>
+            </div>
+            <div class="task-stats compact-stats" id="feedbackStats"></div>
+            <div class="table feedback-list" id="feedbackRows"></div>
           </div>
         </section>
 
@@ -548,6 +560,6 @@
     </dialog>
 
     <div class="toast" id="toast"></div>
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=20260514-feedback"></script>
   </body>
 </html>
