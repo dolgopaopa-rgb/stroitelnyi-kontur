@@ -167,12 +167,92 @@ function canEditProject() {
   return ["owner", "sales_manager", "construction_manager"].includes(currentRoleBase());
 }
 
+function canSubmitProject() {
+  return ["owner", "sales_manager"].includes(currentRoleBase());
+}
+
+function canAcceptProject() {
+  return ["owner", "construction_manager"].includes(currentRoleBase());
+}
+
+function canArchiveProject() {
+  return ["owner", "construction_manager"].includes(currentRoleBase());
+}
+
 function canDeleteForever() {
   return currentRoleBase() === "owner";
 }
 
 function canManageKnowledgeBase() {
   return ["owner", "construction_manager"].includes(currentRoleBase());
+}
+
+const viewAccess = {
+  owner: ["dashboard", "projects", "tasks", "works", "materials", "variations", "locations", "documents", "events"],
+  construction_manager: ["dashboard", "projects", "tasks", "works", "materials", "variations", "locations", "documents", "events"],
+  sales_manager: ["dashboard", "projects", "locations", "documents"],
+  foreman: ["dashboard", "projects", "tasks", "works", "materials", "locations", "documents"],
+  procurement_manager: ["dashboard", "projects", "materials", "locations", "documents"],
+  estimator: ["dashboard", "projects", "works", "materials", "variations", "documents"],
+  technical_supervisor: ["dashboard", "projects", "tasks", "works", "materials", "locations", "documents"],
+};
+
+function allowedViews() {
+  return viewAccess[currentRoleBase()] || viewAccess.owner;
+}
+
+function canView(view) {
+  return allowedViews().includes(view);
+}
+
+function syncNavigationAccess() {
+  const allowed = allowedViews();
+  qsa("[data-view]").forEach((button) => {
+    button.hidden = !allowed.includes(button.dataset.view);
+  });
+  const newProjectButton = qs("#newProjectButton");
+  if (newProjectButton) newProjectButton.hidden = !canEditProject();
+  if (!allowed.includes(state.view)) {
+    switchView(allowed[0] || "dashboard");
+  }
+}
+
+function canViewFinancials() {
+  return ["owner", "construction_manager", "sales_manager", "estimator"].includes(currentRoleBase());
+}
+
+function canViewExternalRefs() {
+  return ["owner", "construction_manager", "sales_manager", "estimator"].includes(currentRoleBase());
+}
+
+const documentAccess = {
+  owner: null,
+  construction_manager: null,
+  sales_manager: null,
+  estimator: new Set(["main_estimate", "smetter_materials", "smetter_work_task", "project_documentation", "variation_estimate", "act", "ks_2", "ks_3", "other"]),
+  foreman: new Set(["smetter_materials", "smetter_work_task", "project_documentation", "detail_node", "regulation", "standard", "instruction", "other"]),
+  procurement_manager: new Set(["smetter_materials", "project_documentation", "detail_node", "regulation", "standard", "instruction", "other"]),
+  technical_supervisor: new Set(["smetter_materials", "smetter_work_task", "project_documentation", "detail_node", "regulation", "standard", "instruction", "other"]),
+};
+
+function visibleDocuments(docs = []) {
+  const allowed = documentAccess[currentRoleBase()];
+  if (!allowed) return docs;
+  return docs.filter((doc) => allowed.has(doc.type || "other"));
+}
+
+function projectTabs() {
+  const base = currentRoleBase();
+  const tabs = {
+    owner: ["overview", "tasks", "works", "materials", "variations", "documents", "events"],
+    construction_manager: ["overview", "tasks", "works", "materials", "variations", "documents", "events"],
+    sales_manager: ["overview", "documents", "events"],
+    foreman: ["overview", "tasks", "works", "materials", "documents"],
+    procurement_manager: ["overview", "materials", "documents"],
+    estimator: ["overview", "works", "materials", "variations", "documents"],
+    technical_supervisor: ["overview", "tasks", "works", "materials", "documents"],
+  }[base];
+  return tabs || ["overview"];
 }
 
 function roleLabel(role) {
@@ -233,7 +313,7 @@ function externalRefLink(value, fallbackText, level = "") {
 function yandexMapsUrl(address) {
   const text = String(address || "").trim();
   if (!text) return "";
-  return `https://yandex.ru/maps/?text=${encodeURIComponent(text)}`;
+  return `https://yandex.ru/maps/?rtext=~${encodeURIComponent(text)}&rtt=auto`;
 }
 
 function addressLink(address, className = "") {
@@ -245,7 +325,7 @@ function addressLink(address, className = "") {
 function mapLink(address, mapsUrl, label = "Открыть в Яндекс.Картах") {
   const url = String(mapsUrl || "").trim();
   const addressText = String(address || "").trim();
-  const href = /^https?:\/\//i.test(url) && !/^https?:\/\/yandex\.ru\/maps\/?$/i.test(url) ? url : yandexMapsUrl(addressText);
+  const href = addressText ? yandexMapsUrl(addressText) : url;
   if (!href) return `<span class="muted">Локация не указана</span>`;
   return `<a class="link-button inline-link" href="${escapeAttr(href)}" target="_blank" rel="noopener noreferrer">${label}</a>`;
 }
@@ -349,9 +429,13 @@ function showToast(message) {
 
 function switchView(view) {
   if (!viewTitles[view]) view = "dashboard";
+  if (!canView(view)) view = allowedViews()[0] || "dashboard";
   state.view = view;
   localStorage.setItem("currentView", view);
-  qsa(".nav-button").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
+  qsa(".nav-button").forEach((button) => {
+    button.hidden = !canView(button.dataset.view);
+    button.classList.toggle("active", button.dataset.view === view);
+  });
   qsa(".view").forEach((node) => node.classList.remove("active"));
   qs(`#${view}View`).classList.add("active");
   qs("#pageTitle").textContent = viewTitles[view];
@@ -471,8 +555,13 @@ async function loadAll() {
   state.users = users;
   state.projects = projects;
   state.archivedProjects = archivedProjects;
+  const availableProjects = state.projectListMode === "archive" ? archivedProjects : projects;
+  if (state.selectedProjectId && !availableProjects.some((project) => Number(project.id) === Number(state.selectedProjectId))) {
+    state.selectedProjectId = availableProjects[0]?.id || projects[0]?.id || null;
+  }
   if (!state.selectedProjectId && projects.length) state.selectedProjectId = projects[0].id;
   fillSelects();
+  syncNavigationAccess();
   await Promise.all([
     renderDashboard(),
     renderNotifications(),
@@ -519,6 +608,7 @@ function fillRoleSwitcher() {
     select.disabled = true;
     select.closest(".role-switcher")?.classList.add("locked");
     state.currentRole = value;
+    syncNavigationAccess();
     return;
   }
   select.disabled = false;
@@ -535,6 +625,7 @@ function fillRoleSwitcher() {
   select.innerHTML = options.map(([value, title]) => `<option value="${value}">${title}</option>`).join("");
   select.value = options.some(([value]) => value === selected) ? selected : "owner";
   state.currentRole = select.value;
+  syncNavigationAccess();
 }
 
 function usersByRole(role) {
@@ -1073,7 +1164,7 @@ async function renderProjects() {
               </div>
               <div class="project-card-badges">
                 ${pill(label(project.status), project.status === "revision_requested" ? "danger" : project.status === "submitted_to_construction" ? "warning" : "blue")}
-                ${state.projectListMode === "archive" ? pill(project.archive_reason || "архив", "success") : pill(`Смета: ${money(project.main_estimate_amount)}`, "success")}
+                ${state.projectListMode === "archive" ? pill(project.archive_reason || "архив", "success") : canViewFinancials() ? pill(`Смета: ${money(project.main_estimate_amount)}`, "success") : ""}
               </div>
               <div class="project-meta-line">
                 <span>${state.projectListMode === "archive" ? project.archived_at || "без даты" : `Прораб: ${project.foreman_name || "не назначен"}`}</span>
@@ -1090,14 +1181,26 @@ async function renderProjects() {
 async function renderProjectDetail(projectId) {
   const project = await api(`/api/projects/${projectId}`);
   state.selectedProjectId = project.id;
-  const tabData = {
-    overview: `
+  const docs = visibleDocuments(project.documents || []);
+  const tabs = projectTabs();
+  if (!tabs.includes(state.selectedProjectTab)) state.selectedProjectTab = tabs[0] || "overview";
+  const overviewHtml = canViewFinancials()
+    ? `
       <div class="detail-grid">
         <div class="info"><span>Основная смета</span><strong>${money(project.main_estimate_amount)}</strong></div>
         <div class="info"><span>Допработы</span><strong>${money(project.approved_variations_amount)}</strong></div>
         <div class="info"><span>Сверхбюджет без решения</span><strong>${money(project.unresolved_overbudget_amount)}</strong></div>
         <div class="info"><span>Срок</span><strong>${project.planned_end_date || "не задан"}</strong></div>
-      </div>`,
+      </div>`
+    : `
+      <div class="detail-grid">
+        <div class="info"><span>Статус</span><strong>${label(project.status)}</strong></div>
+        <div class="info"><span>Срок</span><strong>${project.planned_end_date || "не задан"}</strong></div>
+        <div class="info"><span>Прораб</span><strong>${project.foreman_name || "не назначен"}</strong></div>
+        <div class="info"><span>Технадзор</span><strong>${project.tech_supervisor_name || "не назначен"}</strong></div>
+      </div>`;
+  const tabData = {
+    overview: overviewHtml,
     tasks: renderSmallList(project.tasks, (task) => `${task.title} · ${label(task.status)} · ${task.due_date || "без срока"}`),
     materials: renderSmallList(
       project.materials,
@@ -1113,15 +1216,15 @@ async function renderProjectDetail(projectId) {
           ? `${item.title} · ${item.quantity || 0} ${item.unit || ""} · ${workReasonLabel(item.reason)}`
           : `${item.title} · ${item.estimated_quantity || 0} ${item.unit || ""} · ${money(item.total_price)}`
     ),
-    variations: renderSmallList(project.variations, (item) => `${item.title} · ${variationType(item.type)} · ${money(item.amount)} · ${moneyDecision(item.financial_decision)}`),
-    documents: renderSmallList(project.documents, (doc) => documentFileLink(doc)),
+    variations: canViewFinancials() ? renderSmallList(project.variations, (item) => `${item.title} · ${variationType(item.type)} · ${money(item.amount)} · ${moneyDecision(item.financial_decision)}`) : `<p class="muted">Финансовые отклонения доступны руководителям и сметчикам.</p>`,
+    documents: renderSmallList(docs, (doc) => documentFileLink(doc)),
     events: renderSmallList(project.events, (event) => `${event.text}`),
   };
   const detailBlocks = [
     [
       "sections",
       `<div class="tabs">
-        ${["overview", "tasks", "works", "materials", "variations", "documents", "events"]
+        ${tabs
           .map((tab) => `<button class="tab ${state.selectedProjectTab === tab ? "active" : ""}" data-project-tab="${tab}">${tabTitle(tab)}</button>`)
           .join("")}
       </div>
@@ -1129,7 +1232,7 @@ async function renderProjectDetail(projectId) {
     ],
     ["edit", renderProjectEditPanel(project)],
     ["workflow", renderProjectWorkflow(project)],
-    ["documents", renderDocumentSummary(project.documents)],
+    ["documents", renderDocumentSummary(docs)],
   ];
   qs("#projectDetail").innerHTML = `
     <div class="stack-line"><h2>${project.title}</h2>${pill(label(project.status), "blue")}</div>
@@ -1139,8 +1242,8 @@ async function renderProjectDetail(projectId) {
       ${pill(`Сметчик: ${project.estimator_name || "не назначен"}`)}
       ${pill(`Снабжение: ${project.procurement_name || "не назначено"}`)}
       ${pill(`Технадзор: ${project.tech_supervisor_name || "не назначен"}`)}
-      ${externalRefLink(project.bitrix_ref, project.bitrix_ref ? "Открыть Bitrix" : "Bitrix не указан", "blue")}
-      ${externalRefLink(project.smetter_ref, project.smetter_ref ? "Открыть Сметтер" : "Сметтер не указан", "success")}
+      ${canViewExternalRefs() ? externalRefLink(project.bitrix_ref, project.bitrix_ref ? "Открыть Bitrix" : "Bitrix не указан", "blue") : ""}
+      ${canViewExternalRefs() ? externalRefLink(project.smetter_ref, project.smetter_ref ? "Открыть Сметтер" : "Сметтер не указан", "success") : ""}
     </div>
     <div class="project-detail-blocks sortable-zone" data-sortable-zone="project-detail-v2">
       ${detailBlocks.map(([key, html]) => `<div class="project-detail-block" data-sortable-block="${key}">${html}</div>`).join("")}
@@ -1168,6 +1271,9 @@ function renderProjectEditPanel(project) {
 
 function renderProjectWorkflow(project) {
   if (project.status === "archived") {
+    const restoreButton = canArchiveProject()
+      ? `<button class="primary" data-project-action="restore" data-project-id="${project.id}">Вернуть в работу</button>`
+      : "";
     const deleteButton = canDeleteForever()
       ? `<button class="danger-button" data-project-action="delete" data-project-id="${project.id}">Удалить навсегда</button>`
       : "";
@@ -1176,7 +1282,7 @@ function renderProjectWorkflow(project) {
         <div class="stack-line"><h3>Архив</h3>${pill("Объект скрыт из работы", "blue")}</div>
         <p class="muted">Причина: ${project.archive_reason || "не указана"}</p>
         <div class="form-actions">
-          <button class="primary" data-project-action="restore" data-project-id="${project.id}">Вернуть в работу</button>
+          ${restoreButton}
           ${deleteButton}
         </div>
         ${canDeleteForever() ? `<p class="muted">Полное удаление доступно только роли “Ген.директор” и только из архива.</p>` : ""}
@@ -1190,12 +1296,19 @@ function renderProjectWorkflow(project) {
         ${project.workflow_comment ? `<p class="muted">Комментарий руководителя строительства: ${project.workflow_comment}</p>` : ""}
         <div class="form-actions">
           <span class="muted">После проверки заполнения менеджер передает объект руководителю строительства.</span>
-          <button class="primary" data-project-action="submit" data-project-id="${project.id}">Передать в работу</button>
+          ${canSubmitProject() ? `<button class="primary" data-project-action="submit" data-project-id="${project.id}">Передать в работу</button>` : `<span class="muted">Передать объект может менеджер или ген.директор.</span>`}
         </div>
       </section>`;
   }
 
   if (project.status === "submitted_to_construction") {
+    if (!canAcceptProject()) {
+      return `
+        <section class="workflow-panel">
+          <div class="stack-line"><h3>Проверка руководителем строительства</h3>${pill("Ожидает решения", "warning")}</div>
+          <p class="muted">Принять объект в работу или вернуть менеджеру может только руководитель строительства или ген.директор.</p>
+        </section>`;
+    }
     return `
       <section class="workflow-panel">
         <div class="stack-line"><h3>Проверка руководителем строительства</h3>${pill("Ожидает решения", "warning")}</div>
@@ -1219,7 +1332,7 @@ function renderProjectWorkflow(project) {
     <section class="workflow-panel">
       <div class="stack-line"><h3>Объект в работе</h3>${pill("Ответственные назначены", "success")}</div>
       <p class="muted">После принятия уведомления получают прораб, снабжение, сметчик и технадзор.</p>
-      <button class="secondary" data-project-action="archive" data-project-id="${project.id}">Отправить в архив</button>
+      ${canArchiveProject() ? `<button class="secondary" data-project-action="archive" data-project-id="${project.id}">Отправить в архив</button>` : ""}
     </section>`;
 }
 
@@ -2212,6 +2325,7 @@ function bindEvents() {
   qs("#refreshButton").addEventListener("click", () => loadAll().then(() => showToast("Данные обновлены")));
   qs("#currentRoleSelect").addEventListener("change", async (event) => {
     state.currentRole = event.target.value;
+    syncNavigationAccess();
     if (state.selectedProjectId) await renderProjectDetail(state.selectedProjectId);
     state.selectedTaskProjectId = null;
     await renderTasks();
@@ -2516,8 +2630,10 @@ function bindEvents() {
   qs("#projectForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = qs("#projectForm");
+    const saveMode = event.submitter?.dataset.saveMode === "draft" ? "draft" : "complete";
     try {
       const payload = await projectFormToJson(form);
+      payload.save_mode = saveMode;
       const isEdit = form.dataset.mode === "edit";
       const projectId = form.dataset.projectId;
       const hasWorkTaskUpload = payload.initial_documents.some((doc) => doc.type === "smetter_work_task");

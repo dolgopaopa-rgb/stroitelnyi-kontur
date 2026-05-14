@@ -700,6 +700,80 @@ def role_by_user_id(db, user_id: int | None) -> str:
     return str(row["role"]) if row else ""
 
 
+def account_role(account: dict | None) -> str:
+    return str((account or {}).get("role") or "owner")
+
+
+def account_user_id(account: dict | None) -> int:
+    try:
+        return int((account or {}).get("user_id") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def project_visible_for_account(project: dict, account: dict | None) -> bool:
+    role = account_role(account)
+    if role == "foreman":
+        return int(project.get("foreman_id") or 0) == account_user_id(account)
+    return role in {"owner", "construction_manager", "sales_manager", "procurement_manager", "estimator", "technical_supervisor"}
+
+
+DOCUMENT_TYPES_BY_ROLE = {
+    "foreman": {"smetter_materials", "smetter_work_task", "project_documentation", "detail_node", "regulation", "standard", "instruction", "other"},
+    "procurement_manager": {"smetter_materials", "project_documentation", "detail_node", "regulation", "standard", "instruction", "other"},
+    "technical_supervisor": {"smetter_materials", "smetter_work_task", "project_documentation", "detail_node", "regulation", "standard", "instruction", "other"},
+    "estimator": {"main_estimate", "smetter_materials", "smetter_work_task", "project_documentation", "variation_estimate", "act", "ks_2", "ks_3", "other"},
+}
+
+
+def document_visible_for_account(document: dict, account: dict | None) -> bool:
+    related_type = str(document.get("related_type") or "")
+    if related_type == "knowledge_base":
+        return True
+    role = account_role(account)
+    if role in {"owner", "construction_manager", "sales_manager"}:
+        return True
+    allowed = DOCUMENT_TYPES_BY_ROLE.get(role, set())
+    return str(document.get("type") or "other") in allowed
+
+
+def filter_documents_for_account(documents: list[dict], account: dict | None) -> list[dict]:
+    return [document for document in documents if document_visible_for_account(document, account)]
+
+
+def can_view_financials(account: dict | None) -> bool:
+    return account_role(account) in {"owner", "construction_manager", "sales_manager", "estimator"}
+
+
+def sanitize_project_for_account(project: dict, account: dict | None) -> dict:
+    role = account_role(account)
+    if not can_view_financials(account):
+        for key in ("main_estimate_amount", "approved_variations_amount", "unresolved_overbudget_amount"):
+            if key in project:
+                project[key] = 0
+        project["contracts"] = []
+        project["variations"] = []
+    if role not in {"owner", "construction_manager", "sales_manager", "estimator"}:
+        project["bitrix_ref"] = ""
+        project["smetter_ref"] = ""
+    return project
+
+
+def ensure_project_action_allowed(account: dict | None, action: str) -> None:
+    role = account_role(account)
+    allowed = {
+        "update": {"owner", "sales_manager", "construction_manager"},
+        "submit": {"owner", "sales_manager"},
+        "accept": {"owner", "construction_manager"},
+        "return": {"owner", "construction_manager"},
+        "archive": {"owner", "construction_manager"},
+        "restore": {"owner", "construction_manager"},
+        "delete": {"owner"},
+    }.get(action, set())
+    if role not in allowed:
+        raise PermissionError("Недостаточно прав для этого действия.")
+
+
 def delivery_urgency(needed_at: str | None) -> str:
     if not needed_at:
         return "standard"
@@ -896,7 +970,7 @@ def save_initial_documents(db, project_id: int, files: list[dict]) -> None:
         )
 
 
-def get_project_detail(project_id: int) -> dict | None:
+def get_project_detail(project_id: int, account: dict | None = None) -> dict | None:
     with connect() as db:
         project = db.execute(
             """
@@ -956,9 +1030,13 @@ def get_project_detail(project_id: int) -> dict | None:
         detail["works"] = rows_to_dicts(db.execute("SELECT * FROM work_items WHERE project_id = ? ORDER BY section, title", (project_id,)).fetchall())
         detail["extra_works"] = rows_to_dicts(db.execute("SELECT * FROM work_extra_items WHERE project_id = ? ORDER BY created_at DESC", (project_id,)).fetchall())
         detail["contracts"] = rows_to_dicts(db.execute("SELECT * FROM contracts WHERE project_id = ? ORDER BY ends_at", (project_id,)).fetchall())
-        detail["documents"] = rows_to_dicts(db.execute("SELECT * FROM documents WHERE project_id = ? ORDER BY created_at DESC", (project_id,)).fetchall())
+        detail["documents"] = filter_documents_for_account(
+            rows_to_dicts(db.execute("SELECT * FROM documents WHERE project_id = ? ORDER BY created_at DESC", (project_id,)).fetchall()),
+            account,
+        )
         detail["events"] = rows_to_dicts(db.execute("SELECT * FROM events WHERE project_id = ? ORDER BY created_at DESC", (project_id,)).fetchall())
         detail["notifications"] = rows_to_dicts(db.execute("SELECT * FROM notifications WHERE project_id = ? ORDER BY created_at DESC", (project_id,)).fetchall())
+        detail = sanitize_project_for_account(detail, account)
         return detail
 
 
@@ -1008,6 +1086,8 @@ class AppHandler(BaseHTTPRequestHandler):
             return
         try:
             self.handle_api_post(parsed.path, read_json(self))
+        except PermissionError as exc:
+            json_response(self, {"error": str(exc)}, 403)
         except Exception as exc:
             json_response(self, {"error": str(exc)}, 400)
 
@@ -1028,6 +1108,10 @@ class AppHandler(BaseHTTPRequestHandler):
             ".css": "text/css; charset=utf-8",
             ".js": "application/javascript; charset=utf-8",
             ".svg": "image/svg+xml",
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".webp": "image/webp",
         }
         body = file_path.read_bytes()
         self.send_response(200)
@@ -1041,6 +1125,9 @@ class AppHandler(BaseHTTPRequestHandler):
             document = db.execute("SELECT * FROM documents WHERE id = ?", (document_id,)).fetchone()
             if not document or not document["file_path"]:
                 self.send_error(404)
+                return
+            if not document_visible_for_account(row_to_dict(document), current_access_account(self)):
+                self.send_error(403)
                 return
             stored_path = str(document["file_path"])
             if stored_path.startswith(YANDEX_DISK_FILE_PREFIX):
@@ -1229,9 +1316,9 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
 
     def handle_api_get(self, path: str, query: dict[str, list[str]]) -> None:
         with connect() as db:
+            account = current_access_account(self) or {}
             archive_completed_material_batches(db)
             if path == "/api/session":
-                account = current_access_account(self) or {}
                 user = None
                 if account.get("user_id"):
                     user = db.execute("SELECT id, name, role, email FROM users WHERE id = ?", (account["user_id"],)).fetchone()
@@ -1253,15 +1340,22 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 return
 
             if path == "/api/notifications":
+                notification_filter = ""
+                params: list[object] = []
+                if account_role(account) not in {"owner", "construction_manager"}:
+                    notification_filter = "WHERE n.role = ? OR n.user_id = ?"
+                    params = [account_role(account), account_user_id(account)]
                 rows = db.execute(
-                    """
+                    f"""
                     SELECT n.*, p.title AS project_title, u.name AS user_name
                     FROM notifications n
                     LEFT JOIN projects p ON p.id = n.project_id
                     LEFT JOIN users u ON u.id = n.user_id
+                    {notification_filter}
                     ORDER BY n.created_at DESC
                     LIMIT 30
-                    """
+                    """,
+                    params,
                 ).fetchall()
                 json_response(self, rows_to_dicts(rows))
                 return
@@ -1299,7 +1393,10 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     ORDER BY p.updated_at DESC
                     """
                 ).fetchall()
-                json_response(self, rows_to_dicts(rows))
+                projects = rows_to_dicts(rows)
+                projects = [project for project in projects if project_visible_for_account(project, account)]
+                projects = [sanitize_project_for_account(project, account) for project in projects]
+                json_response(self, projects)
                 return
 
             if path == "/api/projects/archive":
@@ -1319,13 +1416,20 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     ORDER BY p.archived_at DESC, p.updated_at DESC
                     """
                 ).fetchall()
-                json_response(self, rows_to_dicts(rows))
+                projects = rows_to_dicts(rows)
+                projects = [project for project in projects if project_visible_for_account(project, account)]
+                projects = [sanitize_project_for_account(project, account) for project in projects]
+                json_response(self, projects)
                 return
 
             if path == "/api/estimate-materials":
                 project_id = query.get("project_id", [""])[0]
                 if not project_id:
                     json_response(self, [])
+                    return
+                project = db.execute("SELECT id, foreman_id FROM projects WHERE id = ?", (int(project_id),)).fetchone()
+                if project and not project_visible_for_account(row_to_dict(project), account):
+                    json_response(self, {"error": "Forbidden"}, 403)
                     return
                 rows = db.execute(
                     """
@@ -1343,6 +1447,10 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 project_id = query.get("project_id", [""])[0]
                 if not project_id:
                     json_response(self, [])
+                    return
+                project = db.execute("SELECT id, foreman_id FROM projects WHERE id = ?", (int(project_id),)).fetchone()
+                if project and not project_visible_for_account(row_to_dict(project), account):
+                    json_response(self, {"error": "Forbidden"}, 403)
                     return
                 rows = db.execute(
                     "SELECT * FROM work_items WHERE project_id = ? ORDER BY section, title",
@@ -1389,7 +1497,9 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     ORDER BY title
                     """
                 ).fetchall()
-                json_response(self, {"projects": rows_to_dicts(projects), "suppliers": rows_to_dicts(suppliers)})
+                project_rows = rows_to_dicts(projects)
+                project_rows = [project for project in project_rows if project_visible_for_account(project, account)]
+                json_response(self, {"projects": project_rows, "suppliers": rows_to_dicts(suppliers)})
                 return
 
             variation_detail = re.match(r"^/api/variations/(\d+)$", path)
@@ -1440,14 +1550,25 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     ORDER BY COALESCE(b.created_at, m.created_at) DESC, m.id
                     """
                 ).fetchall()
-                json_response(self, rows_to_dicts(rows))
+                material_rows = rows_to_dicts(rows)
+                if account_role(account) == "foreman":
+                    material_rows = [
+                        item
+                        for item in material_rows
+                        if int(item.get("project_foreman_id") or 0) == account_user_id(account)
+                        or int(item.get("creator_id") or 0) == account_user_id(account)
+                    ]
+                json_response(self, material_rows)
                 return
 
             if path.startswith("/api/projects/"):
                 project_id = int(path.rsplit("/", 1)[-1])
-                detail = get_project_detail(project_id)
+                detail = get_project_detail(project_id, account)
                 if not detail:
                     json_response(self, {"error": "Project not found"}, 404)
+                    return
+                if not project_visible_for_account(detail, account):
+                    json_response(self, {"error": "Forbidden"}, 403)
                     return
                 json_response(self, detail)
                 return
@@ -1481,7 +1602,28 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 "/api/events": "SELECT e.*, p.title AS project_title, u.name AS author_name FROM events e JOIN projects p ON p.id = e.project_id LEFT JOIN users u ON u.id = e.author_id ORDER BY e.created_at DESC",
             }
             if path in endpoints:
-                json_response(self, rows_to_dicts(db.execute(endpoints[path]).fetchall()))
+                if path in {"/api/contracts", "/api/events"} and account_role(account) not in {"owner", "construction_manager", "sales_manager"}:
+                    json_response(self, [])
+                    return
+                if path == "/api/variations" and account_role(account) not in {"owner", "construction_manager", "estimator"}:
+                    json_response(self, [])
+                    return
+                rows = rows_to_dicts(db.execute(endpoints[path]).fetchall())
+                if path == "/api/tasks":
+                    role = account_role(account)
+                    user_id = account_user_id(account)
+                    if role == "foreman":
+                        rows = [
+                            row
+                            for row in rows
+                            if int(row.get("project_foreman_id") or 0) == user_id
+                            or int(row.get("assignee_id") or 0) == user_id
+                            or int(row.get("reviewer_id") or 0) == user_id
+                            or int(row.get("creator_id") or 0) == user_id
+                        ]
+                    elif role not in {"owner", "construction_manager", "technical_supervisor"}:
+                        rows = []
+                json_response(self, rows)
                 return
 
             if path == "/api/documents":
@@ -1508,14 +1650,67 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         ORDER BY d.created_at DESC
                         """
                     ).fetchall()
-                json_response(self, rows_to_dicts(rows))
+                documents = rows_to_dicts(rows)
+                if related_type != "knowledge_base":
+                    documents = filter_documents_for_account(documents, account)
+                json_response(self, documents)
                 return
 
         self.send_error(404)
 
     def handle_api_post(self, path: str, data: dict) -> None:
         with connect() as db:
+            account = current_access_account(self) or {}
             if path == "/api/projects":
+                ensure_project_action_allowed(account, "update")
+                if data.get("save_mode") == "draft":
+                    data["title"] = str(data.get("title") or "").strip() or "Новый объект"
+                    data["customer_name"] = str(data.get("customer_name") or "").strip() or "Не указан"
+                    cursor = db.execute(
+                        """
+                        INSERT INTO projects (
+                            title, customer_name, status, address, navigator_url, bitrix_ref,
+                            smetter_ref, estimate_file_name, work_task_file_name, estimate_version, estimate_uploaded_by,
+                            sales_manager_id, construction_manager_id, foreman_id, estimator_id,
+                            procurement_manager_id, tech_supervisor_id, planned_end_date, main_estimate_amount
+                        )
+                        VALUES (?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?)
+                        """,
+                        (
+                            data.get("title"),
+                            data.get("customer_name"),
+                            data.get("address") or "",
+                            data.get("navigator_url") or "https://yandex.ru/maps",
+                            data.get("bitrix_ref") or "",
+                            data.get("smetter_ref") or "",
+                            data.get("estimate_file_name") or "",
+                            data.get("work_task_file_name") or "",
+                            data.get("estimate_version") or "",
+                            account_user_id(account) or 3,
+                            account_user_id(account) or 3,
+                            user_id_by_role(db, "construction_manager") or 2,
+                            data.get("planned_end_date") or "",
+                            number_value(data.get("main_estimate_amount")),
+                        ),
+                    )
+                    project_id = cursor.lastrowid
+                    initial_documents = data.get("initial_documents") or []
+                    save_initial_documents(db, project_id, initial_documents)
+                    imported_materials = import_smetter_materials_from_documents(db, project_id, initial_documents)
+                    imported_works = import_smetter_works_from_documents(db, project_id, initial_documents)
+                    db.execute(
+                        """
+                        INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
+                        VALUES (?, 'document', ?, ?, 'internal', 'handover')
+                        """,
+                        (project_id, "Карточка объекта сохранена как черновик.", account_user_id(account) or 3),
+                    )
+                    db.commit()
+                    detail = get_project_detail(project_id, account)
+                    detail["imported_materials_count"] = imported_materials
+                    detail["imported_works_count"] = imported_works
+                    json_response(self, detail, 201)
+                    return
                 require_fields(
                     data,
                     [
@@ -1576,7 +1771,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     ),
                 )
                 db.commit()
-                detail = get_project_detail(project_id)
+                detail = get_project_detail(project_id, account)
                 detail["imported_materials_count"] = imported_materials
                 detail["imported_works_count"] = imported_works
                 json_response(self, detail, 201)
@@ -1586,9 +1781,62 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
             if project_action:
                 project_id = int(project_action.group(1))
                 action = project_action.group(2)
+                ensure_project_action_allowed(account, action)
                 project = db.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
                 if not project:
                     json_response(self, {"error": "Project not found"}, 404)
+                    return
+
+                if action == "submit" and project["status"] not in {"draft", "revision_requested"}:
+                    raise ValueError("Передать можно только черновик или объект, возвращенный на доработку.")
+                if action in {"accept", "return"} and project["status"] != "submitted_to_construction":
+                    raise ValueError("Принять или вернуть можно только объект, переданный руководителю строительства.")
+
+                if action == "update" and data.get("save_mode") == "draft":
+                    db.execute(
+                        """
+                        UPDATE projects
+                        SET title = ?,
+                            customer_name = ?,
+                            address = ?,
+                            bitrix_ref = ?,
+                            smetter_ref = ?,
+                            planned_end_date = ?,
+                            main_estimate_amount = ?,
+                            estimate_file_name = ?,
+                            work_task_file_name = ?,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (
+                            str(data.get("title") or "").strip() or project["title"] or "Новый объект",
+                            str(data.get("customer_name") or "").strip() or project["customer_name"] or "Не указан",
+                            data.get("address") or "",
+                            data.get("bitrix_ref") or "",
+                            data.get("smetter_ref") or "",
+                            data.get("planned_end_date") or "",
+                            number_value(data.get("main_estimate_amount")),
+                            data.get("estimate_file_name") or project["estimate_file_name"] or "",
+                            data.get("work_task_file_name") or project["work_task_file_name"] or "",
+                            project_id,
+                        ),
+                    )
+                    initial_documents = data.get("initial_documents") or []
+                    save_initial_documents(db, project_id, initial_documents)
+                    imported_materials = import_smetter_materials_from_documents(db, project_id, initial_documents)
+                    imported_works = import_smetter_works_from_documents(db, project_id, initial_documents)
+                    db.execute(
+                        """
+                        INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
+                        VALUES (?, 'document', ?, ?, 'internal', 'handover')
+                        """,
+                        (project_id, "Черновик карточки объекта сохранен.", account_user_id(account) or 3),
+                    )
+                    db.commit()
+                    detail = get_project_detail(project_id, account)
+                    detail["imported_materials_count"] = imported_materials
+                    detail["imported_works_count"] = imported_works
+                    json_response(self, detail)
                     return
 
                 if action == "update":
@@ -1662,7 +1910,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             (project_id, f"Задание на работы из Сметтера обновлено: {imported_works} строк."),
                         )
                     db.commit()
-                    detail = get_project_detail(project_id)
+                    detail = get_project_detail(project_id, account)
                     detail["imported_materials_count"] = imported_materials
                     detail["imported_works_count"] = imported_works
                     json_response(self, detail)
@@ -1712,7 +1960,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         (project_id, "Менеджер передал объект руководителю строительства на проверку."),
                     )
                     db.commit()
-                    json_response(self, get_project_detail(project_id))
+                    json_response(self, get_project_detail(project_id, account))
                     return
 
                 if action == "return":
@@ -1744,7 +1992,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         (project_id, f"Руководитель строительства вернул объект на доработку: {comment}"),
                     )
                     db.commit()
-                    json_response(self, get_project_detail(project_id))
+                    json_response(self, get_project_detail(project_id, account))
                     return
 
                 if action == "accept":
@@ -1801,7 +2049,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         (project_id, "Руководитель строительства принял объект в работу и назначил ответственных."),
                     )
                     db.commit()
-                    json_response(self, get_project_detail(project_id))
+                    json_response(self, get_project_detail(project_id, account))
                     return
 
                 if action == "archive":
@@ -1826,7 +2074,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         (project_id, f"Объект отправлен в архив: {reason}"),
                     )
                     db.commit()
-                    json_response(self, get_project_detail(project_id))
+                    json_response(self, get_project_detail(project_id, account))
                     return
 
                 if action == "restore":
@@ -1850,7 +2098,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         (project_id,),
                     )
                     db.commit()
-                    json_response(self, get_project_detail(project_id))
+                    json_response(self, get_project_detail(project_id, account))
                     return
 
                 if action == "delete":

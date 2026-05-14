@@ -4,6 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Строительный контур MVP</title>
+    <link rel="icon" type="image/png" href="/static/assets/g2-logo.png" />
+    <link rel="apple-touch-icon" href="/static/assets/g2-logo.png" />
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
@@ -323,6 +325,7 @@
         </div>
         <div class="form-actions">
           <button type="button" class="secondary" data-close="projectDialog">Отмена</button>
+          <button class="secondary" id="projectDraftButton" type="submit" formnovalidate data-save-mode="draft">Сохранить черновик</button>
           <button class="primary" id="projectSubmitButton" type="submit">Создать</button>
         </div>
       </form>
