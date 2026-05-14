@@ -6,7 +6,7 @@
     <title>Строительный контур MVP</title>
     <link rel="icon" type="image/png" href="/static/assets/g2-logo.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260514-feedback" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260514-tasks" />
   </head>
   <body>
     <div class="app">
@@ -369,6 +369,19 @@
       </form>
     </dialog>
 
+    <dialog id="taskDetailDialog">
+      <div class="form">
+        <div class="modal-head">
+          <h2 id="taskDetailTitle">Задача</h2>
+          <button type="button" class="icon" data-close="taskDetailDialog">×</button>
+        </div>
+        <div id="taskDetailContent"></div>
+        <div class="form-actions">
+          <button type="button" class="secondary" data-close="taskDetailDialog">Закрыть</button>
+        </div>
+      </div>
+    </dialog>
+
     <dialog id="materialDialog">
       <form method="dialog" class="form" id="materialForm">
         <div class="modal-head">
@@ -447,6 +460,10 @@
         </div>
         <label>Объект <select name="project_id" required></select></label>
         <label>Название <input name="title" required placeholder="Что появилось сверх основной сметы" /></label>
+        <section class="hint-box neutral">
+          <strong>Согласование</strong>
+          <p>Допработа или отклонение фиксируется как вопрос на решение. После проверки руководители определяют, за чей счет позиция и что делать дальше.</p>
+        </section>
         <div class="grid-2">
           <label>
             Тип
@@ -472,10 +489,10 @@
           </label>
         </div>
         <div class="grid-2">
-          <label>Сумма, ₽ <input name="amount" type="number" min="0" step="1000" /></label>
-          <label>Срок решения <input name="due_date" type="date" /></label>
+          <label>Ориентировочная сумма, ₽ <input name="amount" type="number" min="0" step="1000" /></label>
+          <label>Срок принятия решения <input name="due_date" type="date" /></label>
         </div>
-        <label>Описание <textarea name="description" rows="3" placeholder="Причина, фото/документы, что нужно решить"></textarea></label>
+        <label>Причина и вложения <textarea name="description" rows="3" placeholder="Что произошло, кто обнаружил, какие фото/документы нужны для решения"></textarea></label>
         <div class="form-actions">
           <button type="button" class="secondary" data-close="variationDialog">Отмена</button>
           <button class="primary" type="submit">Создать</button>
@@ -563,6 +580,6 @@
     </dialog>
 
     <div class="toast" id="toast"></div>
-    <script src="/static/app.js?v=20260514-feedback"></script>
+    <script src="/static/app.js?v=20260514-tasks"></script>
   </body>
 </html>

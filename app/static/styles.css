@@ -1682,6 +1682,11 @@ h2 {
   line-height: 1;
 }
 
+.task-status-help {
+  margin: -2px 0 10px;
+  font-size: 12px;
+}
+
 .stat-bar {
   height: 5px;
   border-radius: 999px;
@@ -1787,6 +1792,16 @@ h2 {
   word-break: break-word;
 }
 
+.task-title-button {
+  align-self: start;
+  padding: 0;
+  color: var(--text);
+  font-weight: 700;
+  text-align: left;
+  text-decoration: none;
+  white-space: normal;
+}
+
 .task-main .pill {
   max-width: 100%;
   white-space: normal;
@@ -1869,6 +1884,40 @@ h2 {
 .task-project-row.active {
   border-color: var(--brand);
   background: #f7fbfa;
+}
+
+.task-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.task-detail-grid > div {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+  background: var(--surface);
+}
+
+.task-detail-grid span,
+.task-detail-grid strong {
+  display: block;
+}
+
+.task-timeline {
+  display: grid;
+  gap: 8px;
+}
+
+.task-timeline-item {
+  border-left: 3px solid var(--brand);
+  padding-left: 10px;
+}
+
+.task-timeline-item span {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .stack-line {
@@ -2236,6 +2285,10 @@ textarea {
   }
 
   .task-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .task-detail-grid {
     grid-template-columns: 1fr;
   }
 

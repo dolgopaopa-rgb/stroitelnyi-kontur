@@ -264,12 +264,45 @@ def parse_smetter_purchase_xlsx(file_bytes: bytes) -> list[dict]:
     materials: list[dict] = []
     stage = ""
     subsection = ""
+    simple_materials_mode = False
 
     for row in rows:
         cells = row + [""] * 13
         col1 = cell_text(cells[0])
         col2 = cell_text(cells[1])
         col3 = cell_text(cells[2])
+        col4 = cell_text(cells[3])
+        lower2 = col2.lower()
+
+        if "используемые материалы" in lower2 or "материалы и механизмы" in lower2:
+            simple_materials_mode = True
+            stage = ""
+            subsection = ""
+            continue
+
+        if simple_materials_mode:
+            if not col1 and col2 and not col3 and not col4:
+                stage = col2
+                subsection = ""
+                continue
+            looks_like_group_number = bool(re.match(r"^\s*\d+(\.0)?\s*$", col1))
+            if looks_like_group_number and col2 and not col3 and not col4:
+                subsection = col2
+                continue
+            looks_like_material_number = bool(re.match(r"^\s*\d+(\.\d+)+\s*$", col1))
+            quantity = number_value(cells[3])
+            if looks_like_material_number and col2 and col3:
+                materials.append(
+                    {
+                        "section": " / ".join(part for part in (stage, subsection) if part),
+                        "name": col2,
+                        "unit": col3,
+                        "estimated_quantity": quantity,
+                        "unit_price": 0,
+                        "total_price": 0,
+                    }
+                )
+                continue
 
         if re.match(r"^\d+\.", col1):
             stage = col1
@@ -2176,12 +2209,12 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         UPDATE projects
                         SET status = 'archived',
                             archived_at = CURRENT_TIMESTAMP,
-                            archived_by = 2,
+                            archived_by = ?,
                             archive_reason = ?,
                             updated_at = CURRENT_TIMESTAMP
                         WHERE id = ?
                         """,
-                        (reason, project_id),
+                        (account_user_id(account) or project["construction_manager_id"] or user_id_by_role(db, "construction_manager"), reason, project_id),
                     )
                     db.execute(
                         """

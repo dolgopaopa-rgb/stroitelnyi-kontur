@@ -18,6 +18,8 @@ const state = {
   feedbackFilter: "all",
   selectedFeedbackIds: new Set(),
   selectedTaskProjectId: null,
+  lastTasks: [],
+  notificationsOpen: false,
   selectedWorkProjectId: null,
   openWorkStages: {},
 };
@@ -563,7 +565,7 @@ function initSortableZones(scope = document) {
   });
 }
 
-async function loadAll() {
+async function loadCoreData() {
   const [users, projects, archivedProjects] = await Promise.all([api("/api/users"), api("/api/projects"), api("/api/projects/archive")]);
   state.users = users;
   state.projects = projects;
@@ -575,6 +577,10 @@ async function loadAll() {
   if (!state.selectedProjectId && projects.length) state.selectedProjectId = projects[0].id;
   fillSelects();
   syncNavigationAccess();
+}
+
+async function loadAll() {
+  await loadCoreData();
   await Promise.all([
     renderDashboard(),
     renderNotifications(),
@@ -1064,7 +1070,7 @@ function renderTaskStats(tasks, activeFilter = state.taskFilter) {
     ["all", "Все", tasks.length, ""],
     ["active", "В работе", stats.active, "warning"],
     ["returned", "На доработке", stats.returned, "danger"],
-    ["waiting", "Не принято", stats.waiting, "blue"],
+    ["waiting", "Ждет приемки", stats.waiting, "blue"],
     ["accepted", "Принято", stats.accepted, "success"],
     ["overdue", "Просрочено", stats.overdue, "danger"],
   ];
@@ -1138,7 +1144,7 @@ async function renderDashboard() {
 async function renderNotifications() {
   const rows = await api("/api/notifications");
   qs("#notificationRows").innerHTML = rows.length
-    ? `<details class="inline-collapsible notification-collapsible">
+    ? `<details class="inline-collapsible notification-collapsible" ${state.notificationsOpen ? "open" : ""}>
         <summary>Показать уведомления: ${rows.length}</summary>
         <div class="list compact-hidden-list">
           ${rows
@@ -1160,6 +1166,9 @@ async function renderNotifications() {
         </div>
       </details>`
     : `<p class="muted">Уведомлений пока нет.</p>`;
+  qs(".notification-collapsible")?.addEventListener("toggle", (event) => {
+    state.notificationsOpen = event.currentTarget.open;
+  });
 }
 
 async function renderProjects() {
@@ -1528,6 +1537,7 @@ function tabTitle(tab) {
 
 async function renderTasks() {
   const allTasks = visibleTasksForRole(await api("/api/tasks"));
+  state.lastTasks = allTasks;
   const grouped = allTasks.reduce((acc, task) => {
     acc[task.project_id] = acc[task.project_id] || {
       id: task.project_id,
@@ -1570,7 +1580,9 @@ async function renderTasks() {
         })
         .join("")
     : `<p class="muted">${currentRoleBase() === "foreman" ? "За этим прорабом пока нет объектов с задачами." : "Задач пока нет."}</p>`;
-  qs("#taskStats").innerHTML = renderTaskStats(tasks);
+  qs("#taskStats").innerHTML =
+    renderTaskStats(tasks) +
+    `<p class="muted task-status-help">Ждет приемки — исполнитель отметил выполнение, но проверяющий еще не принял. На доработке — проверяющий вернул задачу с комментарием и новым сроком.</p>`;
   const visibleTasks = tasks.filter((task) => taskMatchesFilter(task, state.taskFilter));
   qs("#taskRows").innerHTML = visibleTasks.length
     ? visibleTasks
@@ -1578,12 +1590,12 @@ async function renderTasks() {
           const canComplete = task.status !== "accepted" && task.status !== "completed_pending_acceptance" && (canActAsTaskUser(task, "assignee") || ["owner", "construction_manager"].includes(currentRoleBase()));
           const canReview = task.status === "completed_pending_acceptance" && (["owner", "construction_manager"].includes(currentRoleBase()) || canActAsTaskUser(task, "reviewer"));
           return `
-            <div class="row task-row">
+            <article class="row task-row">
               <div class="row-grid">
                 <div class="task-main">
-                  <strong>${task.title}</strong>
+                  <button class="link-button task-title-button" type="button" data-open-task="${task.id}">${task.title}</button>
                   <div class="stack-line">${pill(label(task.status), taskStatusLevel(task.status))}${pill(task.due_date || "без срока", levelByDate(task.due_date))}</div>
-                  <div class="muted">${task.project_title} · поставил: ${task.creator_name || "не указано"}</div>
+                  <div class="muted">${task.project_title} · поставил: ${task.creator_name || "не указано"} · создана: ${formatDateRu(task.created_at)}</div>
                   ${task.description ? `<div>${task.description}</div>` : ""}
                   ${task.rejection_comment ? `<div class="muted">Комментарий по возврату: ${task.rejection_comment}</div>` : ""}
                 </div>
@@ -1594,7 +1606,7 @@ async function renderTasks() {
                 ${canReview ? `<button class="primary" data-task-action="accept" data-task-id="${task.id}">Принять</button><button class="secondary" data-task-action="return" data-task-id="${task.id}">Вернуть</button>` : ""}
                 ${canDeleteTask(task) ? `<button class="danger-button" data-task-action="delete" data-task-id="${task.id}">Удалить</button>` : ""}
               </div>
-            </div>`;
+            </article>`;
         })
         .join("")
     : `<p class="muted">${tasks.length ? "В этом фильтре задач нет." : "Задач пока нет."}</p>`;
@@ -1618,6 +1630,59 @@ function buildWorkTree(works) {
     acc[stage].groups[group].push(row);
     return acc;
   }, {});
+}
+
+function taskTimeline(task) {
+  const rows = [
+    ["Поставлена", task.created_at, task.creator_name || "автор не указан"],
+    ["Выполнена исполнителем", task.completed_at, task.assignee_name || "исполнитель не указан"],
+    ["Принята", task.accepted_at, task.reviewer_name || task.creator_name || "принимающий не указан"],
+  ].filter(([, date]) => date);
+  if (task.status === "returned" && task.rejection_comment) {
+    rows.push(["Возвращена на доработку", task.updated_at, task.rejection_comment]);
+  }
+  return rows.length
+    ? `<div class="task-timeline">${rows
+        .map(
+          ([title, date, note]) => `
+          <div class="task-timeline-item">
+            <strong>${title}</strong>
+            <span>${formatDateRu(date)}</span>
+            <p class="muted">${note}</p>
+          </div>`
+        )
+        .join("")}</div>`
+    : `<p class="muted">Истории по задаче пока нет.</p>`;
+}
+
+function openTaskDetail(taskId) {
+  const task = state.lastTasks.find((item) => Number(item.id) === Number(taskId));
+  if (!task) {
+    showToast("Задача не найдена");
+    return;
+  }
+  qs("#taskDetailTitle").textContent = task.title || "Задача";
+  qs("#taskDetailContent").innerHTML = `
+    <section class="workflow-panel compact-workflow">
+      <div class="stack-line">
+        <h3>${task.project_title || "Объект не указан"}</h3>
+        ${pill(label(task.status), taskStatusLevel(task.status))}
+        ${pill(task.due_date || "без срока", levelByDate(task.due_date))}
+      </div>
+      <div class="task-detail-grid">
+        <div><span class="muted">Поставил</span><strong>${task.creator_name || "не указано"}</strong></div>
+        <div><span class="muted">Исполнитель</span><strong>${task.assignee_name || "не назначен"}</strong></div>
+        <div><span class="muted">Принимает</span><strong>${task.reviewer_name || task.creator_name || "не назначен"}</strong></div>
+        <div><span class="muted">Дата постановки</span><strong>${formatDateRu(task.created_at)}</strong></div>
+      </div>
+      ${task.description ? `<p class="preserve-lines">${task.description}</p>` : ""}
+      ${task.rejection_comment ? `<div class="hint-box warning"><strong>Причина возврата / непринятия</strong><p>${task.rejection_comment}</p></div>` : ""}
+    </section>
+    <section class="workflow-panel">
+      <h3>История задачи</h3>
+      ${taskTimeline(task)}
+    </section>`;
+  qs("#taskDetailDialog").showModal();
 }
 
 function isWorkStageOpen(projectId, stage) {
@@ -2278,11 +2343,15 @@ async function refreshLiveData() {
   if (hasOpenDialog()) return;
   const selectedProjectId = state.selectedProjectId;
   const selectedTaskProjectId = state.selectedTaskProjectId;
-  await loadAll();
+  await loadCoreData();
   state.selectedProjectId = selectedProjectId;
   state.selectedTaskProjectId = selectedTaskProjectId;
-  if (selectedProjectId) await renderProjectDetail(selectedProjectId);
-  if (state.view === "tasks") await renderTasks();
+  await renderNotifications();
+  if (state.view === "dashboard") {
+    await renderDashboard();
+  } else if (state.view === "feedback") {
+    await renderFeedback();
+  }
 }
 
 function setProjectFileFieldsRequired(required) {
@@ -2337,6 +2406,8 @@ async function handleProjectAction(button) {
   }
 
   if (action === "archive") {
+    const confirmed = window.confirm("Отправить объект в архив? Активные задачи и заявки по объекту будут скрыты из рабочих реестров. Вернуть объект сможет ген.директор или руководитель строительства.");
+    if (!confirmed) return;
     payload = { reason: qs("#archiveReason")?.value || "" };
     message = "Объект отправлен в архив";
   }
@@ -2584,6 +2655,12 @@ function bindEvents() {
       state.selectedTaskProjectId = Number(taskProjectButton.dataset.taskProject);
       state.taskFilter = "all";
       await renderTasks();
+      return;
+    }
+
+    const openTaskButton = event.target.closest("[data-open-task]");
+    if (openTaskButton) {
+      openTaskDetail(openTaskButton.dataset.openTask);
       return;
     }
 
