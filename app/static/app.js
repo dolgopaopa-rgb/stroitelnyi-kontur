@@ -2150,6 +2150,14 @@ function renderFeedbackAttachments(attachments = []) {
                 <span>Открыть скриншот</span>
               </a>`;
           }
+          if (url && type === "video") {
+            const thumbnail = attachment.thumbnail_url || attachment.thumbnail?.url || "";
+            return `
+              <a class="feedback-attachment image" href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer">
+                ${thumbnail ? `<img src="${escapeAttr(thumbnail)}" alt="${escapeAttr(title)}" loading="lazy" />` : ""}
+                <span>Открыть видео${attachment.duration ? ` · ${attachment.duration} сек.` : ""}</span>
+              </a>`;
+          }
           if (url) {
             return `<a class="feedback-attachment" href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(title)}</a>`;
           }
