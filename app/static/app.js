@@ -2136,6 +2136,31 @@ function feedbackStatusLevel(status) {
   }[status] || "";
 }
 
+function renderFeedbackAttachments(attachments = []) {
+  if (!Array.isArray(attachments) || !attachments.length) return "";
+  return `
+    <div class="feedback-attachments">
+      ${attachments
+        .map((attachment, index) => {
+          const url = attachment.url || attachment.payload?.url || "";
+          const type = attachment.type || "file";
+          const title = attachment.name || `${type} ${index + 1}`;
+          if (url && type === "image") {
+            return `
+              <a class="feedback-attachment image" href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer">
+                <img src="${escapeAttr(url)}" alt="${escapeAttr(title)}" loading="lazy" />
+                <span>Открыть скриншот</span>
+              </a>`;
+          }
+          if (url) {
+            return `<a class="feedback-attachment" href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(title)}</a>`;
+          }
+          return `<span class="feedback-attachment muted">${escapeHtml(title)}</span>`;
+        })
+        .join("")}
+    </div>`;
+}
+
 async function renderFeedback() {
   const rowsNode = qs("#feedbackRows");
   const statsNode = qs("#feedbackStats");
@@ -2184,7 +2209,7 @@ async function renderFeedback() {
               </div>
               <div class="muted">${escapeHtml(item.chat_title || item.chat_id || "Чат MAX")} · ${formatDateRu(item.created_at)}</div>
               <p>${escapeHtml(item.text || "Без текста").replace(/\n/g, "<br>")}</p>
-              ${attachments.length ? `<div class="muted">Вложений: ${attachments.length}</div>` : ""}
+              ${renderFeedbackAttachments(attachments)}
               ${item.decision_comment ? `<div class="muted">Комментарий: ${escapeHtml(item.decision_comment)}</div>` : ""}
             </div>
             <div class="feedback-actions">
