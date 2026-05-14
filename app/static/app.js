@@ -1265,7 +1265,6 @@ async function renderProjectDetail(projectId) {
       ${pill(`Сметчик: ${project.estimator_name || "не назначен"}`)}
       ${pill(`Снабжение: ${project.procurement_name || "не назначено"}`)}
       ${pill(`Технадзор: ${project.tech_supervisor_name || "не назначен"}`)}
-      ${canViewExternalRefs() ? externalRefLink(project.bitrix_ref, project.bitrix_ref ? "Открыть Bitrix" : "Bitrix не указан", "blue") : ""}
       ${canViewExternalRefs() ? externalRefLink(project.smetter_ref, project.smetter_ref ? "Открыть Сметтер" : "Сметтер не указан", "success") : ""}
     </div>
     <div class="project-detail-blocks sortable-zone" data-sortable-zone="project-detail-v2">
@@ -2387,7 +2386,6 @@ async function openProjectEditDialog(projectId) {
   form.elements.title.value = project.title || "";
   form.elements.customer_name.value = project.customer_name || "";
   form.elements.address.value = project.address || "";
-  form.elements.bitrix_ref.value = project.bitrix_ref || "";
   form.elements.smetter_ref.value = project.smetter_ref || "";
   form.elements.planned_end_date.value = project.planned_end_date || "";
   form.elements.main_estimate_amount.value = project.main_estimate_amount || "";
@@ -2427,7 +2425,6 @@ async function handleProjectAction(button) {
       title: qs("#projectEditTitle")?.value,
       customer_name: qs("#projectEditCustomer")?.value,
       address: qs("#projectEditAddress")?.value,
-      bitrix_ref: qs("#projectEditBitrix")?.value,
       smetter_ref: qs("#projectEditSmetter")?.value,
       planned_end_date: qs("#projectEditEndDate")?.value,
       main_estimate_amount: qs("#projectEditEstimate")?.value,

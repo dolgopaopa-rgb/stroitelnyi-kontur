@@ -264,45 +264,12 @@ def parse_smetter_purchase_xlsx(file_bytes: bytes) -> list[dict]:
     materials: list[dict] = []
     stage = ""
     subsection = ""
-    simple_materials_mode = False
 
     for row in rows:
         cells = row + [""] * 13
         col1 = cell_text(cells[0])
         col2 = cell_text(cells[1])
         col3 = cell_text(cells[2])
-        col4 = cell_text(cells[3])
-        lower2 = col2.lower()
-
-        if "используемые материалы" in lower2 or "материалы и механизмы" in lower2:
-            simple_materials_mode = True
-            stage = ""
-            subsection = ""
-            continue
-
-        if simple_materials_mode:
-            if not col1 and col2 and not col3 and not col4:
-                stage = col2
-                subsection = ""
-                continue
-            looks_like_group_number = bool(re.match(r"^\s*\d+(\.0)?\s*$", col1))
-            if looks_like_group_number and col2 and not col3 and not col4:
-                subsection = col2
-                continue
-            looks_like_material_number = bool(re.match(r"^\s*\d+(\.\d+)+\s*$", col1))
-            quantity = number_value(cells[3])
-            if looks_like_material_number and col2 and col3:
-                materials.append(
-                    {
-                        "section": " / ".join(part for part in (stage, subsection) if part),
-                        "name": col2,
-                        "unit": col3,
-                        "estimated_quantity": quantity,
-                        "unit_price": 0,
-                        "total_price": 0,
-                    }
-                )
-                continue
 
         if re.match(r"^\d+\.", col1):
             stage = col1
@@ -354,6 +321,14 @@ def parse_smetter_work_task_xlsx(file_bytes: bytes) -> list[dict]:
         quantity = number_value(cells[5]) if smetter_unit else number_value(cells[3])
         unit_price = number_value(cells[6]) if smetter_unit else number_value(cells[4])
         total_price = number_value(cells[7]) if smetter_unit else number_value(cells[5])
+
+        if (
+            "используемые материалы" in lower1
+            or "используемые материалы" in lower2
+            or "материалы и механизмы" in lower1
+            or "материалы и механизмы" in lower2
+        ):
+            break
 
         if not col1 and col2 and not unit and quantity == 0 and not any(word in lower2 for word in {"итого", "всего"}):
             stage = col2
@@ -1831,7 +1806,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             data.get("customer_name"),
                             data.get("address") or "",
                             data.get("navigator_url") or "https://yandex.ru/maps",
-                            data.get("bitrix_ref") or "",
+                            "",
                             data.get("smetter_ref") or "",
                             data.get("estimate_file_name") or "",
                             data.get("work_task_file_name") or "",
@@ -1867,7 +1842,6 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         ("title", "Название"),
                         ("customer_name", "Заказчик"),
                         ("address", "Адрес"),
-                        ("bitrix_ref", "Bitrix"),
                         ("smetter_ref", "Сметтер"),
                         ("planned_end_date", "Плановый срок окончания работ по договору"),
                         ("main_estimate_amount", "Смета"),
@@ -1890,7 +1864,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         data.get("customer_name"),
                         data.get("address"),
                         data.get("navigator_url") or "https://yandex.ru/maps",
-                        data.get("bitrix_ref"),
+                        "",
                         data.get("smetter_ref"),
                         data.get("estimate_file_name"),
                         data.get("work_task_file_name"),
@@ -1962,7 +1936,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             str(data.get("title") or "").strip() or project["title"] or "Новый объект",
                             str(data.get("customer_name") or "").strip() or project["customer_name"] or "Не указан",
                             data.get("address") or "",
-                            data.get("bitrix_ref") or "",
+                            "",
                             data.get("smetter_ref") or "",
                             data.get("planned_end_date") or "",
                             number_value(data.get("main_estimate_amount")),
@@ -1996,7 +1970,6 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             ("title", "Название"),
                             ("customer_name", "Заказчик"),
                             ("address", "Адрес"),
-                            ("bitrix_ref", "Bitrix"),
                             ("smetter_ref", "Сметтер"),
                             ("planned_end_date", "Плановый срок окончания работ по договору"),
                             ("main_estimate_amount", "Смета"),
@@ -2023,7 +1996,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             data.get("title"),
                             data.get("customer_name"),
                             data.get("address"),
-                            data.get("bitrix_ref"),
+                            "",
                             data.get("smetter_ref"),
                             data.get("planned_end_date"),
                             number_value(data.get("main_estimate_amount")),
@@ -2071,7 +2044,6 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         ("title", "Название"),
                         ("customer_name", "Заказчик"),
                         ("address", "Адрес"),
-                        ("bitrix_ref", "Bitrix"),
                         ("smetter_ref", "Сметтер"),
                         ("planned_end_date", "Плановый срок окончания работ по договору"),
                         ("estimate_file_name", "Файл материалов из Сметтера"),
