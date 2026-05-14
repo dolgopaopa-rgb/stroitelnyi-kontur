@@ -1731,13 +1731,22 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 json_response(self, {"id": cursor.lastrowid}, 201)
                 return
 
+            feedback_delete = re.match(r"^/api/feedback/(\d+)/delete$", path)
+            if feedback_delete:
+                if not can_manage_feedback(account):
+                    json_response(self, {"error": "Forbidden"}, 403)
+                    return
+                db.execute("DELETE FROM feedback_items WHERE id = ?", (int(feedback_delete.group(1)),))
+                json_response(self, {"ok": True})
+                return
+
             feedback_action = re.match(r"^/api/feedback/(\d+)/status$", path)
             if feedback_action:
                 if not can_manage_feedback(account):
                     json_response(self, {"error": "Forbidden"}, 403)
                     return
                 status = str(data.get("status") or "new")
-                if status not in {"new", "in_work", "done", "rejected"}:
+                if status not in {"new", "in_work", "done"}:
                     json_response(self, {"error": "Unknown status"}, 400)
                     return
                 db.execute(

@@ -71,7 +71,6 @@ const statusLabels = {
   feedback_new: "Новое",
   feedback_in_work: "В работе",
   feedback_done: "Обработано",
-  feedback_rejected: "Отклонено",
 };
 
 function qs(selector) {
@@ -2123,7 +2122,6 @@ function feedbackStatusLabel(status) {
     new: "Новое",
     in_work: "В работе",
     done: "Обработано",
-    rejected: "Отклонено",
   }[status] || status || "Новое";
 }
 
@@ -2132,7 +2130,6 @@ function feedbackStatusLevel(status) {
     new: "warning",
     in_work: "blue",
     done: "success",
-    rejected: "danger",
   }[status] || "";
 }
 
@@ -2177,14 +2174,13 @@ async function renderFeedback() {
       acc[item.status] = (acc[item.status] || 0) + 1;
       return acc;
     },
-    { all: 0, new: 0, in_work: 0, done: 0, rejected: 0 }
+    { all: 0, new: 0, in_work: 0, done: 0 }
   );
   const statItems = [
     ["all", "Все"],
     ["new", "Новые"],
     ["in_work", "В работе"],
     ["done", "Обработано"],
-    ["rejected", "Отклонено"],
   ];
   statsNode.innerHTML = statItems
     .map(
@@ -2215,7 +2211,7 @@ async function renderFeedback() {
             <div class="feedback-actions">
               <button class="secondary tiny" type="button" data-feedback-status="in_work" data-feedback-id="${item.id}">В работу</button>
               <button class="secondary tiny" type="button" data-feedback-status="done" data-feedback-id="${item.id}">Готово</button>
-              <button class="danger-button tiny" type="button" data-feedback-status="rejected" data-feedback-id="${item.id}">Отклонить</button>
+              <button class="danger-button tiny" type="button" data-feedback-delete="${item.id}">Удалить</button>
             </div>
           </article>`;
         })
@@ -2572,13 +2568,25 @@ function bindEvents() {
 
     const feedbackStatusButton = event.target.closest("[data-feedback-status]");
     if (feedbackStatusButton) {
-      const comment = feedbackStatusButton.dataset.feedbackStatus === "done" ? "" : prompt("Комментарий к обратной связи", "") || "";
       await api(`/api/feedback/${feedbackStatusButton.dataset.feedbackId}/status`, {
         method: "POST",
-        body: JSON.stringify({ status: feedbackStatusButton.dataset.feedbackStatus, comment }),
+        body: JSON.stringify({ status: feedbackStatusButton.dataset.feedbackStatus, comment: "" }),
       });
       await renderFeedback();
       showToast("Статус обратной связи обновлен");
+      return;
+    }
+
+    const feedbackDeleteButton = event.target.closest("[data-feedback-delete]");
+    if (feedbackDeleteButton) {
+      const confirmed = confirm("Удалить это сообщение из обратной связи?");
+      if (!confirmed) return;
+      await api(`/api/feedback/${feedbackDeleteButton.dataset.feedbackDelete}/delete`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      await renderFeedback();
+      showToast("Сообщение удалено");
       return;
     }
 
