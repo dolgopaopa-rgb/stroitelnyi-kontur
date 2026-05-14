@@ -1,4 +1,9 @@
 {$DOMAIN} {
   encode gzip
+  header X-Robots-Tag "noindex, nofollow, noarchive"
+  header /robots.txt Content-Type "text/plain; charset=utf-8"
+  respond /robots.txt "User-agent: *
+Disallow: /
+" 200
   reverse_proxy app:8765
 }
