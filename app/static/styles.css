@@ -1555,8 +1555,21 @@ h2 {
 
 .feedback-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: start;
+}
+
+.feedback-select {
+  display: flex;
+  align-items: flex-start;
+  padding-top: 2px;
+}
+
+.feedback-select input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--teal);
 }
 
 .feedback-row p {

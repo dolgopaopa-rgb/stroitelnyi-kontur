@@ -1731,6 +1731,24 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 json_response(self, {"id": cursor.lastrowid}, 201)
                 return
 
+            if path == "/api/feedback/delete-bulk":
+                if not can_manage_feedback(account):
+                    json_response(self, {"error": "Forbidden"}, 403)
+                    return
+                ids = []
+                for value in data.get("ids") or []:
+                    try:
+                        ids.append(int(value))
+                    except (TypeError, ValueError):
+                        continue
+                if not ids:
+                    json_response(self, {"deleted": 0})
+                    return
+                placeholders = ",".join("?" for _ in ids)
+                cursor = db.execute(f"DELETE FROM feedback_items WHERE id IN ({placeholders})", ids)
+                json_response(self, {"deleted": cursor.rowcount})
+                return
+
             feedback_delete = re.match(r"^/api/feedback/(\d+)/delete$", path)
             if feedback_delete:
                 if not can_manage_feedback(account):

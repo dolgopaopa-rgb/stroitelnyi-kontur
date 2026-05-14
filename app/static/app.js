@@ -2198,6 +2198,9 @@ async function renderFeedback() {
           const attachments = Array.isArray(item.attachments) ? item.attachments : [];
           return `
           <article class="row feedback-row">
+            <label class="feedback-select">
+              <input type="checkbox" data-feedback-check="${item.id}" />
+            </label>
             <div class="feedback-main">
               <div class="stack-line">
                 <strong>${escapeHtml(item.sender_name || item.sender_id || "MAX")}</strong>
@@ -2478,6 +2481,21 @@ function bindEvents() {
   qs("#newDocumentButton").addEventListener("click", () => qs("#documentDialog").showModal());
   qs("#newEventButton").addEventListener("click", () => qs("#eventDialog").showModal());
   qs("#refreshFeedbackButton")?.addEventListener("click", () => renderFeedback().then(() => showToast("Обратная связь обновлена")));
+  qs("#deleteSelectedFeedbackButton")?.addEventListener("click", async () => {
+    const ids = qsa("[data-feedback-check]:checked").map((input) => Number(input.dataset.feedbackCheck)).filter(Boolean);
+    if (!ids.length) {
+      showToast("Выберите сообщения для удаления");
+      return;
+    }
+    const confirmed = confirm(`Удалить выбранные сообщения: ${ids.length}?`);
+    if (!confirmed) return;
+    const result = await api("/api/feedback/delete-bulk", {
+      method: "POST",
+      body: JSON.stringify({ ids }),
+    });
+    await renderFeedback();
+    showToast(`Удалено сообщений: ${result.deleted || ids.length}`);
+  });
 
   qsa("[data-close]").forEach((button) => button.addEventListener("click", () => qs(`#${button.dataset.close}`).close()));
 
