@@ -41,6 +41,7 @@ def init_db() -> None:
 
             CREATE TABLE IF NOT EXISTS projects (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                customer_id INTEGER,
                 title TEXT NOT NULL,
                 customer_name TEXT,
                 status TEXT NOT NULL DEFAULT 'transferred_to_construction',
@@ -72,6 +73,7 @@ def init_db() -> None:
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (estimate_uploaded_by) REFERENCES users(id),
+                FOREIGN KEY (customer_id) REFERENCES customers(id),
                 FOREIGN KEY (sales_manager_id) REFERENCES users(id),
                 FOREIGN KEY (archived_by) REFERENCES users(id),
                 FOREIGN KEY (construction_manager_id) REFERENCES users(id),
@@ -79,6 +81,17 @@ def init_db() -> None:
                 FOREIGN KEY (estimator_id) REFERENCES users(id),
                 FOREIGN KEY (procurement_manager_id) REFERENCES users(id),
                 FOREIGN KEY (tech_supervisor_id) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS customers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                phone TEXT,
+                email TEXT,
+                comment TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(name)
             );
 
             CREATE TABLE IF NOT EXISTS tasks (
@@ -102,6 +115,22 @@ def init_db() -> None:
                 FOREIGN KEY (assignee_id) REFERENCES users(id),
                 FOREIGN KEY (creator_id) REFERENCES users(id),
                 FOREIGN KEY (reviewer_id) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS task_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id INTEGER NOT NULL,
+                project_id INTEGER NOT NULL,
+                actor_id INTEGER,
+                action TEXT NOT NULL,
+                status_from TEXT,
+                status_to TEXT,
+                comment TEXT,
+                due_date TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+                FOREIGN KEY (actor_id) REFERENCES users(id)
             );
 
             CREATE TABLE IF NOT EXISTS material_requests (
@@ -187,6 +216,7 @@ def init_db() -> None:
                 unit TEXT,
                 quantity REAL NOT NULL DEFAULT 0,
                 reason TEXT NOT NULL DEFAULT 'additional_work',
+                estimate_section TEXT,
                 comment TEXT,
                 status TEXT NOT NULL DEFAULT 'new',
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -216,11 +246,17 @@ def init_db() -> None:
                 amount REAL NOT NULL DEFAULT 0,
                 due_date TEXT,
                 description TEXT,
+                estimate_section TEXT,
+                requester_id INTEGER,
+                approver_id INTEGER,
+                decided_at TEXT,
                 source_type TEXT,
                 source_id INTEGER,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+                FOREIGN KEY (requester_id) REFERENCES users(id),
+                FOREIGN KEY (approver_id) REFERENCES users(id)
             );
 
             CREATE TABLE IF NOT EXISTS contracts (
@@ -248,6 +284,9 @@ def init_db() -> None:
                 owner_id INTEGER,
                 due_date TEXT,
                 related_type TEXT,
+                related_section TEXT,
+                contract_id INTEGER,
+                process_type TEXT,
                 file_name TEXT,
                 file_path TEXT,
                 mime_type TEXT,
@@ -255,7 +294,8 @@ def init_db() -> None:
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
-                FOREIGN KEY (owner_id) REFERENCES users(id)
+                FOREIGN KEY (owner_id) REFERENCES users(id),
+                FOREIGN KEY (contract_id) REFERENCES contracts(id)
             );
 
             CREATE TABLE IF NOT EXISTS events (
@@ -305,6 +345,7 @@ def init_db() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
             CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
+            CREATE INDEX IF NOT EXISTS idx_task_events_task ON task_events(task_id, created_at);
             CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(due_date);
             CREATE INDEX IF NOT EXISTS idx_materials_project ON material_requests(project_id);
             CREATE INDEX IF NOT EXISTS idx_estimate_materials_project ON estimate_materials(project_id);
@@ -329,6 +370,7 @@ def init_db() -> None:
         ensure_column(db, "material_requests", "procurement_comment", "TEXT")
         ensure_column(db, "material_requests", "processed_at", "TEXT")
         ensure_column(db, "projects", "estimate_file_name", "TEXT")
+        ensure_column(db, "projects", "customer_id", "INTEGER")
         ensure_column(db, "projects", "work_task_file_name", "TEXT")
         ensure_column(db, "projects", "estimate_version", "TEXT")
         ensure_column(db, "projects", "estimate_uploaded_by", "INTEGER")
@@ -346,10 +388,14 @@ def init_db() -> None:
         ensure_column(db, "tasks", "completed_at", "TEXT")
         ensure_column(db, "tasks", "accepted_at", "TEXT")
         ensure_column(db, "tasks", "rejection_comment", "TEXT")
+        ensure_column(db, "work_extra_items", "estimate_section", "TEXT")
         ensure_column(db, "documents", "file_name", "TEXT")
         ensure_column(db, "documents", "file_path", "TEXT")
         ensure_column(db, "documents", "mime_type", "TEXT")
         ensure_column(db, "documents", "file_size", "INTEGER")
+        ensure_column(db, "documents", "related_section", "TEXT")
+        ensure_column(db, "documents", "contract_id", "INTEGER")
+        ensure_column(db, "documents", "process_type", "TEXT")
         ensure_column(db, "notifications", "related_type", "TEXT")
         ensure_column(db, "notifications", "related_id", "INTEGER")
         ensure_column(db, "material_request_batches", "foreman_response", "TEXT")
@@ -362,6 +408,10 @@ def init_db() -> None:
         ensure_column(db, "material_request_batches", "archived_at", "TEXT")
         ensure_column(db, "variations", "source_type", "TEXT")
         ensure_column(db, "variations", "source_id", "INTEGER")
+        ensure_column(db, "variations", "estimate_section", "TEXT")
+        ensure_column(db, "variations", "requester_id", "INTEGER")
+        ensure_column(db, "variations", "approver_id", "INTEGER")
+        ensure_column(db, "variations", "decided_at", "TEXT")
         db.execute("CREATE INDEX IF NOT EXISTS idx_materials_batch ON material_requests(batch_id)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_material_batches_project ON material_request_batches(project_id)")
         seed(db)
@@ -369,6 +419,7 @@ def init_db() -> None:
         seed_estimate_materials(db)
         seed_related_records(db)
         backfill_material_request_batches(db)
+        backfill_project_customers(db)
 
 
 def ensure_column(db: sqlite3.Connection, table: str, column: str, definition: str) -> None:
@@ -435,6 +486,29 @@ def backfill_material_request_batches(db: sqlite3.Connection) -> None:
                 row["created_at"],
             ),
         )
+
+
+def backfill_project_customers(db: sqlite3.Connection) -> None:
+    rows = db.execute(
+        """
+        SELECT id, customer_name
+        FROM projects
+        WHERE customer_id IS NULL
+          AND COALESCE(customer_name, '') != ''
+          AND COALESCE(bitrix_ref, '') != '__knowledge_base__'
+        """
+    ).fetchall()
+    for row in rows:
+        customer_name = str(row["customer_name"] or "").strip()
+        if not customer_name:
+            continue
+        customer = db.execute("SELECT id FROM customers WHERE lower(name) = lower(?) LIMIT 1", (customer_name,)).fetchone()
+        if customer:
+            customer_id = customer["id"]
+        else:
+            cursor = db.execute("INSERT INTO customers (name) VALUES (?)", (customer_name,))
+            customer_id = cursor.lastrowid
+        db.execute("UPDATE projects SET customer_id = ? WHERE id = ?", (customer_id, row["id"]))
 
 
 def ensure_core_users(db: sqlite3.Connection) -> None:

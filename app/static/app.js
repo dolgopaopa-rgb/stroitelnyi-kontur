@@ -20,6 +20,7 @@ const state = {
   selectedTaskProjectId: null,
   lastTasks: [],
   notificationsOpen: false,
+  expandedLists: {},
   selectedWorkProjectId: null,
   openWorkStages: {},
 };
@@ -70,7 +71,10 @@ const statusLabels = {
   waiting_to_enter: "Внести в Сметтер",
   not_required: "Не требуется",
   no_basis_decision: "Нет решения",
-  decision_required: "Нужно решение",
+  decision_required: "Требует решения",
+  in_review: "На согласовании",
+  approved: "Согласовано",
+  rejected: "Отклонено",
   feedback_new: "Новое",
   feedback_in_work: "В работе",
   feedback_done: "Обработано",
@@ -201,7 +205,7 @@ const viewAccess = {
   sales_manager: ["dashboard", "projects", "locations", "documents", "feedback"],
   foreman: ["dashboard", "projects", "tasks", "works", "materials", "locations", "documents"],
   procurement_manager: ["dashboard", "projects", "materials", "locations", "documents"],
-  estimator: ["dashboard", "projects", "works", "materials", "variations", "documents"],
+  estimator: ["dashboard", "projects", "tasks", "works", "materials", "variations", "documents"],
   technical_supervisor: ["dashboard", "projects", "tasks", "works", "materials", "locations", "documents"],
 };
 
@@ -391,7 +395,7 @@ function documentFileLink(doc) {
   return `
     <a class="document-link" href="/api/documents/${doc.id}/download" target="_blank" rel="noopener noreferrer">
       <strong>${title}</strong>
-      <span>${type}${file ? ` · ${file}` : ""}</span>
+      <span>${[type, doc.related_section, doc.process_type, file].filter(Boolean).join(" · ")}</span>
     </a>`;
 }
 
@@ -412,14 +416,14 @@ function renderDocumentSummary(docs) {
     </section>`;
 }
 
-function renderCollapsibleList({ items, visibleCount = 3, emptyText = "Пока пусто.", renderItem, moreLabel = "Показать еще" }) {
+function renderCollapsibleList({ items, visibleCount = 3, emptyText = "Пока пусто.", renderItem, moreLabel = "Показать еще", key = "" }) {
   if (!items.length) return `<p class="muted">${emptyText}</p>`;
   const visible = items.slice(0, visibleCount).map(renderItem).join("");
   const hidden = items.slice(visibleCount);
   if (!hidden.length) return visible;
   return `
     ${visible}
-    <details class="inline-collapsible">
+    <details class="inline-collapsible" ${key ? `data-collapsible-key="${key}" ${state.expandedLists[key] ? "open" : ""}` : ""}>
       <summary>${moreLabel}: ${hidden.length}</summary>
       <div class="list compact-hidden-list">
         ${hidden.map(renderItem).join("")}
@@ -661,13 +665,14 @@ function taskParticipantLabel(user) {
   if (user.role === "construction_manager") return "Рук.по строительству";
   if (user.role === "technical_supervisor") return "Технадзор";
   if (user.role === "foreman") return `Прораб ${user.name}`;
+  if (user.role === "estimator") return `Сметчик ${user.name}`;
   return user.name;
 }
 
 function taskParticipantOptions() {
-  const order = { technical_supervisor: 1, foreman: 2, construction_manager: 3, owner: 4 };
+  const order = { technical_supervisor: 1, foreman: 2, estimator: 3, construction_manager: 4, owner: 5 };
   return state.users
-    .filter((user) => ["technical_supervisor", "foreman", "construction_manager", "owner"].includes(user.role))
+    .filter((user) => ["technical_supervisor", "foreman", "estimator", "construction_manager", "owner"].includes(user.role))
     .sort((a, b) => (order[a.role] || 99) - (order[b.role] || 99) || a.name.localeCompare(b.name, "ru"))
     .map((user) => `<option value="${user.id}">${taskParticipantLabel(user)}</option>`)
     .join("");
@@ -1137,6 +1142,7 @@ async function renderDashboard() {
     emptyText: "Задач пока нет.",
     renderItem: renderDashboardTaskRow,
     moreLabel: "Остальные задачи",
+    key: "dashboardTasks",
   });
   initSortableZones(qs("#dashboardView"));
 }
@@ -1225,14 +1231,14 @@ async function renderProjectDetail(projectId) {
   const tabData = {
     overview: overviewHtml,
     tasks: renderSmallList(project.tasks, (task) => `${task.title} · ${label(task.status)} · ${task.due_date || "без срока"}`),
-    materials: renderSmallList(
+    materials: `<p class="muted compact-note">Материалы здесь берутся только из файла материалов Сметтера и заявок. Файл “Задание на работы” сюда не попадает.</p>` + renderSmallList(
       project.materials,
       (item) =>
         `${item.title} · ${item.requested_quantity || item.estimated_quantity || 0} ${item.requested_unit || item.estimate_material_unit || ""} · ${label(item.procurement_status)} · желаемая доставка: ${item.needed_at || "не указана"}${
           item.actual_delivery_date ? ` · фактическая: ${item.actual_delivery_date}` : ""
         }${item.procurement_comment ? ` · комментарий снабжения: ${item.procurement_comment}` : ""}`
     ),
-    works: renderSmallList(
+    works: `<p class="muted compact-note">Работы здесь берутся только из файла “Задание на работы”. Материалы из нижней части этого файла игнорируются.</p>` + renderSmallList(
       [...(project.works || []).map((item) => ({ ...item, kind: "plan" })), ...(project.extra_works || []).map((item) => ({ ...item, kind: "extra" }))],
       (item) =>
         item.kind === "extra"
@@ -1259,6 +1265,7 @@ async function renderProjectDetail(projectId) {
   ];
   qs("#projectDetail").innerHTML = `
     <div class="stack-line"><h2>${project.title}</h2>${pill(label(project.status), "blue")}</div>
+    <div class="muted">Клиент: ${project.customer_name || "не указан"} · договоров/объектов в истории: ${project.customer_projects_count || 1}</div>
     <div class="project-detail-map">${mapLink(project.address, project.navigator_url, "Я.Карты")}<span class="muted">${project.address ? "Адрес объекта" : "Адрес не указан"}</span></div>
     <div class="stack-line">
       ${pill(`Прораб: ${project.foreman_name || "не назначен"}`)}
@@ -1581,7 +1588,7 @@ async function renderTasks() {
     : `<p class="muted">${currentRoleBase() === "foreman" ? "За этим прорабом пока нет объектов с задачами." : "Задач пока нет."}</p>`;
   qs("#taskStats").innerHTML =
     renderTaskStats(tasks) +
-    `<p class="muted task-status-help">Ждет приемки — исполнитель отметил выполнение, но проверяющий еще не принял. На доработке — проверяющий вернул задачу с комментарием и новым сроком.</p>`;
+    `<p class="muted task-status-help">Не принято / ждет приемки — исполнитель отметил выполнение, но проверяющий еще не принял. На доработке — проверяющий вернул задачу исполнителю с комментарием и новым сроком.</p>`;
   const visibleTasks = tasks.filter((task) => taskMatchesFilter(task, state.taskFilter));
   qs("#taskRows").innerHTML = visibleTasks.length
     ? visibleTasks
@@ -1631,13 +1638,37 @@ function buildWorkTree(works) {
   }, {});
 }
 
+function fillWorkExtraSectionSelect(works) {
+  const select = qs('#workExtraForm select[name="estimate_section"]');
+  if (!select) return;
+  const sections = [...new Set(works.map((row) => row.section).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
+  const current = select.value;
+  select.innerHTML =
+    `<option value="">Без привязки к разделу</option>` +
+    sections.map((section) => `<option value="${escapeAttr(section)}">${section}</option>`).join("");
+  if (sections.includes(current)) select.value = current;
+}
+
 function taskTimeline(task) {
-  const rows = [
-    ["Поставлена", task.created_at, task.creator_name || "автор не указан"],
-    ["Выполнена исполнителем", task.completed_at, task.assignee_name || "исполнитель не указан"],
-    ["Принята", task.accepted_at, task.reviewer_name || task.creator_name || "принимающий не указан"],
-  ].filter(([, date]) => date);
-  if (task.status === "returned" && task.rejection_comment) {
+  const actionTitle = {
+    create: "Поставлена",
+    complete: "Выполнена исполнителем",
+    accept: "Принята",
+    return: "Возвращена на доработку",
+    delete: "Удалена",
+  };
+  const rows = task.events?.length
+    ? task.events.map((event) => [
+        actionTitle[event.action] || event.action,
+        event.created_at,
+        [event.actor_name, event.comment, event.due_date ? `срок: ${formatDateRu(event.due_date)}` : ""].filter(Boolean).join(" · "),
+      ])
+    : [
+        ["Поставлена", task.created_at, task.creator_name || "автор не указан"],
+        ["Выполнена исполнителем", task.completed_at, task.assignee_name || "исполнитель не указан"],
+        ["Принята", task.accepted_at, task.reviewer_name || task.creator_name || "принимающий не указан"],
+      ].filter(([, date]) => date);
+  if (!task.events?.length && task.status === "returned" && task.rejection_comment) {
     rows.push(["Возвращена на доработку", task.updated_at, task.rejection_comment]);
   }
   return rows.length
@@ -1714,6 +1745,7 @@ async function renderWorks() {
     api(`/api/work-items?project_id=${projectId}`),
     api(`/api/work-extra-items?project_id=${projectId}`),
   ]);
+  fillWorkExtraSectionSelect(works);
   const project = state.projects.find((item) => Number(item.id) === Number(projectId));
   const fileNote = project?.work_task_file_name
     ? `<p class="muted">Файл задания: ${project.work_task_file_name} · загружено работ: ${works.length}</p>`
@@ -1773,7 +1805,7 @@ async function renderWorks() {
           <div class="row estimate-material-row">
             <div class="material-main">
               <strong>${row.title}</strong>
-              <div class="muted">${row.project_title || ""} · ${row.creator_name || "автор не указан"}</div>
+              <div class="muted">${row.project_title || ""} · ${row.estimate_section || "без раздела"} · ${row.creator_name || "автор не указан"}</div>
               ${row.comment ? `<div class="muted">${row.comment}</div>` : ""}
             </div>
             <div class="stack-line">
@@ -2023,6 +2055,15 @@ function moneyDecision(value) {
   }[value] || value;
 }
 
+function variationStatusLevel(status) {
+  return {
+    decision_required: "danger",
+    in_review: "warning",
+    approved: "success",
+    rejected: "",
+  }[status] || "blue";
+}
+
 async function renderVariations() {
   const rows = await api("/api/variations");
   qs("#variationRows").innerHTML = rows.length
@@ -2033,8 +2074,9 @@ async function renderVariations() {
             <div class="row-grid">
               <div>
                 <strong>${row.title}</strong>
-                <div class="muted">${row.project_title} · ${variationType(row.type)}${row.source_type === "material_request_batch" ? ` · из заявки материалов #${row.source_id}` : ""}</div>
+                <div class="muted">${row.project_title} · ${variationType(row.type)}${row.estimate_section ? ` · ${row.estimate_section}` : ""}${row.source_type === "material_request_batch" ? ` · из заявки материалов #${row.source_id}` : ""}</div>
               </div>
+              ${pill(label(row.status), variationStatusLevel(row.status))}
               ${pill(money(row.amount), row.financial_decision === "not_decided" ? "danger" : "warning")}
               <div>${moneyDecision(row.financial_decision)}</div>
               ${pill(row.due_date || "без срока", levelByDate(row.due_date))}
@@ -2057,10 +2099,13 @@ async function openVariationDialog(variationId) {
         ${pill(moneyDecision(variation.financial_decision), variation.financial_decision === "not_decided" ? "danger" : "warning")}
       </div>
       <p class="muted">Сумма: ${money(variation.amount)} · срок решения: ${variation.due_date || "не указан"}</p>
+      ${variation.estimate_section ? `<p class="muted">Раздел / этап сметы: ${variation.estimate_section}</p>` : ""}
+      <p class="muted">Статус: ${label(variation.status)} · инициатор: ${variation.requester_name || "не указан"}${variation.approver_name ? ` · решение: ${variation.approver_name}` : ""}</p>
       ${variation.source_type === "material_request_batch" ? `<p class="muted">Источник: заявка материалов #${variation.source_id}</p>` : ""}
       ${variation.description ? `<p class="preserve-lines">${variation.description}</p>` : ""}
       <div class="form-actions">
         <button class="secondary" type="button" data-export-variation="${variation.id}" ${materials.length ? "" : "disabled"}>Выгрузить Excel</button>
+        ${["owner", "construction_manager"].includes(currentRoleBase()) && !["approved", "rejected"].includes(variation.status) ? `<button class="primary" type="button" data-variation-action="approve" data-variation-id="${variation.id}">Согласовать</button><button class="secondary" type="button" data-variation-action="reject" data-variation-id="${variation.id}">Отклонить</button>` : ""}
       </div>
     </section>
     <section class="workflow-panel">
@@ -2090,6 +2135,31 @@ async function openVariationDialog(variationId) {
       }
     </section>`;
   qs("#variationDetailDialog").showModal();
+}
+
+async function handleVariationAction(button) {
+  const variationId = button.dataset.variationId;
+  const action = button.dataset.variationAction;
+  let payload = { actor_id: currentUserId(), actor_role: currentRoleBase() };
+  if (action === "approve") {
+    const decision = window.prompt("Кто оплачивает? customer / company / contractor / disputed", "customer");
+    if (decision === null) return;
+    const comment = window.prompt("Комментарий к решению", "Согласовано");
+    if (comment === null) return;
+    payload = { ...payload, financial_decision: decision.trim() || "customer", comment };
+  }
+  if (action === "reject") {
+    const comment = window.prompt("Почему отклоняем?");
+    if (comment === null) return;
+    payload = { ...payload, financial_decision: "company", comment };
+  }
+  await api(`/api/variations/${variationId}/${action}`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  await renderVariations();
+  await openVariationDialog(variationId);
+  showToast(action === "approve" ? "Допработа согласована" : "Допработа отклонена");
 }
 
 function contractType(type) {
@@ -2395,7 +2465,7 @@ async function openProjectEditDialog(projectId) {
 async function handleProjectAction(button) {
   const projectId = button.dataset.projectId;
   const action = button.dataset.projectAction;
-  let payload = {};
+  let payload = { actor_id: currentUserId(), actor_role: currentRoleBase() };
   let message = "Объект обновлен";
 
   if (action === "return") {
@@ -2489,14 +2559,14 @@ async function handleTaskAction(button) {
     if (comment === null) return;
     const dueDate = window.prompt("Новый срок выполнения в формате ГГГГ-ММ-ДД. Можно оставить пустым.");
     if (dueDate === null) return;
-    payload = { comment, due_date: dueDate.trim() };
+    payload = { ...payload, comment, due_date: dueDate.trim() };
     message = "Задача возвращена на доработку";
   }
   if (action === "delete") {
     const confirmed = window.confirm("Удалить задачу? Это действие нельзя отменить.");
     if (!confirmed) return;
     message = "Задача удалена";
-    payload = { actor_role: currentRoleBase() };
+    payload = { ...payload, comment: "Удалено из интерфейса задач." };
   }
   await api(`/api/tasks/${taskId}/${action}`, {
     method: "POST",
@@ -2746,6 +2816,12 @@ function bindEvents() {
       return;
     }
 
+    const variationActionButton = event.target.closest("[data-variation-action]");
+    if (variationActionButton) {
+      await handleVariationAction(variationActionButton);
+      return;
+    }
+
     const variationExportButton = event.target.closest("[data-export-variation]");
     if (variationExportButton) {
       window.open(`/api/variations/${variationExportButton.dataset.exportVariation}/export`, "_blank", "noopener");
@@ -2887,6 +2963,16 @@ function bindEvents() {
     }
   });
 
+  document.addEventListener(
+    "toggle",
+    (event) => {
+      const details = event.target.closest?.("[data-collapsible-key]");
+      if (!details) return;
+      state.expandedLists[details.dataset.collapsibleKey] = details.open;
+    },
+    true
+  );
+
   qs("#projectForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = qs("#projectForm");
@@ -2970,9 +3056,17 @@ function bindEvents() {
       })
       .catch((error) => showToast(error.message));
   });
-  qs("#variationForm").addEventListener("submit", (event) => {
+  qs("#variationForm").addEventListener("submit", async (event) => {
     event.preventDefault();
-    submitForm("variationDialog", "variationForm", "/api/variations", "Допработа добавлена");
+    const form = qs("#variationForm");
+    const payload = formToJson(form);
+    payload.actor_id = currentUserId();
+    payload.requester_id = currentUserId();
+    await api("/api/variations", { method: "POST", body: JSON.stringify(payload) });
+    qs("#variationDialog").close();
+    form.reset();
+    await loadAll();
+    showToast("Допработа добавлена и отправлена на решение");
   });
 
   qs("#workExtraForm").addEventListener("submit", async (event) => {
@@ -2985,7 +3079,7 @@ function bindEvents() {
     state.selectedWorkProjectId = Number(qs('#workProjectForm select[name="project_id"]').value);
     form.elements.project_id.value = state.selectedWorkProjectId;
     await loadAll();
-    showToast("Работа добавлена");
+    showToast("Работа добавлена и отправлена в допработы на решение");
   });
   qs("#supplierLocationForm").addEventListener("submit", async (event) => {
     event.preventDefault();

@@ -696,6 +696,98 @@ def create_notification(
     )
 
 
+def ensure_customer(db, name: str | None) -> int | None:
+    clean_name = str(name or "").strip()
+    if not clean_name:
+        return None
+    row = db.execute("SELECT id FROM customers WHERE lower(name) = lower(?) LIMIT 1", (clean_name,)).fetchone()
+    if row:
+        return int(row["id"])
+    cursor = db.execute("INSERT INTO customers (name) VALUES (?)", (clean_name,))
+    return int(cursor.lastrowid)
+
+
+def create_task_event(
+    db,
+    *,
+    task_id: int,
+    project_id: int,
+    actor_id: int | None,
+    action: str,
+    status_from: str | None = None,
+    status_to: str | None = None,
+    comment: str = "",
+    due_date: str | None = None,
+) -> None:
+    db.execute(
+        """
+        INSERT INTO task_events (
+            task_id, project_id, actor_id, action, status_from, status_to, comment, due_date
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (task_id, project_id, actor_id, action, status_from, status_to, comment, due_date),
+    )
+
+
+def project_archive_blockers(db, project_id: int) -> list[str]:
+    blockers: list[str] = []
+    open_tasks = db.execute(
+        "SELECT COUNT(*) AS count FROM tasks WHERE project_id = ? AND status != 'accepted'",
+        (project_id,),
+    ).fetchone()["count"]
+    if open_tasks:
+        blockers.append(f"открытые задачи: {open_tasks}")
+    open_batches = db.execute(
+        """
+        SELECT COUNT(*) AS count
+        FROM material_request_batches
+        WHERE project_id = ?
+          AND archived_at IS NULL
+          AND status NOT IN ('received', 'cancelled')
+        """,
+        (project_id,),
+    ).fetchone()["count"]
+    if open_batches:
+        blockers.append(f"незакрытые заявки на материалы: {open_batches}")
+    open_variations = db.execute(
+        """
+        SELECT COUNT(*) AS count
+        FROM variations
+        WHERE project_id = ?
+          AND (status IN ('decision_required', 'in_review') OR financial_decision = 'not_decided')
+        """,
+        (project_id,),
+    ).fetchone()["count"]
+    if open_variations:
+        blockers.append(f"допработы/отклонения без решения: {open_variations}")
+    return blockers
+
+
+def attach_task_events(db, tasks: list[dict]) -> list[dict]:
+    if not tasks:
+        return tasks
+    task_ids = [int(task["id"]) for task in tasks]
+    placeholders = ",".join("?" for _ in task_ids)
+    rows = db.execute(
+        f"""
+        SELECT te.*, u.name AS actor_name, u.role AS actor_role
+        FROM task_events te
+        LEFT JOIN users u ON u.id = te.actor_id
+        WHERE te.task_id IN ({placeholders})
+        ORDER BY te.created_at, te.id
+        """,
+        task_ids,
+    ).fetchall()
+    grouped: dict[int, list[dict]] = {}
+    for row in rows:
+        item = row_to_dict(row)
+        grouped.setdefault(int(item["task_id"]), []).append(item)
+    for task in tasks:
+        task["events"] = grouped.get(int(task["id"]), [])
+    return tasks
+
+
 def user_id_by_role(db, role: str) -> int | None:
     row = db.execute("SELECT id FROM users WHERE role = ? AND is_active = 1 ORDER BY id LIMIT 1", (role,)).fetchone()
     return int(row["id"]) if row else None
@@ -951,9 +1043,9 @@ def save_document_file(db, project_id: int, file_data: dict, title: str, doc_typ
         """
         INSERT INTO documents (
             project_id, title, type, version, status, owner_id, due_date, related_type,
-            file_name, file_path, mime_type, file_size
+            related_section, contract_id, process_type, file_name, file_path, mime_type, file_size
         )
-        VALUES (?, ?, ?, '', 'active', ?, NULL, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, '', 'active', ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             project_id,
@@ -961,6 +1053,9 @@ def save_document_file(db, project_id: int, file_data: dict, title: str, doc_typ
             doc_type,
             user_id_by_role(db, "sales_manager") or 3,
             related_type,
+            file_data.get("related_section") or "",
+            int(file_data.get("contract_id") or 0) or None,
+            file_data.get("process_type") or "",
             file_name,
             stored_path,
             file_data.get("mime_type") or mimetypes.guess_type(file_name)[0] or "application/octet-stream",
@@ -1003,7 +1098,30 @@ def get_project_detail(project_id: int, account: dict | None = None) -> dict | N
         if not project:
             return None
         detail = row_to_dict(project)
-        detail["tasks"] = rows_to_dicts(db.execute("SELECT * FROM tasks WHERE project_id = ? ORDER BY due_date", (project_id,)).fetchall())
+        if detail.get("customer_id"):
+            detail["customer_projects_count"] = db.execute(
+                "SELECT COUNT(*) AS count FROM projects WHERE customer_id = ?",
+                (detail["customer_id"],),
+            ).fetchone()["count"]
+        else:
+            detail["customer_projects_count"] = 1
+        detail["tasks"] = attach_task_events(
+            db,
+            rows_to_dicts(
+                db.execute(
+                    """
+                    SELECT t.*, assignee.name AS assignee_name, creator.name AS creator_name, reviewer.name AS reviewer_name
+                    FROM tasks t
+                    LEFT JOIN users assignee ON assignee.id = t.assignee_id
+                    LEFT JOIN users creator ON creator.id = t.creator_id
+                    LEFT JOIN users reviewer ON reviewer.id = t.reviewer_id
+                    WHERE t.project_id = ?
+                    ORDER BY t.due_date
+                    """,
+                    (project_id,),
+                ).fetchall()
+            ),
+        )
         detail["materials"] = rows_to_dicts(
             db.execute(
                 """
@@ -1225,9 +1343,11 @@ class AppHandler(BaseHTTPRequestHandler):
     def variation_detail_payload(self, db, variation_id: int) -> dict | None:
         variation = db.execute(
             """
-            SELECT v.*, p.title AS project_title
+            SELECT v.*, p.title AS project_title, requester.name AS requester_name, approver.name AS approver_name
             FROM variations v
             JOIN projects p ON p.id = v.project_id
+            LEFT JOIN users requester ON requester.id = v.requester_id
+            LEFT JOIN users approver ON approver.id = v.approver_id
             WHERE v.id = ?
             """,
             (variation_id,),
@@ -1639,7 +1759,22 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         END,
                         t.due_date
                 """,
-                "/api/variations": "SELECT v.*, p.title AS project_title FROM variations v JOIN projects p ON p.id = v.project_id ORDER BY v.due_date",
+                "/api/variations": """
+                    SELECT v.*, p.title AS project_title, requester.name AS requester_name, approver.name AS approver_name
+                    FROM variations v
+                    JOIN projects p ON p.id = v.project_id
+                    LEFT JOIN users requester ON requester.id = v.requester_id
+                    LEFT JOIN users approver ON approver.id = v.approver_id
+                    ORDER BY
+                        CASE v.status
+                            WHEN 'decision_required' THEN 1
+                            WHEN 'in_review' THEN 2
+                            WHEN 'approved' THEN 3
+                            WHEN 'rejected' THEN 4
+                            ELSE 5
+                        END,
+                        v.due_date
+                """,
                 "/api/contracts": "SELECT c.*, p.title AS project_title, u.name AS responsible_name FROM contracts c JOIN projects p ON p.id = c.project_id LEFT JOIN users u ON u.id = c.responsible_id ORDER BY c.ends_at",
                 "/api/events": "SELECT e.*, p.title AS project_title, u.name AS author_name FROM events e JOIN projects p ON p.id = e.project_id LEFT JOIN users u ON u.id = e.author_id ORDER BY e.created_at DESC",
             }
@@ -1663,8 +1798,17 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             or int(row.get("reviewer_id") or 0) == user_id
                             or int(row.get("creator_id") or 0) == user_id
                         ]
+                    elif role in {"estimator", "procurement_manager", "sales_manager"}:
+                        rows = [
+                            row
+                            for row in rows
+                            if int(row.get("assignee_id") or 0) == user_id
+                            or int(row.get("reviewer_id") or 0) == user_id
+                            or int(row.get("creator_id") or 0) == user_id
+                        ]
                     elif role not in {"owner", "construction_manager", "technical_supervisor"}:
                         rows = []
+                    rows = attach_task_events(db, rows)
                 json_response(self, rows)
                 return
 
@@ -1791,17 +1935,19 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 if data.get("save_mode") == "draft":
                     data["title"] = str(data.get("title") or "").strip() or "Новый объект"
                     data["customer_name"] = str(data.get("customer_name") or "").strip() or "Не указан"
+                    customer_id = ensure_customer(db, data.get("customer_name"))
                     cursor = db.execute(
                         """
                         INSERT INTO projects (
-                            title, customer_name, status, address, navigator_url, bitrix_ref,
+                            customer_id, title, customer_name, status, address, navigator_url, bitrix_ref,
                             smetter_ref, estimate_file_name, work_task_file_name, estimate_version, estimate_uploaded_by,
                             sales_manager_id, construction_manager_id, foreman_id, estimator_id,
                             procurement_manager_id, tech_supervisor_id, planned_end_date, main_estimate_amount
                         )
-                        VALUES (?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?)
+                        VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?)
                         """,
                         (
+                            customer_id,
                             data.get("title"),
                             data.get("customer_name"),
                             data.get("address") or "",
@@ -1849,17 +1995,19 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         ("work_task_file_name", "Задание на работы из Сметтера"),
                     ],
                 )
+                customer_id = ensure_customer(db, data.get("customer_name"))
                 cursor = db.execute(
                     """
                     INSERT INTO projects (
-                        title, customer_name, status, address, navigator_url, bitrix_ref,
+                        customer_id, title, customer_name, status, address, navigator_url, bitrix_ref,
                         smetter_ref, estimate_file_name, work_task_file_name, estimate_version, estimate_uploaded_by,
                         sales_manager_id, construction_manager_id, foreman_id, estimator_id,
                         procurement_manager_id, tech_supervisor_id, planned_end_date, main_estimate_amount
                     )
-                    VALUES (?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?)
+                    VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?)
                     """,
                     (
+                        customer_id,
                         data.get("title"),
                         data.get("customer_name"),
                         data.get("address"),
@@ -1917,10 +2065,12 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     raise ValueError("Принять или вернуть можно только объект, переданный руководителю строительства.")
 
                 if action == "update" and data.get("save_mode") == "draft":
+                    customer_id = ensure_customer(db, data.get("customer_name") or project["customer_name"])
                     db.execute(
                         """
                         UPDATE projects
-                        SET title = ?,
+                        SET customer_id = ?,
+                            title = ?,
                             customer_name = ?,
                             address = ?,
                             bitrix_ref = ?,
@@ -1933,6 +2083,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         WHERE id = ?
                         """,
                         (
+                            customer_id,
                             str(data.get("title") or "").strip() or project["title"] or "Новый объект",
                             str(data.get("customer_name") or "").strip() or project["customer_name"] or "Не указан",
                             data.get("address") or "",
@@ -1974,13 +2125,15 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             ("planned_end_date", "Плановый срок окончания работ по договору"),
                             ("main_estimate_amount", "Смета"),
                             ("estimate_file_name", "Файл материалов из Сметтера"),
-                            ("work_task_file_name", "Задание на работы из Сметтера"),
+                        ("work_task_file_name", "Задание на работы из Сметтера"),
                         ],
                     )
+                    customer_id = ensure_customer(db, data.get("customer_name"))
                     db.execute(
                         """
                         UPDATE projects
-                        SET title = ?,
+                        SET customer_id = ?,
+                            title = ?,
                             customer_name = ?,
                             address = ?,
                             bitrix_ref = ?,
@@ -1993,6 +2146,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         WHERE id = ?
                         """,
                         (
+                            customer_id,
                             data.get("title"),
                             data.get("customer_name"),
                             data.get("address"),
@@ -2176,6 +2330,9 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
 
                 if action == "archive":
                     reason = data.get("reason") or "Работы завершены, объект отправлен в архив."
+                    blockers = project_archive_blockers(db, project_id)
+                    if blockers:
+                        raise ValueError("Объект пока нельзя отправить в архив. Сначала закройте: " + "; ".join(blockers))
                     db.execute(
                         """
                         UPDATE projects
@@ -2263,10 +2420,87 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 json_response(self, {"deleted": document_id})
                 return
 
+            variation_action = re.match(r"^/api/variations/(\d+)/(approve|reject|review)$", path)
+            if variation_action:
+                variation_id = int(variation_action.group(1))
+                action = variation_action.group(2)
+                actor_role = str(data.get("actor_role") or account_role(account))
+                actor_id = int(data.get("actor_id") or 0) or account_user_id(account) or None
+                if action in {"approve", "reject"} and actor_role not in {"owner", "construction_manager"}:
+                    raise ValueError("Согласовать или отклонить допработу может только ген.директор или руководитель строительства.")
+                variation = db.execute(
+                    """
+                    SELECT v.*, p.title AS project_title
+                    FROM variations v
+                    JOIN projects p ON p.id = v.project_id
+                    WHERE v.id = ?
+                    """,
+                    (variation_id,),
+                ).fetchone()
+                if not variation:
+                    json_response(self, {"error": "Variation not found"}, 404)
+                    return
+                if action == "review":
+                    db.execute(
+                        """
+                        UPDATE variations
+                        SET status = 'in_review',
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (variation_id,),
+                    )
+                    notify_users(
+                        db,
+                        {user_id_by_role(db, "construction_manager"), user_id_by_role(db, "owner")} - {None},
+                        variation["project_id"],
+                        "Допработа отправлена на согласование",
+                        f"{variation['project_title']}: {variation['title']}",
+                        "variation",
+                        variation_id,
+                    )
+                else:
+                    status = "approved" if action == "approve" else "rejected"
+                    financial_decision = data.get("financial_decision") or ("customer" if action == "approve" else "company")
+                    comment = data.get("comment") or ("Допработа согласована." if action == "approve" else "Допработа отклонена.")
+                    db.execute(
+                        """
+                        UPDATE variations
+                        SET status = ?,
+                            financial_decision = ?,
+                            approver_id = ?,
+                            decided_at = CURRENT_TIMESTAMP,
+                            description = TRIM(COALESCE(description, '') || CHAR(10) || ?),
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (status, financial_decision, actor_id, f"Решение: {comment}", variation_id),
+                    )
+                    notify_users(
+                        db,
+                        {variation["requester_id"], user_id_by_role(db, "construction_manager"), user_id_by_role(db, "owner")} - {None},
+                        variation["project_id"],
+                        "Решение по допработе принято",
+                        f"{variation['project_title']}: {variation['title']}. {comment}",
+                        "variation",
+                        variation_id,
+                    )
+                db.execute(
+                    """
+                    INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
+                    VALUES (?, 'decision', ?, ?, 'internal', 'variation')
+                    """,
+                    (variation["project_id"], f"{variation['title']}: {action}", actor_id or user_id_by_role(db, "owner")),
+                )
+                db.commit()
+                json_response(self, {"id": variation_id, "status": action})
+                return
+
             task_action = re.match(r"^/api/tasks/(\d+)/(complete|accept|return|delete)$", path)
             if task_action:
                 task_id = int(task_action.group(1))
                 action = task_action.group(2)
+                actor_id = int(data.get("actor_id") or 0) or account_user_id(account) or None
                 task = db.execute(
                     """
                     SELECT t.*, p.title AS project_title
@@ -2283,7 +2517,18 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 if action == "delete":
                     if data.get("actor_role") not in {"owner", "construction_manager"}:
                         raise ValueError("Удалять задачи может только ген.директор или руководитель строительства.")
+                    create_task_event(
+                        db,
+                        task_id=task_id,
+                        project_id=task["project_id"],
+                        actor_id=actor_id,
+                        action="delete",
+                        status_from=task["status"],
+                        status_to="deleted",
+                        comment=data.get("comment") or "Задача удалена руководителем.",
+                    )
                     db.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+                    db.commit()
                     json_response(self, {"deleted": task_id})
                     return
 
@@ -2297,6 +2542,17 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         WHERE id = ?
                         """,
                         (task_id,),
+                    )
+                    create_task_event(
+                        db,
+                        task_id=task_id,
+                        project_id=task["project_id"],
+                        actor_id=actor_id or task["assignee_id"],
+                        action="complete",
+                        status_from=task["status"],
+                        status_to="completed_pending_acceptance",
+                        comment=data.get("comment") or "Исполнитель отметил задачу выполненной.",
+                        due_date=task["due_date"],
                     )
                     reviewer_id = task["reviewer_id"] or task["creator_id"] or user_id_by_role(db, "construction_manager")
                     create_notification(
@@ -2317,6 +2573,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                                 "Задача выполнена, нужна приемка",
                                 f"{task['project_title']}: {task['title']}",
                             )
+                    db.commit()
                     json_response(self, {"id": task_id, "status": "completed_pending_acceptance"})
                     return
 
@@ -2332,6 +2589,17 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         """,
                         (task_id,),
                     )
+                    create_task_event(
+                        db,
+                        task_id=task_id,
+                        project_id=task["project_id"],
+                        actor_id=actor_id or task["reviewer_id"] or task["creator_id"],
+                        action="accept",
+                        status_from=task["status"],
+                        status_to="accepted",
+                        comment=data.get("comment") or "Проверяющий принял выполнение.",
+                        due_date=task["due_date"],
+                    )
                     create_notification(
                         db,
                         task["project_id"],
@@ -2340,6 +2608,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         "Выполнение задачи принято",
                         f"{task['project_title']}: {task['title']}",
                     )
+                    db.commit()
                     json_response(self, {"id": task_id, "status": "accepted"})
                     return
 
@@ -2357,6 +2626,17 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         """,
                         (comment, due_date, task_id),
                     )
+                    create_task_event(
+                        db,
+                        task_id=task_id,
+                        project_id=task["project_id"],
+                        actor_id=actor_id or task["reviewer_id"] or task["creator_id"],
+                        action="return",
+                        status_from=task["status"],
+                        status_to="returned",
+                        comment=comment,
+                        due_date=due_date,
+                    )
                     create_notification(
                         db,
                         task["project_id"],
@@ -2365,6 +2645,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         "Задача возвращена на доработку",
                         f"{task['project_title']}: {task['title']}. {comment}",
                     )
+                    db.commit()
                     json_response(self, {"id": task_id, "status": "returned"})
                     return
 
@@ -2985,6 +3266,17 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     ),
                 )
                 project = db.execute("SELECT title FROM projects WHERE id = ?", (int(data["project_id"]),)).fetchone()
+                create_task_event(
+                    db,
+                    task_id=int(cursor.lastrowid),
+                    project_id=int(data["project_id"]),
+                    actor_id=creator_id,
+                    action="create",
+                    status_from="",
+                    status_to="new",
+                    comment=data.get("description") or "Задача поставлена.",
+                    due_date=data.get("due_date") or None,
+                )
                 create_notification(
                     db,
                     int(data["project_id"]),
@@ -3234,6 +3526,9 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 if related_type == "knowledge_base":
                     project_id = knowledge_base_project_id(db)
                 if file_data.get("file_base64"):
+                    file_data["related_section"] = data.get("related_section") or ""
+                    file_data["contract_id"] = data.get("contract_id") or None
+                    file_data["process_type"] = data.get("process_type") or ""
                     document_id = save_document_file(
                         db,
                         project_id,
@@ -3245,7 +3540,8 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     db.execute(
                         """
                         UPDATE documents
-                        SET version = ?, status = ?, owner_id = ?, due_date = ?
+                        SET version = ?, status = ?, owner_id = ?, due_date = ?,
+                            related_section = ?, contract_id = ?, process_type = ?
                         WHERE id = ?
                         """,
                         (
@@ -3253,6 +3549,9 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             data.get("status") or "draft",
                             int(data.get("owner_id") or 2),
                             data.get("due_date") or None,
+                            data.get("related_section") or "",
+                            int(data.get("contract_id") or 0) or None,
+                            data.get("process_type") or "",
                             document_id,
                         ),
                     )
@@ -3262,9 +3561,9 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     """
                     INSERT INTO documents (
                         project_id, title, type, version, status, owner_id, due_date, related_type,
-                        file_name, file_path, mime_type, file_size
+                        related_section, contract_id, process_type, file_name, file_path, mime_type, file_size
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL)
                     """,
                     (
                         project_id,
@@ -3275,18 +3574,23 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         int(data.get("owner_id") or 2),
                         data.get("due_date") or None,
                         related_type,
+                        data.get("related_section") or "",
+                        int(data.get("contract_id") or 0) or None,
+                        data.get("process_type") or "",
                     ),
                 )
                 json_response(self, {"id": cursor.lastrowid}, 201)
                 return
 
             if path == "/api/variations":
+                actor_id = int(data.get("requester_id") or data.get("actor_id") or 0) or account_user_id(account) or user_id_by_role(db, "construction_manager")
                 cursor = db.execute(
                     """
                     INSERT INTO variations (
-                        project_id, title, type, status, financial_decision, amount, due_date, description
+                        project_id, title, type, status, financial_decision, amount, due_date,
+                        description, estimate_section, requester_id
                     )
-                    VALUES (?, ?, ?, 'decision_required', ?, ?, ?, ?)
+                    VALUES (?, ?, ?, 'decision_required', ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         int(data["project_id"]),
@@ -3296,9 +3600,28 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         number_value(data.get("amount")),
                         data.get("due_date") or None,
                         data.get("description") or "",
+                        data.get("estimate_section") or "",
+                        actor_id,
                     ),
                 )
-                json_response(self, {"id": cursor.lastrowid}, 201)
+                variation_id = int(cursor.lastrowid)
+                notify_users(
+                    db,
+                    {user_id_by_role(db, "construction_manager"), user_id_by_role(db, "owner")} - {None},
+                    int(data["project_id"]),
+                    "Новая допработа требует решения",
+                    data.get("title") or "Новая допработка",
+                    "variation",
+                    variation_id,
+                )
+                db.execute(
+                    """
+                    INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
+                    VALUES (?, 'decision', ?, ?, 'internal', 'variation')
+                    """,
+                    (int(data["project_id"]), f"Создана допработа/отклонение: {data.get('title') or 'Новая допработка'}", actor_id),
+                )
+                json_response(self, {"id": variation_id}, 201)
                 return
 
             if path == "/api/work-extra-items":
@@ -3315,9 +3638,9 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 cursor = db.execute(
                     """
                     INSERT INTO work_extra_items (
-                        project_id, creator_id, title, unit, quantity, reason, comment, status
+                        project_id, creator_id, title, unit, quantity, reason, estimate_section, comment, status
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 'new')
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new')
                     """,
                     (
                         int(data["project_id"]),
@@ -3326,10 +3649,40 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         data.get("unit"),
                         number_value(data.get("quantity")),
                         data.get("reason") or "additional_work",
+                        data.get("estimate_section") or "",
                         data.get("comment") or "",
                     ),
                 )
-                json_response(self, {"id": cursor.lastrowid}, 201)
+                work_extra_id = int(cursor.lastrowid)
+                variation_type = "additional_work" if data.get("reason") == "additional_work" else "disputed_position"
+                variation_cursor = db.execute(
+                    """
+                    INSERT INTO variations (
+                        project_id, title, type, status, financial_decision, amount, due_date,
+                        description, estimate_section, requester_id, source_type, source_id
+                    )
+                    VALUES (?, ?, ?, 'decision_required', 'not_decided', 0, NULL, ?, ?, ?, 'work_extra_item', ?)
+                    """,
+                    (
+                        int(data["project_id"]),
+                        data.get("title"),
+                        variation_type,
+                        data.get("comment") or "",
+                        data.get("estimate_section") or "",
+                        int(data.get("creator_id") or 0) or None,
+                        work_extra_id,
+                    ),
+                )
+                notify_users(
+                    db,
+                    {user_id_by_role(db, "construction_manager"), user_id_by_role(db, "owner")} - {None},
+                    int(data["project_id"]),
+                    "Новая появившаяся работа требует решения",
+                    data.get("title") or "Появившаяся работа",
+                    "variation",
+                    int(variation_cursor.lastrowid),
+                )
+                json_response(self, {"id": work_extra_id, "variation_id": variation_cursor.lastrowid}, 201)
                 return
 
             if path == "/api/supplier-locations":

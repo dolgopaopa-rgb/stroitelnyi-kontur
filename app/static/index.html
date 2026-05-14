@@ -6,7 +6,7 @@
     <title>Строительный контур MVP</title>
     <link rel="icon" type="image/png" href="/static/assets/g2-logo.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260514-nobitrix" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260515-workflow" />
   </head>
   <body>
     <div class="app">
@@ -189,6 +189,7 @@
               </div>
               <form class="form embedded compact-form" id="workExtraForm">
                 <label>Объект <select name="project_id" required></select></label>
+                <label>Раздел / этап сметы <select name="estimate_section"></select></label>
                 <label>Наименование <input name="title" required placeholder="Например: демонтаж старого основания" /></label>
                 <div class="grid-2">
                   <label>Ед. измерения <input name="unit" required placeholder="м2, м.п., шт" /></label>
@@ -489,6 +490,7 @@
           <label>Ориентировочная сумма, ₽ <input name="amount" type="number" min="0" step="1000" /></label>
           <label>Срок принятия решения <input name="due_date" type="date" /></label>
         </div>
+        <label>Раздел / этап сметы <input name="estimate_section" placeholder="Например: Кровля / Монтаж стропильной системы" /></label>
         <label>Причина и вложения <textarea name="description" rows="3" placeholder="Что произошло, кто обнаружил, какие фото/документы нужны для решения"></textarea></label>
         <div class="form-actions">
           <button type="button" class="secondary" data-close="variationDialog">Отмена</button>
@@ -577,6 +579,6 @@
     </dialog>
 
     <div class="toast" id="toast"></div>
-    <script src="/static/app.js?v=20260514-nobitrix"></script>
+    <script src="/static/app.js?v=20260515-workflow"></script>
   </body>
 </html>
