@@ -21,6 +21,7 @@
 15. [Тест-листы для коллег](docs/15-colleague-test-lists.md)
 16. [Журнал работ](docs/16-project-worklog.md)
 17. [QA-агент проекта](docs/17-quality-agent.md)
+18. [Инфографика ролей и доступов](docs/18-role-access-infographic.md)
 
 ## Прототип
 

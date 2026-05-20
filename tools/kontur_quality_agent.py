@@ -246,7 +246,7 @@ def build_recommendations(api_data: dict[str, object], html: str, app_text: str,
 
     unbound_users = [
         user for user in users
-        if user.get("is_active") and user.get("role") in {"owner", "construction_manager", "foreman", "procurement_manager", "technical_supervisor", "estimator"} and not user.get("max_chat_id")
+        if user.get("is_active") and user.get("role") in {"owner", "construction_manager", "finance_director", "accountant", "foreman", "procurement_manager", "technical_supervisor", "estimator"} and not user.get("max_chat_id")
     ]
     if unbound_users:
         add_rec(

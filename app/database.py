@@ -527,6 +527,8 @@ def ensure_core_users(db: sqlite3.Connection) -> None:
     db.execute("UPDATE users SET name = 'Ген.директор' WHERE role = 'owner'")
     required_users = [
         ("Технадзор", "technical_supervisor", "technadzor@example.local"),
+        ("Фин.директор", "finance_director", "finance@example.local"),
+        ("Бухгалтер", "accountant", "accountant@example.local"),
     ]
     for name, role, email in required_users:
         exists = db.execute("SELECT id FROM users WHERE role = ? LIMIT 1", (role,)).fetchone()
@@ -549,6 +551,8 @@ def seed(db: sqlite3.Connection) -> None:
         ("Андрей", "foreman", "andrey@example.local"),
         ("Сергей", "foreman", "sergey@example.local"),
         ("Технадзор", "technical_supervisor", "technadzor@example.local"),
+        ("Фин.директор", "finance_director", "finance@example.local"),
+        ("Бухгалтер", "accountant", "accountant@example.local"),
     ]
     db.executemany("INSERT INTO users (name, role, email) VALUES (?, ?, ?)", users)
 

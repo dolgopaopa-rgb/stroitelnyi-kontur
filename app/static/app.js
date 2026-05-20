@@ -180,19 +180,19 @@ function workReasonLabel(value) {
 }
 
 function canEditProject() {
-  return ["owner", "sales_manager", "construction_manager"].includes(currentRoleBase());
+  return ["owner", "sales_manager", "construction_manager", "finance_director"].includes(currentRoleBase());
 }
 
 function canSubmitProject() {
-  return ["owner", "sales_manager"].includes(currentRoleBase());
+  return ["owner", "sales_manager", "finance_director"].includes(currentRoleBase());
 }
 
 function canAcceptProject() {
-  return ["owner", "construction_manager"].includes(currentRoleBase());
+  return ["owner", "construction_manager", "finance_director"].includes(currentRoleBase());
 }
 
 function canArchiveProject() {
-  return ["owner", "construction_manager"].includes(currentRoleBase());
+  return ["owner", "construction_manager", "finance_director"].includes(currentRoleBase());
 }
 
 function canDeleteForever() {
@@ -200,12 +200,26 @@ function canDeleteForever() {
 }
 
 function canManageKnowledgeBase() {
+  return ["owner", "construction_manager", "finance_director"].includes(currentRoleBase());
+}
+
+function canDeleteKnowledgeBase() {
   return ["owner", "construction_manager"].includes(currentRoleBase());
+}
+
+function canDeleteFeedback() {
+  return ["owner", "construction_manager", "sales_manager"].includes(currentRoleBase());
+}
+
+function canManageSystemSettings() {
+  return ["owner", "construction_manager", "finance_director"].includes(currentRoleBase());
 }
 
 const viewAccess = {
   owner: ["dashboard", "projects", "tasks", "works", "materials", "variations", "locations", "documents", "feedback", "events"],
   construction_manager: ["dashboard", "projects", "tasks", "works", "materials", "variations", "locations", "documents", "feedback", "events"],
+  finance_director: ["dashboard", "projects", "tasks", "works", "materials", "variations", "locations", "documents", "feedback", "events"],
+  accountant: ["dashboard", "projects", "materials", "variations", "locations", "documents", "events"],
   sales_manager: ["dashboard", "projects", "locations", "documents", "feedback"],
   foreman: ["dashboard", "projects", "tasks", "works", "materials", "locations", "documents"],
   procurement_manager: ["dashboard", "projects", "materials", "locations", "documents"],
@@ -234,17 +248,19 @@ function syncNavigationAccess() {
 }
 
 function canViewFinancials() {
-  return ["owner", "construction_manager", "sales_manager", "estimator"].includes(currentRoleBase());
+  return ["owner", "construction_manager", "finance_director", "accountant", "sales_manager", "estimator"].includes(currentRoleBase());
 }
 
 function canViewExternalRefs() {
-  return ["owner", "construction_manager", "sales_manager", "estimator"].includes(currentRoleBase());
+  return ["owner", "construction_manager", "finance_director", "accountant", "sales_manager", "estimator"].includes(currentRoleBase());
 }
 
 const documentAccess = {
   owner: null,
   construction_manager: null,
+  finance_director: null,
   sales_manager: null,
+  accountant: new Set(["main_estimate", "smetter_materials", "smetter_work_task", "contract", "variation_estimate", "act", "ks_2", "ks_3", "other"]),
   estimator: new Set(["main_estimate", "smetter_materials", "smetter_work_task", "project_documentation", "variation_estimate", "act", "ks_2", "ks_3", "other"]),
   foreman: new Set(["smetter_materials", "smetter_work_task", "project_documentation", "detail_node", "regulation", "standard", "instruction", "other"]),
   procurement_manager: new Set(["smetter_materials", "project_documentation", "detail_node", "regulation", "standard", "instruction", "other"]),
@@ -262,6 +278,8 @@ function projectTabs() {
   const tabs = {
     owner: ["overview", "tasks", "works", "materials", "variations", "documents", "events"],
     construction_manager: ["overview", "tasks", "works", "materials", "variations", "documents", "events"],
+    finance_director: ["overview", "tasks", "works", "materials", "variations", "documents", "events"],
+    accountant: ["overview", "materials", "variations", "documents", "events"],
     sales_manager: ["overview", "documents", "events"],
     foreman: ["overview", "tasks", "works", "materials", "documents"],
     procurement_manager: ["overview", "materials", "documents"],
@@ -278,6 +296,8 @@ function roleLabel(role) {
   }
   return {
     owner: "Ген.директор",
+    finance_director: "Фин.директор",
+    accountant: "Бухгалтер",
     sales_manager: "Менеджер",
     construction_manager: "Рук. строительства",
     foreman: "Прораб",
@@ -303,6 +323,8 @@ function roleValueForUser(user, fallbackRole = "owner") {
 
 function availableRoleOptions() {
   const options = [
+    ["finance_director", "Фин.директор"],
+    ["accountant", "Бухгалтер"],
     ["sales_manager", "Менеджер"],
     ["construction_manager", "Рук. строительства"],
     ...usersByRole("foreman").map((user) => [`foreman:${user.id}`, `Прораб ${user.name}`]),
@@ -721,6 +743,8 @@ function userOptionsByRole(role, { includeEmpty = false, selectedId = "" } = {})
 
 function taskParticipantLabel(user) {
   if (user.role === "owner") return "Ген.директор";
+  if (user.role === "finance_director") return "Фин.директор";
+  if (user.role === "accountant") return "Бухгалтер";
   if (user.role === "construction_manager") return "Рук.по строительству";
   if (user.role === "technical_supervisor") return "Технадзор";
   if (user.role === "foreman") return `Прораб ${user.name}`;
@@ -729,9 +753,9 @@ function taskParticipantLabel(user) {
 }
 
 function taskParticipantOptions() {
-  const order = { technical_supervisor: 1, foreman: 2, estimator: 3, construction_manager: 4, owner: 5 };
+  const order = { technical_supervisor: 1, foreman: 2, estimator: 3, construction_manager: 4, finance_director: 5, accountant: 6, owner: 7 };
   return state.users
-    .filter((user) => ["technical_supervisor", "foreman", "estimator", "construction_manager", "owner"].includes(user.role))
+    .filter((user) => ["technical_supervisor", "foreman", "estimator", "construction_manager", "finance_director", "accountant", "owner"].includes(user.role))
     .sort((a, b) => (order[a.role] || 99) - (order[b.role] || 99) || a.name.localeCompare(b.name, "ru"))
     .map((user) => `<option value="${user.id}">${taskParticipantLabel(user)}</option>`)
     .join("");
@@ -1033,7 +1057,7 @@ function materialBatchHasDeviation(batch) {
 
 function canCreateVariationFromBatch(batch) {
   if (!batch.id || !materialBatchHasDeviation(batch) || batch.variation_id) return false;
-  if (["owner", "construction_manager"].includes(currentRoleBase())) return true;
+  if (["owner", "construction_manager", "finance_director"].includes(currentRoleBase())) return true;
   return currentRoleBase() === "foreman" && [Number(batch.project_foreman_id), Number(batch.creator_id)].includes(Number(currentUserId()));
 }
 
@@ -1201,7 +1225,7 @@ function buildDashboardAttention(summary, tasks, materialRows) {
   const unassignedProjects = activeProjects.filter(
     (project) => project.status === "in_progress" && (!project.foreman_id || !project.estimator_id || !project.procurement_manager_id || !project.tech_supervisor_id)
   ).length;
-  if (["owner", "construction_manager"].includes(currentRoleBase()) && unassignedProjects) {
+  if (["owner", "construction_manager", "finance_director"].includes(currentRoleBase()) && unassignedProjects) {
     items.push(attentionItem("Не все ответственные назначены", unassignedProjects, "По объектам в работе должны быть понятны прораб, сметчик, снабжение и технадзор.", "warning", { view: "projects" }));
   }
 
@@ -1224,8 +1248,8 @@ function buildDashboardAttention(summary, tasks, materialRows) {
     items.push(attentionItem("Сверхбюджет без решения", money(summary.unresolved_overbudget), "Нужно решить, что идет в допработы, что остается расходом компании.", "danger", { view: "variations" }));
   }
 
-  if (["owner", "construction_manager"].includes(currentRoleBase())) {
-    const unboundMaxUsers = state.users.filter((user) => user.is_active && ["owner", "construction_manager", "foreman", "procurement_manager", "technical_supervisor", "estimator"].includes(user.role) && !user.max_chat_id).length;
+  if (["owner", "construction_manager", "finance_director"].includes(currentRoleBase())) {
+    const unboundMaxUsers = state.users.filter((user) => user.is_active && ["owner", "construction_manager", "finance_director", "accountant", "foreman", "procurement_manager", "technical_supervisor", "estimator"].includes(user.role) && !user.max_chat_id).length;
     if (unboundMaxUsers) {
       items.push(attentionItem("MAX не привязан", unboundMaxUsers, "Личные уведомления не будут доходить до всех участников процесса.", "blue", { view: "feedback" }));
     }
@@ -1763,8 +1787,8 @@ async function renderTasks() {
   qs("#taskRows").innerHTML = visibleTasks.length
     ? visibleTasks
         .map((task) => {
-          const canComplete = task.status !== "accepted" && task.status !== "completed_pending_acceptance" && (canActAsTaskUser(task, "assignee") || ["owner", "construction_manager"].includes(currentRoleBase()));
-          const canReview = task.status === "completed_pending_acceptance" && (["owner", "construction_manager"].includes(currentRoleBase()) || canActAsTaskUser(task, "reviewer"));
+          const canComplete = task.status !== "accepted" && task.status !== "completed_pending_acceptance" && (canActAsTaskUser(task, "assignee") || ["owner", "construction_manager", "finance_director"].includes(currentRoleBase()));
+          const canReview = task.status === "completed_pending_acceptance" && (["owner", "construction_manager", "finance_director"].includes(currentRoleBase()) || canActAsTaskUser(task, "reviewer"));
           return `
             <article class="row task-row">
               <div class="row-grid">
@@ -2030,7 +2054,7 @@ async function renderMaterials() {
     button.classList.toggle("active", button.dataset.materialListMode === state.materialListMode);
   });
   const exportButton = qs("#exportCompletedMaterialsButton");
-  if (exportButton) exportButton.hidden = !["owner", "construction_manager", "procurement_manager"].includes(currentRoleBase());
+  if (exportButton) exportButton.hidden = !["owner", "construction_manager", "finance_director", "accountant", "procurement_manager"].includes(currentRoleBase());
   const items = await api(`/api/material-requests?archive=${state.materialListMode === "archive" ? "1" : "0"}`);
   state.materialRequests = items;
   const visibleItems =
@@ -2275,7 +2299,7 @@ async function openVariationDialog(variationId) {
       ${variation.description ? `<p class="preserve-lines">${variation.description}</p>` : ""}
       <div class="form-actions">
         <button class="secondary" type="button" data-export-variation="${variation.id}" ${materials.length ? "" : "disabled"}>Выгрузить Excel</button>
-        ${["owner", "construction_manager"].includes(currentRoleBase()) && !["approved", "rejected"].includes(variation.status) ? `<button class="primary" type="button" data-variation-action="approve" data-variation-id="${variation.id}">Согласовать</button><button class="secondary" type="button" data-variation-action="reject" data-variation-id="${variation.id}">Отклонить</button>` : ""}
+        ${["owner", "construction_manager", "finance_director"].includes(currentRoleBase()) && !["approved", "rejected"].includes(variation.status) ? `<button class="primary" type="button" data-variation-action="approve" data-variation-id="${variation.id}">Согласовать</button><button class="secondary" type="button" data-variation-action="reject" data-variation-id="${variation.id}">Отклонить</button>` : ""}
       </div>
     </section>
     <section class="workflow-panel">
@@ -2405,6 +2429,8 @@ async function renderContracts() {
 }
 
 async function renderDocuments() {
+  const newDocumentButton = qs("#newDocumentButton");
+  if (newDocumentButton) newDocumentButton.hidden = !canManageKnowledgeBase();
   const docs = await api("/api/documents?related_type=knowledge_base");
   qs("#documentCards").innerHTML = docs.length
     ? docs
@@ -2413,7 +2439,7 @@ async function renderDocuments() {
           <article class="card">
             <div class="document-card-head">
               <div class="stack-line"><strong>${documentTitle(doc)}</strong>${pill(documentType(doc.type), "blue")}${pill(label(doc.status))}</div>
-              ${canManageKnowledgeBase() ? `<button class="danger-button tiny" type="button" data-document-action="delete" data-document-id="${doc.id}">Удалить</button>` : ""}
+              ${canDeleteKnowledgeBase() ? `<button class="danger-button tiny" type="button" data-document-action="delete" data-document-id="${doc.id}">Удалить</button>` : ""}
             </div>
             ${doc.file_path ? documentFileLink(doc) : `<div class="muted">${doc.file_name || "Файл не загружен"}</div>`}
           </article>`
@@ -2476,13 +2502,16 @@ async function renderFeedback() {
   const statsNode = qs("#feedbackStats");
   const bindingsPanel = qs("#maxBindingsPanel");
   const bindingsRows = qs("#maxBindingRows");
+  const deleteSelectedButton = qs("#deleteSelectedFeedbackButton");
   if (!rowsNode || !statsNode) return;
   if (!canView("feedback")) {
     rowsNode.innerHTML = "";
     statsNode.innerHTML = "";
     if (bindingsPanel) bindingsPanel.hidden = true;
+    if (deleteSelectedButton) deleteSelectedButton.hidden = true;
     return;
   }
+  if (deleteSelectedButton) deleteSelectedButton.hidden = !canDeleteFeedback();
   renderMaxBindings(bindingsPanel, bindingsRows);
   const items = await api("/api/feedback");
   const counts = items.reduce(
@@ -2531,7 +2560,7 @@ async function renderFeedback() {
             <div class="feedback-actions">
               <button class="secondary tiny" type="button" data-feedback-status="in_work" data-feedback-id="${item.id}">В работу</button>
               <button class="secondary tiny" type="button" data-feedback-status="done" data-feedback-id="${item.id}">Готово</button>
-              <button class="danger-button tiny" type="button" data-feedback-delete="${item.id}">Удалить</button>
+              ${canDeleteFeedback() ? `<button class="danger-button tiny" type="button" data-feedback-delete="${item.id}">Удалить</button>` : ""}
             </div>
           </article>`;
         })
@@ -2541,7 +2570,7 @@ async function renderFeedback() {
 
 function renderMaxBindings(panel, rowsNode) {
   if (!panel || !rowsNode) return;
-  const canManage = ["owner", "construction_manager"].includes(currentRoleBase());
+  const canManage = canManageSystemSettings();
   panel.hidden = !canManage;
   if (!canManage) return;
   rememberMaxBindingDrafts(rowsNode);
@@ -2882,6 +2911,10 @@ function bindEvents() {
   qs("#newEventButton").addEventListener("click", () => qs("#eventDialog").showModal());
   qs("#refreshFeedbackButton")?.addEventListener("click", () => renderFeedback().then(() => showToast("Обратная связь обновлена")));
   qs("#deleteSelectedFeedbackButton")?.addEventListener("click", async () => {
+    if (!canDeleteFeedback()) {
+      showToast("Удаление сообщений недоступно для текущей роли");
+      return;
+    }
     const ids = [...state.selectedFeedbackIds].filter(Boolean);
     if (!ids.length) {
       showToast("Выберите сообщения для удаления");

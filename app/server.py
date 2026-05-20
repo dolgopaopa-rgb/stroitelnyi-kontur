@@ -1083,6 +1083,10 @@ def account_user_id(account: dict | None) -> int:
 
 
 def can_manage_feedback(account: dict | None) -> bool:
+    return account_role(account) in {"owner", "construction_manager", "finance_director", "sales_manager"}
+
+
+def can_delete_feedback(account: dict | None) -> bool:
     return account_role(account) in {"owner", "construction_manager", "sales_manager"}
 
 
@@ -1090,7 +1094,7 @@ def project_visible_for_account(project: dict, account: dict | None) -> bool:
     role = account_role(account)
     if role == "foreman":
         return int(project.get("foreman_id") or 0) == account_user_id(account)
-    return role in {"owner", "construction_manager", "sales_manager", "procurement_manager", "estimator", "technical_supervisor"}
+    return role in {"owner", "construction_manager", "finance_director", "accountant", "sales_manager", "procurement_manager", "estimator", "technical_supervisor"}
 
 
 DOCUMENT_TYPES_BY_ROLE = {
@@ -1098,6 +1102,7 @@ DOCUMENT_TYPES_BY_ROLE = {
     "procurement_manager": {"smetter_materials", "project_documentation", "detail_node", "regulation", "standard", "instruction", "other"},
     "technical_supervisor": {"smetter_materials", "smetter_work_task", "project_documentation", "detail_node", "regulation", "standard", "instruction", "other"},
     "estimator": {"main_estimate", "smetter_materials", "smetter_work_task", "project_documentation", "variation_estimate", "act", "ks_2", "ks_3", "other"},
+    "accountant": {"main_estimate", "smetter_materials", "smetter_work_task", "contract", "variation_estimate", "act", "ks_2", "ks_3", "other"},
 }
 
 
@@ -1106,7 +1111,7 @@ def document_visible_for_account(document: dict, account: dict | None) -> bool:
     if related_type == "knowledge_base":
         return True
     role = account_role(account)
-    if role in {"owner", "construction_manager", "sales_manager"}:
+    if role in {"owner", "construction_manager", "finance_director", "sales_manager"}:
         return True
     allowed = DOCUMENT_TYPES_BY_ROLE.get(role, set())
     return str(document.get("type") or "other") in allowed
@@ -1117,7 +1122,7 @@ def filter_documents_for_account(documents: list[dict], account: dict | None) ->
 
 
 def can_view_financials(account: dict | None) -> bool:
-    return account_role(account) in {"owner", "construction_manager", "sales_manager", "estimator"}
+    return account_role(account) in {"owner", "construction_manager", "finance_director", "accountant", "sales_manager", "estimator"}
 
 
 def sanitize_project_for_account(project: dict, account: dict | None) -> dict:
@@ -1128,7 +1133,7 @@ def sanitize_project_for_account(project: dict, account: dict | None) -> dict:
                 project[key] = 0
         project["contracts"] = []
         project["variations"] = []
-    if role not in {"owner", "construction_manager", "sales_manager", "estimator"}:
+    if role not in {"owner", "construction_manager", "finance_director", "accountant", "sales_manager", "estimator"}:
         project["bitrix_ref"] = ""
         project["smetter_ref"] = ""
     return project
@@ -1137,13 +1142,13 @@ def sanitize_project_for_account(project: dict, account: dict | None) -> dict:
 def ensure_project_action_allowed(account: dict | None, action: str) -> None:
     role = account_role(account)
     allowed = {
-        "update": {"owner", "sales_manager", "construction_manager"},
-        "submit": {"owner", "sales_manager"},
-        "accept": {"owner", "construction_manager"},
-        "assign": {"owner", "construction_manager"},
-        "return": {"owner", "construction_manager"},
-        "archive": {"owner", "construction_manager"},
-        "restore": {"owner", "construction_manager"},
+        "update": {"owner", "sales_manager", "construction_manager", "finance_director"},
+        "submit": {"owner", "sales_manager", "finance_director"},
+        "accept": {"owner", "construction_manager", "finance_director"},
+        "assign": {"owner", "construction_manager", "finance_director"},
+        "return": {"owner", "construction_manager", "finance_director"},
+        "archive": {"owner", "construction_manager", "finance_director"},
+        "restore": {"owner", "construction_manager", "finance_director"},
         "delete": {"owner"},
     }.get(action, set())
     if role not in allowed:
@@ -1773,7 +1778,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
             if path == "/api/notifications":
                 notification_filter = ""
                 params: list[object] = []
-                if account_role(account) not in {"owner", "construction_manager"}:
+                if account_role(account) not in {"owner", "construction_manager", "finance_director"}:
                     notification_filter = "WHERE n.role = ? OR n.user_id = ?"
                     params = [account_role(account), account_user_id(account)]
                 rows = db.execute(
@@ -2078,10 +2083,10 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 "/api/events": "SELECT e.*, p.title AS project_title, u.name AS author_name FROM events e JOIN projects p ON p.id = e.project_id LEFT JOIN users u ON u.id = e.author_id ORDER BY e.created_at DESC",
             }
             if path in endpoints:
-                if path in {"/api/contracts", "/api/events"} and account_role(account) not in {"owner", "construction_manager", "sales_manager"}:
+                if path in {"/api/contracts", "/api/events"} and account_role(account) not in {"owner", "construction_manager", "finance_director", "accountant", "sales_manager"}:
                     json_response(self, [])
                     return
-                if path == "/api/variations" and account_role(account) not in {"owner", "construction_manager", "estimator"}:
+                if path == "/api/variations" and account_role(account) not in {"owner", "construction_manager", "finance_director", "accountant", "estimator"}:
                     json_response(self, [])
                     return
                 rows = rows_to_dicts(db.execute(endpoints[path]).fetchall())
@@ -2105,7 +2110,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             or int(row.get("reviewer_id") or 0) == user_id
                             or int(row.get("creator_id") or 0) == user_id
                         ]
-                    elif role not in {"owner", "construction_manager", "technical_supervisor"}:
+                    elif role not in {"owner", "construction_manager", "finance_director", "technical_supervisor"}:
                         rows = []
                     rows = attach_task_events(db, rows)
                 json_response(self, rows)
@@ -2184,7 +2189,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
 
             user_max_chat = re.match(r"^/api/users/(\d+)/max-chat$", path)
             if user_max_chat:
-                if account_role(account) not in {"owner", "construction_manager"}:
+                if account_role(account) not in {"owner", "construction_manager", "finance_director"}:
                     json_response(self, {"error": "Forbidden"}, 403)
                     return
                 user_id = int(user_max_chat.group(1))
@@ -2209,7 +2214,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 return
 
             if path == "/api/feedback/delete-bulk":
-                if not can_manage_feedback(account):
+                if not can_delete_feedback(account):
                     json_response(self, {"error": "Forbidden"}, 403)
                     return
                 ids = []
@@ -2228,7 +2233,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
 
             feedback_delete = re.match(r"^/api/feedback/(\d+)/delete$", path)
             if feedback_delete:
-                if not can_manage_feedback(account):
+                if not can_delete_feedback(account):
                     json_response(self, {"error": "Forbidden"}, 403)
                     return
                 db.execute("DELETE FROM feedback_items WHERE id = ?", (int(feedback_delete.group(1)),))
@@ -2810,7 +2815,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 action = variation_action.group(2)
                 actor_role = str(data.get("actor_role") or account_role(account))
                 actor_id = int(data.get("actor_id") or 0) or account_user_id(account) or None
-                if action in {"approve", "reject"} and actor_role not in {"owner", "construction_manager"}:
+                if action in {"approve", "reject"} and actor_role not in {"owner", "construction_manager", "finance_director"}:
                     raise ValueError("Согласовать или отклонить допработу может только ген.директор или руководитель строительства.")
                 variation = db.execute(
                     """
@@ -3053,7 +3058,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 if action == "create_variation":
                     actor_role = str(data.get("actor_role") or "").strip()
                     actor_id = int(data.get("actor_id") or 0) or None
-                    can_create_variation = actor_role in {"owner", "construction_manager"} or (
+                    can_create_variation = actor_role in {"owner", "construction_manager", "finance_director"} or (
                         actor_role == "foreman"
                         and actor_id
                         and int(actor_id) in {int(batch["foreman_id"] or 0), int(batch["creator_id"] or 0)}
@@ -3904,6 +3909,9 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
             if path == "/api/documents":
                 file_data = data.get("document_file") or {}
                 related_type = data.get("related_type") or "project"
+                if related_type == "knowledge_base" and account_role(account) not in {"owner", "construction_manager", "finance_director"}:
+                    json_response(self, {"error": "Forbidden"}, 403)
+                    return
                 project_id = int(data["project_id"]) if data.get("project_id") else (0 if related_type == "knowledge_base" else None)
                 if project_id is None:
                     json_response(self, {"error": "Для документа объекта нужно выбрать объект"}, 400)

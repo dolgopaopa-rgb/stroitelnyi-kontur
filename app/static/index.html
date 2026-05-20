@@ -9,10 +9,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Строительный контур</title>
-    <link rel="manifest" href="/static/manifest.webmanifest?v=20260521-attention-agent" />
+    <link rel="manifest" href="/static/manifest.webmanifest?v=20260521-role-access" />
     <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260521-attention-agent" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260521-role-access" />
   </head>
   <body>
     <div class="app">
@@ -47,6 +47,8 @@
               Роль
               <select id="currentRoleSelect">
                 <option value="owner">Ген.директор</option>
+                <option value="finance_director">Фин.директор</option>
+                <option value="accountant">Бухгалтер</option>
                 <option value="sales_manager">Менеджер</option>
                 <option value="construction_manager">Рук. строительства</option>
                 <option value="foreman:7">Прораб Андрей</option>
@@ -597,6 +599,6 @@
     </dialog>
 
     <div class="toast" id="toast"></div>
-    <script src="/static/app.js?v=20260521-attention-agent"></script>
+    <script src="/static/app.js?v=20260521-role-access"></script>
   </body>
 </html>
