@@ -47,6 +47,16 @@ def auth_required_response(handler: BaseHTTPRequestHandler) -> None:
     handler.end_headers()
 
 
+def logout_response(handler: BaseHTTPRequestHandler) -> None:
+    handler.send_response(401)
+    handler.send_header("WWW-Authenticate", 'Basic realm="Stroitelnyi Kontur Logout"')
+    handler.send_header("Content-Type", "text/plain; charset=utf-8")
+    body = "Вы вышли из Контура. Закройте вкладку или войдите заново.".encode("utf-8")
+    handler.send_header("Content-Length", str(len(body)))
+    handler.end_headers()
+    handler.wfile.write(body)
+
+
 def basic_auth_pair(handler: BaseHTTPRequestHandler) -> tuple[str, str] | None:
     header = handler.headers.get("Authorization", "")
     if not header.startswith("Basic "):
@@ -869,6 +879,7 @@ def ensure_project_action_allowed(account: dict | None, action: str) -> None:
         "update": {"owner", "sales_manager", "construction_manager"},
         "submit": {"owner", "sales_manager"},
         "accept": {"owner", "construction_manager"},
+        "assign": {"owner", "construction_manager"},
         "return": {"owner", "construction_manager"},
         "archive": {"owner", "construction_manager"},
         "restore": {"owner", "construction_manager"},
@@ -1065,8 +1076,24 @@ def save_document_file(db, project_id: int, file_data: dict, title: str, doc_typ
     return int(cursor.lastrowid)
 
 
+def archive_replaced_project_documents(db, project_id: int, doc_type: str) -> None:
+    if doc_type not in {"smetter_materials", "smetter_work_task", "main_estimate"}:
+        return
+    db.execute(
+        """
+        UPDATE documents
+        SET status = 'archived', updated_at = CURRENT_TIMESTAMP
+        WHERE project_id = ?
+          AND type = ?
+          AND COALESCE(status, 'active') != 'archived'
+        """,
+        (project_id, doc_type),
+    )
+
+
 def save_initial_documents(db, project_id: int, files: list[dict]) -> None:
     for item in files:
+        archive_replaced_project_documents(db, project_id, item.get("type") or "other")
         save_document_file(
             db,
             project_id,
@@ -1175,6 +1202,9 @@ class AppHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
 
+        if path == "/logout":
+            logout_response(self)
+            return
         if path != "/health" and not is_authorized(self):
             auth_required_response(self)
             return
@@ -2049,7 +2079,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 json_response(self, detail, 201)
                 return
 
-            project_action = re.match(r"^/api/projects/(\d+)/(update|submit|accept|return|archive|restore|delete)$", path)
+            project_action = re.match(r"^/api/projects/(\d+)/(update|submit|accept|assign|return|archive|restore|delete)$", path)
             if project_action:
                 project_id = int(project_action.group(1))
                 action = project_action.group(2)
@@ -2194,6 +2224,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     return
 
                 if action == "submit":
+                    correction_comment = str(data.get("comment") or "").strip()
                     required = [
                         ("title", "Название"),
                         ("customer_name", "Заказчик"),
@@ -2226,14 +2257,19 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         manager_id,
                         "construction_manager",
                         "Новый объект передан в строительство",
-                        f"{project['title']}: проверьте карточку, документацию и примите объект в работу или верните на доработку.",
+                        f"{project['title']}: проверьте карточку, документацию и примите объект в работу или верните на доработку."
+                        + (f" Комментарий менеджера: {correction_comment}" if correction_comment else ""),
                     )
                     db.execute(
                         """
                         INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
                         VALUES (?, 'decision', ?, 3, 'internal', 'handover')
                         """,
-                        (project_id, "Менеджер передал объект руководителю строительства на проверку."),
+                        (
+                            project_id,
+                            "Менеджер передал объект руководителю строительства на проверку."
+                            + (f" Комментарий после доработки: {correction_comment}" if correction_comment else ""),
+                        ),
                     )
                     db.commit()
                     json_response(self, get_project_detail(project_id, account))
@@ -2323,6 +2359,59 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         VALUES (?, 'decision', ?, 2, 'internal', 'handover')
                         """,
                         (project_id, "Руководитель строительства принял объект в работу и назначил ответственных."),
+                    )
+                    db.commit()
+                    json_response(self, get_project_detail(project_id, account))
+                    return
+
+                if action == "assign":
+                    if project["status"] == "archived":
+                        raise ValueError("У архивного объекта нельзя менять ответственных.")
+                    assignees = {
+                        "foreman": int(data.get("foreman_id") or 0) or None,
+                        "estimator": int(data.get("estimator_id") or 0) or None,
+                        "procurement_manager": int(data.get("procurement_manager_id") or 0) or None,
+                        "technical_supervisor": int(data.get("tech_supervisor_id") or 0) or None,
+                    }
+                    db.execute(
+                        """
+                        UPDATE projects
+                        SET foreman_id = ?,
+                            estimator_id = ?,
+                            procurement_manager_id = ?,
+                            tech_supervisor_id = ?,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (
+                            assignees["foreman"],
+                            assignees["estimator"],
+                            assignees["procurement_manager"],
+                            assignees["technical_supervisor"],
+                            project_id,
+                        ),
+                    )
+                    for role, user_id in assignees.items():
+                        if not user_id:
+                            continue
+                        create_notification(
+                            db,
+                            project_id,
+                            user_id,
+                            role,
+                            "Назначение по объекту обновлено",
+                            f"{project['title']}: руководитель строительства обновил состав ответственных.",
+                        )
+                    db.execute(
+                        """
+                        INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
+                        VALUES (?, 'decision', ?, ?, 'internal', 'handover')
+                        """,
+                        (
+                            project_id,
+                            "Руководитель строительства обновил ответственных по объекту.",
+                            account_user_id(account) or user_id_by_role(db, "construction_manager") or 2,
+                        ),
                     )
                     db.commit()
                     json_response(self, get_project_detail(project_id, account))
@@ -3501,6 +3590,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     ),
                 )
                 if data.get("file_base64"):
+                    archive_replaced_project_documents(db, project_id, "smetter_materials")
                     save_document_file(
                         db,
                         project_id,
@@ -3719,7 +3809,31 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         int(data.get("responsible_id") or 2),
                     ),
                 )
-                json_response(self, {"id": cursor.lastrowid}, 201)
+                contract_id = int(cursor.lastrowid)
+                file_data = data.get("document_file") or {}
+                if file_data.get("file_base64"):
+                    file_data["contract_id"] = contract_id
+                    file_data["process_type"] = data.get("type") or "customer_contract"
+                    save_document_file(
+                        db,
+                        int(data["project_id"]),
+                        file_data,
+                        data.get("title") or "Договор",
+                        "contract",
+                        "contract",
+                    )
+                db.execute(
+                    """
+                    INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
+                    VALUES (?, 'document', ?, ?, 'internal', 'contract')
+                    """,
+                    (
+                        int(data["project_id"]),
+                        f"Добавлен договор/допсоглашение: {data.get('title') or 'Новый договор'}",
+                        account_user_id(account) or user_id_by_role(db, "sales_manager") or 3,
+                    ),
+                )
+                json_response(self, {"id": contract_id}, 201)
                 return
 
             if path == "/api/events":

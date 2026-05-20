@@ -1,6 +1,6 @@
 const state = {
   view: localStorage.getItem("currentView") || "dashboard",
-  currentRole: "owner",
+  currentRole: localStorage.getItem("currentRole") || "owner",
   session: null,
   canSwitchRole: true,
   users: [],
@@ -355,7 +355,6 @@ function documentType(type) {
     main_estimate: "Основная смета",
     smetter_materials: "Файл материалов из Сметтера",
     smetter_work_task: "Задание на работы из Сметтера",
-    payment_schedule: "График платежей",
     project_documentation: "Проектная документация",
     variation_estimate: "Смета допработ",
     act: "Акт",
@@ -395,11 +394,49 @@ function documentFileLink(doc) {
   return `
     <a class="document-link" href="/api/documents/${doc.id}/download" target="_blank" rel="noopener noreferrer">
       <strong>${title}</strong>
-      <span>${[type, doc.related_section, doc.process_type, file].filter(Boolean).join(" · ")}</span>
+      <span>${[type, doc.status === "archived" ? "архивная версия" : "", doc.related_section, doc.process_type, file].filter(Boolean).join(" · ")}</span>
     </a>`;
 }
 
-function renderDocumentSummary(docs) {
+function contractTitleById(contracts = []) {
+  return contracts.reduce((acc, contract) => {
+    acc[Number(contract.id)] = `${contractType(contract.type)}: ${contract.title}`;
+    return acc;
+  }, {});
+}
+
+function renderGroupedProjectDocuments(docs, contracts = []) {
+  const byContract = contractTitleById(contracts);
+  const activeDocs = docs.filter((doc) => doc.status !== "archived");
+  const archivedDocs = docs.filter((doc) => doc.status === "archived");
+  const groups = activeDocs.reduce((acc, doc) => {
+    const key = doc.contract_id ? byContract[Number(doc.contract_id)] || "Договор / допник" : "Общие документы объекта";
+    acc[key] = acc[key] || [];
+    acc[key].push(doc);
+    return acc;
+  }, {});
+  const activeHtml = Object.entries(groups)
+    .map(
+      ([title, items]) => `
+        <details class="document-contract-group" open>
+          <summary>${title} ${pill(`${items.length} шт.`, "blue")}</summary>
+          <div class="document-list">${items.map((doc) => `<div class="document-row">${documentFileLink(doc)}</div>`).join("")}</div>
+        </details>`
+    )
+    .join("");
+  const archiveHtml = archivedDocs.length
+    ? `
+      <details class="document-contract-group">
+        <summary>Архив замененных файлов ${pill(`${archivedDocs.length} шт.`, "warning")}</summary>
+        <div class="document-list">${archivedDocs.map((doc) => `<div class="document-row">${documentFileLink(doc)}</div>`).join("")}</div>
+      </details>`
+    : "";
+  return (activeHtml || archiveHtml)
+    ? `${activeHtml}${archiveHtml}`
+    : `<p class="muted">Документы пока не загружены. Добавить договор, смету или проект можно через кнопку “Редактировать”.</p>`;
+}
+
+function renderDocumentSummary(docs, contracts = []) {
   return `
     <section class="workflow-panel document-summary compact-collapsible">
       <details>
@@ -407,11 +444,10 @@ function renderDocumentSummary(docs) {
           <span>Документы объекта</span>
           ${pill(`${docs.length} шт.`, docs.length ? "blue" : "")}
         </summary>
-        ${
-          docs.length
-            ? `<div class="document-list">${docs.map((doc) => `<div class="document-row">${documentFileLink(doc)}</div>`).join("")}</div>`
-            : `<p class="muted">Документы пока не загружены. Добавить договор, смету, график платежей или проект можно через кнопку “Редактировать”.</p>`
-        }
+        <div class="form-actions">
+          ${canEditProject() ? `<button class="secondary tiny" type="button" data-add-contract="${state.selectedProjectId || ""}">Добавить договор / допник</button>` : ""}
+        </div>
+        ${renderGroupedProjectDocuments(docs, contracts)}
       </details>
     </section>`;
 }
@@ -649,6 +685,7 @@ function fillRoleSwitcher() {
   select.innerHTML = options.map(([value, title]) => `<option value="${value}">${title}</option>`).join("");
   select.value = options.some(([value]) => value === selected) ? selected : "owner";
   state.currentRole = select.value;
+  localStorage.setItem("currentRole", state.currentRole);
   syncNavigationAccess();
 }
 
@@ -656,8 +693,14 @@ function usersByRole(role) {
   return state.users.filter((user) => user.role === role);
 }
 
-function userOptionsByRole(role) {
-  return usersByRole(role).map((user) => `<option value="${user.id}">${user.name}</option>`).join("");
+function userOptionsByRole(role, { includeEmpty = false, selectedId = "" } = {}) {
+  const empty = includeEmpty ? `<option value="">Не назначен</option>` : "";
+  return (
+    empty +
+    usersByRole(role)
+      .map((user) => `<option value="${user.id}" ${Number(selectedId) === Number(user.id) ? "selected" : ""}>${user.name}</option>`)
+      .join("")
+  );
 }
 
 function taskParticipantLabel(user) {
@@ -1122,6 +1165,7 @@ async function renderDashboard() {
   qs("#summaryCards").innerHTML = `
     <button class="metric clickable" data-view-target="projects" type="button"><span class="muted">Объекты</span><strong>${summary.projects}</strong><span>В базе MVP</span></button>
     <button class="metric clickable" data-view-target="projects" type="button"><span class="muted">У менеджера</span><strong>${summary.pending_handover}</strong><span>Черновики и доработки</span></button>
+    <button class="metric clickable" data-view-target="projects" type="button"><span class="muted">На передаче</span><strong>${summary.construction_review || 0}</strong><span>Ждут решения строительства</span></button>
     <button class="metric clickable" data-task-filter="waiting" type="button"><span class="muted">Задачи к приемке</span><strong>${summary.task_done_waiting || 0}</strong><span>Выполнены, но не приняты</span></button>
     <button class="metric clickable" data-task-filter="overdue" type="button"><span class="muted">Просрочено</span><strong>${taskStats(roleTasks).overdue}</strong><span>По открытым задачам</span></button>
   `;
@@ -1246,7 +1290,7 @@ async function renderProjectDetail(projectId) {
           : `${item.title} · ${item.estimated_quantity || 0} ${item.unit || ""} · ${money(item.total_price)}`
     ),
     variations: canViewFinancials() ? renderSmallList(project.variations, (item) => `${item.title} · ${variationType(item.type)} · ${money(item.amount)} · ${moneyDecision(item.financial_decision)}`) : `<p class="muted">Финансовые отклонения доступны руководителям и сметчикам.</p>`,
-    documents: renderSmallList(docs, (doc) => documentFileLink(doc)),
+    documents: renderGroupedProjectDocuments(docs, project.contracts || []),
     events: renderSmallList(project.events, (event) => `${event.text}`),
   };
   const detailBlocks = [
@@ -1261,7 +1305,7 @@ async function renderProjectDetail(projectId) {
     ],
     ["edit", renderProjectEditPanel(project)],
     ["workflow", renderProjectWorkflow(project)],
-    ["documents", renderDocumentSummary(docs)],
+    ["documents", renderDocumentSummary(docs, project.contracts || [])],
   ];
   qs("#projectDetail").innerHTML = `
     <div class="stack-line"><h2>${project.title}</h2>${pill(label(project.status), "blue")}</div>
@@ -1323,6 +1367,7 @@ function renderProjectWorkflow(project) {
       <section class="workflow-panel">
         <div class="stack-line"><h3>Передача объекта</h3>${pill(project.status === "revision_requested" ? "Нужна доработка" : "Черновик", project.status === "revision_requested" ? "danger" : "warning")}</div>
         ${project.workflow_comment ? `<p class="muted">Комментарий руководителя строительства: ${project.workflow_comment}</p>` : ""}
+        ${project.status === "revision_requested" ? `<label>Что исправлено перед повторной передачей <textarea id="submitFixComment" rows="2" placeholder="Например: добавил договор и проектную документацию"></textarea></label>` : ""}
         <div class="form-actions">
           <span class="muted">После проверки заполнения менеджер передает объект руководителю строительства.</span>
           ${canSubmitProject() ? `<button class="primary" data-project-action="submit" data-project-id="${project.id}">Передать в работу</button>` : `<span class="muted">Передать объект может менеджер или ген.директор.</span>`}
@@ -1361,6 +1406,19 @@ function renderProjectWorkflow(project) {
     <section class="workflow-panel">
       <div class="stack-line"><h3>Объект в работе</h3>${pill("Ответственные назначены", "success")}</div>
       <p class="muted">После принятия уведомления получают прораб, снабжение, сметчик и технадзор.</p>
+      ${
+        canAcceptProject()
+          ? `<div class="grid-2">
+              <label>Прораб <select id="assignForeman">${userOptionsByRole("foreman", { includeEmpty: true, selectedId: project.foreman_id })}</select></label>
+              <label>Сметчик <select id="assignEstimator">${userOptionsByRole("estimator", { includeEmpty: true, selectedId: project.estimator_id })}</select></label>
+            </div>
+            <div class="grid-2">
+              <label>Снабжение <select id="assignProcurement">${userOptionsByRole("procurement_manager", { includeEmpty: true, selectedId: project.procurement_manager_id })}</select></label>
+              <label>Технадзор <select id="assignTech">${userOptionsByRole("technical_supervisor", { includeEmpty: true, selectedId: project.tech_supervisor_id })}</select></label>
+            </div>
+            <button class="secondary" data-project-action="assign" data-project-id="${project.id}">Сохранить ответственных</button>`
+          : ""
+      }
       ${canArchiveProject() ? `<button class="secondary" data-project-action="archive" data-project-id="${project.id}">Отправить в архив</button>` : ""}
     </section>`;
 }
@@ -1499,7 +1557,6 @@ async function projectFormToJson(form) {
       fileDocumentPayload(workTaskFile, "Задание на работы из Сметтера", "smetter_work_task"),
       fileDocumentPayload(files.contract_file.files[0], "Договор", "contract"),
       fileDocumentPayload(files.estimate_doc_file.files[0], "Смета", "main_estimate"),
-      fileDocumentPayload(files.payment_schedule_file.files[0], "График платежей", "payment_schedule"),
       fileDocumentPayload(files.project_docs_file.files[0], "Проектная документация", "project_documentation"),
     ])
   ).filter(Boolean);
@@ -2424,7 +2481,7 @@ async function refreshLiveData() {
 }
 
 function setProjectFileFieldsRequired(required) {
-  ["estimate_file_name", "work_task_file", "contract_file", "estimate_doc_file", "payment_schedule_file", "project_docs_file"].forEach((name) => {
+  ["estimate_file_name", "work_task_file", "contract_file", "estimate_doc_file", "project_docs_file"].forEach((name) => {
     const input = qs(`#projectForm input[name="${name}"]`);
     if (input) input.required = required;
   });
@@ -2460,6 +2517,14 @@ async function openProjectEditDialog(projectId) {
   form.elements.planned_end_date.value = project.planned_end_date || "";
   form.elements.main_estimate_amount.value = project.main_estimate_amount || "";
   qs("#projectDialog").showModal();
+}
+
+function openContractDialog(projectId = "") {
+  const form = qs("#contractForm");
+  form.reset();
+  if (projectId) form.elements.project_id.value = String(projectId);
+  form.elements.responsible_id.value = currentUserId() || state.users.find((user) => user.role === "construction_manager")?.id || "";
+  qs("#contractDialog").showModal();
 }
 
 async function handleProjectAction(button) {
@@ -2513,7 +2578,20 @@ async function handleProjectAction(button) {
     message = "Объект принят в работу";
   }
 
+  if (action === "assign") {
+    payload = {
+      actor_id: currentUserId(),
+      actor_role: currentRoleBase(),
+      foreman_id: qs("#assignForeman")?.value,
+      estimator_id: qs("#assignEstimator")?.value,
+      procurement_manager_id: qs("#assignProcurement")?.value,
+      tech_supervisor_id: qs("#assignTech")?.value,
+    };
+    message = "Ответственные по объекту обновлены";
+  }
+
   if (action === "submit") {
+    payload.comment = qs("#submitFixComment")?.value || "";
     message = "Объект передан руководителю строительства";
   }
 
@@ -2588,8 +2666,13 @@ function bindEvents() {
   qsa("[data-view]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
   qsa("[data-view-target]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.viewTarget)));
   qs("#refreshButton").addEventListener("click", () => loadAll().then(() => showToast("Данные обновлены")));
+  qs("#logoutButton")?.addEventListener("click", () => {
+    localStorage.removeItem("currentRole");
+    window.location.href = "/logout";
+  });
   qs("#currentRoleSelect").addEventListener("change", async (event) => {
     state.currentRole = event.target.value;
+    localStorage.setItem("currentRole", state.currentRole);
     syncNavigationAccess();
     if (state.selectedProjectId) await renderProjectDetail(state.selectedProjectId);
     state.selectedTaskProjectId = null;
@@ -2605,6 +2688,7 @@ function bindEvents() {
     resetProjectDialog();
     qs("#projectDialog").showModal();
   });
+  qs("#newContractButton")?.addEventListener("click", () => openContractDialog(state.selectedProjectId || ""));
   qs("#newTaskButton").addEventListener("click", () => {
     const form = qs("#taskForm");
     form.reset();
@@ -2947,6 +3031,12 @@ function bindEvents() {
       return;
     }
 
+    const addContractButton = event.target.closest("[data-add-contract]");
+    if (addContractButton) {
+      openContractDialog(Number(addContractButton.dataset.addContract));
+      return;
+    }
+
     if (event.target.closest("a")) return;
 
     const projectButton = event.target.closest("[data-open-project]");
@@ -3133,6 +3223,29 @@ function bindEvents() {
       showToast("Материал добавлен в базу знаний");
     } catch (error) {
       showToast(error.message || "Не удалось сохранить материал");
+    }
+  });
+  qs("#contractForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = qs("#contractForm");
+    try {
+      const payload = formToJson(form);
+      const file = form.elements.contract_document_file.files[0];
+      if (file) {
+        payload.document_file = await fileDocumentPayload(file, payload.title || file.name, "contract", "contract");
+      }
+      await api("/api/contracts", { method: "POST", body: JSON.stringify(payload) });
+      qs("#contractDialog").close();
+      form.reset();
+      await loadAll();
+      if (payload.project_id) {
+        state.selectedProjectId = Number(payload.project_id);
+        switchView("projects");
+        await renderProjectDetail(state.selectedProjectId);
+      }
+      showToast("Договор или допник добавлен в карточку объекта");
+    } catch (error) {
+      showToast(error.message || "Не удалось сохранить договор");
     }
   });
   qs("#eventForm").addEventListener("submit", (event) => {

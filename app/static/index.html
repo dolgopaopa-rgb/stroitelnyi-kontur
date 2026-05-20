@@ -6,7 +6,7 @@
     <title>Строительный контур MVP</title>
     <link rel="icon" type="image/png" href="/static/assets/g2-logo.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260515-workflow" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260520-feedback" />
   </head>
   <body>
     <div class="app">
@@ -51,6 +51,7 @@
               </select>
             </label>
             <button class="secondary" id="refreshButton">Обновить</button>
+            <button class="secondary" id="logoutButton" type="button">Выйти</button>
             <button class="primary" id="newProjectButton">Новый объект</button>
           </div>
         </header>
@@ -329,13 +330,10 @@
         <label>Файл материалов из Сметтера / Excel <input name="estimate_file_name" type="file" accept=".xlsx,.csv" required /></label>
         <label>Задание на работы из Сметтера / Excel <input name="work_task_file" type="file" accept=".xlsx,.csv" required /></label>
         <div class="grid-2">
-          <label>Договор <input name="contract_file" type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" required /></label>
+          <label>Первичный договор <input name="contract_file" type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" required /></label>
           <label>Смета <input name="estimate_doc_file" type="file" accept=".pdf,.xlsx,.xls,.doc,.docx" required /></label>
         </div>
-        <div class="grid-2">
-          <label>График платежей <input name="payment_schedule_file" type="file" accept=".pdf,.xlsx,.xls,.doc,.docx,.jpg,.jpeg,.png" required /></label>
-          <label>Проектная документация <input name="project_docs_file" type="file" accept=".pdf,.zip,.rar,.7z,.dwg,.dxf,.jpg,.jpeg,.png,.doc,.docx" required /></label>
-        </div>
+        <label>Проектная документация <input name="project_docs_file" type="file" accept=".pdf,.zip,.rar,.7z,.dwg,.dxf,.jpg,.jpeg,.png,.doc,.docx" required /></label>
         <div class="form-actions">
           <button type="button" class="secondary" data-close="projectDialog">Отмена</button>
           <button class="secondary" id="projectDraftButton" type="submit" formnovalidate data-save-mode="draft">Сохранить черновик</button>
@@ -537,6 +535,7 @@
           <label>Дата окончания <input name="ends_at" type="date" /></label>
           <label>Ответственный <select name="responsible_id"></select></label>
         </div>
+        <label>Файл договора / допника <input name="contract_document_file" type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" /></label>
         <div class="form-actions">
           <button type="button" class="secondary" data-close="contractDialog">Отмена</button>
           <button class="primary" type="submit">Сохранить</button>
@@ -579,6 +578,6 @@
     </dialog>
 
     <div class="toast" id="toast"></div>
-    <script src="/static/app.js?v=20260515-workflow"></script>
+    <script src="/static/app.js?v=20260520-feedback"></script>
   </body>
 </html>
