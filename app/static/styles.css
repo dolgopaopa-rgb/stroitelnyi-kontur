@@ -1595,6 +1595,32 @@ h2 {
   gap: 6px;
 }
 
+.max-bindings-panel {
+  margin-top: 12px;
+}
+
+.max-binding-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(180px, 1.2fr) auto auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.checkbox-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.checkbox-line input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--teal);
+}
+
 .feedback-attachments {
   display: flex;
   flex-wrap: wrap;
@@ -2541,6 +2567,16 @@ textarea {
   .detail-grid {
     grid-template-columns: minmax(0, 1fr);
     gap: 10px;
+  }
+
+  .max-binding-row {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .max-binding-row input,
+  .max-binding-row button {
+    width: 100%;
   }
 
   #projectsView .split,

@@ -2364,12 +2364,16 @@ function renderFeedbackAttachments(attachments = []) {
 async function renderFeedback() {
   const rowsNode = qs("#feedbackRows");
   const statsNode = qs("#feedbackStats");
+  const bindingsPanel = qs("#maxBindingsPanel");
+  const bindingsRows = qs("#maxBindingRows");
   if (!rowsNode || !statsNode) return;
   if (!canView("feedback")) {
     rowsNode.innerHTML = "";
     statsNode.innerHTML = "";
+    if (bindingsPanel) bindingsPanel.hidden = true;
     return;
   }
+  renderMaxBindings(bindingsPanel, bindingsRows);
   const items = await api("/api/feedback");
   const counts = items.reduce(
     (acc, item) => {
@@ -2423,6 +2427,30 @@ async function renderFeedback() {
         })
         .join("")
     : `<p class="muted">Сообщений из MAX пока нет.</p>`;
+}
+
+function renderMaxBindings(panel, rowsNode) {
+  if (!panel || !rowsNode) return;
+  const canManage = ["owner", "construction_manager"].includes(currentRoleBase());
+  panel.hidden = !canManage;
+  if (!canManage) return;
+  rowsNode.innerHTML = state.users
+    .map(
+      (user) => `
+      <article class="row max-binding-row" data-max-user-row="${user.id}">
+        <div>
+          <strong>${taskParticipantLabel(user)}</strong>
+          <div class="muted">${user.max_notifications_enabled ? "Личные уведомления включены" : "Личные уведомления выключены"}</div>
+        </div>
+        <input name="max_chat_id" value="${escapeAttr(user.max_chat_id || "")}" placeholder="Личный chat_id из MAX" />
+        <label class="checkbox-line">
+          <input name="max_enabled" type="checkbox" ${user.max_notifications_enabled ? "checked" : ""} />
+          Включить
+        </label>
+        <button class="secondary tiny" type="button" data-save-max-chat="${user.id}">Сохранить</button>
+      </article>`
+    )
+    .join("");
 }
 
 async function renderEvents() {
@@ -2822,6 +2850,23 @@ function bindEvents() {
     if (feedbackFilterButton) {
       state.feedbackFilter = feedbackFilterButton.dataset.feedbackFilter;
       await renderFeedback();
+      return;
+    }
+
+    const saveMaxChatButton = event.target.closest("[data-save-max-chat]");
+    if (saveMaxChatButton) {
+      const row = saveMaxChatButton.closest("[data-max-user-row]");
+      const userId = Number(saveMaxChatButton.dataset.saveMaxChat);
+      await api(`/api/users/${userId}/max-chat`, {
+        method: "POST",
+        body: JSON.stringify({
+          max_chat_id: row.querySelector('input[name="max_chat_id"]').value.trim(),
+          enabled: row.querySelector('input[name="max_enabled"]').checked,
+        }),
+      });
+      state.users = await api("/api/users");
+      await renderFeedback();
+      showToast("MAX-уведомления для сотрудника обновлены");
       return;
     }
 

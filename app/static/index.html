@@ -9,10 +9,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Строительный контур</title>
-    <link rel="manifest" href="/static/manifest.webmanifest?v=20260520-pwa" />
+    <link rel="manifest" href="/static/manifest.webmanifest?v=20260520-pwa-max" />
     <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260520-pwa" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260520-pwa-max" />
   </head>
   <body>
     <div class="app">
@@ -269,6 +269,12 @@
             <div class="task-stats compact-stats" id="feedbackStats"></div>
             <div class="table feedback-list" id="feedbackRows"></div>
           </div>
+          <section class="panel max-bindings-panel" id="maxBindingsPanel">
+            <div class="panel-head">
+              <h2>Личные уведомления MAX</h2>
+            </div>
+            <div class="table" id="maxBindingRows"></div>
+          </section>
         </section>
 
         <section class="view" id="variationsView">
@@ -584,6 +590,6 @@
     </dialog>
 
     <div class="toast" id="toast"></div>
-    <script src="/static/app.js?v=20260520-pwa"></script>
+    <script src="/static/app.js?v=20260520-pwa-max"></script>
   </body>
 </html>
