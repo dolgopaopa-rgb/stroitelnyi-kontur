@@ -1,6 +1,6 @@
 # Агент проверки строительного контура
 
-Этот файл описывает постоянного QA-агента проекта. Его задача - регулярно проверять приложение и оставлять понятные отчеты в репозитории.
+Этот файл описывает постоянного QA-агента проекта. Его задача - проверять приложение после изменений и показывать понятный отчет в GitHub Actions.
 
 ## Роль агента
 
@@ -56,11 +56,16 @@ GitHub Actions workflow:
 .github/workflows/quality-agent.yml
 ```
 
-Он запускается вручную и по расписанию, создает отчет в `docs/qa-reports/` и коммитит его в историю репозитория.
+Он запускается:
+
+- автоматически после каждого `push` в ветку `main`;
+- вручную через вкладку GitHub Actions.
+
+Агент ничего не меняет в репозитории, не делает commit и не исправляет код сам. Его задача - проверить и показать отчет в логе запуска и в `Step summary`.
 
 ## GitHub Secrets для глубокой проверки
 
-Чтобы агент мог проверять защищенный сайт, в настройках GitHub нужно добавить секреты:
+Чтобы агент мог проверять защищенный сайт, в настройках GitHub Actions должны быть секреты:
 
 ```text
 KONTUR_BASIC_USER
@@ -69,9 +74,11 @@ KONTUR_BASIC_PASSWORD
 
 Без этих секретов агент увидит только, что сайт закрыт авторизацией, но не сможет проверить API и внутренние страницы.
 
+На 2026-05-21 эти секреты уже добавлены в репозиторий через GitHub Actions Secrets. Их значения не хранятся в коде и не отображаются в истории.
+
 ## Формат отчета
 
-Отчет должен содержать:
+Отчет в GitHub Actions содержит:
 
 - дату и адрес проверки;
 - краткую сводку;
@@ -81,18 +88,26 @@ KONTUR_BASIC_PASSWORD
 - замечания по строительной логике;
 - рекомендуемые следующие действия.
 
-## Как запускать вручную
+## Как запускать вручную в GitHub
+
+1. Открыть репозиторий `stroitelnyi-kontur`.
+2. Перейти во вкладку `Actions`.
+3. Выбрать `Quality Agent`.
+4. Нажать `Run workflow`.
+5. Открыть завершенный запуск и посмотреть `Summary` или лог шага `Run quality agent`.
+
+## Как запускать локально
 
 Локально:
 
 ```bash
-python tools/kontur_quality_agent.py --url https://kontur.derevgroup.ru --report-dir docs/qa-reports
+python tools/kontur_quality_agent.py --url https://kontur.derevgroup.ru
 ```
 
 С логином и паролем через переменные окружения:
 
 ```bash
-KONTUR_BASIC_USER=... KONTUR_BASIC_PASSWORD=... python tools/kontur_quality_agent.py --url https://kontur.derevgroup.ru --report-dir docs/qa-reports
+KONTUR_BASIC_USER=... KONTUR_BASIC_PASSWORD=... python tools/kontur_quality_agent.py --url https://kontur.derevgroup.ru
 ```
 
 На Windows PowerShell:
@@ -100,7 +115,7 @@ KONTUR_BASIC_USER=... KONTUR_BASIC_PASSWORD=... python tools/kontur_quality_agen
 ```powershell
 $env:KONTUR_BASIC_USER="..."
 $env:KONTUR_BASIC_PASSWORD="..."
-python tools/kontur_quality_agent.py --url https://kontur.derevgroup.ru --report-dir docs/qa-reports
+python tools/kontur_quality_agent.py --url https://kontur.derevgroup.ru
 ```
 
 ## Как использовать вывод агента
