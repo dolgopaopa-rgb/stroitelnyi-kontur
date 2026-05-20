@@ -17,6 +17,10 @@
 11. [Executive Summary](docs/11-executive-summary.md)
 12. [Постоянный сервер](docs/12-deployment.md)
 13. [Текущий Selectel VDS](docs/13-selectel-server.md)
+14. [Работа с другого компьютера](docs/14-working-from-another-computer.md)
+15. [Тест-листы для коллег](docs/15-colleague-test-lists.md)
+16. [Журнал работ](docs/16-project-worklog.md)
+17. [QA-агент проекта](docs/17-quality-agent.md)
 
 ## Прототип
 

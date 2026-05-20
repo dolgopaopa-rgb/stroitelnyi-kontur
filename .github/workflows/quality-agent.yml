@@ -1,0 +1,31 @@
+name: Quality Agent
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 3 * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  quality-agent:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run quality agent
+        env:
+          KONTUR_URL: https://kontur.derevgroup.ru
+          KONTUR_BASIC_USER: ${{ secrets.KONTUR_BASIC_USER }}
+          KONTUR_BASIC_PASSWORD: ${{ secrets.KONTUR_BASIC_PASSWORD }}
+        run: python tools/kontur_quality_agent.py --url "$KONTUR_URL" --report-dir docs/qa-reports || true
+
+      - name: Commit quality report
+        run: |
+          git config user.name "kontur-quality-agent"
+          git config user.email "kontur-quality-agent@users.noreply.github.com"
+          git add docs/qa-reports
+          git diff --cached --quiet || git commit -m "Add quality agent report"
+          git push
