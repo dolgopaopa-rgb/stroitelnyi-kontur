@@ -35,6 +35,9 @@ def init_db() -> None:
                 name TEXT NOT NULL,
                 role TEXT NOT NULL,
                 email TEXT,
+                max_user_id TEXT,
+                max_chat_id TEXT,
+                max_notifications_enabled INTEGER NOT NULL DEFAULT 0,
                 is_active INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
@@ -321,6 +324,9 @@ def init_db() -> None:
                 is_read INTEGER NOT NULL DEFAULT 0,
                 related_type TEXT,
                 related_id INTEGER,
+                max_status TEXT NOT NULL DEFAULT 'pending',
+                max_sent_at TEXT,
+                max_error TEXT,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
                 FOREIGN KEY (user_id) REFERENCES users(id)
@@ -396,8 +402,14 @@ def init_db() -> None:
         ensure_column(db, "documents", "related_section", "TEXT")
         ensure_column(db, "documents", "contract_id", "INTEGER")
         ensure_column(db, "documents", "process_type", "TEXT")
+        ensure_column(db, "users", "max_user_id", "TEXT")
+        ensure_column(db, "users", "max_chat_id", "TEXT")
+        ensure_column(db, "users", "max_notifications_enabled", "INTEGER NOT NULL DEFAULT 0")
         ensure_column(db, "notifications", "related_type", "TEXT")
         ensure_column(db, "notifications", "related_id", "INTEGER")
+        ensure_column(db, "notifications", "max_status", "TEXT NOT NULL DEFAULT 'pending'")
+        ensure_column(db, "notifications", "max_sent_at", "TEXT")
+        ensure_column(db, "notifications", "max_error", "TEXT")
         ensure_column(db, "material_request_batches", "foreman_response", "TEXT")
         ensure_column(db, "material_request_batches", "scheduled_delivery_date", "TEXT")
         ensure_column(db, "material_request_batches", "procurement_comment", "TEXT")

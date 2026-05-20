@@ -7,6 +7,7 @@ import json
 import mimetypes
 import os
 import re
+import threading
 import time
 import zipfile
 import xml.etree.ElementTree as ET
@@ -25,6 +26,8 @@ STATIC_DIR = APP_DIR / "static"
 UPLOAD_DIR = DATA_DIR / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 YANDEX_DISK_FILE_PREFIX = "yadisk:"
+MAX_API_URL = os.environ.get("MAX_API_URL", "https://platform-api.max.ru").rstrip("/")
+APP_PUBLIC_URL = os.environ.get("APP_PUBLIC_URL", "").rstrip("/")
 
 
 def json_response(handler: BaseHTTPRequestHandler, payload: object, status: int = 200) -> None:
@@ -687,6 +690,110 @@ def require_fields(data: dict, fields: list[tuple[str, str]]) -> None:
         raise ValueError("Заполните обязательные поля: " + ", ".join(missing))
 
 
+def notification_view_for_related_type(related_type: str | None) -> str:
+    return {
+        "task": "tasks",
+        "tasks": "tasks",
+        "material_request": "materials",
+        "material_request_batch": "materials",
+        "materials": "materials",
+        "variation": "variations",
+        "variations": "variations",
+        "document": "documents",
+        "documents": "documents",
+        "handover": "projects",
+        "project": "projects",
+        "projects": "projects",
+        "work": "works",
+        "works": "works",
+    }.get(str(related_type or "").strip(), "dashboard")
+
+
+def notification_url(project_id: int | None, related_type: str | None, related_id: int | None) -> str:
+    if not APP_PUBLIC_URL:
+        return ""
+    query = {"view": notification_view_for_related_type(related_type)}
+    if project_id:
+        query["project"] = str(project_id)
+    if related_id:
+        query["item"] = str(related_id)
+    return f"{APP_PUBLIC_URL}/?{urlencode(query)}"
+
+
+def update_notification_max_status(notification_id: int, status: str, error: str = "") -> None:
+    try:
+        with connect() as status_db:
+            status_db.execute(
+                """
+                UPDATE notifications
+                SET max_status = ?,
+                    max_sent_at = CASE WHEN ? = 'sent' THEN CURRENT_TIMESTAMP ELSE max_sent_at END,
+                    max_error = ?
+                WHERE id = ?
+                """,
+                (status, status, error[:500], notification_id),
+            )
+            status_db.commit()
+    except Exception:
+        return
+
+
+def send_max_message(chat_id: str, text: str) -> tuple[bool, str]:
+    token = os.environ.get("MAX_TOKEN", "").strip()
+    if not token:
+        return False, "MAX_TOKEN is not configured"
+    if not chat_id:
+        return False, "MAX chat is not bound"
+    payload = json.dumps({"text": text, "format": "markdown", "notify": True}, ensure_ascii=False).encode("utf-8")
+    url = f"{MAX_API_URL}/messages?{urlencode({'chat_id': chat_id})}"
+    request = Request(
+        url,
+        data=payload,
+        headers={"Authorization": token, "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=8) as response:
+            response.read()
+        return True, ""
+    except HTTPError as error:
+        try:
+            body = error.read().decode("utf-8", "replace")
+        except Exception:
+            body = ""
+        return False, f"MAX HTTP {error.code}: {body[:250]}"
+    except (URLError, TimeoutError, OSError) as error:
+        return False, str(error)
+
+
+def enqueue_max_notification(
+    *,
+    notification_id: int,
+    chat_id: str,
+    project_id: int | None,
+    title: str,
+    text: str,
+    related_type: str | None,
+    related_id: int | None,
+) -> None:
+    clean_chat_id = str(chat_id or "").strip()
+    if not clean_chat_id:
+        return
+
+    url = notification_url(project_id, related_type, related_id)
+    message_lines = [f"Контур: {title}", "", text]
+    if url:
+        message_lines.extend(["", f"Открыть: {url}"])
+    message = "\n".join(line for line in message_lines if line is not None).strip()
+
+    def worker() -> None:
+        time.sleep(0.4)
+        ok, error = send_max_message(clean_chat_id, message)
+        update_notification_max_status(notification_id, "sent" if ok else "error", error)
+
+    threading.Thread(target=worker, daemon=True).start()
+
+
 def create_notification(
     db,
     project_id: int,
@@ -697,12 +804,31 @@ def create_notification(
     related_type: str | None = None,
     related_id: int | None = None,
 ) -> None:
-    db.execute(
+    max_status = "disabled" if not os.environ.get("MAX_TOKEN", "").strip() else "not_bound"
+    max_chat_id = ""
+    if user_id and max_status != "disabled":
+        user = db.execute(
+            "SELECT max_chat_id, max_notifications_enabled FROM users WHERE id = ?",
+            (user_id,),
+        ).fetchone()
+        if user and int(user["max_notifications_enabled"] or 0) and str(user["max_chat_id"] or "").strip():
+            max_status = "queued"
+            max_chat_id = str(user["max_chat_id"]).strip()
+    cursor = db.execute(
         """
-        INSERT INTO notifications (project_id, user_id, role, title, text, related_type, related_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO notifications (project_id, user_id, role, title, text, related_type, related_id, max_status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (project_id, user_id, role, title, text, related_type, related_id),
+        (project_id, user_id, role, title, text, related_type, related_id, max_status),
+    )
+    enqueue_max_notification(
+        notification_id=int(cursor.lastrowid),
+        chat_id=max_chat_id,
+        project_id=project_id,
+        title=title,
+        text=text,
+        related_type=related_type,
+        related_id=related_id,
     )
 
 
@@ -1211,6 +1337,9 @@ class AppHandler(BaseHTTPRequestHandler):
         if path == "/":
             self.serve_static("index.html")
             return
+        if path == "/sw.js":
+            self.serve_static("sw.js")
+            return
         if path == "/health":
             json_response(self, {"status": "ok"})
             return
@@ -1267,15 +1396,19 @@ class AppHandler(BaseHTTPRequestHandler):
             ".html": "text/html; charset=utf-8",
             ".css": "text/css; charset=utf-8",
             ".js": "application/javascript; charset=utf-8",
+            ".webmanifest": "application/manifest+json; charset=utf-8",
             ".svg": "image/svg+xml",
             ".png": "image/png",
             ".jpg": "image/jpeg",
             ".jpeg": "image/jpeg",
             ".webp": "image/webp",
+            ".ico": "image/x-icon",
         }
         body = file_path.read_bytes()
         self.send_response(200)
         self.send_header("Content-Type", content_types.get(file_path.suffix, "application/octet-stream"))
+        if file_path.name == "sw.js":
+            self.send_header("Cache-Control", "no-cache")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -1911,6 +2044,32 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     ),
                 )
                 json_response(self, {"id": cursor.lastrowid}, 201)
+                return
+
+            user_max_chat = re.match(r"^/api/users/(\d+)/max-chat$", path)
+            if user_max_chat:
+                if account_role(account) not in {"owner", "construction_manager"}:
+                    json_response(self, {"error": "Forbidden"}, 403)
+                    return
+                user_id = int(user_max_chat.group(1))
+                max_chat_id = str(data.get("max_chat_id") or "").strip()
+                max_user_id = str(data.get("max_user_id") or "").strip()
+                enabled = 1 if max_chat_id and data.get("enabled", True) is not False else 0
+                db.execute(
+                    """
+                    UPDATE users
+                    SET max_chat_id = ?,
+                        max_user_id = ?,
+                        max_notifications_enabled = ?
+                    WHERE id = ?
+                    """,
+                    (max_chat_id, max_user_id, enabled, user_id),
+                )
+                user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+                if not user:
+                    json_response(self, {"error": "User not found"}, 404)
+                    return
+                json_response(self, row_to_dict(user))
                 return
 
             if path == "/api/feedback/delete-bulk":

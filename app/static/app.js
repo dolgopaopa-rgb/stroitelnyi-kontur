@@ -1,5 +1,8 @@
+const initialRoute = new URLSearchParams(window.location.search);
+const initialProjectId = Number(initialRoute.get("project") || 0) || null;
+
 const state = {
-  view: localStorage.getItem("currentView") || "dashboard",
+  view: initialRoute.get("view") || localStorage.getItem("currentView") || "dashboard",
   currentRole: localStorage.getItem("currentRole") || "owner",
   session: null,
   canSwitchRole: true,
@@ -10,18 +13,18 @@ const state = {
   estimateMaterials: [],
   estimatePreviewRows: [],
   showEstimateMaterials: false,
-  selectedProjectId: null,
+  selectedProjectId: initialProjectId,
   selectedProjectTab: "overview",
   projectListMode: "active",
   materialListMode: "active",
   taskFilter: "all",
   feedbackFilter: "all",
   selectedFeedbackIds: new Set(),
-  selectedTaskProjectId: null,
+  selectedTaskProjectId: initialProjectId,
   lastTasks: [],
   notificationsOpen: false,
   expandedLists: {},
-  selectedWorkProjectId: null,
+  selectedWorkProjectId: initialProjectId,
   openWorkStages: {},
 };
 
@@ -3259,6 +3262,12 @@ async function boot() {
   bindEvents();
   switchView(state.view);
   await loadAll();
+  registerServiceWorker();
+}
+
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator) || location.protocol === "file:") return;
+  navigator.serviceWorker.register("/sw.js").catch(() => undefined);
 }
 
 boot().catch((error) => showToast(error.message));

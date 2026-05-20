@@ -13,6 +13,9 @@ services:
       STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
       YANDEX_DISK_TOKEN: ${YANDEX_DISK_TOKEN:-}
       YANDEX_DISK_ROOT: ${YANDEX_DISK_ROOT:-/Stroitelnyi kontur}
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:-}
+      MAX_API_URL: ${MAX_API_URL:-https://platform-api.max.ru}
+      MAX_TOKEN: ${MAX_TOKEN:-}
     volumes:
       - app_data:/data
       - ./data/backups:/backups
