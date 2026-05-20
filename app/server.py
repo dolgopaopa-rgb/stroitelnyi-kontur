@@ -170,10 +170,21 @@ def session_account(handler: BaseHTTPRequestHandler) -> dict | None:
         return None
     if int(payload.get("exp") or 0) < int(time.time()):
         return None
+    login = str(payload.get("login") or "")
+    user_id = int(payload.get("user_id") or 0)
+    role = str(payload.get("role") or "owner")
+    for account in configured_access_accounts():
+        if account["login"] == login and int(account["user_id"] or 0) == user_id and account["role"] == role:
+            return {
+                "login": account["login"],
+                "user_id": int(account["user_id"] or 0),
+                "role": account["role"],
+                "can_switch_role": bool(account.get("can_switch_role")),
+            }
     return {
-        "login": str(payload.get("login") or ""),
-        "user_id": int(payload.get("user_id") or 0),
-        "role": str(payload.get("role") or "owner"),
+        "login": login,
+        "user_id": user_id,
+        "role": role,
         "can_switch_role": bool(payload.get("can_switch_role")),
     }
 
@@ -208,29 +219,29 @@ def current_access_account(handler: BaseHTTPRequestHandler) -> dict | None:
 
     username = os.environ.get("APP_BASIC_AUTH_USER")
     password = os.environ.get("APP_BASIC_AUTH_PASSWORD")
+    pair = basic_auth_pair(handler)
+
+    if pair:
+        login, supplied_password = pair
+        for account in configured_access_accounts():
+            if login == account["login"] and supplied_password == account["password"]:
+                handler._access_account = account
+                handler._issue_session_cookie = True
+                return account
+        if username and password and login == username and supplied_password == password:
+            account = {"login": login, "user_id": 1, "role": "owner", "can_switch_role": True}
+            handler._access_account = account
+            handler._issue_session_cookie = True
+            return account
 
     cookie_account = session_account(handler)
     if cookie_account:
         handler._access_account = cookie_account
         return cookie_account
 
-    pair = basic_auth_pair(handler)
-    if not pair:
-        if not username and not password and not configured_access_accounts():
-            account = {"login": "local", "user_id": 1, "role": "owner", "can_switch_role": True}
-            handler._access_account = account
-            return account
-        return None
-    login, supplied_password = pair
-    for account in configured_access_accounts():
-        if login == account["login"] and supplied_password == account["password"]:
-            handler._access_account = account
-            handler._issue_session_cookie = True
-            return account
-    if username and password and login == username and supplied_password == password:
-        account = {"login": login, "user_id": 1, "role": "owner", "can_switch_role": True}
+    if not username and not password and not configured_access_accounts():
+        account = {"login": "local", "user_id": 1, "role": "owner", "can_switch_role": True}
         handler._access_account = account
-        handler._issue_session_cookie = True
         return account
     return None
 

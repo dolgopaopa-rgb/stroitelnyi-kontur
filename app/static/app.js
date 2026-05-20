@@ -300,6 +300,21 @@ function roleValueForUser(user, fallbackRole = "owner") {
   return user.role === "foreman" ? `foreman:${user.id}` : user.role;
 }
 
+function availableRoleOptions() {
+  const options = [
+    ["sales_manager", "Менеджер"],
+    ["construction_manager", "Рук. строительства"],
+    ...usersByRole("foreman").map((user) => [`foreman:${user.id}`, `Прораб ${user.name}`]),
+    ["procurement_manager", "Снабжение"],
+    ["estimator", "Сметчик"],
+    ["technical_supervisor", "Технадзор"],
+  ];
+  if (state.session?.role === "owner") {
+    return [["owner", "Ген.директор"], ...options];
+  }
+  return options;
+}
+
 async function loadSession() {
   const session = await api("/api/session");
   state.session = session;
@@ -676,17 +691,14 @@ function fillRoleSwitcher() {
   }
   select.disabled = false;
   select.closest(".role-switcher")?.classList.remove("locked");
-  const options = [
-    ["owner", "Ген.директор"],
-    ["sales_manager", "Менеджер"],
-    ["construction_manager", "Рук. строительства"],
-    ...usersByRole("foreman").map((user) => [`foreman:${user.id}`, `Прораб ${user.name}`]),
-    ["procurement_manager", "Снабжение"],
-    ["estimator", "Сметчик"],
-    ["technical_supervisor", "Технадзор"],
-  ];
+  const options = availableRoleOptions();
   select.innerHTML = options.map(([value, title]) => `<option value="${value}">${title}</option>`).join("");
-  select.value = options.some(([value]) => value === selected) ? selected : "owner";
+  const ownRole = roleValueForUser(state.session?.user, state.session?.role);
+  select.value = options.some(([value]) => value === selected)
+    ? selected
+    : options.some(([value]) => value === ownRole)
+      ? ownRole
+      : options[0]?.[0] || ownRole || "construction_manager";
   state.currentRole = select.value;
   localStorage.setItem("currentRole", state.currentRole);
   syncNavigationAccess();
