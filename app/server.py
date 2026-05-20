@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import base64
 import csv
+import hashlib
+import hmac
 import io
 import json
 import mimetypes
@@ -28,12 +30,15 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 YANDEX_DISK_FILE_PREFIX = "yadisk:"
 MAX_API_URL = os.environ.get("MAX_API_URL", "https://platform-api.max.ru").rstrip("/")
 APP_PUBLIC_URL = os.environ.get("APP_PUBLIC_URL", "").rstrip("/")
+SESSION_COOKIE_NAME = "kontur_session"
+SESSION_TTL_SECONDS = int(os.environ.get("APP_SESSION_TTL_SECONDS", str(90 * 24 * 60 * 60)) or 0)
 
 
 def json_response(handler: BaseHTTPRequestHandler, payload: object, status: int = 200) -> None:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     handler.send_response(status)
     handler.send_header("Content-Type", "application/json; charset=utf-8")
+    maybe_send_session_cookie(handler)
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
     handler.wfile.write(body)
@@ -46,6 +51,8 @@ def is_authorized(handler: BaseHTTPRequestHandler) -> bool:
 def auth_required_response(handler: BaseHTTPRequestHandler) -> None:
     handler.send_response(401)
     handler.send_header("WWW-Authenticate", 'Basic realm="Stroitelnyi Kontur"')
+    if request_cookie(handler, SESSION_COOKIE_NAME):
+        handler.send_header("Set-Cookie", expired_session_cookie(handler))
     handler.send_header("Content-Length", "0")
     handler.end_headers()
 
@@ -54,6 +61,7 @@ def logout_response(handler: BaseHTTPRequestHandler) -> None:
     handler.send_response(401)
     handler.send_header("WWW-Authenticate", 'Basic realm="Stroitelnyi Kontur Logout"')
     handler.send_header("Content-Type", "text/plain; charset=utf-8")
+    handler.send_header("Set-Cookie", expired_session_cookie(handler))
     body = "Вы вышли из Контура. Закройте вкладку или войдите заново.".encode("utf-8")
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
@@ -71,6 +79,103 @@ def basic_auth_pair(handler: BaseHTTPRequestHandler) -> tuple[str, str] | None:
     if ":" not in decoded:
         return None
     return tuple(decoded.split(":", 1))
+
+
+def request_cookie(handler: BaseHTTPRequestHandler, name: str) -> str:
+    cookie_header = handler.headers.get("Cookie", "")
+    for chunk in cookie_header.split(";"):
+        if "=" not in chunk:
+            continue
+        key, value = chunk.strip().split("=", 1)
+        if key == name:
+            return value.strip()
+    return ""
+
+
+def b64url_encode(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def b64url_decode(raw: str) -> bytes:
+    padding = "=" * (-len(raw) % 4)
+    return base64.urlsafe_b64decode((raw + padding).encode("ascii"))
+
+
+def session_secret() -> bytes:
+    configured = os.environ.get("APP_SESSION_SECRET", "").strip()
+    if configured:
+        return configured.encode("utf-8")
+    fallback = "|".join(
+        [
+            os.environ.get("APP_BASIC_AUTH_USER", ""),
+            os.environ.get("APP_BASIC_AUTH_PASSWORD", ""),
+            os.environ.get("APP_ACCESS_ACCOUNTS", ""),
+            "stroitelnyi-kontur-session-v1",
+        ]
+    )
+    return fallback.encode("utf-8")
+
+
+def session_signature(payload_b64: str) -> str:
+    digest = hmac.new(session_secret(), payload_b64.encode("ascii"), hashlib.sha256).digest()
+    return b64url_encode(digest)
+
+
+def session_cookie_secure(handler: BaseHTTPRequestHandler) -> bool:
+    if APP_PUBLIC_URL.startswith("https://"):
+        return True
+    forwarded_proto = handler.headers.get("X-Forwarded-Proto", "")
+    return forwarded_proto.lower() == "https"
+
+
+def session_cookie_header(handler: BaseHTTPRequestHandler, account: dict) -> str:
+    max_age = max(SESSION_TTL_SECONDS, 3600)
+    payload = {
+        "login": str(account.get("login") or ""),
+        "user_id": int(account.get("user_id") or 0),
+        "role": str(account.get("role") or ""),
+        "can_switch_role": bool(account.get("can_switch_role")),
+        "exp": int(time.time()) + max_age,
+    }
+    payload_b64 = b64url_encode(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+    cookie = f"{SESSION_COOKIE_NAME}={payload_b64}.{session_signature(payload_b64)}; Path=/; Max-Age={max_age}; HttpOnly; SameSite=Lax"
+    if session_cookie_secure(handler):
+        cookie += "; Secure"
+    return cookie
+
+
+def expired_session_cookie(handler: BaseHTTPRequestHandler) -> str:
+    cookie = f"{SESSION_COOKIE_NAME}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax"
+    if session_cookie_secure(handler):
+        cookie += "; Secure"
+    return cookie
+
+
+def maybe_send_session_cookie(handler: BaseHTTPRequestHandler) -> None:
+    account = getattr(handler, "_access_account", None)
+    if getattr(handler, "_issue_session_cookie", False) and account:
+        handler.send_header("Set-Cookie", session_cookie_header(handler, account))
+
+
+def session_account(handler: BaseHTTPRequestHandler) -> dict | None:
+    token = request_cookie(handler, SESSION_COOKIE_NAME)
+    if not token or "." not in token:
+        return None
+    payload_b64, signature = token.rsplit(".", 1)
+    if not hmac.compare_digest(session_signature(payload_b64), signature):
+        return None
+    try:
+        payload = json.loads(b64url_decode(payload_b64).decode("utf-8"))
+    except Exception:
+        return None
+    if int(payload.get("exp") or 0) < int(time.time()):
+        return None
+    return {
+        "login": str(payload.get("login") or ""),
+        "user_id": int(payload.get("user_id") or 0),
+        "role": str(payload.get("role") or "owner"),
+        "can_switch_role": bool(payload.get("can_switch_role")),
+    }
 
 
 def configured_access_accounts() -> list[dict]:
@@ -95,19 +200,38 @@ def configured_access_accounts() -> list[dict]:
 
 
 def current_access_account(handler: BaseHTTPRequestHandler) -> dict | None:
+    if hasattr(handler, "_access_account_checked"):
+        return getattr(handler, "_access_account", None)
+    handler._access_account_checked = True
+    handler._access_account = None
+    handler._issue_session_cookie = False
+
     username = os.environ.get("APP_BASIC_AUTH_USER")
     password = os.environ.get("APP_BASIC_AUTH_PASSWORD")
+
+    cookie_account = session_account(handler)
+    if cookie_account:
+        handler._access_account = cookie_account
+        return cookie_account
+
     pair = basic_auth_pair(handler)
     if not pair:
         if not username and not password and not configured_access_accounts():
-            return {"login": "local", "user_id": 1, "role": "owner", "can_switch_role": True}
+            account = {"login": "local", "user_id": 1, "role": "owner", "can_switch_role": True}
+            handler._access_account = account
+            return account
         return None
     login, supplied_password = pair
     for account in configured_access_accounts():
         if login == account["login"] and supplied_password == account["password"]:
+            handler._access_account = account
+            handler._issue_session_cookie = True
             return account
     if username and password and login == username and supplied_password == password:
-        return {"login": login, "user_id": 1, "role": "owner", "can_switch_role": True}
+        account = {"login": login, "user_id": 1, "role": "owner", "can_switch_role": True}
+        handler._access_account = account
+        handler._issue_session_cookie = True
+        return account
     return None
 
 
@@ -1407,6 +1531,7 @@ class AppHandler(BaseHTTPRequestHandler):
         body = file_path.read_bytes()
         self.send_response(200)
         self.send_header("Content-Type", content_types.get(file_path.suffix, "application/octet-stream"))
+        maybe_send_session_cookie(self)
         if file_path.name == "sw.js":
             self.send_header("Cache-Control", "no-cache")
         self.send_header("Content-Length", str(len(body)))
