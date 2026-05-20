@@ -1164,6 +1164,102 @@ function taskStatusLevel(status) {
   }[status] || "";
 }
 
+function uniqueMaterialBatches(materialRows = []) {
+  const batches = new Map();
+  materialRows.forEach((item) => {
+    const key = item.batch_id || `material-${item.id}`;
+    if (!batches.has(key)) batches.set(key, item);
+  });
+  return [...batches.values()];
+}
+
+function attentionItem(title, count, details, level, action) {
+  return { title, count, details, level, action };
+}
+
+function buildDashboardAttention(summary, tasks, materialRows) {
+  const items = [];
+  const stats = taskStats(tasks);
+  const activeProjects = state.projects.filter((project) => project.status !== "archived");
+  const materialBatches = uniqueMaterialBatches(materialRows);
+
+  if (stats.overdue) {
+    items.push(attentionItem("Просроченные задачи", stats.overdue, "Нужно открыть задачи и решить: принять, вернуть или перенести срок.", "danger", { taskFilter: "overdue" }));
+  }
+  if (stats.waiting) {
+    items.push(attentionItem("Ждут приемки", stats.waiting, "Исполнители отметили выполнение, но принимающий еще не закрыл результат.", "blue", { taskFilter: "waiting" }));
+  }
+  if (stats.returned) {
+    items.push(attentionItem("На доработке", stats.returned, "Есть задачи, которые вернули исполнителям с комментариями.", "warning", { taskFilter: "returned" }));
+  }
+
+  const reviewProjects = activeProjects.filter((project) => project.status === "submitted_to_construction").length;
+  if (reviewProjects) {
+    items.push(attentionItem("Объекты на проверке", reviewProjects, "Руководителю строительства нужно принять объект в работу или вернуть менеджеру.", "warning", { view: "projects" }));
+  }
+
+  const unassignedProjects = activeProjects.filter(
+    (project) => project.status === "in_progress" && (!project.foreman_id || !project.estimator_id || !project.procurement_manager_id || !project.tech_supervisor_id)
+  ).length;
+  if (["owner", "construction_manager"].includes(currentRoleBase()) && unassignedProjects) {
+    items.push(attentionItem("Не все ответственные назначены", unassignedProjects, "По объектам в работе должны быть понятны прораб, сметчик, снабжение и технадзор.", "warning", { view: "projects" }));
+  }
+
+  const returnedMaterials = materialBatches.filter((batch) => batch.batch_status === "returned").length;
+  if (returnedMaterials) {
+    items.push(attentionItem("Заявки вернули на доработку", returnedMaterials, "Прорабу нужно открыть заявку, исправить и отправить снабжению повторно.", "warning", { view: "materials" }));
+  }
+
+  const receiptIssues = materialBatches.filter((batch) => batch.batch_status === "receipt_issue").length;
+  if (receiptIssues) {
+    items.push(attentionItem("Проблемы при приемке материалов", receiptIssues, "Снабжению нужно закрыть проблему по заявке и уведомить участников.", "danger", { view: "materials" }));
+  }
+
+  const urgentMaterials = materialBatches.filter((batch) => batch.batch_delivery_urgency === "urgent" && !["received", "archived"].includes(batch.batch_status)).length;
+  if (urgentMaterials) {
+    items.push(attentionItem("Срочные материалы", urgentMaterials, "Заявки с доставкой сегодня или завтра лучше держать на виду.", "danger", { view: "materials" }));
+  }
+
+  if (canViewFinancials() && Number(summary.unresolved_overbudget || 0) > 0) {
+    items.push(attentionItem("Сверхбюджет без решения", money(summary.unresolved_overbudget), "Нужно решить, что идет в допработы, что остается расходом компании.", "danger", { view: "variations" }));
+  }
+
+  if (["owner", "construction_manager"].includes(currentRoleBase())) {
+    const unboundMaxUsers = state.users.filter((user) => user.is_active && ["owner", "construction_manager", "foreman", "procurement_manager", "technical_supervisor", "estimator"].includes(user.role) && !user.max_chat_id).length;
+    if (unboundMaxUsers) {
+      items.push(attentionItem("MAX не привязан", unboundMaxUsers, "Личные уведомления не будут доходить до всех участников процесса.", "blue", { view: "feedback" }));
+    }
+  }
+
+  return items.slice(0, 6);
+}
+
+function renderDashboardAttention(items) {
+  if (!items.length) {
+    return `
+      <div class="attention-empty">
+        <strong>Критичных сигналов нет</strong>
+        <span>Агент не нашел просрочек, зависших приемок или проблемных заявок по текущей роли.</span>
+      </div>`;
+  }
+  return `
+    <div class="attention-list">
+      ${items
+        .map((item) => {
+          const attrs = item.action?.taskFilter ? `data-task-filter="${item.action.taskFilter}"` : `data-view-target="${item.action?.view || "dashboard"}"`;
+          return `
+            <button class="attention-item ${item.level}" type="button" ${attrs}>
+              <span class="attention-count">${escapeHtml(String(item.count))}</span>
+              <span class="attention-body">
+                <strong>${escapeHtml(item.title)}</strong>
+                <small>${escapeHtml(item.details)}</small>
+              </span>
+            </button>`;
+        })
+        .join("")}
+    </div>`;
+}
+
 function canActAsTaskUser(task, kind) {
   const userId = currentUserId();
   const idKey = `${kind}_id`;
@@ -1176,7 +1272,7 @@ function canDeleteTask(task) {
 }
 
 async function renderDashboard() {
-  const [summary, tasks] = await Promise.all([api("/api/summary"), api("/api/tasks")]);
+  const [summary, tasks, materialRows] = await Promise.all([api("/api/summary"), api("/api/tasks"), api("/api/material-requests")]);
   const roleTasks = visibleTasksForRole(tasks);
   qs("#summaryCards").innerHTML = `
     <button class="metric clickable" data-view-target="projects" type="button"><span class="muted">Объекты</span><strong>${summary.projects}</strong><span>В базе MVP</span></button>
@@ -1185,6 +1281,7 @@ async function renderDashboard() {
     <button class="metric clickable" data-task-filter="waiting" type="button"><span class="muted">Задачи к приемке</span><strong>${summary.task_done_waiting || 0}</strong><span>Выполнены, но не приняты</span></button>
     <button class="metric clickable" data-task-filter="overdue" type="button"><span class="muted">Просрочено</span><strong>${taskStats(roleTasks).overdue}</strong><span>По открытым задачам</span></button>
   `;
+  qs("#dashboardAttention").innerHTML = renderDashboardAttention(buildDashboardAttention(summary, roleTasks, materialRows));
   qs("#dashboardTaskStats").innerHTML = renderTaskStats(roleTasks);
   qs("#dashboardProjects").innerHTML = state.projects
     .slice(0, 4)

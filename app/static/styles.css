@@ -288,6 +288,7 @@ h2 {
 
 .dashboard-sortable > .metrics,
 .dashboard-sortable > .task-overview-panel,
+.dashboard-sortable > .attention-panel,
 .dashboard-sortable > .notifications-panel {
   grid-column: 1 / -1;
 }
@@ -1684,6 +1685,116 @@ h2 {
   margin-bottom: 12px;
 }
 
+.attention-panel {
+  border-color: #c8d7d3;
+  background: linear-gradient(180deg, #ffffff 0%, #f6faf9 100%);
+}
+
+.attention-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.attention-item {
+  min-height: 66px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: inherit;
+  text-align: left;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+}
+
+.attention-item:hover {
+  border-color: #8dbbb5;
+}
+
+.attention-count {
+  min-width: 34px;
+  height: 28px;
+  border-radius: 7px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-2);
+  color: var(--brand-strong);
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.attention-body {
+  display: grid;
+  gap: 3px;
+}
+
+.attention-body strong {
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.attention-body small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.attention-item.danger {
+  background: var(--danger-soft);
+  border-color: #efc6c6;
+}
+
+.attention-item.danger .attention-count {
+  background: #ffffff;
+  color: var(--danger);
+}
+
+.attention-item.warning {
+  background: var(--warning-soft);
+  border-color: #ead2a4;
+}
+
+.attention-item.warning .attention-count {
+  background: #ffffff;
+  color: var(--warning);
+}
+
+.attention-item.blue {
+  background: var(--blue-soft);
+  border-color: #c9d9ea;
+}
+
+.attention-item.blue .attention-count {
+  background: #ffffff;
+  color: var(--blue);
+}
+
+.attention-empty {
+  min-height: 58px;
+  border: 1px dashed #bed1cd;
+  border-radius: 8px;
+  background: rgba(34, 111, 104, 0.05);
+  padding: 10px;
+  display: grid;
+  gap: 3px;
+}
+
+.attention-empty strong {
+  color: var(--brand-strong);
+  font-size: 13px;
+}
+
+.attention-empty span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
 .task-stats {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -2130,6 +2241,10 @@ textarea {
   .split,
   .task-workspace,
   .detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .attention-list {
     grid-template-columns: 1fr;
   }
 }

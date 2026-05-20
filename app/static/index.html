@@ -9,10 +9,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Строительный контур</title>
-    <link rel="manifest" href="/static/manifest.webmanifest?v=20260521-max-bindings" />
+    <link rel="manifest" href="/static/manifest.webmanifest?v=20260521-attention-agent" />
     <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260521-max-bindings" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260521-attention-agent" />
   </head>
   <body>
     <div class="app">
@@ -65,6 +65,13 @@
         <section class="view active" id="dashboardView">
           <div class="dashboard-sortable sortable-zone" data-sortable-zone="dashboard">
             <div class="metrics" id="summaryCards" data-sortable-block="summary"></div>
+            <section class="panel attention-panel" data-sortable-block="dashboard-attention">
+              <div class="panel-head">
+                <h2>Контроль агента</h2>
+                <span class="muted">Что требует внимания</span>
+              </div>
+              <div id="dashboardAttention"></div>
+            </section>
             <section class="panel task-overview-panel" data-sortable-block="task-overview">
               <div class="panel-head">
                 <h2>Реестр задач</h2>
@@ -590,6 +597,6 @@
     </dialog>
 
     <div class="toast" id="toast"></div>
-    <script src="/static/app.js?v=20260521-max-bindings"></script>
+    <script src="/static/app.js?v=20260521-attention-agent"></script>
   </body>
 </html>
