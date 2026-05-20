@@ -20,6 +20,7 @@ const state = {
   taskFilter: "all",
   feedbackFilter: "all",
   selectedFeedbackIds: new Set(),
+  maxChatDrafts: {},
   selectedTaskProjectId: initialProjectId,
   lastTasks: [],
   notificationsOpen: false,
@@ -2446,23 +2447,51 @@ function renderMaxBindings(panel, rowsNode) {
   const canManage = ["owner", "construction_manager"].includes(currentRoleBase());
   panel.hidden = !canManage;
   if (!canManage) return;
+  rememberMaxBindingDrafts(rowsNode);
   rowsNode.innerHTML = state.users
     .map(
-      (user) => `
+      (user) => {
+        const draft = state.maxChatDrafts[String(user.id)] || {};
+        const maxChatId = draft.max_chat_id ?? user.max_chat_id ?? "";
+        const maxEnabled = draft.enabled ?? Boolean(user.max_notifications_enabled);
+        return `
       <article class="row max-binding-row" data-max-user-row="${user.id}">
         <div>
           <strong>${taskParticipantLabel(user)}</strong>
-          <div class="muted">${user.max_notifications_enabled ? "Личные уведомления включены" : "Личные уведомления выключены"}</div>
+          <div class="muted">${maxEnabled ? "Личные уведомления включены" : "Личные уведомления выключены"}</div>
         </div>
-        <input name="max_chat_id" value="${escapeAttr(user.max_chat_id || "")}" placeholder="Личный chat_id из MAX" />
+        <input name="max_chat_id" value="${escapeAttr(maxChatId)}" placeholder="Личный chat_id из MAX" />
         <label class="checkbox-line">
-          <input name="max_enabled" type="checkbox" ${user.max_notifications_enabled ? "checked" : ""} />
+          <input name="max_enabled" type="checkbox" ${maxEnabled ? "checked" : ""} />
           Включить
         </label>
         <button class="secondary tiny" type="button" data-save-max-chat="${user.id}">Сохранить</button>
-      </article>`
+      </article>`;
+      }
     )
     .join("");
+}
+
+function rememberMaxBindingDrafts(rowsNode) {
+  if (!rowsNode) return;
+  rowsNode.querySelectorAll("[data-max-user-row]").forEach((row) => {
+    const input = row.querySelector('input[name="max_chat_id"]');
+    const checkbox = row.querySelector('input[name="max_enabled"]');
+    if (!input || !checkbox) return;
+    saveMaxBindingDraft(row);
+  });
+}
+
+function saveMaxBindingDraft(row) {
+  const userId = row?.dataset?.maxUserRow;
+  if (!userId) return;
+  const input = row.querySelector('input[name="max_chat_id"]');
+  const checkbox = row.querySelector('input[name="max_enabled"]');
+  if (!input || !checkbox) return;
+  state.maxChatDrafts[String(userId)] = {
+    max_chat_id: input.value,
+    enabled: checkbox.checked,
+  };
 }
 
 async function renderEvents() {
@@ -2876,6 +2905,7 @@ function bindEvents() {
           enabled: row.querySelector('input[name="max_enabled"]').checked,
         }),
       });
+      delete state.maxChatDrafts[String(userId)];
       state.users = await api("/api/users");
       await renderFeedback();
       showToast("MAX-уведомления для сотрудника обновлены");
@@ -3122,6 +3152,18 @@ function bindEvents() {
     },
     true
   );
+
+  document.addEventListener("input", (event) => {
+    const maxChatInput = event.target.closest?.('[data-max-user-row] input[name="max_chat_id"]');
+    if (!maxChatInput) return;
+    saveMaxBindingDraft(maxChatInput.closest("[data-max-user-row]"));
+  });
+
+  document.addEventListener("change", (event) => {
+    const maxEnabledInput = event.target.closest?.('[data-max-user-row] input[name="max_enabled"]');
+    if (!maxEnabledInput) return;
+    saveMaxBindingDraft(maxEnabledInput.closest("[data-max-user-row]"));
+  });
 
   qs("#projectForm").addEventListener("submit", async (event) => {
     event.preventDefault();
