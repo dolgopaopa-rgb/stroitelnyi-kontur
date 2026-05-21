@@ -220,8 +220,8 @@ const viewAccess = {
   construction_manager: ["dashboard", "projects", "tasks", "works", "materials", "variations", "locations", "documents", "feedback", "events"],
   finance_director: ["dashboard", "projects", "tasks", "works", "materials", "variations", "locations", "documents", "feedback", "events"],
   accountant: ["dashboard", "projects", "materials", "variations", "locations", "documents", "events"],
-  sales_manager: ["dashboard", "projects", "locations", "documents", "feedback"],
-  foreman: ["dashboard", "projects", "tasks", "works", "materials", "locations", "documents"],
+  sales_manager: ["dashboard", "projects", "variations", "locations", "events"],
+  foreman: ["dashboard", "tasks", "works", "materials", "variations", "locations", "documents"],
   procurement_manager: ["dashboard", "projects", "materials", "locations", "documents"],
   estimator: ["dashboard", "projects", "tasks", "works", "materials", "variations", "documents"],
   technical_supervisor: ["dashboard", "projects", "tasks", "works", "materials", "locations", "documents"],
@@ -2271,8 +2271,8 @@ async function renderVariations() {
                 <div class="muted">${row.project_title} · ${variationType(row.type)}${row.estimate_section ? ` · ${row.estimate_section}` : ""}${row.source_type === "material_request_batch" ? ` · из заявки материалов #${row.source_id}` : ""}</div>
               </div>
               ${pill(label(row.status), variationStatusLevel(row.status))}
-              ${pill(money(row.amount), row.financial_decision === "not_decided" ? "danger" : "warning")}
-              <div>${moneyDecision(row.financial_decision)}</div>
+              ${canViewFinancials() ? pill(money(row.amount), row.financial_decision === "not_decided" ? "danger" : "warning") : ""}
+              ${canViewFinancials() ? `<div>${moneyDecision(row.financial_decision)}</div>` : ""}
               ${pill(row.due_date || "без срока", levelByDate(row.due_date))}
             </div>
           </button>`
@@ -2290,15 +2290,15 @@ async function openVariationDialog(variationId) {
       <div class="stack-line">
         <h3>${variation.project_title || "Объект не указан"}</h3>
         ${pill(variationType(variation.type), "blue")}
-        ${pill(moneyDecision(variation.financial_decision), variation.financial_decision === "not_decided" ? "danger" : "warning")}
+        ${canViewFinancials() ? pill(moneyDecision(variation.financial_decision), variation.financial_decision === "not_decided" ? "danger" : "warning") : ""}
       </div>
-      <p class="muted">Сумма: ${money(variation.amount)} · срок решения: ${variation.due_date || "не указан"}</p>
+      <p class="muted">${canViewFinancials() ? `Сумма: ${money(variation.amount)} · ` : ""}срок решения: ${variation.due_date || "не указан"}</p>
       ${variation.estimate_section ? `<p class="muted">Раздел / этап сметы: ${variation.estimate_section}</p>` : ""}
       <p class="muted">Статус: ${label(variation.status)} · инициатор: ${variation.requester_name || "не указан"}${variation.approver_name ? ` · решение: ${variation.approver_name}` : ""}</p>
       ${variation.source_type === "material_request_batch" ? `<p class="muted">Источник: заявка материалов #${variation.source_id}</p>` : ""}
       ${variation.description ? `<p class="preserve-lines">${variation.description}</p>` : ""}
       <div class="form-actions">
-        <button class="secondary" type="button" data-export-variation="${variation.id}" ${materials.length ? "" : "disabled"}>Выгрузить Excel</button>
+        ${canViewFinancials() ? `<button class="secondary" type="button" data-export-variation="${variation.id}" ${materials.length ? "" : "disabled"}>Выгрузить Excel</button>` : ""}
         ${["owner", "construction_manager", "finance_director"].includes(currentRoleBase()) && !["approved", "rejected"].includes(variation.status) ? `<button class="primary" type="button" data-variation-action="approve" data-variation-id="${variation.id}">Согласовать</button><button class="secondary" type="button" data-variation-action="reject" data-variation-id="${variation.id}">Отклонить</button>` : ""}
       </div>
     </section>
@@ -2319,7 +2319,7 @@ async function openVariationDialog(variationId) {
                     <div class="stack-line">
                       ${pill(materialBasisLabel(item.basis_type), materialBasisLevel(item.basis_type))}
                       ${pill(`${item.requested_quantity || 0} ${item.requested_unit || item.estimate_material_unit || ""}`, "blue")}
-                      ${pill(money(item.total_amount), "success")}
+                      ${canViewFinancials() ? pill(money(item.total_amount), "success") : ""}
                     </div>
                   </div>`
                 )

@@ -22,6 +22,7 @@
 16. [Журнал работ](docs/16-project-worklog.md)
 17. [QA-агент проекта](docs/17-quality-agent.md)
 18. [Инфографика ролей и доступов](docs/18-role-access-infographic.md)
+19. [Матрица доступов по сотрудникам](docs/19-employee-access-matrix.md)
 
 ## Прототип
 

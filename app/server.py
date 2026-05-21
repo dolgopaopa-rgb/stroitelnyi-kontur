@@ -1083,11 +1083,37 @@ def account_user_id(account: dict | None) -> int:
 
 
 def can_manage_feedback(account: dict | None) -> bool:
-    return account_role(account) in {"owner", "construction_manager", "finance_director", "sales_manager"}
+    return account_role(account) in {"owner", "construction_manager", "finance_director"}
 
 
 def can_delete_feedback(account: dict | None) -> bool:
-    return account_role(account) in {"owner", "construction_manager", "sales_manager"}
+    return account_role(account) in {"owner", "construction_manager"}
+
+
+def can_view_variations(account: dict | None) -> bool:
+    return account_role(account) in {"owner", "construction_manager", "finance_director", "accountant", "sales_manager", "estimator", "foreman"}
+
+
+def can_view_knowledge_base(account: dict | None) -> bool:
+    return account_role(account) in {"owner", "construction_manager", "finance_director", "accountant", "foreman", "procurement_manager", "estimator", "technical_supervisor"}
+
+
+def variation_visible_for_account(variation: dict, account: dict | None) -> bool:
+    role = account_role(account)
+    if role == "foreman":
+        return int(variation.get("project_foreman_id") or 0) == account_user_id(account)
+    return role in {"owner", "construction_manager", "finance_director", "accountant", "sales_manager", "estimator"}
+
+
+def sanitize_variation_for_account(variation: dict, account: dict | None) -> dict:
+    if can_view_financials(account):
+        return variation
+    variation["amount"] = 0
+    variation["financial_decision"] = ""
+    for item in variation.get("materials") or []:
+        item["total_amount"] = 0
+        item["unit_price"] = 0
+    return variation
 
 
 def project_visible_for_account(project: dict, account: dict | None) -> bool:
@@ -1109,7 +1135,7 @@ DOCUMENT_TYPES_BY_ROLE = {
 def document_visible_for_account(document: dict, account: dict | None) -> bool:
     related_type = str(document.get("related_type") or "")
     if related_type == "knowledge_base":
-        return True
+        return can_view_knowledge_base(account)
     role = account_role(account)
     if role in {"owner", "construction_manager", "finance_director", "sales_manager"}:
         return True
@@ -1647,7 +1673,8 @@ class AppHandler(BaseHTTPRequestHandler):
     def variation_detail_payload(self, db, variation_id: int) -> dict | None:
         variation = db.execute(
             """
-            SELECT v.*, p.title AS project_title, requester.name AS requester_name, approver.name AS approver_name
+            SELECT v.*, p.title AS project_title, p.foreman_id AS project_foreman_id,
+                   requester.name AS requester_name, approver.name AS approver_name
             FROM variations v
             JOIN projects p ON p.id = v.project_id
             LEFT JOIN users requester ON requester.id = v.requester_id
@@ -1680,9 +1707,13 @@ class AppHandler(BaseHTTPRequestHandler):
 
     def serve_variation_export(self, variation_id: int) -> None:
         with connect() as db:
+            account = current_access_account(self) or {}
             payload = self.variation_detail_payload(db, variation_id)
-            if not payload:
+            if not payload or not variation_visible_for_account(payload, account):
                 self.send_error(404)
+                return
+            if not can_view_financials(account):
+                self.send_error(403)
                 return
         rows: list[list[object]] = [
             ["Допработа / отклонение", payload["title"]],
@@ -1971,9 +2002,10 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
             variation_detail = re.match(r"^/api/variations/(\d+)$", path)
             if variation_detail:
                 payload = self.variation_detail_payload(db, int(variation_detail.group(1)))
-                if not payload:
+                if not payload or not variation_visible_for_account(payload, account):
                     json_response(self, {"error": "Variation not found"}, 404)
                     return
+                payload = sanitize_variation_for_account(payload, account)
                 json_response(self, payload)
                 return
 
@@ -2064,7 +2096,8 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         t.due_date
                 """,
                 "/api/variations": """
-                    SELECT v.*, p.title AS project_title, requester.name AS requester_name, approver.name AS approver_name
+                    SELECT v.*, p.title AS project_title, p.foreman_id AS project_foreman_id,
+                           requester.name AS requester_name, approver.name AS approver_name
                     FROM variations v
                     JOIN projects p ON p.id = v.project_id
                     LEFT JOIN users requester ON requester.id = v.requester_id
@@ -2083,13 +2116,18 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 "/api/events": "SELECT e.*, p.title AS project_title, u.name AS author_name FROM events e JOIN projects p ON p.id = e.project_id LEFT JOIN users u ON u.id = e.author_id ORDER BY e.created_at DESC",
             }
             if path in endpoints:
-                if path in {"/api/contracts", "/api/events"} and account_role(account) not in {"owner", "construction_manager", "finance_director", "accountant", "sales_manager"}:
+                if path == "/api/contracts" and account_role(account) not in {"owner", "construction_manager", "finance_director", "accountant"}:
                     json_response(self, [])
                     return
-                if path == "/api/variations" and account_role(account) not in {"owner", "construction_manager", "finance_director", "accountant", "estimator"}:
+                if path == "/api/events" and account_role(account) not in {"owner", "construction_manager", "finance_director", "accountant", "sales_manager"}:
+                    json_response(self, [])
+                    return
+                if path == "/api/variations" and not can_view_variations(account):
                     json_response(self, [])
                     return
                 rows = rows_to_dicts(db.execute(endpoints[path]).fetchall())
+                if path == "/api/variations":
+                    rows = [sanitize_variation_for_account(row, account) for row in rows if variation_visible_for_account(row, account)]
                 if path == "/api/tasks":
                     role = account_role(account)
                     user_id = account_user_id(account)
@@ -2119,6 +2157,9 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
             if path == "/api/documents":
                 related_type = (query.get("related_type") or ["project"])[0]
                 if related_type == "knowledge_base":
+                    if not can_view_knowledge_base(account):
+                        json_response(self, [])
+                        return
                     rows = db.execute(
                         """
                         SELECT d.*, p.title AS project_title, u.name AS owner_name
