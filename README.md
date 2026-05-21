@@ -23,6 +23,7 @@
 17. [QA-агент проекта](docs/17-quality-agent.md)
 18. [Инфографика ролей и доступов](docs/18-role-access-infographic.md)
 19. [Матрица доступов по сотрудникам](docs/19-employee-access-matrix.md)
+20. [Санитизированная переписка и контекст проекта](docs/20-sanitized-conversation-log.md)
 
 ## Прототип
 
