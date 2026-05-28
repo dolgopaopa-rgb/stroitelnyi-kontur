@@ -9,10 +9,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Строительный контур</title>
-    <link rel="manifest" href="/static/manifest.webmanifest?v=20260528-project-draft" />
+    <link rel="manifest" href="/static/manifest.webmanifest?v=20260528-project-contact" />
     <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260528-project-draft" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260528-project-contact" />
   </head>
   <body>
     <div class="app">
@@ -334,7 +334,16 @@
         </div>
         <label>Название <input name="title" required placeholder="Дом, Павловская Слобода" /></label>
         <label>Заказчик <input name="customer_name" required placeholder="ФИО или компания" /></label>
+        <div class="grid-2">
+          <label>Телефон заказчика <input name="customer_phone" type="tel" required placeholder="+7 999 000-00-00" /></label>
+          <label>E-mail заказчика <input name="customer_email" type="email" required placeholder="client@example.ru" /></label>
+        </div>
         <label>Адрес <input name="address" required placeholder="Адрес объекта" /></label>
+        <label>
+          Локация объекта в Яндекс.Картах
+          <input name="navigator_url" required placeholder="Вставьте сюда ссылку из Яндекса" />
+          <span class="field-hint">Откройте объект в Яндекс.Картах, нажмите “Поделиться” и вставьте сюда полученную ссылку.</span>
+        </label>
         <label>Сметтер <input name="smetter_ref" required placeholder="Ссылка на смету или номер" /></label>
         <section class="hint-box neutral">
           <strong>Передача в строительство</strong>
@@ -600,6 +609,6 @@
     </dialog>
 
     <div class="toast" id="toast"></div>
-    <script src="/static/app.js?v=20260528-project-draft"></script>
+    <script src="/static/app.js?v=20260528-project-contact"></script>
   </body>
 </html>

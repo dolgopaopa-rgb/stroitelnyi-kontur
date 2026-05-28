@@ -2144,6 +2144,12 @@ textarea {
   color: var(--text);
 }
 
+.field-hint {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .grid-2 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2202,6 +2208,29 @@ textarea {
   border-color: #c8d6df;
   background: #f2f6f8;
   color: #40515a;
+}
+
+.form.is-saving .form-status.pending {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.form.is-saving .form-status.pending::before {
+  content: "";
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid #bfd7d2;
+  border-top-color: var(--accent);
+  flex: 0 0 auto;
+  animation: form-spinner 0.8s linear infinite;
+}
+
+@keyframes form-spinner {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .toast {

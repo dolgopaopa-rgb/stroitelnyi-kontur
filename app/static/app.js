@@ -30,11 +30,24 @@ const state = {
 };
 
 const PROJECT_FORM_DRAFT_KEY = "projectFormDraft:v1";
-const PROJECT_TEXT_DRAFT_FIELDS = ["title", "customer_name", "address", "smetter_ref", "planned_end_date", "main_estimate_amount"];
+const PROJECT_TEXT_DRAFT_FIELDS = [
+  "title",
+  "customer_name",
+  "customer_phone",
+  "customer_email",
+  "address",
+  "navigator_url",
+  "smetter_ref",
+  "planned_end_date",
+  "main_estimate_amount",
+];
 const PROJECT_REQUIRED_FIELDS = [
   ["title", "Название"],
   ["customer_name", "Заказчик"],
+  ["customer_phone", "Телефон заказчика"],
+  ["customer_email", "E-mail заказчика"],
   ["address", "Адрес"],
+  ["navigator_url", "Ссылка на локацию объекта из Яндекса"],
   ["smetter_ref", "Сметтер"],
   ["planned_end_date", "Плановый срок окончания работ по договору"],
   ["main_estimate_amount", "Смета"],
@@ -224,7 +237,7 @@ function canDeleteKnowledgeBase() {
 }
 
 function canDeleteFeedback() {
-  return ["owner", "construction_manager", "sales_manager"].includes(currentRoleBase());
+  return ["owner", "construction_manager"].includes(currentRoleBase());
 }
 
 function canManageSystemSettings() {
@@ -236,7 +249,7 @@ const viewAccess = {
   construction_manager: ["dashboard", "projects", "tasks", "works", "materials", "variations", "locations", "documents", "feedback", "events"],
   finance_director: ["dashboard", "projects", "tasks", "works", "materials", "variations", "locations", "documents", "feedback", "events"],
   accountant: ["dashboard", "projects", "materials", "variations", "locations", "documents", "events"],
-  sales_manager: ["dashboard", "projects", "variations", "locations", "events"],
+  sales_manager: ["dashboard", "projects", "variations"],
   foreman: ["dashboard", "tasks", "works", "materials", "variations", "locations", "documents"],
   procurement_manager: ["dashboard", "projects", "materials", "locations", "documents"],
   estimator: ["dashboard", "projects", "tasks", "works", "materials", "variations", "documents"],
@@ -296,7 +309,7 @@ function projectTabs() {
     construction_manager: ["overview", "tasks", "works", "materials", "variations", "documents", "events"],
     finance_director: ["overview", "tasks", "works", "materials", "variations", "documents", "events"],
     accountant: ["overview", "materials", "variations", "documents", "events"],
-    sales_manager: ["overview", "documents", "events"],
+    sales_manager: ["overview", "documents"],
     foreman: ["overview", "tasks", "works", "materials", "documents"],
     procurement_manager: ["overview", "materials", "documents"],
     estimator: ["overview", "works", "materials", "variations", "documents"],
@@ -403,7 +416,7 @@ function addressLink(address, className = "") {
 function mapLink(address, mapsUrl, label = "Открыть в Яндекс.Картах") {
   const url = String(mapsUrl || "").trim();
   const addressText = String(address || "").trim();
-  const href = addressText ? yandexMapsUrl(addressText) : url;
+  const href = url || (addressText ? yandexMapsUrl(addressText) : "");
   if (!href) return `<span class="muted">Локация не указана</span>`;
   return `<a class="link-button inline-link" href="${escapeAttr(href)}" target="_blank" rel="noopener noreferrer">${label}</a>`;
 }
@@ -607,6 +620,11 @@ function restoreProjectFormDraft(form) {
 }
 
 function setProjectSaving(isSaving, message = "") {
+  const form = qs("#projectForm");
+  if (form) {
+    form.classList.toggle("is-saving", isSaving);
+    form.setAttribute("aria-busy", isSaving ? "true" : "false");
+  }
   qsa("#projectDraftButton, #projectSubmitButton").forEach((button) => {
     button.disabled = isSaving;
   });
@@ -1551,6 +1569,7 @@ async function renderProjectDetail(projectId) {
   qs("#projectDetail").innerHTML = `
     <div class="stack-line"><h2>${project.title}</h2>${pill(label(project.status), "blue")}</div>
     <div class="muted">Клиент: ${project.customer_name || "не указан"} · договоров/объектов в истории: ${project.customer_projects_count || 1}</div>
+    <div class="muted">Телефон: ${escapeHtml(project.customer_phone || "не указан")} · E-mail: ${escapeHtml(project.customer_email || "не указан")}</div>
     <div class="project-detail-map">${mapLink(project.address, project.navigator_url, "Я.Карты")}<span class="muted">${project.address ? "Адрес объекта" : "Адрес не указан"}</span></div>
     <div class="stack-line">
       ${pill(`Прораб: ${project.foreman_name || "не назначен"}`)}
@@ -2818,7 +2837,10 @@ async function openProjectEditDialog(projectId) {
   setProjectFormStatus("");
   form.elements.title.value = project.title || "";
   form.elements.customer_name.value = project.customer_name || "";
+  form.elements.customer_phone.value = project.customer_phone || "";
+  form.elements.customer_email.value = project.customer_email || "";
   form.elements.address.value = project.address || "";
+  form.elements.navigator_url.value = project.navigator_url || "";
   form.elements.smetter_ref.value = project.smetter_ref || "";
   form.elements.planned_end_date.value = project.planned_end_date || "";
   form.elements.main_estimate_amount.value = project.main_estimate_amount || "";

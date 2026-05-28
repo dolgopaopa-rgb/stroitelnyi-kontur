@@ -1,9 +1,9 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260528-project-draft";
+const CACHE_NAME = "stroitelnyi-kontur-20260528-project-contact";
 const CORE_ASSETS = [
   "/",
-  "/static/styles.css?v=20260528-project-draft",
-  "/static/app.js?v=20260528-project-draft",
-  "/static/manifest.webmanifest?v=20260528-project-draft",
+  "/static/styles.css?v=20260528-project-contact",
+  "/static/app.js?v=20260528-project-contact",
+  "/static/manifest.webmanifest?v=20260528-project-contact",
   "/static/assets/g2-logo-192.png",
   "/static/assets/g2-logo-512.png"
 ];

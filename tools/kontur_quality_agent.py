@@ -215,8 +215,14 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         (
             "Navigation access scenario",
             "Меню ограничивается по ролям менеджера и прораба.",
-            ['sales_manager: ["dashboard", "projects", "variations", "locations", "events"]', 'foreman: ["dashboard", "tasks", "works", "materials", "variations", "locations", "documents"]', "syncNavigationAccess"],
+            ['sales_manager: ["dashboard", "projects", "variations"]', 'foreman: ["dashboard", "tasks", "works", "materials", "variations", "locations", "documents"]', "syncNavigationAccess"],
             "Проверить матрицу ролей: менеджеру и прорабу нельзя показывать лишние разделы.",
+        ),
+        (
+            "New project contact fields scenario",
+            "Новая карточка объекта требует телефон, e-mail и ссылку на локацию из Яндекса.",
+            ['name="customer_phone"', 'name="customer_email"', 'name="navigator_url"', "PROJECT_TEXT_DRAFT_FIELDS", "ensure_customer(db, data.get(\"customer_name\"), data.get(\"customer_phone\"), data.get(\"customer_email\"))"],
+            "Вернуть поля контактов и локации в форму, черновик и серверное сохранение.",
         ),
         (
             "Project approval guard",

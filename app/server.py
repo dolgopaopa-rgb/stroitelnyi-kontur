@@ -967,14 +967,28 @@ def create_notification(
     )
 
 
-def ensure_customer(db, name: str | None) -> int | None:
+def ensure_customer(db, name: str | None, phone: str | None = None, email: str | None = None) -> int | None:
     clean_name = str(name or "").strip()
     if not clean_name:
         return None
+    clean_phone = str(phone or "").strip()
+    clean_email = str(email or "").strip()
     row = db.execute("SELECT id FROM customers WHERE lower(name) = lower(?) LIMIT 1", (clean_name,)).fetchone()
     if row:
-        return int(row["id"])
-    cursor = db.execute("INSERT INTO customers (name) VALUES (?)", (clean_name,))
+        customer_id = int(row["id"])
+        if clean_phone or clean_email:
+            db.execute(
+                """
+                UPDATE customers
+                SET phone = COALESCE(NULLIF(?, ''), phone),
+                    email = COALESCE(NULLIF(?, ''), email),
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (clean_phone, clean_email, customer_id),
+            )
+        return customer_id
+    cursor = db.execute("INSERT INTO customers (name, phone, email) VALUES (?, ?, ?)", (clean_name, clean_phone, clean_email))
     return int(cursor.lastrowid)
 
 
@@ -1402,8 +1416,10 @@ def get_project_detail(project_id: int, account: dict | None = None) -> dict | N
             """
             SELECT p.*, foreman.name AS foreman_name, estimator.name AS estimator_name,
                    procurement.name AS procurement_name, manager.name AS manager_name,
-                   tech.name AS tech_supervisor_name, sales.name AS sales_manager_name
+                   tech.name AS tech_supervisor_name, sales.name AS sales_manager_name,
+                   customer.phone AS customer_phone, customer.email AS customer_email
             FROM projects p
+            LEFT JOIN customers customer ON customer.id = p.customer_id
             LEFT JOIN users foreman ON foreman.id = p.foreman_id
             LEFT JOIN users estimator ON estimator.id = p.estimator_id
             LEFT JOIN users procurement ON procurement.id = p.procurement_manager_id
@@ -1879,8 +1895,10 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     """
                     SELECT p.*, foreman.name AS foreman_name, estimator.name AS estimator_name,
                            procurement.name AS procurement_name, tech.name AS tech_supervisor_name,
-                           sales.name AS sales_manager_name
+                           sales.name AS sales_manager_name,
+                           customer.phone AS customer_phone, customer.email AS customer_email
                     FROM projects p
+                    LEFT JOIN customers customer ON customer.id = p.customer_id
                     LEFT JOIN users foreman ON foreman.id = p.foreman_id
                     LEFT JOIN users estimator ON estimator.id = p.estimator_id
                     LEFT JOIN users procurement ON procurement.id = p.procurement_manager_id
@@ -1901,8 +1919,10 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     """
                     SELECT p.*, foreman.name AS foreman_name, estimator.name AS estimator_name,
                            procurement.name AS procurement_name, tech.name AS tech_supervisor_name,
-                           sales.name AS sales_manager_name
+                           sales.name AS sales_manager_name,
+                           customer.phone AS customer_phone, customer.email AS customer_email
                     FROM projects p
+                    LEFT JOIN customers customer ON customer.id = p.customer_id
                     LEFT JOIN users foreman ON foreman.id = p.foreman_id
                     LEFT JOIN users estimator ON estimator.id = p.estimator_id
                     LEFT JOIN users procurement ON procurement.id = p.procurement_manager_id
@@ -2119,7 +2139,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 if path == "/api/contracts" and account_role(account) not in {"owner", "construction_manager", "finance_director", "accountant"}:
                     json_response(self, [])
                     return
-                if path == "/api/events" and account_role(account) not in {"owner", "construction_manager", "finance_director", "accountant", "sales_manager"}:
+                if path == "/api/events" and account_role(account) not in {"owner", "construction_manager", "finance_director", "accountant"}:
                     json_response(self, [])
                     return
                 if path == "/api/variations" and not can_view_variations(account):
@@ -2306,7 +2326,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 if data.get("save_mode") == "draft":
                     data["title"] = str(data.get("title") or "").strip() or "Новый объект"
                     data["customer_name"] = str(data.get("customer_name") or "").strip() or "Не указан"
-                    customer_id = ensure_customer(db, data.get("customer_name"))
+                    customer_id = ensure_customer(db, data.get("customer_name"), data.get("customer_phone"), data.get("customer_email"))
                     cursor = db.execute(
                         """
                         INSERT INTO projects (
@@ -2358,7 +2378,10 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     [
                         ("title", "Название"),
                         ("customer_name", "Заказчик"),
+                        ("customer_phone", "Телефон заказчика"),
+                        ("customer_email", "E-mail заказчика"),
                         ("address", "Адрес"),
+                        ("navigator_url", "Ссылка на локацию объекта из Яндекса"),
                         ("smetter_ref", "Сметтер"),
                         ("planned_end_date", "Плановый срок окончания работ по договору"),
                         ("main_estimate_amount", "Смета"),
@@ -2366,7 +2389,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         ("work_task_file_name", "Задание на работы из Сметтера"),
                     ],
                 )
-                customer_id = ensure_customer(db, data.get("customer_name"))
+                customer_id = ensure_customer(db, data.get("customer_name"), data.get("customer_phone"), data.get("customer_email"))
                 cursor = db.execute(
                     """
                     INSERT INTO projects (
@@ -2436,7 +2459,12 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     raise ValueError("Принять или вернуть можно только объект, переданный руководителю строительства.")
 
                 if action == "update" and data.get("save_mode") == "draft":
-                    customer_id = ensure_customer(db, data.get("customer_name") or project["customer_name"])
+                    customer_id = ensure_customer(
+                        db,
+                        data.get("customer_name") or project["customer_name"],
+                        data.get("customer_phone"),
+                        data.get("customer_email"),
+                    )
                     db.execute(
                         """
                         UPDATE projects
@@ -2444,6 +2472,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             title = ?,
                             customer_name = ?,
                             address = ?,
+                            navigator_url = ?,
                             bitrix_ref = ?,
                             smetter_ref = ?,
                             planned_end_date = ?,
@@ -2458,6 +2487,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             str(data.get("title") or "").strip() or project["title"] or "Новый объект",
                             str(data.get("customer_name") or "").strip() or project["customer_name"] or "Не указан",
                             data.get("address") or "",
+                            data.get("navigator_url") or project["navigator_url"] or "",
                             "",
                             data.get("smetter_ref") or "",
                             data.get("planned_end_date") or "",
@@ -2491,7 +2521,10 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         [
                             ("title", "Название"),
                             ("customer_name", "Заказчик"),
+                            ("customer_phone", "Телефон заказчика"),
+                            ("customer_email", "E-mail заказчика"),
                             ("address", "Адрес"),
+                            ("navigator_url", "Ссылка на локацию объекта из Яндекса"),
                             ("smetter_ref", "Сметтер"),
                             ("planned_end_date", "Плановый срок окончания работ по договору"),
                             ("main_estimate_amount", "Смета"),
@@ -2499,7 +2532,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         ("work_task_file_name", "Задание на работы из Сметтера"),
                         ],
                     )
-                    customer_id = ensure_customer(db, data.get("customer_name"))
+                    customer_id = ensure_customer(db, data.get("customer_name"), data.get("customer_phone"), data.get("customer_email"))
                     db.execute(
                         """
                         UPDATE projects
@@ -2507,6 +2540,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             title = ?,
                             customer_name = ?,
                             address = ?,
+                            navigator_url = ?,
                             bitrix_ref = ?,
                             smetter_ref = ?,
                             planned_end_date = ?,
@@ -2521,6 +2555,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             data.get("title"),
                             data.get("customer_name"),
                             data.get("address"),
+                            data.get("navigator_url") or "",
                             "",
                             data.get("smetter_ref"),
                             data.get("planned_end_date"),
