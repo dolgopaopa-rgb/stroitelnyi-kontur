@@ -4185,6 +4185,9 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 return
 
             if path == "/api/contracts":
+                project_id = int(data["project_id"])
+                actor_id = account_user_id(account) or user_id_by_role(db, "sales_manager") or 3
+                contract_title = data.get("title") or "Новый договор"
                 cursor = db.execute(
                     """
                     INSERT INTO contracts (
@@ -4193,8 +4196,8 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     VALUES (?, ?, ?, ?, ?, ?, 'active')
                     """,
                     (
-                        int(data["project_id"]),
-                        data.get("title") or "Новый договор",
+                        project_id,
+                        contract_title,
                         data.get("type") or "customer_contract",
                         data.get("counterparty") or "",
                         data.get("ends_at") or None,
@@ -4208,11 +4211,122 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     file_data["process_type"] = data.get("type") or "customer_contract"
                     save_document_file(
                         db,
-                        int(data["project_id"]),
+                        project_id,
                         file_data,
-                        data.get("title") or "Договор",
+                        contract_title,
                         "contract",
                         "contract",
+                    )
+                extra_materials = data.get("extra_materials") or []
+                if not isinstance(extra_materials, list):
+                    extra_materials = []
+                material_request_ids: list[int] = []
+                material_batch_id = None
+                if extra_materials:
+                    material_batch_id = create_material_batch(
+                        db,
+                        project_id=project_id,
+                        creator_id=actor_id,
+                        needed_at=None,
+                        comment=f"Материалы по договору/допнику: {contract_title}",
+                    )
+                    for item in extra_materials:
+                        material = str(item.get("material") or "").strip()
+                        name = str(item.get("name") or "").strip()
+                        quantity = number_value(item.get("quantity"))
+                        unit = str(item.get("unit") or "").strip()
+                        comment = str(item.get("comment") or "").strip()
+                        if not material and not name and quantity <= 0:
+                            continue
+                        if not material or not name or quantity <= 0:
+                            raise ValueError("Заполните материал, наименование и количество для материалов по допнику.")
+                        material_request_ids.append(
+                            create_material_request(
+                                db,
+                                batch_id=material_batch_id,
+                                project_id=project_id,
+                                creator_id=actor_id,
+                                estimate_material_id=None,
+                                title=f"{material}: {name}",
+                                basis_type="additional_agreement",
+                                estimate_section="Материалы по допнику",
+                                needed_at=None,
+                                requested_quantity=quantity,
+                                requested_unit=unit,
+                                total_amount=0,
+                                comment=f"По допнику: {contract_title}. {comment}".strip(),
+                            )
+                        )
+                    if material_request_ids:
+                        create_notification(
+                            db,
+                            project_id,
+                            user_id_by_role(db, "procurement_manager"),
+                            "procurement_manager",
+                            "Материалы по допнику",
+                            f"{contract_title}: {len(material_request_ids)} позиций",
+                            "material_request_batch",
+                            material_batch_id,
+                        )
+
+                extra_work_ids: list[int] = []
+                variation_ids: list[int] = []
+                extra_works = data.get("extra_works") or []
+                if not isinstance(extra_works, list):
+                    extra_works = []
+                for item in extra_works:
+                    title = str(item.get("title") or "").strip()
+                    unit = str(item.get("unit") or "").strip()
+                    quantity = number_value(item.get("quantity"))
+                    comment = str(item.get("comment") or "").strip()
+                    if not title and not unit and quantity <= 0:
+                        continue
+                    if not title or not unit or quantity <= 0:
+                        raise ValueError("Заполните наименование, единицу измерения и количество для работ по допнику.")
+                    work_cursor = db.execute(
+                        """
+                        INSERT INTO work_extra_items (
+                            project_id, creator_id, title, unit, quantity, reason, estimate_section, comment, status
+                        )
+                        VALUES (?, ?, ?, ?, ?, 'additional_work', 'Работы по допнику', ?, 'new')
+                        """,
+                        (
+                            project_id,
+                            actor_id,
+                            title,
+                            unit,
+                            quantity,
+                            f"По допнику: {contract_title}. {comment}".strip(),
+                        ),
+                    )
+                    work_extra_id = int(work_cursor.lastrowid)
+                    extra_work_ids.append(work_extra_id)
+                    variation_cursor = db.execute(
+                        """
+                        INSERT INTO variations (
+                            project_id, title, type, status, financial_decision, amount, due_date,
+                            description, estimate_section, requester_id, source_type, source_id
+                        )
+                        VALUES (?, ?, 'additional_work', 'decision_required', 'not_decided', 0, NULL, ?, 'Работы по допнику', ?, 'work_extra_item', ?)
+                        """,
+                        (
+                            project_id,
+                            title,
+                            f"По допнику: {contract_title}. {comment}".strip(),
+                            actor_id,
+                            work_extra_id,
+                        ),
+                    )
+                    variation_ids.append(int(variation_cursor.lastrowid))
+                if extra_work_ids:
+                    notify_users(
+                        db,
+                        {user_id_by_role(db, "construction_manager"), user_id_by_role(db, "owner")} - {None},
+                        project_id,
+                        "Работы по допнику требуют решения",
+                        f"{contract_title}: {len(extra_work_ids)} позиций",
+                        "variation",
+                        variation_ids[0] if variation_ids else None,
                     )
                 db.execute(
                     """
@@ -4220,12 +4334,21 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     VALUES (?, 'document', ?, ?, 'internal', 'contract')
                     """,
                     (
-                        int(data["project_id"]),
-                        f"Добавлен договор/допсоглашение: {data.get('title') or 'Новый договор'}",
-                        account_user_id(account) or user_id_by_role(db, "sales_manager") or 3,
+                        project_id,
+                        f"Добавлен договор/допсоглашение: {contract_title}",
+                        actor_id,
                     ),
                 )
-                json_response(self, {"id": contract_id}, 201)
+                json_response(
+                    self,
+                    {
+                        "id": contract_id,
+                        "material_batch_id": material_batch_id,
+                        "material_request_ids": material_request_ids,
+                        "work_extra_ids": extra_work_ids,
+                    },
+                    201,
+                )
                 return
 
             if path == "/api/events":

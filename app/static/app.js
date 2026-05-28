@@ -249,7 +249,7 @@ const viewAccess = {
   construction_manager: ["dashboard", "projects", "tasks", "works", "materials", "variations", "locations", "documents", "feedback", "events"],
   finance_director: ["dashboard", "projects", "tasks", "works", "materials", "variations", "locations", "documents", "feedback", "events"],
   accountant: ["dashboard", "projects", "materials", "variations", "locations", "documents", "events"],
-  sales_manager: ["dashboard", "projects", "variations", "documents"],
+  sales_manager: ["dashboard", "projects", "documents"],
   foreman: ["dashboard", "tasks", "works", "materials", "variations", "locations", "documents"],
   procurement_manager: ["dashboard", "projects", "materials", "locations", "documents"],
   estimator: ["dashboard", "projects", "tasks", "works", "materials", "variations", "documents"],
@@ -269,10 +269,32 @@ function syncNavigationAccess() {
   qsa("[data-view]").forEach((button) => {
     button.hidden = !allowed.includes(button.dataset.view);
   });
-  const newProjectButton = qs("#newProjectButton");
-  if (newProjectButton) newProjectButton.hidden = !canEditProject();
+  qsa("[data-view-target]").forEach((button) => {
+    button.hidden = !allowed.includes(button.dataset.viewTarget);
+  });
+  qsa("[data-requires-view]").forEach((node) => {
+    node.hidden = !allowed.includes(node.dataset.requiresView);
+  });
+  syncTopbarAccess();
   if (!allowed.includes(state.view)) {
     switchView(allowed[0] || "dashboard");
+  }
+}
+
+function syncTopbarAccess() {
+  const canUseRoleTools = Boolean(state.canSwitchRole);
+  const roleSwitcher = qs(".role-switcher");
+  const refreshButton = qs("#refreshButton");
+  const logoutButton = qs("#logoutButton");
+  const newProjectButton = qs("#newProjectButton");
+  const actions = qs(".topbar .actions");
+  if (roleSwitcher) roleSwitcher.hidden = !canUseRoleTools;
+  if (refreshButton) refreshButton.hidden = !canUseRoleTools;
+  if (logoutButton) logoutButton.hidden = false;
+  if (newProjectButton) newProjectButton.hidden = !canEditProject();
+  if (actions) {
+    actions.classList.toggle("role-tools-hidden", !canUseRoleTools);
+    actions.classList.toggle("manager-actions", currentRoleBase() === "sales_manager" && !canUseRoleTools);
   }
 }
 
@@ -538,9 +560,6 @@ function renderDocumentSummary(docs, contracts = []) {
           <span>Документы объекта</span>
           ${pill(`${docs.length} шт.`, docs.length ? "blue" : "")}
         </summary>
-        <div class="form-actions">
-          ${canEditProject() ? `<button class="secondary tiny" type="button" data-add-contract="${state.selectedProjectId || ""}">Добавить договор / допник</button>` : ""}
-        </div>
         ${renderGroupedProjectDocuments(docs, contracts)}
       </details>
     </section>`;
@@ -821,6 +840,7 @@ async function loadAll() {
     renderEvents(),
   ]);
   initSortableZones();
+  syncNavigationAccess();
 }
 
 function fillSelects() {
@@ -1446,8 +1466,12 @@ async function renderDashboard() {
     <button class="metric clickable" data-view-target="projects" type="button"><span class="muted">Объекты</span><strong>${summary.projects}</strong><span>В базе MVP</span></button>
     <button class="metric clickable" data-view-target="projects" type="button"><span class="muted">У менеджера</span><strong>${summary.pending_handover}</strong><span>Черновики и доработки</span></button>
     <button class="metric clickable" data-view-target="projects" type="button"><span class="muted">На передаче</span><strong>${summary.construction_review || 0}</strong><span>Ждут решения строительства</span></button>
-    <button class="metric clickable" data-task-filter="waiting" type="button"><span class="muted">Задачи к приемке</span><strong>${summary.task_done_waiting || 0}</strong><span>Выполнены, но не приняты</span></button>
-    <button class="metric clickable" data-task-filter="overdue" type="button"><span class="muted">Просрочено</span><strong>${taskStats(roleTasks).overdue}</strong><span>По открытым задачам</span></button>
+    ${
+      canView("tasks")
+        ? `<button class="metric clickable" data-task-filter="waiting" type="button"><span class="muted">Задачи к приемке</span><strong>${summary.task_done_waiting || 0}</strong><span>Выполнены, но не приняты</span></button>
+           <button class="metric clickable" data-task-filter="overdue" type="button"><span class="muted">Просрочено</span><strong>${taskStats(roleTasks).overdue}</strong><span>По открытым задачам</span></button>`
+        : ""
+    }
   `;
   qs("#dashboardAttention").innerHTML = renderDashboardAttention(buildDashboardAttention(summary, roleTasks, materialRows));
   qs("#dashboardTaskStats").innerHTML = renderTaskStats(roleTasks);
@@ -1585,6 +1609,7 @@ async function renderProjectDetail(projectId) {
       <div>${tabData[state.selectedProjectTab]}</div>`,
     ],
     ["edit", renderProjectEditPanel(project)],
+    ["contract", renderProjectContractPanel(project)],
     ["workflow", renderProjectWorkflow(project)],
     ["documents", renderDocumentSummary(docs, project.contracts || [])],
   ];
@@ -1631,7 +1656,7 @@ async function renderProjectDetail(projectId) {
       ${canViewExternalRefs() ? externalRefLink(project.smetter_ref, project.smetter_ref ? "Открыть Сметтер" : "Сметтер не указан", "success") : ""}
     </div>
     <div class="project-detail-blocks sortable-zone" data-sortable-zone="project-detail-v2">
-      ${detailBlocks.map(([key, html]) => `<div class="project-detail-block" data-sortable-block="${key}">${html}</div>`).join("")}
+      ${detailBlocks.filter(([, html]) => String(html || "").trim()).map(([key, html]) => `<div class="project-detail-block" data-sortable-block="${key}">${html}</div>`).join("")}
     </div>
   `;
   initSortableZones(qs("#projectDetail"));
@@ -1650,6 +1675,21 @@ function renderProjectEditPanel(project) {
       <div class="form-actions">
         <span class="muted">Основные данные и файлы меняются в отдельном окне.</span>
         <button class="secondary" data-edit-project="${project.id}">Редактировать</button>
+      </div>
+    </section>`;
+}
+
+function renderProjectContractPanel(project) {
+  if (!canEditProject()) return "";
+  return `
+    <section class="workflow-panel compact-workflow contract-action-panel">
+      <div class="stack-line">
+        <h3>Договоры и допники</h3>
+        ${pill("Материалы и работы можно привязать к допнику", "blue")}
+      </div>
+      <div class="form-actions">
+        <span class="muted">Добавляйте договор, допсоглашение, материалы и работы по нему из одного окна.</span>
+        <button class="primary" type="button" data-add-contract="${project.id}">Добавить договор / допник</button>
       </div>
     </section>`;
 }
@@ -2826,6 +2866,40 @@ function formToJson(form) {
   return data;
 }
 
+function splitContractExtraLine(line) {
+  return String(line || "")
+    .split(/[;\t]/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function parseContractExtraMaterials(text) {
+  return String(text || "")
+    .split(/\r?\n/)
+    .map((line) => splitContractExtraLine(line))
+    .filter((parts) => parts.length)
+    .map(([material, name, quantity, unit, ...comment]) => ({
+      material: material || "",
+      name: name || "",
+      quantity: quantity || "",
+      unit: unit || "",
+      comment: comment.join("; "),
+    }));
+}
+
+function parseContractExtraWorks(text) {
+  return String(text || "")
+    .split(/\r?\n/)
+    .map((line) => splitContractExtraLine(line))
+    .filter((parts) => parts.length)
+    .map(([title, unit, quantity, ...comment]) => ({
+      title: title || "",
+      unit: unit || "",
+      quantity: quantity || "",
+      comment: comment.join("; "),
+    }));
+}
+
 async function submitForm(dialogId, formId, endpoint, successMessage) {
   const form = qs(`#${formId}`);
   await api(endpoint, { method: "POST", body: JSON.stringify(formToJson(form)) });
@@ -3666,6 +3740,8 @@ function bindEvents() {
     const form = qs("#contractForm");
     try {
       const payload = formToJson(form);
+      payload.extra_materials = parseContractExtraMaterials(form.elements.extra_materials_text?.value || "");
+      payload.extra_works = parseContractExtraWorks(form.elements.extra_works_text?.value || "");
       const file = form.elements.contract_document_file.files[0];
       if (file) {
         payload.document_file = await fileDocumentPayload(file, payload.title || file.name, "contract", "contract");
