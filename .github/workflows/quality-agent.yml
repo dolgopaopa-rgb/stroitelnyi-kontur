@@ -2,8 +2,7 @@ name: Quality Agent
 
 on:
   push:
-    branches:
-      - main
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -15,6 +14,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Check quality agent syntax
+        run: python -m py_compile tools/kontur_quality_agent.py
 
       - name: Run quality agent
         env:

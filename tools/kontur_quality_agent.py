@@ -93,6 +93,174 @@ def repository_asset_version() -> str | None:
     return asset_version_from_html(index_path.read_text(encoding="utf-8", errors="replace"))
 
 
+def repository_file(relative_path: str) -> str:
+    path = Path(__file__).resolve().parents[1] / relative_path
+    if not path.exists():
+        return ""
+    return path.read_text(encoding="utf-8", errors="replace")
+
+
+def has_all(text: str, needles: list[str]) -> bool:
+    return all(needle in text for needle in needles)
+
+
+def check_static_contract(
+    checks: list[Check],
+    name: str,
+    ok: bool,
+    details: str,
+    recommendation: str,
+) -> None:
+    add(checks, name, "OK" if ok else "FAIL", details, "" if ok else recommendation)
+
+
+def check_repository_ui_contracts(checks: list[Check], recommendations: list[Recommendation]) -> None:
+    html = repository_file("app/static/index.html")
+    app_text = repository_file("app/static/app.js")
+    sw_text = repository_file("app/static/sw.js")
+    server_text = repository_file("app/server.py")
+
+    if not html or not app_text:
+        add(
+            checks,
+            "Repository UI files",
+            "FAIL",
+            "Не удалось прочитать app/static/index.html или app/static/app.js.",
+            "Проверить структуру репозитория и путь запуска агента.",
+        )
+        return
+
+    button_contracts = [
+        ("refreshButton", "Обновить данные", ['qs("#refreshButton").addEventListener("click"', "loadAll().then"]),
+        ("logoutButton", "Выйти", ['qs("#logoutButton")?.addEventListener("click"', 'window.location.href = "/logout"']),
+        ("newProjectButton", "Новый объект", ['qs("#newProjectButton").addEventListener("click"', "resetProjectDialog()", 'qs("#projectDialog").showModal()']),
+        ("newTaskButton", "Добавить задачу", ['qs("#newTaskButton").addEventListener("click"', 'qs("#taskDialog").showModal()']),
+        ("newMaterialButton", "Добавить заявку", ['qs("#newMaterialButton").addEventListener("click"', 'qs("#materialDialog").showModal()']),
+        ("newVariationButton", "Добавить допработу", ['qs("#newVariationButton").addEventListener("click"', 'qs("#variationDialog").showModal()']),
+        ("newDocumentButton", "Добавить материал базы знаний", ['qs("#newDocumentButton").addEventListener("click"', 'qs("#documentDialog").showModal()']),
+        ("newEventButton", "Добавить событие", ['qs("#newEventButton").addEventListener("click"', 'qs("#eventDialog").showModal()']),
+        ("newContractButton", "Добавить договор", ['qs("#newContractButton")?.addEventListener("click"', "openContractDialog"]),
+        ("refreshFeedbackButton", "Обновить обратную связь", ['qs("#refreshFeedbackButton")?.addEventListener("click"', "renderFeedback()"]),
+        ("deleteSelectedFeedbackButton", "Удалить выбранную обратную связь", ['qs("#deleteSelectedFeedbackButton")?.addEventListener("click"', "/api/feedback/delete-bulk"]),
+        ("loadMaterialEstimateButton", "Материалы по смете в заявке", ['qs("#loadMaterialEstimateButton").addEventListener("click"', "loadMaterialEstimatePicker"]),
+        ("addExtraMaterialButton", "Добавить дополнительный материал", ['qs("#addExtraMaterialButton").addEventListener("click"', "addExtraMaterialRow"]),
+        ("toggleEstimateMaterialsButton", "Показать материалы по смете", ['qs("#toggleEstimateMaterialsButton").addEventListener("click"', "state.showEstimateMaterials"]),
+        ("exportCompletedMaterialsButton", "Выгрузить выполненные заявки", ['qs("#exportCompletedMaterialsButton").addEventListener("click"', "/api/material-requests/export"]),
+        ("refreshEstimateButton", "Обновить сметные материалы", ['qs("#refreshEstimateButton").addEventListener("click"', "renderEstimateMaterials"]),
+        ("previewEstimateButton", "Предпросмотр файла материалов", ['qs("#previewEstimateButton").addEventListener("click"', "loadEstimatePreview"]),
+        ("printWorksButton", "Печать работ", ['qs("#printWorksButton").addEventListener("click"', "/api/work-items/print"]),
+    ]
+
+    missing_buttons = []
+    missing_handlers = []
+    for element_id, title, handler_needles in button_contracts:
+        if f'id="{element_id}"' not in html:
+            missing_buttons.append(title)
+        elif not has_all(app_text, handler_needles):
+            missing_handlers.append(title)
+
+    check_static_contract(
+        checks,
+        "UI buttons contract",
+        not missing_buttons and not missing_handlers,
+        "Ключевые кнопки найдены в HTML и имеют обработчики в app.js."
+        if not missing_buttons and not missing_handlers
+        else f"Нет кнопок: {', '.join(missing_buttons) or 'нет'}; нет обработчиков: {', '.join(missing_handlers) or 'нет'}.",
+        "Восстановить кнопку или обработчик. Если кнопка больше не нужна, удалить ее и из HTML, и из списка контрактов агента.",
+    )
+
+    form_contracts = [
+        ("projectForm", "Форма объекта", ['qs("#projectForm").addEventListener("submit"', "/api/projects"]),
+        ("taskForm", "Форма задачи", ['qs("#taskForm").addEventListener("submit"', "/api/tasks"]),
+        ("materialForm", "Форма заявки материалов", ['qs("#materialForm").addEventListener("submit"', "/api/material-requests/bulk"]),
+        ("documentForm", "Форма базы знаний", ['qs("#documentForm").addEventListener("submit"', "/api/documents"]),
+        ("variationForm", "Форма допработы", ['qs("#variationForm").addEventListener("submit"', "/api/variations"]),
+        ("workExtraForm", "Форма появившейся работы", ['qs("#workExtraForm").addEventListener("submit"', "/api/work-extra-items"]),
+        ("supplierLocationForm", "Форма локации поставщика", ['qs("#supplierLocationForm").addEventListener("submit"', "/api/supplier-locations"]),
+        ("estimateImportForm", "Форма загрузки материалов", ['qs("#estimateImportForm").addEventListener("submit"', "/api/estimate-materials/import"]),
+        ("contractForm", "Форма договора", ['qs("#contractForm").addEventListener("submit"', "/api/contracts"]),
+        ("eventForm", "Форма журнала", ['qs("#eventForm").addEventListener("submit"', "/api/events"]),
+    ]
+    missing_forms = []
+    missing_form_handlers = []
+    for form_id, title, handler_needles in form_contracts:
+        if f'id="{form_id}"' not in html:
+            missing_forms.append(title)
+        elif not has_all(app_text, handler_needles):
+            missing_form_handlers.append(title)
+
+    check_static_contract(
+        checks,
+        "UI forms contract",
+        not missing_forms and not missing_form_handlers,
+        "Ключевые формы найдены и отправляются через ожидаемые API."
+        if not missing_forms and not missing_form_handlers
+        else f"Нет форм: {', '.join(missing_forms) or 'нет'}; нет submit-обработчиков: {', '.join(missing_form_handlers) or 'нет'}.",
+        "Восстановить submit-обработчик, чтобы форма не выглядела как сохраненная, когда на самом деле ничего не произошло.",
+    )
+
+    scenario_contracts = [
+        (
+            "Role persistence scenario",
+            "Выбранная тестовая роль сохраняется после обновления страницы.",
+            ["localStorage.getItem(\"currentRole\")", "state.canSwitchRole && savedRole ? savedRole : ownRole", "localStorage.setItem(\"currentRole\", state.currentRole)"],
+            "Сохранить выбранную роль в localStorage и не перезаписывать ее ролью учетной записи при reload.",
+        ),
+        (
+            "New project draft scenario",
+            "Карточка нового объекта имеет автосохранение текстовых полей и понятные ошибки.",
+            ["PROJECT_FORM_DRAFT_KEY", "restoreProjectFormDraft", "missingProjectRequiredFields", "projectFormStatus", "setProjectSaving", "novalidate"],
+            "Вернуть автосохранение и ручную валидацию формы, чтобы менеджер не терял заполненную карточку.",
+        ),
+        (
+            "Navigation access scenario",
+            "Меню ограничивается по ролям менеджера и прораба.",
+            ['sales_manager: ["dashboard", "projects", "variations", "locations", "events"]', 'foreman: ["dashboard", "tasks", "works", "materials", "variations", "locations", "documents"]', "syncNavigationAccess"],
+            "Проверить матрицу ролей: менеджеру и прорабу нельзя показывать лишние разделы.",
+        ),
+        (
+            "Project approval guard",
+            "Менеджер не может принять объект в работу вместо руководителя строительства.",
+            ['"accept": {"owner", "construction_manager", "finance_director"}', '"submit": {"owner", "sales_manager", "finance_director"}'],
+            "Вернуть разделение полномочий: менеджер передает, руководитель строительства принимает или возвращает.",
+        ),
+        (
+            "Permanent delete guard",
+            "Удаление навсегда разрешено только гендиректору.",
+            ['"delete": {"owner"}', "canDeleteForever()", "currentRoleBase() === \"owner\""],
+            "Оставить окончательное удаление только роли owner.",
+        ),
+    ]
+
+    broken_scenarios = []
+    combined_text = "\n".join([html, app_text, server_text])
+    for name, details, needles, recommendation in scenario_contracts:
+        ok = has_all(combined_text, needles)
+        check_static_contract(checks, name, ok, details if ok else f"Нарушен сценарий: {details}", recommendation)
+        if not ok:
+            broken_scenarios.append(name)
+
+    repo_version = asset_version_from_html(html)
+    sw_has_version = bool(repo_version and repo_version in sw_text)
+    check_static_contract(
+        checks,
+        "Repository PWA cache contract",
+        sw_has_version,
+        f"Версия фронтенда `{repo_version}` есть в service worker." if sw_has_version else "Версия app.js из index.html не найдена в service worker.",
+        "После каждой фронтенд-правки обновлять версию в index.html и sw.js, иначе мобильная версия может взять старый код.",
+    )
+
+    if broken_scenarios:
+        add_rec(
+            recommendations,
+            "Сценарии и кнопки",
+            "high",
+            "Нарушены критичные пользовательские сценарии",
+            f"Агент нашел проблемы в сценариях: {', '.join(broken_scenarios)}.",
+            "Сначала восстановить сценарии, потом выкатывать правку пользователям.",
+        )
+
+
 def check_json_endpoint(base_url: str, path: str, headers: dict[str, str], checks: list[Check]):
     url = absolute_url(base_url, path)
     status, _, body = fetch(url, headers=headers)
@@ -300,6 +468,8 @@ def run_checks(base_url: str, username: str | None, password: str | None) -> tup
     app_text = ""
     sw_text = ""
 
+    check_repository_ui_contracts(checks, recommendations)
+
     status, root_headers, body = fetch(base_url, headers=headers)
     html = text_from(body)
 
@@ -384,7 +554,7 @@ def run_checks(base_url: str, username: str | None, password: str | None) -> tup
         if payload is not None:
             api_data[path] = payload
 
-    recommendations = build_recommendations(api_data, html, app_text, sw_text)
+    recommendations.extend(build_recommendations(api_data, html, app_text, sw_text))
     return checks, recommendations
 
 
@@ -423,6 +593,7 @@ def build_report(base_url: str, checks: list[Check], recommendations: list[Recom
     lines.extend(["## Рекомендации агента", ""])
     if recommendations:
         perspective_order = [
+            "Сценарии и кнопки",
             "Строительный процесс",
             "Снабжение",
             "Финансовый контроль",
