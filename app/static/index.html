@@ -9,10 +9,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Строительный контур</title>
-    <link rel="manifest" href="/static/manifest.webmanifest?v=20260528-role-persist" />
+    <link rel="manifest" href="/static/manifest.webmanifest?v=20260528-project-draft" />
     <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260528-role-persist" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260528-project-draft" />
   </head>
   <body>
     <div class="app">
@@ -327,7 +327,7 @@
     </div>
 
     <dialog id="projectDialog">
-      <form method="dialog" class="form" id="projectForm">
+      <form method="dialog" class="form" id="projectForm" novalidate>
         <div class="modal-head">
           <h2 id="projectDialogTitle">Новый объект</h2>
           <button type="button" class="icon" data-close="projectDialog">×</button>
@@ -355,6 +355,7 @@
           <label>Смета <input name="estimate_doc_file" type="file" accept=".pdf,.xlsx,.xls,.doc,.docx" required /></label>
         </div>
         <label>Проектная документация <input name="project_docs_file" type="file" accept=".pdf,.zip,.rar,.7z,.dwg,.dxf,.jpg,.jpeg,.png,.doc,.docx" required /></label>
+        <p class="form-status" id="projectFormStatus" hidden></p>
         <div class="form-actions">
           <button type="button" class="secondary" data-close="projectDialog">Отмена</button>
           <button class="secondary" id="projectDraftButton" type="submit" formnovalidate data-save-mode="draft">Сохранить черновик</button>
@@ -599,6 +600,6 @@
     </dialog>
 
     <div class="toast" id="toast"></div>
-    <script src="/static/app.js?v=20260528-role-persist"></script>
+    <script src="/static/app.js?v=20260528-project-draft"></script>
   </body>
 </html>

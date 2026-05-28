@@ -2174,6 +2174,36 @@ textarea {
   color: #40515a;
 }
 
+.form-status {
+  border: 1px solid #bfd7d2;
+  background: #e9f1ef;
+  color: #33454d;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+  line-height: 1.35;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.form-status.error {
+  border-color: #efb4b4;
+  background: #fff1f1;
+  color: #9f2424;
+}
+
+.form-status.success {
+  border-color: #b8dfc6;
+  background: #ebf8ef;
+  color: #166534;
+}
+
+.form-status.pending {
+  border-color: #c8d6df;
+  background: #f2f6f8;
+  color: #40515a;
+}
+
 .toast {
   position: fixed;
   right: 18px;

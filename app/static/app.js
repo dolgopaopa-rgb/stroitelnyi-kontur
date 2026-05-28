@@ -29,6 +29,22 @@ const state = {
   openWorkStages: {},
 };
 
+const PROJECT_FORM_DRAFT_KEY = "projectFormDraft:v1";
+const PROJECT_TEXT_DRAFT_FIELDS = ["title", "customer_name", "address", "smetter_ref", "planned_end_date", "main_estimate_amount"];
+const PROJECT_REQUIRED_FIELDS = [
+  ["title", "Название"],
+  ["customer_name", "Заказчик"],
+  ["address", "Адрес"],
+  ["smetter_ref", "Сметтер"],
+  ["planned_end_date", "Плановый срок окончания работ по договору"],
+  ["main_estimate_amount", "Смета"],
+  ["estimate_file_name", "Файл материалов из Сметтера"],
+  ["work_task_file", "Задание на работы из Сметтера"],
+  ["contract_file", "Первичный договор"],
+  ["estimate_doc_file", "Смета"],
+  ["project_docs_file", "Проектная документация"],
+];
+
 let sortableDragSource = null;
 
 const viewTitles = {
@@ -523,6 +539,92 @@ function showToast(message) {
   toast.textContent = message;
   toast.classList.add("active");
   setTimeout(() => toast.classList.remove("active"), 2200);
+}
+
+function setProjectFormStatus(message = "", level = "pending") {
+  const status = qs("#projectFormStatus");
+  if (!status) return;
+  status.textContent = message;
+  status.hidden = !message;
+  status.className = `form-status ${level || ""}`.trim();
+}
+
+function projectDraftSnapshot(form) {
+  const values = {};
+  PROJECT_TEXT_DRAFT_FIELDS.forEach((name) => {
+    values[name] = form.elements[name]?.value || "";
+  });
+  const fileNames = {};
+  PROJECT_REQUIRED_FIELDS.forEach(([name]) => {
+    const input = form.elements[name];
+    if (input?.type === "file" && input.files?.[0]) fileNames[name] = input.files[0].name;
+  });
+  return { values, fileNames, savedAt: new Date().toISOString() };
+}
+
+function hasProjectDraft(snapshot) {
+  return Boolean(
+    snapshot &&
+      (Object.values(snapshot.values || {}).some((value) => String(value || "").trim()) ||
+        Object.values(snapshot.fileNames || {}).some(Boolean))
+  );
+}
+
+function saveProjectFormDraft(form) {
+  if (!form || form.dataset.mode === "edit") return;
+  const snapshot = projectDraftSnapshot(form);
+  if (!hasProjectDraft(snapshot)) {
+    localStorage.removeItem(PROJECT_FORM_DRAFT_KEY);
+    return;
+  }
+  localStorage.setItem(PROJECT_FORM_DRAFT_KEY, JSON.stringify(snapshot));
+}
+
+function clearProjectFormDraft() {
+  localStorage.removeItem(PROJECT_FORM_DRAFT_KEY);
+}
+
+function restoreProjectFormDraft(form) {
+  if (!form || form.dataset.mode === "edit") return;
+  let snapshot = null;
+  try {
+    snapshot = JSON.parse(localStorage.getItem(PROJECT_FORM_DRAFT_KEY) || "null");
+  } catch (error) {
+    snapshot = null;
+  }
+  if (!hasProjectDraft(snapshot)) {
+    setProjectFormStatus("");
+    return;
+  }
+  PROJECT_TEXT_DRAFT_FIELDS.forEach((name) => {
+    if (form.elements[name] && snapshot.values?.[name]) form.elements[name].value = snapshot.values[name];
+  });
+  const fileNames = Object.values(snapshot.fileNames || {}).filter(Boolean);
+  const note = fileNames.length
+    ? `Черновик текстовых полей восстановлен. Файлы браузер не восстанавливает после обновления, выберите их снова: ${fileNames.join(", ")}.`
+    : "Черновик текстовых полей восстановлен.";
+  setProjectFormStatus(note, "pending");
+}
+
+function setProjectSaving(isSaving, message = "") {
+  qsa("#projectDraftButton, #projectSubmitButton").forEach((button) => {
+    button.disabled = isSaving;
+  });
+  if (message) setProjectFormStatus(message, isSaving ? "pending" : "");
+}
+
+function missingProjectRequiredFields(form, saveMode) {
+  if (saveMode === "draft") return [];
+  const isEdit = form.dataset.mode === "edit";
+  return PROJECT_REQUIRED_FIELDS.filter(([name]) => {
+    const input = form.elements[name];
+    if (!input) return false;
+    if (input.type === "file") {
+      if (isEdit) return false;
+      return !input.files?.length;
+    }
+    return !String(input.value || "").trim();
+  });
 }
 
 function switchView(view) {
@@ -2697,6 +2799,8 @@ function resetProjectDialog() {
   qs("#projectDialogTitle").textContent = "Новый объект";
   qs("#projectSubmitButton").textContent = "Создать";
   setProjectFileFieldsRequired(true);
+  setProjectSaving(false);
+  restoreProjectFormDraft(form);
 }
 
 async function openProjectEditDialog(projectId) {
@@ -2710,6 +2814,8 @@ async function openProjectEditDialog(projectId) {
   qs("#projectDialogTitle").textContent = "Редактирование объекта";
   qs("#projectSubmitButton").textContent = "Сохранить";
   setProjectFileFieldsRequired(false);
+  setProjectSaving(false);
+  setProjectFormStatus("");
   form.elements.title.value = project.title || "";
   form.elements.customer_name.value = project.customer_name || "";
   form.elements.address.value = project.address || "";
@@ -3286,23 +3392,36 @@ function bindEvents() {
   );
 
   document.addEventListener("input", (event) => {
+    const projectInput = event.target.closest?.("#projectForm input, #projectForm textarea, #projectForm select");
+    if (projectInput && projectInput.type !== "file") {
+      saveProjectFormDraft(projectInput.form);
+      setProjectFormStatus("Черновик полей сохранен в браузере.", "pending");
+    }
     const maxChatInput = event.target.closest?.('[data-max-user-row] input[name="max_chat_id"]');
-    if (!maxChatInput) return;
-    saveMaxBindingDraft(maxChatInput.closest("[data-max-user-row]"));
+    if (maxChatInput) saveMaxBindingDraft(maxChatInput.closest("[data-max-user-row]"));
   });
 
   document.addEventListener("change", (event) => {
+    const projectInput = event.target.closest?.("#projectForm input, #projectForm textarea, #projectForm select");
+    if (projectInput) saveProjectFormDraft(projectInput.form);
     const maxEnabledInput = event.target.closest?.('[data-max-user-row] input[name="max_enabled"]');
-    if (!maxEnabledInput) return;
-    saveMaxBindingDraft(maxEnabledInput.closest("[data-max-user-row]"));
+    if (maxEnabledInput) saveMaxBindingDraft(maxEnabledInput.closest("[data-max-user-row]"));
   });
 
   qs("#projectForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = qs("#projectForm");
     const saveMode = event.submitter?.dataset.saveMode === "draft" ? "draft" : "complete";
+    const missingFields = missingProjectRequiredFields(form, saveMode);
+    if (missingFields.length) {
+      setProjectFormStatus(`Не заполнено: ${missingFields.map(([, label]) => label).join(", ")}.`, "error");
+      missingFields[0] && form.elements[missingFields[0][0]]?.focus?.();
+      return;
+    }
     try {
+      setProjectSaving(true, "Сохраняю карточку. Если приложены тяжелые файлы, загрузка может занять немного времени.");
       const payload = await projectFormToJson(form);
+      setProjectFormStatus("Файлы подготовлены, отправляю данные на сервер...", "pending");
       payload.save_mode = saveMode;
       const isEdit = form.dataset.mode === "edit";
       const projectId = form.dataset.projectId;
@@ -3313,6 +3432,8 @@ function bindEvents() {
       });
       qs("#projectDialog").close();
       form.reset();
+      if (!isEdit) clearProjectFormDraft();
+      setProjectFormStatus("");
       await loadAll();
       const savedProjectId = Number(isEdit ? projectId : savedProject.id);
       if (isEdit) {
@@ -3332,7 +3453,10 @@ function bindEvents() {
       }
       showToast(isEdit ? "Карточка объекта сохранена" : "Объект создан как черновик");
     } catch (error) {
+      setProjectFormStatus(error.message || "Не удалось сохранить карточку объекта", "error");
       showToast(error.message || "Не удалось сохранить карточку объекта");
+    } finally {
+      setProjectSaving(false);
     }
   });
   qs("#taskForm").addEventListener("submit", (event) => {
