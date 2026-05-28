@@ -9,10 +9,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Строительный контур</title>
-    <link rel="manifest" href="/static/manifest.webmanifest?v=20260528-role-contract" />
+    <link rel="manifest" href="/static/manifest.webmanifest?v=20260528-contract-files" />
     <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260528-role-contract" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260528-contract-files" />
   </head>
   <body>
     <div class="app">
@@ -569,16 +569,16 @@
         <label>Файл договора / допника <input name="contract_document_file" type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" /></label>
         <section class="hint-box contract-extra-section">
           <strong>Материалы и работы по этому допнику</strong>
-          <p class="muted">Заполняйте по одной позиции в строке. Если позиций пока нет, оставьте поля пустыми.</p>
+          <p class="muted">Загрузите выгрузки из Сметтера в Excel. Если по допнику пока нет материалов или работ, оставьте файл пустым.</p>
         </section>
         <div class="grid-2">
           <label>
-            Материалы по допнику
-            <textarea name="extra_materials_text" rows="4" placeholder="Материал; наименование; количество; ед.; комментарий"></textarea>
+            Материалы по допнику из Сметтера / Excel
+            <input name="contract_materials_file" type="file" accept=".xlsx,.csv" />
           </label>
           <label>
-            Работы по допнику
-            <textarea name="extra_works_text" rows="4" placeholder="Наименование работы; ед.; количество; комментарий"></textarea>
+            Задание на работы по допнику из Сметтера / Excel
+            <input name="contract_works_file" type="file" accept=".xlsx,.csv" />
           </label>
         </div>
         <div class="form-actions">
@@ -623,6 +623,6 @@
     </dialog>
 
     <div class="toast" id="toast"></div>
-    <script src="/static/app.js?v=20260528-role-contract"></script>
+    <script src="/static/app.js?v=20260528-contract-files"></script>
   </body>
 </html>

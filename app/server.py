@@ -662,6 +662,95 @@ def import_smetter_works_from_documents(db, project_id: int, files: list[dict]) 
     return imported
 
 
+def create_addendum_material_requests(db, *, project_id: int, actor_id: int | None, contract_title: str, rows: list[dict]) -> tuple[int | None, list[int]]:
+    clean_rows = [row for row in rows if (row.get("name") or "").strip() and number_value(row.get("estimated_quantity")) > 0]
+    if not clean_rows:
+        return None, []
+    batch_id = create_material_batch(
+        db,
+        project_id=project_id,
+        creator_id=actor_id,
+        needed_at=None,
+        comment=f"Материалы по договору/допнику: {contract_title}",
+    )
+    request_ids: list[int] = []
+    for row in clean_rows:
+        quantity = number_value(row.get("estimated_quantity"))
+        unit_price = number_value(row.get("unit_price"))
+        total_amount = number_value(row.get("total_price")) or quantity * unit_price
+        request_ids.append(
+            create_material_request(
+                db,
+                batch_id=batch_id,
+                project_id=project_id,
+                creator_id=actor_id,
+                estimate_material_id=None,
+                title=row.get("name") or "Материал по допнику",
+                basis_type="additional_agreement",
+                estimate_section=row.get("section") or "Материалы по допнику",
+                needed_at=None,
+                requested_quantity=quantity,
+                requested_unit=row.get("unit") or "",
+                total_amount=total_amount,
+                comment=f"По допнику: {contract_title}".strip(),
+            )
+        )
+    return batch_id, request_ids
+
+
+def create_addendum_work_extras(db, *, project_id: int, actor_id: int | None, contract_title: str, rows: list[dict]) -> tuple[list[int], list[int]]:
+    work_extra_ids: list[int] = []
+    variation_ids: list[int] = []
+    for row in rows:
+        title = str(row.get("title") or "").strip()
+        quantity = number_value(row.get("estimated_quantity"))
+        if not title or quantity <= 0:
+            continue
+        unit_price = number_value(row.get("unit_price"))
+        total_amount = number_value(row.get("total_price")) or quantity * unit_price
+        section = row.get("section") or "Работы по допнику"
+        comment = f"По допнику: {contract_title}".strip()
+        work_cursor = db.execute(
+            """
+            INSERT INTO work_extra_items (
+                project_id, creator_id, title, unit, quantity, reason, estimate_section, comment, status
+            )
+            VALUES (?, ?, ?, ?, ?, 'additional_work', ?, ?, 'new')
+            """,
+            (
+                project_id,
+                actor_id,
+                title,
+                row.get("unit") or "",
+                quantity,
+                section,
+                comment,
+            ),
+        )
+        work_extra_id = int(work_cursor.lastrowid)
+        work_extra_ids.append(work_extra_id)
+        variation_cursor = db.execute(
+            """
+            INSERT INTO variations (
+                project_id, title, type, status, financial_decision, amount, due_date,
+                description, estimate_section, requester_id, source_type, source_id
+            )
+            VALUES (?, ?, 'additional_work', 'decision_required', 'not_decided', ?, NULL, ?, ?, ?, 'work_extra_item', ?)
+            """,
+            (
+                project_id,
+                title,
+                total_amount,
+                comment,
+                section,
+                actor_id,
+                work_extra_id,
+            ),
+        )
+        variation_ids.append(int(variation_cursor.lastrowid))
+    return work_extra_ids, variation_ids
+
+
 def backfill_estimate_materials_from_saved_documents() -> None:
     with connect() as db:
         docs = db.execute(
@@ -4217,46 +4306,30 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         "contract",
                         "contract",
                     )
-                extra_materials = data.get("extra_materials") or []
-                if not isinstance(extra_materials, list):
-                    extra_materials = []
                 material_request_ids: list[int] = []
                 material_batch_id = None
-                if extra_materials:
-                    material_batch_id = create_material_batch(
+                materials_file = data.get("materials_file") if isinstance(data.get("materials_file"), dict) else {}
+                if materials_file.get("file_base64"):
+                    material_rows = parse_uploaded_materials(materials_file)
+                    if not material_rows:
+                        raise ValueError("В файле материалов по допнику не найдены позиции. Загрузите выгрузку материалов из Сметтера.")
+                    materials_file["contract_id"] = contract_id
+                    materials_file["process_type"] = "additional_agreement_materials"
+                    save_document_file(
+                        db,
+                        project_id,
+                        materials_file,
+                        "Материалы по допнику из Сметтера",
+                        "smetter_materials",
+                        "contract",
+                    )
+                    material_batch_id, material_request_ids = create_addendum_material_requests(
                         db,
                         project_id=project_id,
-                        creator_id=actor_id,
-                        needed_at=None,
-                        comment=f"Материалы по договору/допнику: {contract_title}",
+                        actor_id=actor_id,
+                        contract_title=contract_title,
+                        rows=material_rows,
                     )
-                    for item in extra_materials:
-                        material = str(item.get("material") or "").strip()
-                        name = str(item.get("name") or "").strip()
-                        quantity = number_value(item.get("quantity"))
-                        unit = str(item.get("unit") or "").strip()
-                        comment = str(item.get("comment") or "").strip()
-                        if not material and not name and quantity <= 0:
-                            continue
-                        if not material or not name or quantity <= 0:
-                            raise ValueError("Заполните материал, наименование и количество для материалов по допнику.")
-                        material_request_ids.append(
-                            create_material_request(
-                                db,
-                                batch_id=material_batch_id,
-                                project_id=project_id,
-                                creator_id=actor_id,
-                                estimate_material_id=None,
-                                title=f"{material}: {name}",
-                                basis_type="additional_agreement",
-                                estimate_section="Материалы по допнику",
-                                needed_at=None,
-                                requested_quantity=quantity,
-                                requested_unit=unit,
-                                total_amount=0,
-                                comment=f"По допнику: {contract_title}. {comment}".strip(),
-                            )
-                        )
                     if material_request_ids:
                         create_notification(
                             db,
@@ -4271,53 +4344,28 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
 
                 extra_work_ids: list[int] = []
                 variation_ids: list[int] = []
-                extra_works = data.get("extra_works") or []
-                if not isinstance(extra_works, list):
-                    extra_works = []
-                for item in extra_works:
-                    title = str(item.get("title") or "").strip()
-                    unit = str(item.get("unit") or "").strip()
-                    quantity = number_value(item.get("quantity"))
-                    comment = str(item.get("comment") or "").strip()
-                    if not title and not unit and quantity <= 0:
-                        continue
-                    if not title or not unit or quantity <= 0:
-                        raise ValueError("Заполните наименование, единицу измерения и количество для работ по допнику.")
-                    work_cursor = db.execute(
-                        """
-                        INSERT INTO work_extra_items (
-                            project_id, creator_id, title, unit, quantity, reason, estimate_section, comment, status
-                        )
-                        VALUES (?, ?, ?, ?, ?, 'additional_work', 'Работы по допнику', ?, 'new')
-                        """,
-                        (
-                            project_id,
-                            actor_id,
-                            title,
-                            unit,
-                            quantity,
-                            f"По допнику: {contract_title}. {comment}".strip(),
-                        ),
+                works_file = data.get("works_file") if isinstance(data.get("works_file"), dict) else {}
+                if works_file.get("file_base64"):
+                    work_rows = parse_uploaded_works(works_file)
+                    if not work_rows:
+                        raise ValueError("В файле работ по допнику не найдены работы. Загрузите задание на работы из Сметтера.")
+                    works_file["contract_id"] = contract_id
+                    works_file["process_type"] = "additional_agreement_works"
+                    save_document_file(
+                        db,
+                        project_id,
+                        works_file,
+                        "Задание на работы по допнику из Сметтера",
+                        "smetter_work_task",
+                        "contract",
                     )
-                    work_extra_id = int(work_cursor.lastrowid)
-                    extra_work_ids.append(work_extra_id)
-                    variation_cursor = db.execute(
-                        """
-                        INSERT INTO variations (
-                            project_id, title, type, status, financial_decision, amount, due_date,
-                            description, estimate_section, requester_id, source_type, source_id
-                        )
-                        VALUES (?, ?, 'additional_work', 'decision_required', 'not_decided', 0, NULL, ?, 'Работы по допнику', ?, 'work_extra_item', ?)
-                        """,
-                        (
-                            project_id,
-                            title,
-                            f"По допнику: {contract_title}. {comment}".strip(),
-                            actor_id,
-                            work_extra_id,
-                        ),
+                    extra_work_ids, variation_ids = create_addendum_work_extras(
+                        db,
+                        project_id=project_id,
+                        actor_id=actor_id,
+                        contract_title=contract_title,
+                        rows=work_rows,
                     )
-                    variation_ids.append(int(variation_cursor.lastrowid))
                 if extra_work_ids:
                     notify_users(
                         db,

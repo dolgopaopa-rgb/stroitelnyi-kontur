@@ -2866,40 +2866,6 @@ function formToJson(form) {
   return data;
 }
 
-function splitContractExtraLine(line) {
-  return String(line || "")
-    .split(/[;\t]/)
-    .map((part) => part.trim())
-    .filter(Boolean);
-}
-
-function parseContractExtraMaterials(text) {
-  return String(text || "")
-    .split(/\r?\n/)
-    .map((line) => splitContractExtraLine(line))
-    .filter((parts) => parts.length)
-    .map(([material, name, quantity, unit, ...comment]) => ({
-      material: material || "",
-      name: name || "",
-      quantity: quantity || "",
-      unit: unit || "",
-      comment: comment.join("; "),
-    }));
-}
-
-function parseContractExtraWorks(text) {
-  return String(text || "")
-    .split(/\r?\n/)
-    .map((line) => splitContractExtraLine(line))
-    .filter((parts) => parts.length)
-    .map(([title, unit, quantity, ...comment]) => ({
-      title: title || "",
-      unit: unit || "",
-      quantity: quantity || "",
-      comment: comment.join("; "),
-    }));
-}
-
 async function submitForm(dialogId, formId, endpoint, successMessage) {
   const form = qs(`#${formId}`);
   await api(endpoint, { method: "POST", body: JSON.stringify(formToJson(form)) });
@@ -3740,11 +3706,17 @@ function bindEvents() {
     const form = qs("#contractForm");
     try {
       const payload = formToJson(form);
-      payload.extra_materials = parseContractExtraMaterials(form.elements.extra_materials_text?.value || "");
-      payload.extra_works = parseContractExtraWorks(form.elements.extra_works_text?.value || "");
       const file = form.elements.contract_document_file.files[0];
       if (file) {
         payload.document_file = await fileDocumentPayload(file, payload.title || file.name, "contract", "contract");
+      }
+      const materialsFile = form.elements.contract_materials_file?.files?.[0];
+      if (materialsFile) {
+        payload.materials_file = await fileDocumentPayload(materialsFile, "Материалы по допнику из Сметтера", "smetter_materials", "contract");
+      }
+      const worksFile = form.elements.contract_works_file?.files?.[0];
+      if (worksFile) {
+        payload.works_file = await fileDocumentPayload(worksFile, "Задание на работы по допнику из Сметтера", "smetter_work_task", "contract");
       }
       await api("/api/contracts", { method: "POST", body: JSON.stringify(payload) });
       qs("#contractDialog").close();

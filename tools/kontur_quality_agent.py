@@ -232,6 +232,12 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
             "Вернуть поля контактов и локации в форму, черновик и серверное сохранение.",
         ),
         (
+            "Addendum Smetter files scenario",
+            "Материалы и работы по допнику загружаются файлами Excel из Сметтера и разносятся в заявки/допработы.",
+            ['name="contract_materials_file"', 'name="contract_works_file"', "payload.materials_file", "payload.works_file", "parse_uploaded_materials(materials_file)", "parse_uploaded_works(works_file)", "create_addendum_material_requests", "create_addendum_work_extras"],
+            "Не возвращать ручной ввод строк по допнику: основанием должны быть Excel-файлы из Сметтера.",
+        ),
+        (
             "Project approval guard",
             "Менеджер не может принять объект в работу вместо руководителя строительства.",
             ['"accept": {"owner", "construction_manager", "finance_director"}', '"submit": {"owner", "sales_manager", "finance_director"}'],
