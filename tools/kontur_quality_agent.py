@@ -117,6 +117,7 @@ def check_static_contract(
 def check_repository_ui_contracts(checks: list[Check], recommendations: list[Recommendation]) -> None:
     html = repository_file("app/static/index.html")
     app_text = repository_file("app/static/app.js")
+    css_text = repository_file("app/static/styles.css")
     sw_text = repository_file("app/static/sw.js")
     server_text = repository_file("app/server.py")
 
@@ -215,7 +216,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         (
             "Navigation access scenario",
             "Меню ограничивается по ролям менеджера и прораба.",
-            ['sales_manager: ["dashboard", "projects", "variations"]', 'foreman: ["dashboard", "tasks", "works", "materials", "variations", "locations", "documents"]', "syncNavigationAccess"],
+            ['sales_manager: ["dashboard", "projects", "variations", "documents"]', 'foreman: ["dashboard", "tasks", "works", "materials", "variations", "locations", "documents"]', "[hidden]", "syncNavigationAccess"],
             "Проверить матрицу ролей: менеджеру и прорабу нельзя показывать лишние разделы.",
         ),
         (
@@ -239,7 +240,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
     ]
 
     broken_scenarios = []
-    combined_text = "\n".join([html, app_text, server_text])
+    combined_text = "\n".join([html, app_text, css_text, server_text])
     for name, details, needles, recommendation in scenario_contracts:
         ok = has_all(combined_text, needles)
         check_static_contract(checks, name, ok, details if ok else f"Нарушен сценарий: {details}", recommendation)

@@ -249,7 +249,7 @@ const viewAccess = {
   construction_manager: ["dashboard", "projects", "tasks", "works", "materials", "variations", "locations", "documents", "feedback", "events"],
   finance_director: ["dashboard", "projects", "tasks", "works", "materials", "variations", "locations", "documents", "feedback", "events"],
   accountant: ["dashboard", "projects", "materials", "variations", "locations", "documents", "events"],
-  sales_manager: ["dashboard", "projects", "variations"],
+  sales_manager: ["dashboard", "projects", "variations", "documents"],
   foreman: ["dashboard", "tasks", "works", "materials", "variations", "locations", "documents"],
   procurement_manager: ["dashboard", "projects", "materials", "locations", "documents"],
   estimator: ["dashboard", "projects", "tasks", "works", "materials", "variations", "documents"],

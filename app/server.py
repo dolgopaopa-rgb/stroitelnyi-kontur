@@ -1109,7 +1109,7 @@ def can_view_variations(account: dict | None) -> bool:
 
 
 def can_view_knowledge_base(account: dict | None) -> bool:
-    return account_role(account) in {"owner", "construction_manager", "finance_director", "accountant", "foreman", "procurement_manager", "estimator", "technical_supervisor"}
+    return account_role(account) in {"owner", "construction_manager", "finance_director", "accountant", "sales_manager", "foreman", "procurement_manager", "estimator", "technical_supervisor"}
 
 
 def variation_visible_for_account(variation: dict, account: dict | None) -> bool:
