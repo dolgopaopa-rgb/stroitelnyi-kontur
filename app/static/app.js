@@ -339,10 +339,12 @@ function availableRoleOptions() {
 }
 
 async function loadSession() {
+  const savedRole = localStorage.getItem("currentRole");
   const session = await api("/api/session");
   state.session = session;
   state.canSwitchRole = Boolean(session.can_switch_role);
-  state.currentRole = roleValueForUser(session.user, session.role);
+  const ownRole = roleValueForUser(session.user, session.role);
+  state.currentRole = state.canSwitchRole && savedRole ? savedRole : ownRole;
 }
 
 function escapeAttr(value) {
