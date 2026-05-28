@@ -665,6 +665,9 @@ def seed_estimate_materials(db: sqlite3.Connection) -> None:
     count = db.execute("SELECT COUNT(*) AS count FROM estimate_materials").fetchone()["count"]
     if count:
         return
+    sample_project_ids = {row["id"] for row in db.execute("SELECT id FROM projects WHERE id IN (1, 2, 3)").fetchall()}
+    if not {1, 2, 3}.issubset(sample_project_ids):
+        return
 
     rows = [
         (1, "Кровля", "Утеплитель 200 мм", "м2", 180, 820, 147600, "manual_xls"),
