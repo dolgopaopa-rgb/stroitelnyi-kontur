@@ -222,7 +222,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         (
             "New project contact fields scenario",
             "Новая карточка объекта требует телефон, e-mail и ссылку на локацию из Яндекса.",
-            ['name="customer_phone"', 'name="customer_email"', 'name="navigator_url"', "PROJECT_TEXT_DRAFT_FIELDS", "ensure_customer(db, data.get(\"customer_name\"), data.get(\"customer_phone\"), data.get(\"customer_email\"))"],
+            ['name="customer_phone"', 'name="customer_email"', 'name="navigator_url"', "PROJECT_TEXT_DRAFT_FIELDS", "formatRuPhone", "normalize_phone", "project-info-grid", "ensure_customer(db, data.get(\"customer_name\"), data.get(\"customer_phone\"), data.get(\"customer_email\"))"],
             "Вернуть поля контактов и локации в форму, черновик и серверное сохранение.",
         ),
         (

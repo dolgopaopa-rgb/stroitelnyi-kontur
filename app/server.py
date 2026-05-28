@@ -967,11 +967,24 @@ def create_notification(
     )
 
 
+def normalize_phone(value: str | None) -> str:
+    digits = re.sub(r"\D", "", str(value or ""))
+    if not digits:
+        return ""
+    if digits[0] in {"7", "8"} and len(digits) > 10:
+        rest = digits[1:11]
+    else:
+        rest = digits[:10]
+    if len(rest) != 10:
+        return str(value or "").strip()
+    return f"+7-{rest[:3]}-{rest[3:6]}-{rest[6:8]}-{rest[8:10]}"
+
+
 def ensure_customer(db, name: str | None, phone: str | None = None, email: str | None = None) -> int | None:
     clean_name = str(name or "").strip()
     if not clean_name:
         return None
-    clean_phone = str(phone or "").strip()
+    clean_phone = normalize_phone(phone)
     clean_email = str(email or "").strip()
     row = db.execute("SELECT id FROM customers WHERE lower(name) = lower(?) LIMIT 1", (clean_name,)).fetchone()
     if row:

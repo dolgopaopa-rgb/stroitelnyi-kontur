@@ -391,6 +391,28 @@ function escapeHtml(value) {
     .replace(/>/g, "&gt;");
 }
 
+function phoneDigits(value) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+function formatRuPhone(value) {
+  const rawDigits = phoneDigits(value);
+  if (!rawDigits) return "";
+  let rest = rawDigits;
+  if (rawDigits[0] === "7" || rawDigits[0] === "8") {
+    rest = rawDigits.slice(1);
+  }
+  rest = rest.slice(0, 10);
+  const groups = [rest.slice(0, 3), rest.slice(3, 6), rest.slice(6, 8), rest.slice(8, 10)].filter(Boolean);
+  return groups.length ? `+7-${groups.join("-")}` : "+7";
+}
+
+function phoneHref(value) {
+  const formatted = formatRuPhone(value);
+  const digits = phoneDigits(formatted);
+  return digits.length === 11 ? `tel:+${digits}` : "";
+}
+
 function externalRefLink(value, fallbackText, level = "") {
   const text = String(value || "").trim();
   if (!text) return pill(fallbackText, level);
@@ -1566,11 +1588,41 @@ async function renderProjectDetail(projectId) {
     ["workflow", renderProjectWorkflow(project)],
     ["documents", renderDocumentSummary(docs, project.contracts || [])],
   ];
+  const customerPhone = formatRuPhone(project.customer_phone || "");
+  const customerEmail = String(project.customer_email || "").trim();
+  const customerHistory = Number(project.customer_projects_count || 1);
+  const mapHref = String(project.navigator_url || "").trim() || (project.address ? yandexMapsUrl(project.address) : "");
+  const phoneLink = phoneHref(customerPhone);
+  const customerInfoHtml = `
+    <div class="project-info-grid">
+      <div class="project-info-chip">
+        <span>Клиент</span>
+        <strong>${escapeHtml(project.customer_name || "не указан")}</strong>
+      </div>
+      <div class="project-info-chip">
+        <span>История</span>
+        <strong>${customerHistory}</strong>
+        <small>${customerHistory === 1 ? "объект/договор" : "объектов/договоров"}</small>
+      </div>
+      ${
+        phoneLink
+          ? `<a class="project-info-chip info-link" href="${escapeAttr(phoneLink)}"><span>Телефон</span><strong>${escapeHtml(customerPhone)}</strong></a>`
+          : `<div class="project-info-chip"><span>Телефон</span><strong>не указан</strong></div>`
+      }
+      ${
+        customerEmail
+          ? `<a class="project-info-chip info-link" href="mailto:${escapeAttr(customerEmail)}"><span>E-mail</span><strong>${escapeHtml(customerEmail)}</strong></a>`
+          : `<div class="project-info-chip"><span>E-mail</span><strong>не указан</strong></div>`
+      }
+      ${
+        mapHref
+          ? `<a class="project-info-chip info-link map-chip" href="${escapeAttr(mapHref)}" target="_blank" rel="noopener noreferrer"><span>Локация</span><strong>Я.Карты</strong><small>${project.address ? "Адрес объекта" : "ссылка"}</small></a>`
+          : `<div class="project-info-chip"><span>Локация</span><strong>не указана</strong></div>`
+      }
+    </div>`;
   qs("#projectDetail").innerHTML = `
     <div class="stack-line"><h2>${project.title}</h2>${pill(label(project.status), "blue")}</div>
-    <div class="muted">Клиент: ${project.customer_name || "не указан"} · договоров/объектов в истории: ${project.customer_projects_count || 1}</div>
-    <div class="muted">Телефон: ${escapeHtml(project.customer_phone || "не указан")} · E-mail: ${escapeHtml(project.customer_email || "не указан")}</div>
-    <div class="project-detail-map">${mapLink(project.address, project.navigator_url, "Я.Карты")}<span class="muted">${project.address ? "Адрес объекта" : "Адрес не указан"}</span></div>
+    ${customerInfoHtml}
     <div class="stack-line">
       ${pill(`Прораб: ${project.foreman_name || "не назначен"}`)}
       ${pill(`Сметчик: ${project.estimator_name || "не назначен"}`)}
@@ -1806,6 +1858,7 @@ async function fileDocumentPayload(file, title, type, relatedType = "handover") 
 
 async function projectFormToJson(form) {
   const data = formToJson(form);
+  data.customer_phone = formatRuPhone(data.customer_phone);
   const files = form.elements;
   const materialFile = files.estimate_file_name.files[0];
   const workTaskFile = files.work_task_file.files[0];
@@ -3416,6 +3469,9 @@ function bindEvents() {
   document.addEventListener("input", (event) => {
     const projectInput = event.target.closest?.("#projectForm input, #projectForm textarea, #projectForm select");
     if (projectInput && projectInput.type !== "file") {
+      if (projectInput.name === "customer_phone") {
+        projectInput.value = formatRuPhone(projectInput.value);
+      }
       saveProjectFormDraft(projectInput.form);
       setProjectFormStatus("Черновик полей сохранен в браузере.", "pending");
     }

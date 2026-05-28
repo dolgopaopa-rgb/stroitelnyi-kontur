@@ -530,6 +530,49 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.project-info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 6px;
+  margin: 7px 0 8px;
+}
+
+.project-info-chip {
+  min-height: 48px;
+  border: 1px solid #d8e4e7;
+  background: #eef5f4;
+  border-radius: 8px;
+  padding: 7px 9px;
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  color: var(--text);
+  text-decoration: none;
+  overflow: hidden;
+}
+
+.project-info-chip span,
+.project-info-chip small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.15;
+}
+
+.project-info-chip strong {
+  font-size: 13px;
+  line-height: 1.18;
+  overflow-wrap: anywhere;
+}
+
+.project-info-chip.info-link:hover {
+  border-color: #9fc6c0;
+  background: #e5f2ef;
+}
+
+.project-info-chip.map-chip {
+  background: #edf7ee;
+}
+
 #projectDetail {
   font-size: 13px;
 }

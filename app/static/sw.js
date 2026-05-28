@@ -1,9 +1,9 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260528-manager-menu";
+const CACHE_NAME = "stroitelnyi-kontur-20260528-phone-chips";
 const CORE_ASSETS = [
   "/",
-  "/static/styles.css?v=20260528-manager-menu",
-  "/static/app.js?v=20260528-manager-menu",
-  "/static/manifest.webmanifest?v=20260528-manager-menu",
+  "/static/styles.css?v=20260528-phone-chips",
+  "/static/app.js?v=20260528-phone-chips",
+  "/static/manifest.webmanifest?v=20260528-phone-chips",
   "/static/assets/g2-logo-192.png",
   "/static/assets/g2-logo-512.png"
 ];
