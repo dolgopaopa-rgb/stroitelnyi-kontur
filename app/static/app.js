@@ -983,6 +983,14 @@ function groupBySection(rows) {
   }, {});
 }
 
+function estimateSectionKey(scope, projectId, section) {
+  return `${scope}:${projectId || "none"}:${section || "no-section"}`;
+}
+
+function openAttrForKey(key) {
+  return state.expandedLists[key] ? " open" : "";
+}
+
 async function renderEstimateMaterials() {
   const projectSelect = qs('#estimateImportForm select[name="project_id"]');
   const projectId = projectSelect?.value || state.selectedProjectId || state.projects[0]?.id;
@@ -1000,9 +1008,10 @@ async function renderEstimateMaterials() {
   }
   const grouped = groupBySection(rows);
   qs("#estimateMaterialRows").innerHTML = Object.entries(grouped)
-    .map(
-      ([section, sectionRows]) => `
-      <details class="estimate-section">
+    .map(([section, sectionRows]) => {
+      const key = estimateSectionKey("estimate-materials", projectId, section);
+      return `
+      <details class="estimate-section" data-collapsible-key="${escapeAttr(key)}"${openAttrForKey(key)}>
         <summary>${section} <span>${sectionRows.length} позиций</span></summary>
         <div class="table">
           ${sectionRows
@@ -1022,8 +1031,8 @@ async function renderEstimateMaterials() {
             )
             .join("")}
         </div>
-      </details>`
-    )
+      </details>`;
+    })
     .join("");
 }
 
@@ -1111,9 +1120,10 @@ async function loadMaterialEstimatePicker() {
   }
   const grouped = groupBySection(rows);
   target.innerHTML = Object.entries(grouped)
-    .map(
-      ([section, sectionRows]) => `
-      <details class="estimate-section">
+    .map(([section, sectionRows]) => {
+      const key = estimateSectionKey("material-picker", projectId, section);
+      return `
+      <details class="estimate-section" data-collapsible-key="${escapeAttr(key)}"${openAttrForKey(key)}>
         <summary>${section} <span>${sectionRows.length} позиций</span></summary>
         <div class="table">
           ${sectionRows
@@ -1132,8 +1142,8 @@ async function loadMaterialEstimatePicker() {
             )
             .join("")}
         </div>
-      </details>`
-    )
+      </details>`;
+    })
     .join("");
 }
 
@@ -2879,6 +2889,50 @@ function hasOpenDialog() {
   return Boolean(document.querySelector("dialog[open]"));
 }
 
+function bindStableDetailsTouchGuard() {
+  document.addEventListener(
+    "touchstart",
+    (event) => {
+      const summary = event.target.closest?.("summary");
+      if (!summary?.parentElement?.classList.contains("estimate-section")) return;
+      const touch = event.touches?.[0];
+      if (!touch) return;
+      summary.dataset.touchStartX = String(touch.clientX);
+      summary.dataset.touchStartY = String(touch.clientY);
+      summary.dataset.touchMoved = "0";
+    },
+    { passive: true }
+  );
+  document.addEventListener(
+    "touchmove",
+    (event) => {
+      const summary = event.target.closest?.("summary");
+      if (!summary?.parentElement?.classList.contains("estimate-section")) return;
+      const touch = event.touches?.[0];
+      if (!touch) return;
+      const startX = Number(summary.dataset.touchStartX || touch.clientX);
+      const startY = Number(summary.dataset.touchStartY || touch.clientY);
+      if (Math.abs(touch.clientX - startX) > 8 || Math.abs(touch.clientY - startY) > 8) {
+        summary.dataset.touchMoved = "1";
+      }
+    },
+    { passive: true }
+  );
+  document.addEventListener(
+    "click",
+    (event) => {
+      const summary = event.target.closest?.("summary");
+      if (!summary?.parentElement?.classList.contains("estimate-section")) return;
+      if (summary.dataset.touchMoved === "1") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        summary.dataset.touchMoved = "0";
+      }
+    },
+    true
+  );
+}
+
 async function refreshLiveData() {
   if (hasOpenDialog()) return;
   const selectedProjectId = state.selectedProjectId;
@@ -3084,6 +3138,7 @@ async function handleTaskAction(button) {
 }
 
 function bindEvents() {
+  bindStableDetailsTouchGuard();
   qsa("[data-view]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
   qsa("[data-view-target]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.viewTarget)));
   qs("#refreshButton").addEventListener("click", () => loadAll().then(() => showToast("Данные обновлены")));

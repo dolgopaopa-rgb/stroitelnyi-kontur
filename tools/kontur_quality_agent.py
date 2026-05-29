@@ -238,6 +238,18 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
             "Не возвращать ручной ввод строк по допнику: основанием должны быть Excel-файлы из Сметтера.",
         ),
         (
+            "Mobile material accordion scenario",
+            "Раскрытые разделы материалов не схлопываются при прокрутке на мобильном.",
+            ["estimateSectionKey", "openAttrForKey", "bindStableDetailsTouchGuard", 'data-collapsible-key="${escapeAttr(key)}"', "summary.dataset.touchMoved"],
+            "Сохранять состояние раскрытых разделов и блокировать случайный toggle после свайпа.",
+        ),
+        (
+            "Knowledge base construction manager scenario",
+            "Руководитель строительства может добавлять материалы в базу знаний.",
+            ["function canManageKnowledgeBase()", '\"construction_manager\"', 'related_type == \"knowledge_base\" and account_role(account) not in {\"owner\", \"construction_manager\", \"finance_director\"}'],
+            "Не закрывать загрузку базы знаний для руководителя строительства ни во фронтенде, ни на сервере.",
+        ),
+        (
             "Project approval guard",
             "Менеджер не может принять объект в работу вместо руководителя строительства.",
             ['"accept": {"owner", "construction_manager", "finance_director"}', '"submit": {"owner", "sales_manager", "finance_director"}'],
@@ -562,7 +574,7 @@ def run_checks(base_url: str, username: str | None, password: str | None) -> tup
         sw_text = text_from(sw_body)
         app_asset_match = re.search(r'app\.js\?v=([^"]+)', html)
         if "CACHE_NAME" in sw_text and (not app_asset_match or app_asset_match.group(1) in sw_text):
-            add(checks, "PWA cache version", "OK", "Версия service worker актуальна для правки MAX-привязок.")
+            add(checks, "PWA cache version", "OK", "Версия service worker актуальна для текущей фронтенд-правки.")
         else:
             add(checks, "PWA cache version", "WARN", "Версия service worker может быть старой.", "После фронтенд-правок повышать версию кэша.")
     else:
