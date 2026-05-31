@@ -9,10 +9,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Строительный контур</title>
-    <link rel="manifest" href="/static/manifest.webmanifest?v=20260529-mobile-materials" />
+    <link rel="manifest" href="/static/manifest.webmanifest?v=20260531-feedback-work" />
     <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260529-mobile-materials" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260531-feedback-work" />
   </head>
   <body>
     <div class="app">
@@ -363,7 +363,11 @@
           <label>Первичный договор <input name="contract_file" type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" required /></label>
           <label>Смета <input name="estimate_doc_file" type="file" accept=".pdf,.xlsx,.xls,.doc,.docx" required /></label>
         </div>
-        <label>Проектная документация <input name="project_docs_file" type="file" accept=".pdf,.zip,.rar,.7z,.dwg,.dxf,.jpg,.jpeg,.png,.doc,.docx" required /></label>
+        <label>
+          Проектная документация
+          <input name="project_docs_file" type="file" accept=".pdf,.zip,.rar,.7z,.dwg,.dxf,.jpg,.jpeg,.png,.doc,.docx" multiple required />
+          <span class="field-hint">Можно выбрать сразу несколько файлов. Новые файлы добавляются к объекту, уже загруженные не заменяются.</span>
+        </label>
         <p class="form-status" id="projectFormStatus" hidden></p>
         <div class="form-actions">
           <button type="button" class="secondary" data-close="projectDialog">Отмена</button>
@@ -520,7 +524,12 @@
           <label>Срок принятия решения <input name="due_date" type="date" /></label>
         </div>
         <label>Раздел / этап сметы <input name="estimate_section" placeholder="Например: Кровля / Монтаж стропильной системы" /></label>
-        <label>Причина и вложения <textarea name="description" rows="3" placeholder="Что произошло, кто обнаружил, какие фото/документы нужны для решения"></textarea></label>
+        <label>Причина и комментарий <textarea name="description" rows="3" placeholder="Что произошло, кто обнаружил, какое решение нужно принять"></textarea></label>
+        <label>
+          Фото, видео или документы
+          <input name="variation_files" type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,.heic,.mp4,.mov,.avi,.zip,.rar,.7z" multiple />
+          <span class="field-hint">Вложения сохраняются в карточке допработы и видны тем, кто имеет доступ к этой допработе.</span>
+        </label>
         <div class="form-actions">
           <button type="button" class="secondary" data-close="variationDialog">Отмена</button>
           <button class="primary" type="submit">Создать</button>
@@ -623,6 +632,6 @@
     </dialog>
 
     <div class="toast" id="toast"></div>
-    <script src="/static/app.js?v=20260529-mobile-materials"></script>
+    <script src="/static/app.js?v=20260531-feedback-work"></script>
   </body>
 </html>

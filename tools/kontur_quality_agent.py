@@ -256,6 +256,24 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
             "Вернуть разделение полномочий: менеджер передает, руководитель строительства принимает или возвращает.",
         ),
         (
+            "Project documentation multi-upload scenario",
+            "Проектную документацию можно добавить сразу несколькими файлами, без замены уже сохраненных документов.",
+            ['name="project_docs_file" type="file"', "multiple required", "projectDocFiles", "...projectDocFiles.map", "Проектная документация:"],
+            "Оставить множественную загрузку проектной документации в форме объекта и добавлять каждый файл отдельным документом.",
+        ),
+        (
+            "Variation attachments scenario",
+            "К допработе можно приложить фото, видео или документ, а вложение видно в карточке допработы.",
+            ['name="variation_files"', "payload.attachments", "variation_attachment", 'attachment["process_type"] = f"variation:{variation_id}"', 'payload["attachments"]', "documentFileLink(doc)"],
+            "Не терять вложения допработ: сохранять их как документы процесса variation и показывать в деталях допработы.",
+        ),
+        (
+            "Yandex route links scenario",
+            "Ссылки локаций открывают Яндекс.Карты в режиме построения маршрута.",
+            ["function yandexCoordinateDestination", "mode=routes", "rtext=~", "function mapLink(address, mapsUrl", "yandexMapsUrl(addressText, url)"],
+            "Локации должны вести не просто на текстовый поиск, а на построение маршрута по адресу или координатам.",
+        ),
+        (
             "Permanent delete guard",
             "Удаление навсегда разрешено только гендиректору.",
             ['"delete": {"owner"}', "canDeleteForever()", "currentRoleBase() === \"owner\""],

@@ -1240,11 +1240,11 @@ def project_visible_for_account(project: dict, account: dict | None) -> bool:
 
 
 DOCUMENT_TYPES_BY_ROLE = {
-    "foreman": {"smetter_materials", "smetter_work_task", "project_documentation", "detail_node", "regulation", "standard", "instruction", "other"},
-    "procurement_manager": {"smetter_materials", "project_documentation", "detail_node", "regulation", "standard", "instruction", "other"},
-    "technical_supervisor": {"smetter_materials", "smetter_work_task", "project_documentation", "detail_node", "regulation", "standard", "instruction", "other"},
-    "estimator": {"main_estimate", "smetter_materials", "smetter_work_task", "project_documentation", "variation_estimate", "act", "ks_2", "ks_3", "other"},
-    "accountant": {"main_estimate", "smetter_materials", "smetter_work_task", "contract", "variation_estimate", "act", "ks_2", "ks_3", "other"},
+    "foreman": {"smetter_materials", "smetter_work_task", "project_documentation", "variation_attachment", "detail_node", "regulation", "standard", "instruction", "other"},
+    "procurement_manager": {"smetter_materials", "project_documentation", "variation_attachment", "detail_node", "regulation", "standard", "instruction", "other"},
+    "technical_supervisor": {"smetter_materials", "smetter_work_task", "project_documentation", "variation_attachment", "detail_node", "regulation", "standard", "instruction", "other"},
+    "estimator": {"main_estimate", "smetter_materials", "smetter_work_task", "project_documentation", "variation_attachment", "variation_estimate", "act", "ks_2", "ks_3", "other"},
+    "accountant": {"main_estimate", "smetter_materials", "smetter_work_task", "contract", "variation_attachment", "variation_estimate", "act", "ks_2", "ks_3", "other"},
 }
 
 
@@ -1821,6 +1821,19 @@ class AppHandler(BaseHTTPRequestHandler):
                 (variation["source_id"],),
             ).fetchall()
         payload["materials"] = rows_to_dicts(materials)
+        attachments = db.execute(
+            """
+            SELECT *
+            FROM documents
+            WHERE project_id = ?
+              AND related_type = 'variation'
+              AND process_type = ?
+              AND COALESCE(status, 'active') != 'archived'
+            ORDER BY created_at DESC
+            """,
+            (variation["project_id"], f"variation:{variation_id}"),
+        ).fetchall()
+        payload["attachments"] = rows_to_dicts(attachments)
         return payload
 
     def serve_variation_export(self, variation_id: int) -> None:
@@ -4176,6 +4189,19 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     ),
                 )
                 variation_id = int(cursor.lastrowid)
+                for attachment in data.get("attachments") or []:
+                    if not isinstance(attachment, dict) or not attachment.get("file_base64"):
+                        continue
+                    attachment["related_section"] = data.get("estimate_section") or ""
+                    attachment["process_type"] = f"variation:{variation_id}"
+                    save_document_file(
+                        db,
+                        int(data["project_id"]),
+                        attachment,
+                        attachment.get("title") or attachment.get("file_name") or "Вложение к допработе",
+                        attachment.get("type") or "variation_attachment",
+                        "variation",
+                    )
                 notify_users(
                     db,
                     {user_id_by_role(db, "construction_manager"), user_id_by_role(db, "owner")} - {None},

@@ -445,10 +445,30 @@ function externalRefLink(value, fallbackText, level = "") {
   return `<a class="pill link-pill ${level}" href="${escapeAttr(href)}" target="_blank" rel="noopener noreferrer">${fallbackText}</a>`;
 }
 
-function yandexMapsUrl(address) {
-  const text = String(address || "").trim();
+function yandexCoordinateDestination(mapsUrl) {
+  const text = String(mapsUrl || "").trim();
   if (!text) return "";
-  return `https://yandex.ru/maps/?rtext=~${encodeURIComponent(text)}&rtt=auto`;
+  const parsePair = (value) => {
+    const match = String(value || "").match(/(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/);
+    return match ? `${match[2]},${match[1]}` : "";
+  };
+  try {
+    const url = new URL(/^https?:\/\//i.test(text) ? text : `https://${text}`);
+    for (const key of ["pt", "ll", "whatshere[point]"]) {
+      const destination = parsePair(url.searchParams.get(key));
+      if (destination) return destination;
+    }
+  } catch {
+    // Short share links do not expose coordinates before redirect; fall back to address below.
+  }
+  const rawMatch = text.match(/(?:pt|ll|whatshere(?:%5B|\[)point(?:%5D|\]))=(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/i);
+  return rawMatch ? `${rawMatch[2]},${rawMatch[1]}` : "";
+}
+
+function yandexMapsUrl(address, mapsUrl = "") {
+  const destination = yandexCoordinateDestination(mapsUrl) || String(address || "").trim();
+  if (!destination) return "";
+  return `https://yandex.ru/maps/?mode=routes&rtext=~${encodeURIComponent(destination)}&rtt=auto`;
 }
 
 function addressLink(address, className = "") {
@@ -460,7 +480,7 @@ function addressLink(address, className = "") {
 function mapLink(address, mapsUrl, label = "Открыть в Яндекс.Картах") {
   const url = String(mapsUrl || "").trim();
   const addressText = String(address || "").trim();
-  const href = url || (addressText ? yandexMapsUrl(addressText) : "");
+  const href = yandexMapsUrl(addressText, url) || url;
   if (!href) return `<span class="muted">Локация не указана</span>`;
   return `<a class="link-button inline-link" href="${escapeAttr(href)}" target="_blank" rel="noopener noreferrer">${label}</a>`;
 }
@@ -472,6 +492,7 @@ function documentType(type) {
     smetter_materials: "Файл материалов из Сметтера",
     smetter_work_task: "Задание на работы из Сметтера",
     project_documentation: "Проектная документация",
+    variation_attachment: "Вложение к допработе",
     variation_estimate: "Смета допработ",
     act: "Акт",
     ks_2: "КС-2",
@@ -507,10 +528,11 @@ function documentFileLink(doc) {
         <div class="muted">${type} · файл не загружен</div>
       </div>`;
   }
+  const processLabel = String(doc.process_type || "").startsWith("variation:") ? "" : doc.process_type;
   return `
     <a class="document-link" href="/api/documents/${doc.id}/download" target="_blank" rel="noopener noreferrer">
       <strong>${title}</strong>
-      <span>${[type, doc.status === "archived" ? "архивная версия" : "", doc.related_section, doc.process_type, file].filter(Boolean).join(" · ")}</span>
+      <span>${[type, doc.status === "archived" ? "архивная версия" : "", doc.related_section, processLabel, file].filter(Boolean).join(" · ")}</span>
     </a>`;
 }
 
@@ -1626,7 +1648,7 @@ async function renderProjectDetail(projectId) {
   const customerPhone = formatRuPhone(project.customer_phone || "");
   const customerEmail = String(project.customer_email || "").trim();
   const customerHistory = Number(project.customer_projects_count || 1);
-  const mapHref = String(project.navigator_url || "").trim() || (project.address ? yandexMapsUrl(project.address) : "");
+  const mapHref = yandexMapsUrl(project.address, project.navigator_url) || String(project.navigator_url || "").trim();
   const phoneLink = phoneHref(customerPhone);
   const customerInfoHtml = `
     <div class="project-info-grid">
@@ -1912,16 +1934,19 @@ async function projectFormToJson(form) {
   const files = form.elements;
   const materialFile = files.estimate_file_name.files[0];
   const workTaskFile = files.work_task_file.files[0];
+  const projectDocFiles = Array.from(files.project_docs_file.files || []);
   data.estimate_file_name = materialFile?.name || form.dataset.existingEstimateFileName || "";
   data.work_task_file_name = workTaskFile?.name || form.dataset.existingWorkTaskFileName || "";
   data.initial_documents = (
-    await Promise.all([
-      fileDocumentPayload(materialFile, "Файл материалов из Сметтера", "smetter_materials"),
-      fileDocumentPayload(workTaskFile, "Задание на работы из Сметтера", "smetter_work_task"),
-      fileDocumentPayload(files.contract_file.files[0], "Договор", "contract"),
-      fileDocumentPayload(files.estimate_doc_file.files[0], "Смета", "main_estimate"),
-      fileDocumentPayload(files.project_docs_file.files[0], "Проектная документация", "project_documentation"),
-    ])
+    await Promise.all(
+      [
+        fileDocumentPayload(materialFile, "Файл материалов из Сметтера", "smetter_materials"),
+        fileDocumentPayload(workTaskFile, "Задание на работы из Сметтера", "smetter_work_task"),
+        fileDocumentPayload(files.contract_file.files[0], "Договор", "contract"),
+        fileDocumentPayload(files.estimate_doc_file.files[0], "Смета", "main_estimate"),
+        ...projectDocFiles.map((file) => fileDocumentPayload(file, `Проектная документация: ${file.name}`, "project_documentation")),
+      ].filter(Boolean)
+    )
   ).filter(Boolean);
   return data;
 }
@@ -2511,6 +2536,7 @@ async function openVariationDialog(variationId) {
   const variation = await api(`/api/variations/${variationId}`);
   qs("#variationDetailTitle").textContent = variation.title || "Допработа";
   const materials = variation.materials || [];
+  const attachments = variation.attachments || [];
   qs("#variationDetailContent").innerHTML = `
     <section class="workflow-panel compact-workflow">
       <div class="stack-line">
@@ -2554,6 +2580,15 @@ async function openVariationDialog(variationId) {
           : `<p class="muted">К этой допработе пока не привязан список материалов.</p>`
       }
     </section>`;
+  if (attachments.length) {
+    qs("#variationDetailContent").insertAdjacentHTML(
+      "beforeend",
+      `<section class="workflow-panel">
+        <h3>Вложения</h3>
+        <div class="document-list">${attachments.map((doc) => `<div class="document-row">${documentFileLink(doc)}</div>`).join("")}</div>
+      </section>`
+    );
+  }
   qs("#variationDetailDialog").showModal();
 }
 
@@ -3683,6 +3718,11 @@ function bindEvents() {
     const payload = formToJson(form);
     payload.actor_id = currentUserId();
     payload.requester_id = currentUserId();
+    payload.attachments = await Promise.all(
+      Array.from(form.elements.variation_files?.files || []).map((file) =>
+        fileDocumentPayload(file, `Вложение к допработе: ${file.name}`, "variation_attachment", "variation")
+      )
+    );
     await api("/api/variations", { method: "POST", body: JSON.stringify(payload) });
     qs("#variationDialog").close();
     form.reset();
