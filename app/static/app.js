@@ -259,6 +259,31 @@ function canDeleteEstimateJobs() {
   return ["owner", "construction_manager"].includes(currentRoleBase());
 }
 
+function isOwnEstimateJob(job, field) {
+  const userId = currentUserId();
+  return Boolean(userId && Number(job?.[field] || 0) === Number(userId));
+}
+
+function canEditEstimateJob(job) {
+  const role = currentRoleBase();
+  if (["owner", "construction_manager"].includes(role)) return true;
+  if (role === "sales_manager") return isOwnEstimateJob(job, "manager_id") && job.status !== "estimate_done";
+  if (role === "estimator") return isOwnEstimateJob(job, "estimator_id") && job.status !== "estimate_done";
+  return false;
+}
+
+function canStartEstimateJob(job) {
+  const role = currentRoleBase();
+  if (!["estimate_new", "estimate_hold"].includes(job.status)) return false;
+  return ["owner", "construction_manager"].includes(role) || (role === "estimator" && isOwnEstimateJob(job, "estimator_id"));
+}
+
+function canFinishEstimateJob(job) {
+  const role = currentRoleBase();
+  if (job.status !== "estimate_in_work") return false;
+  return ["owner", "construction_manager"].includes(role) || (role === "estimator" && isOwnEstimateJob(job, "estimator_id"));
+}
+
 const viewAccess = {
   owner: ["dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "locations", "documents", "feedback", "events"],
   construction_manager: ["dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "locations", "documents", "feedback", "events"],
@@ -298,15 +323,16 @@ function syncNavigationAccess() {
 
 function syncTopbarAccess() {
   const canUseRoleTools = Boolean(state.canSwitchRole);
+  const ownerOnlyPageActions = state.view === "estimates" && currentRoleBase() !== "owner";
   const roleSwitcher = qs(".role-switcher");
   const refreshButton = qs("#refreshButton");
   const logoutButton = qs("#logoutButton");
   const newProjectButton = qs("#newProjectButton");
   const actions = qs(".topbar .actions");
   if (roleSwitcher) roleSwitcher.hidden = !canUseRoleTools;
-  if (refreshButton) refreshButton.hidden = !canUseRoleTools;
+  if (refreshButton) refreshButton.hidden = !canUseRoleTools || ownerOnlyPageActions;
   if (logoutButton) logoutButton.hidden = false;
-  if (newProjectButton) newProjectButton.hidden = !canEditProject();
+  if (newProjectButton) newProjectButton.hidden = !canEditProject() || ownerOnlyPageActions;
   if (actions) {
     actions.classList.toggle("role-tools-hidden", !canUseRoleTools);
     actions.classList.toggle("manager-actions", currentRoleBase() === "sales_manager" && !canUseRoleTools);
@@ -379,6 +405,7 @@ function currentRoleBase() {
 
 function currentUserId() {
   if (String(state.currentRole || "").includes(":")) return Number(String(state.currentRole).split(":")[1]);
+  if (state.session?.user?.role === currentRoleBase()) return Number(state.session.user.id || 0) || null;
   return state.users.find((user) => user.role === currentRoleBase())?.id || null;
 }
 
@@ -1514,7 +1541,9 @@ function renderEstimateJobFiles(files = []) {
 
 function renderEstimateJobRow(job) {
   const statusLevel = estimateJobStatusLevel(job);
-  const canEdit = canManageEstimateJobs();
+  const canEdit = canEditEstimateJob(job);
+  const canStart = canStartEstimateJob(job);
+  const canFinish = canFinishEstimateJob(job);
   const canDelete = canDeleteEstimateJobs();
   return `
     <article class="row estimate-job-row">
@@ -1532,8 +1561,8 @@ function renderEstimateJobRow(job) {
       </div>
       <div class="estimate-job-actions">
         ${canEdit ? `<button class="secondary tiny" type="button" data-edit-estimate-job="${job.id}">Редактировать</button>` : ""}
-        ${canEdit && job.status !== "estimate_in_work" && job.status !== "estimate_done" ? `<button class="secondary tiny" type="button" data-estimate-job-status="estimate_in_work" data-estimate-job-id="${job.id}">В работу</button>` : ""}
-        ${canEdit && job.status !== "estimate_done" ? `<button class="primary tiny" type="button" data-estimate-job-status="estimate_done" data-estimate-job-id="${job.id}">Сдано</button>` : ""}
+        ${canStart ? `<button class="secondary tiny" type="button" data-estimate-job-status="estimate_in_work" data-estimate-job-id="${job.id}">В работу</button>` : ""}
+        ${canFinish ? `<button class="primary tiny" type="button" data-estimate-job-status="estimate_done" data-estimate-job-id="${job.id}">Сдано</button>` : ""}
         ${canDelete ? `<button class="danger-button tiny" type="button" data-delete-estimate-job="${job.id}">Удалить</button>` : ""}
       </div>
     </article>`;

@@ -2497,7 +2497,8 @@ textarea {
 
 @media (max-width: 980px) {
   .app {
-    grid-template-columns: 1fr;
+    display: block;
+    min-height: 100vh;
   }
 
   .sidebar {
@@ -2509,6 +2510,8 @@ textarea {
     align-items: center;
     padding: 10px 12px;
     gap: 12px;
+    min-height: 0;
+    height: auto;
   }
 
   .nav {

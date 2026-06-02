@@ -1220,6 +1220,37 @@ def can_delete_estimate_jobs(account: dict | None) -> bool:
     return account_role(account) in {"owner", "construction_manager"}
 
 
+def estimate_job_owned_by_account(row, account: dict | None, field: str) -> bool:
+    try:
+        return int(row[field] or 0) == account_user_id(account)
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
+def can_update_estimate_job(row, account: dict | None) -> bool:
+    role = account_role(account)
+    if role in {"owner", "construction_manager"}:
+        return True
+    if role == "sales_manager":
+        return estimate_job_owned_by_account(row, account, "manager_id") and row["status"] != "estimate_done"
+    if role == "estimator":
+        return estimate_job_owned_by_account(row, account, "estimator_id") and row["status"] != "estimate_done"
+    return False
+
+
+def can_change_estimate_job_status(row, status: str, account: dict | None) -> bool:
+    role = account_role(account)
+    if role in {"owner", "construction_manager"}:
+        return True
+    if role != "estimator" or not estimate_job_owned_by_account(row, account, "estimator_id"):
+        return False
+    if status == "estimate_in_work":
+        return row["status"] in {"estimate_new", "estimate_hold"}
+    if status == "estimate_done":
+        return row["status"] == "estimate_in_work"
+    return False
+
+
 def can_view_variations(account: dict | None) -> bool:
     return account_role(account) in {"owner", "construction_manager", "finance_director", "accountant", "sales_manager", "estimator", "foreman"}
 
@@ -2654,6 +2685,9 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     json_response(self, {"error": "Forbidden"}, 403)
                     return
                 if action == "update":
+                    if not can_update_estimate_job(row, account):
+                        json_response(self, {"error": "Forbidden"}, 403)
+                        return
                     require_fields(
                         data,
                         [
@@ -2705,6 +2739,9 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 status = data.get("status") or row["status"]
                 if status not in {"estimate_new", "estimate_in_work", "estimate_done", "estimate_hold"}:
                     json_response(self, {"error": "Unknown status"}, 400)
+                    return
+                if not can_change_estimate_job_status(row, status, account):
+                    json_response(self, {"error": "Forbidden"}, 403)
                     return
                 delivered_at = data.get("delivered_at") or (date.today().isoformat() if status == "estimate_done" else None)
                 result_comment = data.get("result_comment") or row["result_comment"] or ""
