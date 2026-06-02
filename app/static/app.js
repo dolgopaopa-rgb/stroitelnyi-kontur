@@ -1495,6 +1495,22 @@ function renderEstimateSchedule(jobs) {
     .join("");
 }
 
+function renderEstimateJobFiles(files = []) {
+  if (!Array.isArray(files) || !files.length) return "";
+  return `
+    <div class="estimate-job-files">
+      ${files
+        .map(
+          (file) => `
+          <a href="/api/estimate-job-files/${file.id}/download" target="_blank" rel="noopener noreferrer">
+            <strong>${escapeHtml(file.title || file.file_name || "Файл")}</strong>
+            <span>${escapeHtml(file.file_name || "")}</span>
+          </a>`
+        )
+        .join("")}
+    </div>`;
+}
+
 function renderEstimateJobRow(job) {
   const statusLevel = estimateJobStatusLevel(job);
   const canEdit = canManageEstimateJobs();
@@ -1511,6 +1527,7 @@ function renderEstimateJobRow(job) {
         <div class="muted">получено: ${formatDateRu(job.received_at) || "не указано"} · менеджер: ${escapeHtml(job.manager_name || "не назначен")} · сметчик: ${escapeHtml(job.estimator_name || "не назначен")}</div>
         ${job.comment ? `<p>${escapeHtml(job.comment)}</p>` : ""}
         ${job.result_comment ? `<p class="muted">Итог: ${escapeHtml(job.result_comment)}</p>` : ""}
+        ${renderEstimateJobFiles(job.files)}
       </div>
       <div class="estimate-job-actions">
         ${canEdit ? `<button class="secondary tiny" type="button" data-edit-estimate-job="${job.id}">Редактировать</button>` : ""}
@@ -3913,6 +3930,8 @@ function bindEvents() {
     const payload = formToJson(form);
     const id = payload.id;
     delete payload.id;
+    const attachments = Array.from(form.elements.attachments?.files || []);
+    payload.attachments = await Promise.all(attachments.map((file) => fileDocumentPayload(file, file.name, "estimate_job_file", "estimate_job")));
     await api(id ? `/api/estimate-jobs/${id}/update` : "/api/estimate-jobs", {
       method: "POST",
       body: JSON.stringify(payload),

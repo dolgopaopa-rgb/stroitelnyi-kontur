@@ -2032,6 +2032,41 @@ h2 {
   font-size: 12px;
 }
 
+.estimate-job-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.estimate-job-files a {
+  display: inline-grid;
+  gap: 1px;
+  max-width: 230px;
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: var(--brand-strong);
+  text-decoration: none;
+}
+
+.estimate-job-files a:hover {
+  border-color: #8dbbb5;
+}
+
+.estimate-job-files strong,
+.estimate-job-files span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.estimate-job-files span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
 #dashboardView .panel {
   padding: 12px;
 }

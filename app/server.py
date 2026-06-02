@@ -1385,6 +1385,10 @@ def project_upload_folder(db, project_id: int, related_type: str, doc_type: str)
     root = yandex_disk_root()
     if related_type == "knowledge_base":
         return f"{root}/База знаний/{yandex_path_part(doc_type, 'documents')}"
+    if related_type == "estimate_job":
+        row = db.execute("SELECT title FROM estimate_jobs WHERE id = ?", (project_id,)).fetchone()
+        title = row["title"] if row else f"estimate_job_{project_id}"
+        return f"{root}/Сметы/{yandex_path_part(title, f'estimate_job_{project_id}')}/{yandex_path_part(doc_type, 'files')}"
     row = db.execute("SELECT title FROM projects WHERE id = ?", (project_id,)).fetchone()
     project_title = row["title"] if row else f"project_{project_id}"
     return f"{root}/Объекты/{yandex_path_part(project_title, f'project_{project_id}')}/{yandex_path_part(doc_type, 'documents')}"
@@ -1493,6 +1497,36 @@ def save_document_file(db, project_id: int, file_data: dict, title: str, doc_typ
             stored_path,
             file_data.get("mime_type") or mimetypes.guess_type(file_name)[0] or "application/octet-stream",
             len(raw),
+        ),
+    )
+    return int(cursor.lastrowid)
+
+
+def save_estimate_job_file(db, estimate_job_id: int, file_data: dict, uploaded_by: int | None = None) -> int | None:
+    file_name = safe_file_name(file_data.get("file_name") or file_data.get("title") or "file")
+    encoded = file_data.get("file_base64") or ""
+    if not encoded:
+        return None
+    if "," in encoded:
+        encoded = encoded.split(",", 1)[1]
+    raw = base64.b64decode(encoded)
+    target_name = f"{int(time.time() * 1000)}_{file_name}"
+    stored_path = save_uploaded_file(db, estimate_job_id, "estimate_job", "attachments", target_name, raw)
+    cursor = db.execute(
+        """
+        INSERT INTO estimate_job_files (
+            estimate_job_id, title, file_name, file_path, mime_type, file_size, uploaded_by
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            estimate_job_id,
+            str(file_data.get("title") or file_name).strip() or file_name,
+            file_name,
+            stored_path,
+            file_data.get("mime_type") or mimetypes.guess_type(file_name)[0] or "application/octet-stream",
+            len(raw),
+            uploaded_by,
         ),
     )
     return int(cursor.lastrowid)
@@ -1658,6 +1692,10 @@ class AppHandler(BaseHTTPRequestHandler):
         if document_download:
             self.serve_document_download(int(document_download.group(1)))
             return
+        estimate_job_file_download = re.match(r"^/api/estimate-job-files/(\d+)/download$", path)
+        if estimate_job_file_download:
+            self.serve_estimate_job_file_download(int(estimate_job_file_download.group(1)))
+            return
         if path.startswith("/api/"):
             self.handle_api_get(path, parse_qs(parsed.query))
             return
@@ -1740,6 +1778,41 @@ class AppHandler(BaseHTTPRequestHandler):
                 body = file_path.read_bytes()
                 file_name = document["file_name"] or file_path.name
             content_type = document["mime_type"] or mimetypes.guess_type(file_name)[0] or "application/octet-stream"
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Content-Disposition", f"inline; filename*=UTF-8''{quote(file_name)}")
+            self.end_headers()
+            self.wfile.write(body)
+
+    def serve_estimate_job_file_download(self, file_id: int) -> None:
+        with connect() as db:
+            if not can_view_estimate_jobs(current_access_account(self)):
+                self.send_error(403)
+                return
+            item = db.execute("SELECT * FROM estimate_job_files WHERE id = ?", (file_id,)).fetchone()
+            if not item or not item["file_path"]:
+                self.send_error(404)
+                return
+            stored_path = str(item["file_path"])
+            if stored_path.startswith(YANDEX_DISK_FILE_PREFIX):
+                try:
+                    body = download_from_yandex_disk(stored_path)
+                except (HTTPError, URLError, TimeoutError, RuntimeError, OSError):
+                    self.send_error(502)
+                    return
+                file_name = item["file_name"] or Path(stored_path.removeprefix(YANDEX_DISK_FILE_PREFIX)).name
+            else:
+                file_path = (DATA_DIR / stored_path).resolve()
+                if DATA_DIR.resolve() not in file_path.parents and file_path != DATA_DIR.resolve():
+                    self.send_error(403)
+                    return
+                if not file_path.exists() or not file_path.is_file():
+                    self.send_error(404)
+                    return
+                body = file_path.read_bytes()
+                file_name = item["file_name"] or file_path.name
+            content_type = item["mime_type"] or mimetypes.guess_type(file_name)[0] or "application/octet-stream"
             self.send_response(200)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
@@ -2047,7 +2120,27 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         j.id DESC
                     """
                 ).fetchall()
-                json_response(self, rows_to_dicts(rows))
+                jobs = rows_to_dicts(rows)
+                if jobs:
+                    ids = [int(job["id"]) for job in jobs]
+                    placeholders = ",".join("?" for _ in ids)
+                    file_rows = db.execute(
+                        f"""
+                        SELECT f.*, u.name AS uploaded_by_name
+                        FROM estimate_job_files f
+                        LEFT JOIN users u ON u.id = f.uploaded_by
+                        WHERE f.estimate_job_id IN ({placeholders})
+                        ORDER BY f.created_at DESC, f.id DESC
+                        """,
+                        ids,
+                    ).fetchall()
+                    files_by_job: dict[int, list[dict]] = {}
+                    for file_row in file_rows:
+                        file_item = row_to_dict(file_row)
+                        files_by_job.setdefault(int(file_item["estimate_job_id"]), []).append(file_item)
+                    for job in jobs:
+                        job["files"] = files_by_job.get(int(job["id"]), [])
+                json_response(self, jobs)
                 return
 
             if path == "/api/projects":
@@ -2527,12 +2620,15 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     ),
                 )
                 estimate_job_id = int(cursor.lastrowid)
+                attachments = [item for item in data.get("attachments") or [] if isinstance(item, dict) and item.get("file_base64")]
+                for attachment in attachments:
+                    save_estimate_job_file(db, estimate_job_id, attachment, account_user_id(account))
                 notify_users(
                     db,
                     {int(data.get("estimator_id") or 0), int(data.get("manager_id") or 0), user_id_by_role(db, "construction_manager"), user_id_by_role(db, "owner")} - {0, None},
                     project_id,
                     "Новое задание на смету",
-                    f"{data.get('title')} · срок: {data.get('due_date')}",
+                    f"{data.get('title')} · срок: {data.get('due_date')} · файлов: {len(attachments)}",
                     "estimate_job",
                     estimate_job_id,
                 )
@@ -2601,6 +2697,9 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             estimate_job_id,
                         ),
                     )
+                    attachments = [item for item in data.get("attachments") or [] if isinstance(item, dict) and item.get("file_base64")]
+                    for attachment in attachments:
+                        save_estimate_job_file(db, estimate_job_id, attachment, account_user_id(account))
                     json_response(self, {"id": estimate_job_id})
                     return
                 status = data.get("status") or row["status"]

@@ -220,6 +220,20 @@ def init_db() -> None:
                 FOREIGN KEY (estimator_id) REFERENCES users(id)
             );
 
+            CREATE TABLE IF NOT EXISTS estimate_job_files (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                estimate_job_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                file_name TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                mime_type TEXT,
+                file_size INTEGER,
+                uploaded_by INTEGER,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (estimate_job_id) REFERENCES estimate_jobs(id) ON DELETE CASCADE,
+                FOREIGN KEY (uploaded_by) REFERENCES users(id)
+            );
+
             CREATE TABLE IF NOT EXISTS work_items (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 project_id INTEGER NOT NULL,
@@ -380,6 +394,7 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_estimate_materials_project ON estimate_materials(project_id);
             CREATE INDEX IF NOT EXISTS idx_estimate_jobs_status ON estimate_jobs(status, due_date);
             CREATE INDEX IF NOT EXISTS idx_estimate_jobs_estimator ON estimate_jobs(estimator_id, status);
+            CREATE INDEX IF NOT EXISTS idx_estimate_job_files_job ON estimate_job_files(estimate_job_id);
             CREATE INDEX IF NOT EXISTS idx_work_items_project ON work_items(project_id);
             CREATE INDEX IF NOT EXISTS idx_work_extra_items_project ON work_extra_items(project_id);
             CREATE INDEX IF NOT EXISTS idx_supplier_locations_active ON supplier_locations(is_active);

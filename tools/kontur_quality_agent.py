@@ -225,7 +225,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         (
             "Estimate job CRM scenario",
             "Менеджер, сметчик, гендиректор и руководитель строительства видят отдельный реестр сметных заданий со сроками и статусами.",
-            ["CREATE TABLE IF NOT EXISTS estimate_jobs", "can_view_estimate_jobs", 'data-view="estimates"', "renderEstimateJobs", "/api/estimate-jobs", 'estimator: ["dashboard", "projects", "estimates"', "estimateJobSchedule"],
+            ["CREATE TABLE IF NOT EXISTS estimate_jobs", "CREATE TABLE IF NOT EXISTS estimate_job_files", "can_view_estimate_jobs", 'data-view="estimates"', "renderEstimateJobs", "/api/estimate-jobs", 'name="attachments" type="file" multiple', "serve_estimate_job_file_download", 'estimator: ["dashboard", "projects", "estimates"', "estimateJobSchedule"],
             "Не держать сметы в голове и чатах: у задания должны быть дата получения, срок, сметчик, менеджер и статус.",
         ),
         (
