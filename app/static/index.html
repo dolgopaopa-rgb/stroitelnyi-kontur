@@ -9,10 +9,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Строительный контур</title>
-    <link rel="manifest" href="/static/manifest.webmanifest?v=20260602-estimate-files" />
+    <link rel="manifest" href="/static/manifest.webmanifest?v=20260602-manager-note" />
     <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260602-estimate-files" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260602-manager-note" />
   </head>
   <body>
     <div class="app">
@@ -357,6 +357,11 @@
           <input name="navigator_url" required placeholder="Вставьте сюда ссылку из Яндекса" />
           <span class="field-hint">Откройте объект в Яндекс.Картах, нажмите “Поделиться” и вставьте сюда полученную ссылку.</span>
         </label>
+        <label>
+          Заметки менеджера
+          <textarea name="manager_note" rows="3" placeholder="Например: особенности клиента, договоренности, важные вводные для строительства"></textarea>
+          <span class="field-hint">Эту заметку увидят все участники, у которых есть доступ к карточке объекта.</span>
+        </label>
         <label>Сметтер <input name="smetter_ref" required placeholder="Ссылка на смету или номер" /></label>
         <section class="hint-box neutral">
           <strong>Передача в строительство</strong>
@@ -699,6 +704,6 @@
     </dialog>
 
     <div class="toast" id="toast"></div>
-    <script src="/static/app.js?v=20260602-estimate-files"></script>
+    <script src="/static/app.js?v=20260602-manager-note"></script>
   </body>
 </html>

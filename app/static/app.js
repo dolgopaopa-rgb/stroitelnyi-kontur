@@ -38,6 +38,7 @@ const PROJECT_TEXT_DRAFT_FIELDS = [
   "customer_email",
   "address",
   "navigator_url",
+  "manager_note",
   "smetter_ref",
   "planned_end_date",
   "main_estimate_amount",
@@ -1855,6 +1856,7 @@ async function renderProjectDetail(projectId) {
   const customerHistory = Number(project.customer_projects_count || 1);
   const mapHref = yandexMapsUrl(project.address, project.navigator_url) || String(project.navigator_url || "").trim();
   const phoneLink = phoneHref(customerPhone);
+  const managerNote = String(project.manager_note || "").trim();
   const customerInfoHtml = `
     <div class="project-info-grid">
       <div class="project-info-chip">
@@ -1882,9 +1884,16 @@ async function renderProjectDetail(projectId) {
           : `<div class="project-info-chip"><span>Локация</span><strong>не указана</strong></div>`
       }
     </div>`;
+  const managerNoteHtml = managerNote
+    ? `<section class="manager-note-panel">
+        <div class="stack-line"><strong>Заметка менеджера</strong>${pill(project.sales_manager_name || "Менеджер", "blue")}</div>
+        <p>${escapeHtml(managerNote)}</p>
+      </section>`
+    : "";
   qs("#projectDetail").innerHTML = `
     <div class="stack-line"><h2>${project.title}</h2>${pill(label(project.status), "blue")}</div>
     ${customerInfoHtml}
+    ${managerNoteHtml}
     <div class="stack-line">
       ${pill(`Прораб: ${project.foreman_name || "не назначен"}`)}
       ${pill(`Сметчик: ${project.estimator_name || "не назначен"}`)}
@@ -3230,6 +3239,7 @@ async function openProjectEditDialog(projectId) {
   form.elements.customer_email.value = project.customer_email || "";
   form.elements.address.value = project.address || "";
   form.elements.navigator_url.value = project.navigator_url || "";
+  form.elements.manager_note.value = project.manager_note || "";
   form.elements.smetter_ref.value = project.smetter_ref || "";
   form.elements.planned_end_date.value = project.planned_end_date || "";
   form.elements.main_estimate_amount.value = project.main_estimate_amount || "";

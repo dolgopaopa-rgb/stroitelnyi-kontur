@@ -1,9 +1,9 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260602-estimate-files";
+const CACHE_NAME = "stroitelnyi-kontur-20260602-manager-note";
 const CORE_ASSETS = [
   "/",
-  "/static/styles.css?v=20260602-estimate-files",
-  "/static/app.js?v=20260602-estimate-files",
-  "/static/manifest.webmanifest?v=20260602-estimate-files",
+  "/static/styles.css?v=20260602-manager-note",
+  "/static/app.js?v=20260602-manager-note",
+  "/static/manifest.webmanifest?v=20260602-manager-note",
   "/static/assets/g2-logo-192.png",
   "/static/assets/g2-logo-512.png"
 ];

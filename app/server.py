@@ -2743,9 +2743,9 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             customer_id, title, customer_name, status, address, navigator_url, bitrix_ref,
                             smetter_ref, estimate_file_name, work_task_file_name, estimate_version, estimate_uploaded_by,
                             sales_manager_id, construction_manager_id, foreman_id, estimator_id,
-                            procurement_manager_id, tech_supervisor_id, planned_end_date, main_estimate_amount
+                            procurement_manager_id, tech_supervisor_id, manager_note, planned_end_date, main_estimate_amount
                         )
-                        VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?)
+                        VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?, ?)
                         """,
                         (
                             customer_id,
@@ -2761,6 +2761,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             account_user_id(account) or 3,
                             account_user_id(account) or 3,
                             user_id_by_role(db, "construction_manager") or 2,
+                            str(data.get("manager_note") or "").strip(),
                             data.get("planned_end_date") or "",
                             number_value(data.get("main_estimate_amount")),
                         ),
@@ -2806,9 +2807,9 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         customer_id, title, customer_name, status, address, navigator_url, bitrix_ref,
                         smetter_ref, estimate_file_name, work_task_file_name, estimate_version, estimate_uploaded_by,
                         sales_manager_id, construction_manager_id, foreman_id, estimator_id,
-                        procurement_manager_id, tech_supervisor_id, planned_end_date, main_estimate_amount
+                        procurement_manager_id, tech_supervisor_id, manager_note, planned_end_date, main_estimate_amount
                     )
-                    VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?)
+                    VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?, ?)
                     """,
                     (
                         customer_id,
@@ -2824,6 +2825,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         3,
                         3,
                         user_id_by_role(db, "construction_manager") or 2,
+                        str(data.get("manager_note") or "").strip(),
                         data.get("planned_end_date"),
                         number_value(data.get("main_estimate_amount")),
                     ),
@@ -2885,6 +2887,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             navigator_url = ?,
                             bitrix_ref = ?,
                             smetter_ref = ?,
+                            manager_note = ?,
                             planned_end_date = ?,
                             main_estimate_amount = ?,
                             estimate_file_name = ?,
@@ -2900,6 +2903,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             data.get("navigator_url") or project["navigator_url"] or "",
                             "",
                             data.get("smetter_ref") or "",
+                            str(data.get("manager_note") or "").strip(),
                             data.get("planned_end_date") or "",
                             number_value(data.get("main_estimate_amount")),
                             data.get("estimate_file_name") or project["estimate_file_name"] or "",
@@ -2953,6 +2957,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             navigator_url = ?,
                             bitrix_ref = ?,
                             smetter_ref = ?,
+                            manager_note = ?,
                             planned_end_date = ?,
                             main_estimate_amount = ?,
                             estimate_file_name = ?,
@@ -2968,6 +2973,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             data.get("navigator_url") or "",
                             "",
                             data.get("smetter_ref"),
+                            str(data.get("manager_note") or "").strip(),
                             data.get("planned_end_date"),
                             number_value(data.get("main_estimate_amount")),
                             data.get("estimate_file_name"),

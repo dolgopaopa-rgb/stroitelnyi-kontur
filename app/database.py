@@ -63,6 +63,7 @@ def init_db() -> None:
                 procurement_manager_id INTEGER,
                 tech_supervisor_id INTEGER,
                 workflow_comment TEXT,
+                manager_note TEXT,
                 submitted_at TEXT,
                 accepted_at TEXT,
                 returned_at TEXT,
@@ -423,6 +424,7 @@ def init_db() -> None:
         ensure_column(db, "projects", "sales_manager_id", "INTEGER")
         ensure_column(db, "projects", "tech_supervisor_id", "INTEGER")
         ensure_column(db, "projects", "workflow_comment", "TEXT")
+        ensure_column(db, "projects", "manager_note", "TEXT")
         ensure_column(db, "projects", "submitted_at", "TEXT")
         ensure_column(db, "projects", "accepted_at", "TEXT")
         ensure_column(db, "projects", "returned_at", "TEXT")
