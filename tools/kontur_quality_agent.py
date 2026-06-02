@@ -120,6 +120,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
     css_text = repository_file("app/static/styles.css")
     sw_text = repository_file("app/static/sw.js")
     server_text = repository_file("app/server.py")
+    database_text = repository_file("app/database.py")
 
     if not html or not app_text:
         add(
@@ -136,6 +137,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         ("logoutButton", "Выйти", ['qs("#logoutButton")?.addEventListener("click"', 'window.location.href = "/logout"']),
         ("newProjectButton", "Новый объект", ['qs("#newProjectButton").addEventListener("click"', "resetProjectDialog()", 'qs("#projectDialog").showModal()']),
         ("newTaskButton", "Добавить задачу", ['qs("#newTaskButton").addEventListener("click"', 'qs("#taskDialog").showModal()']),
+        ("newEstimateJobButton", "Добавить сметное задание", ['qs("#newEstimateJobButton").addEventListener("click"', "openEstimateJobDialog"]),
         ("newMaterialButton", "Добавить заявку", ['qs("#newMaterialButton").addEventListener("click"', 'qs("#materialDialog").showModal()']),
         ("newVariationButton", "Добавить допработу", ['qs("#newVariationButton").addEventListener("click"', 'qs("#variationDialog").showModal()']),
         ("newDocumentButton", "Добавить материал базы знаний", ['qs("#newDocumentButton").addEventListener("click"', 'qs("#documentDialog").showModal()']),
@@ -173,6 +175,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
     form_contracts = [
         ("projectForm", "Форма объекта", ['qs("#projectForm").addEventListener("submit"', "/api/projects"]),
         ("taskForm", "Форма задачи", ['qs("#taskForm").addEventListener("submit"', "/api/tasks"]),
+        ("estimateJobForm", "Форма сметного задания", ['qs("#estimateJobForm").addEventListener("submit"', "/api/estimate-jobs"]),
         ("materialForm", "Форма заявки материалов", ['qs("#materialForm").addEventListener("submit"', "/api/material-requests/bulk"]),
         ("documentForm", "Форма базы знаний", ['qs("#documentForm").addEventListener("submit"', "/api/documents"]),
         ("variationForm", "Форма допработы", ['qs("#variationForm").addEventListener("submit"', "/api/variations"]),
@@ -216,8 +219,14 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         (
             "Navigation access scenario",
             "Меню ограничивается по ролям менеджера и прораба.",
-            ['sales_manager: ["dashboard", "projects", "documents"]', 'foreman: ["dashboard", "tasks", "works", "materials", "variations", "locations", "documents"]', "[hidden]", "data-requires-view", "syncNavigationAccess"],
+            ['sales_manager: ["dashboard", "projects", "estimates", "documents"]', 'foreman: ["dashboard", "tasks", "works", "materials", "variations", "locations", "documents"]', "[hidden]", "data-requires-view", "syncNavigationAccess"],
             "Проверить матрицу ролей: менеджеру и прорабу нельзя показывать лишние разделы.",
+        ),
+        (
+            "Estimate job CRM scenario",
+            "Менеджер, сметчик, гендиректор и руководитель строительства видят отдельный реестр сметных заданий со сроками и статусами.",
+            ["CREATE TABLE IF NOT EXISTS estimate_jobs", "can_view_estimate_jobs", 'data-view="estimates"', "renderEstimateJobs", "/api/estimate-jobs", 'estimator: ["dashboard", "projects", "estimates"', "estimateJobSchedule"],
+            "Не держать сметы в голове и чатах: у задания должны быть дата получения, срок, сметчик, менеджер и статус.",
         ),
         (
             "Restricted topbar controls scenario",
@@ -282,7 +291,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
     ]
 
     broken_scenarios = []
-    combined_text = "\n".join([html, app_text, css_text, server_text])
+    combined_text = "\n".join([html, app_text, css_text, server_text, database_text])
     for name, details, needles, recommendation in scenario_contracts:
         ok = has_all(combined_text, needles)
         check_static_contract(checks, name, ok, details if ok else f"Нарушен сценарий: {details}", recommendation)

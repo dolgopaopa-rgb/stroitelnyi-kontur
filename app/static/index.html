@@ -9,10 +9,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Строительный контур</title>
-    <link rel="manifest" href="/static/manifest.webmanifest?v=20260531-feedback-work" />
+    <link rel="manifest" href="/static/manifest.webmanifest?v=20260602-estimate-jobs" />
     <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260531-feedback-work" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260602-estimate-jobs" />
   </head>
   <body>
     <div class="app">
@@ -26,6 +26,7 @@
         <nav class="nav">
           <button class="nav-button active" data-view="dashboard"><span class="nav-icon">⌂</span><span>Рабочий стол</span></button>
           <button class="nav-button" data-view="projects"><span class="nav-icon">▦</span><span>Объекты</span></button>
+          <button class="nav-button" data-view="estimates"><span class="nav-icon">≋</span><span>Сметы</span></button>
           <button class="nav-button" data-view="tasks"><span class="nav-icon">✓</span><span>Задачи</span></button>
           <button class="nav-button" data-view="works"><span class="nav-icon">▤</span><span>Работы</span></button>
           <button class="nav-button" data-view="materials"><span class="nav-icon">◫</span><span>Материалы</span></button>
@@ -138,6 +139,18 @@
                 <div class="table" id="taskRows"></div>
               </section>
             </div>
+          </div>
+        </section>
+
+        <section class="view" id="estimatesView">
+          <div class="panel estimate-crm-panel">
+            <div class="panel-head">
+              <h2>Сметные задания</h2>
+              <button class="primary" id="newEstimateJobButton" type="button">Добавить задание</button>
+            </div>
+            <div class="compact-stats" id="estimateJobStats"></div>
+            <div class="estimate-schedule" id="estimateJobSchedule"></div>
+            <div class="table estimate-job-list" id="estimateJobRows"></div>
           </div>
         </section>
 
@@ -413,6 +426,55 @@
       </div>
     </dialog>
 
+    <dialog id="estimateJobDialog">
+      <form method="dialog" class="form" id="estimateJobForm">
+        <div class="modal-head">
+          <h2 id="estimateJobDialogTitle">Новое задание на смету</h2>
+          <button type="button" class="icon" data-close="estimateJobDialog">×</button>
+        </div>
+        <input name="id" type="hidden" />
+        <label>Название задания <input name="title" required placeholder="Например: дом 180 м2, расчет КП" /></label>
+        <div class="grid-2">
+          <label>Заказчик <input name="customer_name" required placeholder="ФИО или компания" /></label>
+          <label>Связанный объект <select name="project_id"></select></label>
+        </div>
+        <div class="grid-2">
+          <label>Менеджер <select name="manager_id" required></select></label>
+          <label>Сметчик <select name="estimator_id" required></select></label>
+        </div>
+        <div class="grid-2">
+          <label>Дата получения задания <input name="received_at" type="date" required /></label>
+          <label>Плановый срок готовности <input name="due_date" type="date" required /></label>
+        </div>
+        <div class="grid-2">
+          <label>
+            Тип сметы
+            <select name="estimate_type">
+              <option value="primary">Первичная</option>
+              <option value="revision">Корректировка</option>
+              <option value="additional">Допработы</option>
+              <option value="contractor">Проверка подрядчика</option>
+              <option value="other">Другое</option>
+            </select>
+          </label>
+          <label>
+            Приоритет
+            <select name="priority">
+              <option value="normal">Обычный</option>
+              <option value="high">Срочно</option>
+              <option value="low">Можно позже</option>
+            </select>
+          </label>
+        </div>
+        <label>Источник / откуда пришло <input name="source" placeholder="Битрикс, звонок, руководитель, подрядчик..." /></label>
+        <label>Комментарий <textarea name="comment" rows="3" placeholder="Что считать, что приложено, какие вводные важны"></textarea></label>
+        <div class="form-actions">
+          <button type="button" class="secondary" data-close="estimateJobDialog">Отмена</button>
+          <button class="primary" type="submit">Сохранить</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog id="materialDialog">
       <form method="dialog" class="form" id="materialForm">
         <div class="modal-head">
@@ -632,6 +694,6 @@
     </dialog>
 
     <div class="toast" id="toast"></div>
-    <script src="/static/app.js?v=20260531-feedback-work"></script>
+    <script src="/static/app.js?v=20260602-estimate-jobs"></script>
   </body>
 </html>

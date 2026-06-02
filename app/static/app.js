@@ -10,6 +10,7 @@ const state = {
   projects: [],
   archivedProjects: [],
   materialRequests: [],
+  estimateJobs: [],
   estimateMaterials: [],
   estimatePreviewRows: [],
   showEstimateMaterials: false,
@@ -63,6 +64,7 @@ let sortableDragSource = null;
 const viewTitles = {
   dashboard: "Рабочий стол",
   projects: "Объекты",
+  estimates: "Сметы",
   tasks: "Задачи",
   works: "Работы",
   materials: "Материалы",
@@ -111,6 +113,10 @@ const statusLabels = {
   feedback_new: "Новое",
   feedback_in_work: "В работе",
   feedback_done: "Обработано",
+  estimate_new: "Новое задание",
+  estimate_in_work: "В расчете",
+  estimate_done: "Смета сдана",
+  estimate_hold: "Пауза",
 };
 
 function qs(selector) {
@@ -244,15 +250,23 @@ function canManageSystemSettings() {
   return ["owner", "construction_manager", "finance_director"].includes(currentRoleBase());
 }
 
+function canManageEstimateJobs() {
+  return ["owner", "construction_manager", "sales_manager", "estimator"].includes(currentRoleBase());
+}
+
+function canDeleteEstimateJobs() {
+  return ["owner", "construction_manager"].includes(currentRoleBase());
+}
+
 const viewAccess = {
-  owner: ["dashboard", "projects", "tasks", "works", "materials", "variations", "locations", "documents", "feedback", "events"],
-  construction_manager: ["dashboard", "projects", "tasks", "works", "materials", "variations", "locations", "documents", "feedback", "events"],
+  owner: ["dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "locations", "documents", "feedback", "events"],
+  construction_manager: ["dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "locations", "documents", "feedback", "events"],
   finance_director: ["dashboard", "projects", "tasks", "works", "materials", "variations", "locations", "documents", "feedback", "events"],
   accountant: ["dashboard", "projects", "materials", "variations", "locations", "documents", "events"],
-  sales_manager: ["dashboard", "projects", "documents"],
+  sales_manager: ["dashboard", "projects", "estimates", "documents"],
   foreman: ["dashboard", "tasks", "works", "materials", "variations", "locations", "documents"],
   procurement_manager: ["dashboard", "projects", "materials", "locations", "documents"],
-  estimator: ["dashboard", "projects", "tasks", "works", "materials", "variations", "documents"],
+  estimator: ["dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "documents"],
   technical_supervisor: ["dashboard", "projects", "tasks", "works", "materials", "locations", "documents"],
 };
 
@@ -832,10 +846,16 @@ function initSortableZones(scope = document) {
 }
 
 async function loadCoreData() {
-  const [users, projects, archivedProjects] = await Promise.all([api("/api/users"), api("/api/projects"), api("/api/projects/archive")]);
+  const [users, projects, archivedProjects, estimateJobs] = await Promise.all([
+    api("/api/users"),
+    api("/api/projects"),
+    api("/api/projects/archive"),
+    canView("estimates") ? api("/api/estimate-jobs") : Promise.resolve([]),
+  ]);
   state.users = users;
   state.projects = projects;
   state.archivedProjects = archivedProjects;
+  state.estimateJobs = estimateJobs;
   const availableProjects = state.projectListMode === "archive" ? archivedProjects : projects;
   if (state.selectedProjectId && !availableProjects.some((project) => Number(project.id) === Number(state.selectedProjectId))) {
     state.selectedProjectId = availableProjects[0]?.id || projects[0]?.id || null;
@@ -851,6 +871,7 @@ async function loadAll() {
     renderDashboard(),
     renderNotifications(),
     renderProjects(),
+    renderEstimateJobs(),
     renderTasks(),
     renderWorks(),
     renderMaterials(),
@@ -867,9 +888,16 @@ async function loadAll() {
 
 function fillSelects() {
   const projectOptions = state.projects.map((project) => `<option value="${project.id}">${project.title}</option>`).join("");
+  const optionalProjectOptions = `<option value="">Без объекта</option>${projectOptions}`;
   const userOptions = state.users.map((user) => `<option value="${user.id}">${user.name}</option>`).join("");
   const taskUserOptions = taskParticipantOptions();
   qsa('select[name="project_id"]').forEach((select) => (select.innerHTML = projectOptions));
+  const estimateProjectSelect = qs('#estimateJobForm select[name="project_id"]');
+  if (estimateProjectSelect) estimateProjectSelect.innerHTML = optionalProjectOptions;
+  const estimateManagerSelect = qs('#estimateJobForm select[name="manager_id"]');
+  if (estimateManagerSelect) estimateManagerSelect.innerHTML = userOptionsByRole("sales_manager");
+  const estimateEstimatorSelect = qs('#estimateJobForm select[name="estimator_id"]');
+  if (estimateEstimatorSelect) estimateEstimatorSelect.innerHTML = userOptionsByRole("estimator");
   const workProject = workProjectId();
   qsa('#workProjectForm select[name="project_id"], #workExtraForm select[name="project_id"]').forEach((select) => {
     if (workProject) select.value = String(workProject);
@@ -1384,6 +1412,141 @@ function taskStatusLevel(status) {
   }[status] || "";
 }
 
+function estimateJobStatusLevel(job) {
+  if (job.status === "estimate_done") return "success";
+  if (levelByDate(job.due_date) === "danger") return "danger";
+  return {
+    estimate_new: "warning",
+    estimate_in_work: "blue",
+    estimate_hold: "warning",
+  }[job.status] || "";
+}
+
+function estimateJobTypeLabel(value) {
+  return {
+    primary: "Первичная",
+    revision: "Корректировка",
+    additional: "Допработы",
+    contractor: "Проверка подрядчика",
+    other: "Другое",
+  }[value] || "Не указан";
+}
+
+function estimateJobStats(jobs) {
+  return {
+    active: jobs.filter((job) => ["estimate_new", "estimate_in_work"].includes(job.status)).length,
+    done: jobs.filter((job) => job.status === "estimate_done").length,
+    overdue: jobs.filter((job) => job.status !== "estimate_done" && levelByDate(job.due_date) === "danger").length,
+    hold: jobs.filter((job) => job.status === "estimate_hold").length,
+  };
+}
+
+function renderEstimateJobStats(jobs) {
+  const stats = estimateJobStats(jobs);
+  const total = Math.max(jobs.length, 1);
+  const segments = [
+    ["Все", jobs.length, ""],
+    ["В работе", stats.active, "blue"],
+    ["Просрочено", stats.overdue, "danger"],
+    ["Сдано", stats.done, "success"],
+    ["Пауза", stats.hold, "warning"],
+  ];
+  return `
+    <div class="task-stats">
+      ${segments
+        .map(
+          ([title, count, level]) => `
+          <div class="task-stat ${level}">
+            <span>${title}</span>
+            <strong>${count}</strong>
+            <div class="stat-bar"><i style="width: ${(count / total) * 100}%"></i></div>
+          </div>`
+        )
+        .join("")}
+    </div>`;
+}
+
+function estimateJobProgress(job) {
+  if (job.status === "estimate_done") return 100;
+  if (!job.received_at || !job.due_date) return 15;
+  const start = new Date(`${job.received_at}T00:00:00`);
+  const end = new Date(`${job.due_date}T00:00:00`);
+  const today = new Date();
+  const current = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const total = Math.max(end - start, 86400000);
+  return Math.max(8, Math.min(100, ((current - start) / total) * 100));
+}
+
+function renderEstimateSchedule(jobs) {
+  const activeJobs = jobs.filter((job) => job.status !== "estimate_done").slice(0, 8);
+  if (!activeJobs.length) return `<p class="muted">Активных сметных заданий нет.</p>`;
+  return activeJobs
+    .map(
+      (job) => `
+      <div class="estimate-timeline-row">
+        <div class="estimate-timeline-main">
+          <strong>${escapeHtml(job.title)}</strong>
+          <span>${escapeHtml(job.estimator_name || "сметчик не назначен")} · ${formatDateRu(job.received_at)} → ${formatDateRu(job.due_date)}</span>
+        </div>
+        <div class="estimate-timeline-track ${estimateJobStatusLevel(job)}"><i style="width: ${estimateJobProgress(job)}%"></i></div>
+        ${pill(label(job.status), estimateJobStatusLevel(job))}
+      </div>`
+    )
+    .join("");
+}
+
+function renderEstimateJobRow(job) {
+  const statusLevel = estimateJobStatusLevel(job);
+  const canEdit = canManageEstimateJobs();
+  const canDelete = canDeleteEstimateJobs();
+  return `
+    <article class="row estimate-job-row">
+      <div class="estimate-job-main">
+        <div class="stack-line">
+          <strong>${escapeHtml(job.title)}</strong>
+          ${pill(label(job.status), statusLevel)}
+          ${pill(job.due_date || "без срока", job.status === "estimate_done" ? "success" : levelByDate(job.due_date))}
+        </div>
+        <div class="muted">${escapeHtml(job.customer_name || "Заказчик не указан")} · ${escapeHtml(job.project_title || "без карточки объекта")} · ${estimateJobTypeLabel(job.estimate_type)}</div>
+        <div class="muted">получено: ${formatDateRu(job.received_at) || "не указано"} · менеджер: ${escapeHtml(job.manager_name || "не назначен")} · сметчик: ${escapeHtml(job.estimator_name || "не назначен")}</div>
+        ${job.comment ? `<p>${escapeHtml(job.comment)}</p>` : ""}
+        ${job.result_comment ? `<p class="muted">Итог: ${escapeHtml(job.result_comment)}</p>` : ""}
+      </div>
+      <div class="estimate-job-actions">
+        ${canEdit ? `<button class="secondary tiny" type="button" data-edit-estimate-job="${job.id}">Редактировать</button>` : ""}
+        ${canEdit && job.status !== "estimate_in_work" && job.status !== "estimate_done" ? `<button class="secondary tiny" type="button" data-estimate-job-status="estimate_in_work" data-estimate-job-id="${job.id}">В работу</button>` : ""}
+        ${canEdit && job.status !== "estimate_done" ? `<button class="primary tiny" type="button" data-estimate-job-status="estimate_done" data-estimate-job-id="${job.id}">Сдано</button>` : ""}
+        ${canDelete ? `<button class="danger-button tiny" type="button" data-delete-estimate-job="${job.id}">Удалить</button>` : ""}
+      </div>
+    </article>`;
+}
+
+function fillEstimateJobForm(job = {}) {
+  const form = qs("#estimateJobForm");
+  form.reset();
+  form.elements.id.value = job.id || "";
+  form.elements.title.value = job.title || "";
+  form.elements.customer_name.value = job.customer_name || "";
+  form.elements.project_id.value = job.project_id || "";
+  const defaultManager = currentRoleBase() === "sales_manager" ? currentUserId() : usersByRole("sales_manager")[0]?.id;
+  const defaultEstimator = currentRoleBase() === "estimator" ? currentUserId() : usersByRole("estimator")[0]?.id;
+  form.elements.manager_id.value = job.manager_id || defaultManager || "";
+  form.elements.estimator_id.value = job.estimator_id || defaultEstimator || "";
+  form.elements.received_at.value = job.received_at || new Date().toISOString().slice(0, 10);
+  form.elements.due_date.value = job.due_date || "";
+  form.elements.estimate_type.value = job.estimate_type || "primary";
+  form.elements.priority.value = job.priority || "normal";
+  form.elements.source.value = job.source || "";
+  form.elements.comment.value = job.comment || "";
+}
+
+function openEstimateJobDialog(jobId = "") {
+  const job = state.estimateJobs.find((item) => Number(item.id) === Number(jobId)) || {};
+  fillEstimateJobForm(job);
+  qs("#estimateJobDialogTitle").textContent = job.id ? "Редактирование задания на смету" : "Новое задание на смету";
+  qs("#estimateJobDialog").showModal();
+}
+
 function uniqueMaterialBatches(materialRows = []) {
   const batches = new Map();
   materialRows.forEach((item) => {
@@ -1504,6 +1667,12 @@ async function renderDashboard() {
            <button class="metric clickable" data-task-filter="overdue" type="button"><span class="muted">Просрочено</span><strong>${taskStats(roleTasks).overdue}</strong><span>По открытым задачам</span></button>`
         : ""
     }
+    ${
+      canView("estimates")
+        ? `<button class="metric clickable" data-view-target="estimates" type="button"><span class="muted">Сметы в работе</span><strong>${summary.estimate_jobs_open || 0}</strong><span>Нужно рассчитать</span></button>
+           <button class="metric clickable" data-view-target="estimates" type="button"><span class="muted">Сметы просрочены</span><strong>${summary.estimate_jobs_overdue || 0}</strong><span>Срок уже прошел</span></button>`
+        : ""
+    }
   `;
   qs("#dashboardAttention").innerHTML = renderDashboardAttention(buildDashboardAttention(summary, roleTasks, materialRows));
   qs("#dashboardTaskStats").innerHTML = renderTaskStats(roleTasks);
@@ -1526,6 +1695,25 @@ async function renderDashboard() {
     key: "dashboardTasks",
   });
   initSortableZones(qs("#dashboardView"));
+}
+
+async function renderEstimateJobs() {
+  const statsNode = qs("#estimateJobStats");
+  const scheduleNode = qs("#estimateJobSchedule");
+  const rowsNode = qs("#estimateJobRows");
+  if (!statsNode || !scheduleNode || !rowsNode) return;
+  if (!canView("estimates")) {
+    statsNode.innerHTML = "";
+    scheduleNode.innerHTML = "";
+    rowsNode.innerHTML = "";
+    return;
+  }
+  const jobs = state.estimateJobs || [];
+  statsNode.innerHTML = renderEstimateJobStats(jobs);
+  scheduleNode.innerHTML = renderEstimateSchedule(jobs);
+  rowsNode.innerHTML = jobs.length
+    ? jobs.map(renderEstimateJobRow).join("")
+    : `<p class="muted">Сметных заданий пока нет. Нажмите “Добавить задание”, чтобы зафиксировать входящую смету в работе.</p>`;
 }
 
 async function renderNotifications() {
@@ -2978,6 +3166,8 @@ async function refreshLiveData() {
   await renderNotifications();
   if (state.view === "dashboard") {
     await renderDashboard();
+  } else if (state.view === "estimates") {
+    await renderEstimateJobs();
   } else if (state.view === "feedback") {
     await renderFeedback();
   }
@@ -3188,6 +3378,7 @@ function bindEvents() {
     if (state.selectedProjectId) await renderProjectDetail(state.selectedProjectId);
     state.selectedTaskProjectId = null;
     await renderTasks();
+    await renderEstimateJobs();
     await renderDashboard();
     await renderMaterials();
     fillMaterialProjectSelect();
@@ -3209,6 +3400,7 @@ function bindEvents() {
     if (userId && form.elements.reviewer_id) form.elements.reviewer_id.value = String(userId);
     qs("#taskDialog").showModal();
   });
+  qs("#newEstimateJobButton").addEventListener("click", () => openEstimateJobDialog());
   qs("#newMaterialButton").addEventListener("click", async () => {
     const form = qs("#materialForm");
     form.reset();
@@ -3418,6 +3610,48 @@ function bindEvents() {
     const taskActionButton = event.target.closest("[data-task-action]");
     if (taskActionButton) {
       await handleTaskAction(taskActionButton);
+      return;
+    }
+
+    const editEstimateJobButton = event.target.closest("[data-edit-estimate-job]");
+    if (editEstimateJobButton) {
+      openEstimateJobDialog(editEstimateJobButton.dataset.editEstimateJob);
+      return;
+    }
+
+    const estimateJobStatusButton = event.target.closest("[data-estimate-job-status]");
+    if (estimateJobStatusButton) {
+      const id = estimateJobStatusButton.dataset.estimateJobId;
+      const status = estimateJobStatusButton.dataset.estimateJobStatus;
+      const body = { status };
+      if (status === "estimate_done") {
+        const comment = window.prompt("Комментарий к сдаче сметы. Например: смета отправлена менеджеру, требуется проверка.");
+        if (comment === null) return;
+        body.result_comment = comment.trim();
+      }
+      await api(`/api/estimate-jobs/${id}/status`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      await loadCoreData();
+      await renderEstimateJobs();
+      await renderDashboard();
+      showToast(status === "estimate_done" ? "Смета отмечена как сданная" : "Сметное задание взято в работу");
+      return;
+    }
+
+    const deleteEstimateJobButton = event.target.closest("[data-delete-estimate-job]");
+    if (deleteEstimateJobButton) {
+      const confirmed = confirm("Удалить сметное задание? Это действие нельзя отменить.");
+      if (!confirmed) return;
+      await api(`/api/estimate-jobs/${deleteEstimateJobButton.dataset.deleteEstimateJob}/delete`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      await loadCoreData();
+      await renderEstimateJobs();
+      await renderDashboard();
+      showToast("Сметное задание удалено");
       return;
     }
 
@@ -3672,6 +3906,23 @@ function bindEvents() {
     qs('#taskForm input[name="creator_role"]').value = currentRoleBase();
     qs('#taskForm input[name="creator_id"]').value = currentUserId() || "";
     submitForm("taskDialog", "taskForm", "/api/tasks", "Задача создана");
+  });
+  qs("#estimateJobForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = qs("#estimateJobForm");
+    const payload = formToJson(form);
+    const id = payload.id;
+    delete payload.id;
+    await api(id ? `/api/estimate-jobs/${id}/update` : "/api/estimate-jobs", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    qs("#estimateJobDialog").close();
+    form.reset();
+    await loadCoreData();
+    await renderEstimateJobs();
+    await renderDashboard();
+    showToast(id ? "Сметное задание обновлено" : "Сметное задание создано");
   });
   qs("#materialForm").addEventListener("submit", (event) => {
     event.preventDefault();

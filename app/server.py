@@ -930,6 +930,8 @@ def notification_view_for_related_type(related_type: str | None) -> str:
         "projects": "projects",
         "work": "works",
         "works": "works",
+        "estimate_job": "estimates",
+        "estimate_jobs": "estimates",
     }.get(str(related_type or "").strip(), "dashboard")
 
 
@@ -1203,6 +1205,18 @@ def can_manage_feedback(account: dict | None) -> bool:
 
 
 def can_delete_feedback(account: dict | None) -> bool:
+    return account_role(account) in {"owner", "construction_manager"}
+
+
+def can_view_estimate_jobs(account: dict | None) -> bool:
+    return account_role(account) in {"owner", "construction_manager", "sales_manager", "estimator"}
+
+
+def can_manage_estimate_jobs(account: dict | None) -> bool:
+    return can_view_estimate_jobs(account)
+
+
+def can_delete_estimate_jobs(account: dict | None) -> bool:
     return account_role(account) in {"owner", "construction_manager"}
 
 
@@ -2001,8 +2015,39 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     "material_requests": db.execute("SELECT COUNT(*) AS count FROM material_requests WHERE procurement_status != 'closed'").fetchone()["count"],
                     "unresolved_overbudget": db.execute("SELECT COALESCE(SUM(amount), 0) AS total FROM variations WHERE financial_decision = 'not_decided'").fetchone()["total"],
                     "contracts_soon": db.execute("SELECT COUNT(*) AS count FROM contracts WHERE ends_at <= '2026-05-27' AND status = 'active'").fetchone()["count"],
+                    "estimate_jobs_open": db.execute("SELECT COUNT(*) AS count FROM estimate_jobs WHERE status IN ('estimate_new', 'estimate_in_work')").fetchone()["count"],
+                    "estimate_jobs_done": db.execute("SELECT COUNT(*) AS count FROM estimate_jobs WHERE status = 'estimate_done'").fetchone()["count"],
+                    "estimate_jobs_overdue": db.execute("SELECT COUNT(*) AS count FROM estimate_jobs WHERE status != 'estimate_done' AND due_date IS NOT NULL AND due_date < date('now')").fetchone()["count"],
                 }
                 json_response(self, payload)
+                return
+
+            if path == "/api/estimate-jobs":
+                if not can_view_estimate_jobs(account):
+                    json_response(self, [])
+                    return
+                rows = db.execute(
+                    """
+                    SELECT j.*, p.title AS project_title,
+                           manager.name AS manager_name,
+                           estimator.name AS estimator_name
+                    FROM estimate_jobs j
+                    LEFT JOIN projects p ON p.id = j.project_id
+                    LEFT JOIN users manager ON manager.id = j.manager_id
+                    LEFT JOIN users estimator ON estimator.id = j.estimator_id
+                    ORDER BY
+                        CASE j.status
+                            WHEN 'estimate_new' THEN 1
+                            WHEN 'estimate_in_work' THEN 2
+                            WHEN 'estimate_done' THEN 4
+                            ELSE 3
+                        END,
+                        j.due_date,
+                        j.received_at DESC,
+                        j.id DESC
+                    """
+                ).fetchall()
+                json_response(self, rows_to_dicts(rows))
                 return
 
             if path == "/api/projects":
@@ -2434,6 +2479,157 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     (status, str(data.get("comment") or ""), int(feedback_action.group(1))),
                 )
                 json_response(self, {"ok": True})
+                return
+
+            if path == "/api/estimate-jobs":
+                if not can_manage_estimate_jobs(account):
+                    json_response(self, {"error": "Forbidden"}, 403)
+                    return
+                require_fields(
+                    data,
+                    [
+                        ("title", "Название задания"),
+                        ("customer_name", "Заказчик"),
+                        ("manager_id", "Менеджер"),
+                        ("estimator_id", "Сметчик"),
+                        ("received_at", "Дата получения задания"),
+                        ("due_date", "Плановый срок готовности"),
+                    ],
+                )
+                status = data.get("status") or "estimate_new"
+                if status not in {"estimate_new", "estimate_in_work", "estimate_done", "estimate_hold"}:
+                    status = "estimate_new"
+                project_id = int(data.get("project_id") or 0) or None
+                cursor = db.execute(
+                    """
+                    INSERT INTO estimate_jobs (
+                        project_id, title, customer_name, manager_id, estimator_id,
+                        received_at, due_date, delivered_at, status, priority, source,
+                        estimate_type, comment, result_comment
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        project_id,
+                        data.get("title"),
+                        data.get("customer_name"),
+                        int(data.get("manager_id") or 0) or None,
+                        int(data.get("estimator_id") or 0) or None,
+                        data.get("received_at") or None,
+                        data.get("due_date") or None,
+                        data.get("delivered_at") or None,
+                        status,
+                        data.get("priority") or "normal",
+                        data.get("source") or "",
+                        data.get("estimate_type") or "",
+                        data.get("comment") or "",
+                        data.get("result_comment") or "",
+                    ),
+                )
+                estimate_job_id = int(cursor.lastrowid)
+                notify_users(
+                    db,
+                    {int(data.get("estimator_id") or 0), int(data.get("manager_id") or 0), user_id_by_role(db, "construction_manager"), user_id_by_role(db, "owner")} - {0, None},
+                    project_id,
+                    "Новое задание на смету",
+                    f"{data.get('title')} · срок: {data.get('due_date')}",
+                    "estimate_job",
+                    estimate_job_id,
+                )
+                json_response(self, {"id": estimate_job_id}, 201)
+                return
+
+            estimate_job_action = re.match(r"^/api/estimate-jobs/(\d+)/(update|status|delete)$", path)
+            if estimate_job_action:
+                estimate_job_id = int(estimate_job_action.group(1))
+                action = estimate_job_action.group(2)
+                row = db.execute("SELECT * FROM estimate_jobs WHERE id = ?", (estimate_job_id,)).fetchone()
+                if not row:
+                    json_response(self, {"error": "Estimate job not found"}, 404)
+                    return
+                if action == "delete":
+                    if not can_delete_estimate_jobs(account):
+                        json_response(self, {"error": "Forbidden"}, 403)
+                        return
+                    db.execute("DELETE FROM estimate_jobs WHERE id = ?", (estimate_job_id,))
+                    json_response(self, {"deleted": estimate_job_id})
+                    return
+                if not can_manage_estimate_jobs(account):
+                    json_response(self, {"error": "Forbidden"}, 403)
+                    return
+                if action == "update":
+                    require_fields(
+                        data,
+                        [
+                            ("title", "Название задания"),
+                            ("customer_name", "Заказчик"),
+                            ("manager_id", "Менеджер"),
+                            ("estimator_id", "Сметчик"),
+                            ("received_at", "Дата получения задания"),
+                            ("due_date", "Плановый срок готовности"),
+                        ],
+                    )
+                    db.execute(
+                        """
+                        UPDATE estimate_jobs
+                        SET project_id = ?,
+                            title = ?,
+                            customer_name = ?,
+                            manager_id = ?,
+                            estimator_id = ?,
+                            received_at = ?,
+                            due_date = ?,
+                            priority = ?,
+                            source = ?,
+                            estimate_type = ?,
+                            comment = ?,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (
+                            int(data.get("project_id") or 0) or None,
+                            data.get("title"),
+                            data.get("customer_name"),
+                            int(data.get("manager_id") or 0) or None,
+                            int(data.get("estimator_id") or 0) or None,
+                            data.get("received_at") or None,
+                            data.get("due_date") or None,
+                            data.get("priority") or "normal",
+                            data.get("source") or "",
+                            data.get("estimate_type") or "",
+                            data.get("comment") or "",
+                            estimate_job_id,
+                        ),
+                    )
+                    json_response(self, {"id": estimate_job_id})
+                    return
+                status = data.get("status") or row["status"]
+                if status not in {"estimate_new", "estimate_in_work", "estimate_done", "estimate_hold"}:
+                    json_response(self, {"error": "Unknown status"}, 400)
+                    return
+                delivered_at = data.get("delivered_at") or (date.today().isoformat() if status == "estimate_done" else None)
+                result_comment = data.get("result_comment") or row["result_comment"] or ""
+                db.execute(
+                    """
+                    UPDATE estimate_jobs
+                    SET status = ?,
+                        delivered_at = ?,
+                        result_comment = ?,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                    """,
+                    (status, delivered_at if status == "estimate_done" else None, result_comment, estimate_job_id),
+                )
+                notify_users(
+                    db,
+                    {row["manager_id"], row["estimator_id"], user_id_by_role(db, "construction_manager"), user_id_by_role(db, "owner")} - {None},
+                    row["project_id"],
+                    "Статус сметы изменен",
+                    f"{row['title']}: {status}",
+                    "estimate_job",
+                    estimate_job_id,
+                )
+                json_response(self, {"id": estimate_job_id, "status": status})
                 return
 
             if path == "/api/projects":

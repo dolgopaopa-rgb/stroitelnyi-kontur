@@ -1538,6 +1538,7 @@ h2 {
 }
 
 #locationsView .panel,
+#estimatesView .panel,
 #documentsView .panel,
 #feedbackView .panel,
 #variationsView .panel,
@@ -1547,6 +1548,7 @@ h2 {
 }
 
 #locationsView .panel-head,
+#estimatesView .panel-head,
 #documentsView .panel-head,
 #feedbackView .panel-head,
 #variationsView .panel-head,
@@ -1556,6 +1558,7 @@ h2 {
 }
 
 #locationsView .panel-head h2,
+#estimatesView .panel-head h2,
 #documentsView .panel-head h2,
 #feedbackView .panel-head h2,
 #variationsView .panel-head h2,
@@ -1566,6 +1569,7 @@ h2 {
 }
 
 #locationsView .row,
+#estimatesView .row,
 #documentsView .card,
 #feedbackView .row,
 #variationsView .row,
@@ -1577,6 +1581,7 @@ h2 {
 }
 
 #locationsView .row strong,
+#estimatesView .row strong,
 #documentsView .card strong,
 #feedbackView .row strong,
 #variationsView .row strong,
@@ -1587,6 +1592,7 @@ h2 {
 }
 
 #locationsView .muted,
+#estimatesView .muted,
 #documentsView .muted,
 #feedbackView .muted,
 #variationsView .muted,
@@ -1597,6 +1603,7 @@ h2 {
 }
 
 #locationsView .pill,
+#estimatesView .pill,
 #documentsView .pill,
 #feedbackView .pill,
 #variationsView .pill,
@@ -1928,6 +1935,101 @@ h2 {
 
 .task-stat.danger .stat-bar i {
   background: var(--danger);
+}
+
+.estimate-crm-panel {
+  display: grid;
+  gap: 10px;
+}
+
+#estimatesView .task-stats {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.estimate-schedule {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 2px;
+}
+
+.estimate-timeline-row {
+  display: grid;
+  grid-template-columns: minmax(190px, 0.9fr) minmax(180px, 1.2fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.estimate-timeline-main,
+.estimate-job-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.estimate-timeline-main strong,
+.estimate-job-main strong {
+  font-size: 13px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.estimate-timeline-main span,
+.estimate-job-main .muted,
+.estimate-job-main p {
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.estimate-timeline-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.estimate-timeline-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--brand);
+}
+
+.estimate-timeline-track.warning i {
+  background: var(--warning);
+}
+
+.estimate-timeline-track.blue i {
+  background: var(--blue);
+}
+
+.estimate-timeline-track.success i {
+  background: var(--success);
+}
+
+.estimate-timeline-track.danger i {
+  background: var(--danger);
+}
+
+.estimate-job-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.estimate-job-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.estimate-job-actions .tiny {
+  min-height: 28px;
+  padding: 5px 9px;
+  font-size: 12px;
 }
 
 #dashboardView .panel {
@@ -2365,6 +2467,8 @@ textarea {
   .layout-two,
   .split,
   .task-workspace,
+  .estimate-timeline-row,
+  .estimate-job-row,
   .detail-grid {
     grid-template-columns: 1fr;
   }
@@ -2734,6 +2838,7 @@ textarea {
   #projectsView .panel,
   #worksView .panel,
   #materialsView .panel,
+  #estimatesView .panel,
   #dashboardView .panel,
   #tasksView .panel {
     padding: 10px;
@@ -2748,6 +2853,7 @@ textarea {
   #projectsView .panel-head h2,
   #worksView .panel-head h2,
   #materialsView .panel-head h2,
+  #estimatesView .panel-head h2,
   #dashboardView .panel-head h2,
   #tasksView .panel-head h2 {
     font-size: 17px;
@@ -2819,11 +2925,16 @@ textarea {
     width: 100%;
   }
 
+  .estimate-job-actions {
+    justify-content: flex-start;
+  }
+
   #projectsView .split,
   #tasksView .task-workspace,
   #materialsView .materials-layout,
   #worksView .works-layout,
   #locationsView .locations-layout,
+  #estimatesView .estimate-job-row,
   #contractsView .layout-two {
     grid-template-columns: minmax(0, 1fr);
   }
