@@ -256,12 +256,14 @@ def configured_access_accounts() -> list[dict]:
 
 
 def authenticate_access_account(login: str, supplied_password: str) -> dict | None:
+    normalized_login = login.strip().casefold()
+    normalized_password = supplied_password.strip()
     for account in configured_access_accounts():
-        if login == account["login"] and supplied_password == account["password"]:
+        if normalized_login == account["login"].casefold() and normalized_password == account["password"]:
             return account
     username = os.environ.get("APP_BASIC_AUTH_USER")
     password = os.environ.get("APP_BASIC_AUTH_PASSWORD")
-    if username and password and login == username and supplied_password == password:
+    if username and password and normalized_login == username.casefold() and normalized_password == password:
         return {"login": login, "user_id": 1, "role": "owner", "can_switch_role": True}
     return None
 
@@ -1842,7 +1844,9 @@ class AppHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", content_types.get(file_path.suffix, "application/octet-stream"))
         maybe_send_session_cookie(self)
-        if file_path.name == "sw.js":
+        if file_path.name == "login.html":
+            self.send_header("Cache-Control", "no-store")
+        elif file_path.name == "sw.js":
             self.send_header("Cache-Control", "no-cache")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
@@ -1850,7 +1854,7 @@ class AppHandler(BaseHTTPRequestHandler):
 
     def handle_login(self, data: dict) -> None:
         login = str(data.get("login") or data.get("username") or "").strip()
-        password = str(data.get("password") or "")
+        password = str(data.get("password") or "").strip()
         account = authenticate_access_account(login, password)
         if not account:
             json_response(self, {"error": "Логин или пароль не подошли"}, 401)
