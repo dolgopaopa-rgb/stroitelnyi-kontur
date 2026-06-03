@@ -229,6 +229,12 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
             "Не держать сметы в голове и чатах: у задания должны быть дата получения, срок, сметчик, менеджер и статус.",
         ),
         (
+            "Estimate return and photo carousel scenario",
+            "Сметчик может вернуть неполное задание менеджеру с причиной, а фото задания открываются каруселью на телефоне.",
+            ["estimate_returned", "return_comment", "canReturnEstimateJob", "Укажите причину возврата задания менеджеру", "estimateImageDialog", "openEstimateGallery", "moveEstimateGallery", "data-estimate-gallery-file", "isEstimateImageFile"],
+            "Не убирать возврат задания и карусель: без них сметчик снова зависнет на неполных исходных данных и отдельных фото.",
+        ),
+        (
             "Restricted topbar controls scenario",
             "Обычные участники не видят переключатель ролей и кнопку обновления, но видят выход.",
             ["syncTopbarAccess", "roleSwitcher.hidden = !canUseRoleTools", "refreshButton.hidden = !canUseRoleTools", "logoutButton.hidden = false"],

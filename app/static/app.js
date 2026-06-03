@@ -28,6 +28,7 @@ const state = {
   expandedLists: {},
   selectedWorkProjectId: initialProjectId,
   openWorkStages: {},
+  estimateGallery: { jobId: null, files: [], index: 0 },
 };
 
 const PROJECT_FORM_DRAFT_KEY = "projectFormDraft:v1";
@@ -118,6 +119,7 @@ const statusLabels = {
   estimate_in_work: "В расчете",
   estimate_done: "Смета сдана",
   estimate_hold: "Пауза",
+  estimate_returned: "Возвращено менеджеру",
 };
 
 function qs(selector) {
@@ -268,7 +270,7 @@ function canEditEstimateJob(job) {
   const role = currentRoleBase();
   if (["owner", "construction_manager"].includes(role)) return true;
   if (role === "sales_manager") return isOwnEstimateJob(job, "manager_id") && job.status !== "estimate_done";
-  if (role === "estimator") return isOwnEstimateJob(job, "estimator_id") && job.status !== "estimate_done";
+  if (role === "estimator") return isOwnEstimateJob(job, "estimator_id") && !["estimate_done", "estimate_returned"].includes(job.status);
   return false;
 }
 
@@ -281,6 +283,12 @@ function canStartEstimateJob(job) {
 function canFinishEstimateJob(job) {
   const role = currentRoleBase();
   if (job.status !== "estimate_in_work") return false;
+  return ["owner", "construction_manager"].includes(role) || (role === "estimator" && isOwnEstimateJob(job, "estimator_id"));
+}
+
+function canReturnEstimateJob(job) {
+  const role = currentRoleBase();
+  if (["estimate_done", "estimate_returned"].includes(job.status)) return false;
   return ["owner", "construction_manager"].includes(role) || (role === "estimator" && isOwnEstimateJob(job, "estimator_id"));
 }
 
@@ -1447,6 +1455,7 @@ function estimateJobStatusLevel(job) {
     estimate_new: "warning",
     estimate_in_work: "blue",
     estimate_hold: "warning",
+    estimate_returned: "danger",
   }[job.status] || "";
 }
 
@@ -1466,6 +1475,7 @@ function estimateJobStats(jobs) {
     done: jobs.filter((job) => job.status === "estimate_done").length,
     overdue: jobs.filter((job) => job.status !== "estimate_done" && levelByDate(job.due_date) === "danger").length,
     hold: jobs.filter((job) => job.status === "estimate_hold").length,
+    returned: jobs.filter((job) => job.status === "estimate_returned").length,
   };
 }
 
@@ -1478,6 +1488,7 @@ function renderEstimateJobStats(jobs) {
     ["Просрочено", stats.overdue, "danger"],
     ["Сдано", stats.done, "success"],
     ["Пауза", stats.hold, "warning"],
+    ["Возврат", stats.returned, "danger"],
   ];
   return `
     <div class="task-stats">
@@ -1523,20 +1534,82 @@ function renderEstimateSchedule(jobs) {
     .join("");
 }
 
-function renderEstimateJobFiles(files = []) {
+function estimateFileDownloadUrl(file) {
+  return `/api/estimate-job-files/${encodeURIComponent(file.id)}/download`;
+}
+
+function isEstimateImageFile(file) {
+  const mime = String(file?.mime_type || "").toLowerCase();
+  const fileName = String(file?.file_name || file?.title || "").toLowerCase();
+  return mime.startsWith("image/") || /\.(jpe?g|png|webp|gif|bmp|heic|heif)$/i.test(fileName);
+}
+
+function renderEstimateJobFiles(files = [], jobId = "") {
   if (!Array.isArray(files) || !files.length) return "";
   return `
     <div class="estimate-job-files">
       ${files
         .map(
-          (file) => `
-          <a href="/api/estimate-job-files/${file.id}/download" target="_blank" rel="noopener noreferrer">
+          (file) => {
+            const title = escapeHtml(file.title || file.file_name || "Файл");
+            const fileName = escapeHtml(file.file_name || "");
+            const href = escapeAttr(estimateFileDownloadUrl(file));
+            if (isEstimateImageFile(file)) {
+              return `
+          <button class="estimate-file-button" type="button" data-estimate-gallery-job="${escapeAttr(jobId)}" data-estimate-gallery-file="${escapeAttr(file.id)}">
+            <strong>${title}</strong>
+            <span>${fileName}</span>
+          </button>`;
+            }
+            return `
+          <a href="${href}" target="_blank" rel="noopener noreferrer">
             <strong>${escapeHtml(file.title || file.file_name || "Файл")}</strong>
             <span>${escapeHtml(file.file_name || "")}</span>
-          </a>`
+          </a>`;
+          }
         )
         .join("")}
     </div>`;
+}
+
+function renderEstimateGallery() {
+  const gallery = state.estimateGallery || { files: [], index: 0 };
+  const files = gallery.files || [];
+  const file = files[gallery.index];
+  const image = qs("#estimateImagePreview");
+  const titleNode = qs("#estimateImageTitle");
+  const counterNode = qs("#estimateImageCounter");
+  const downloadNode = qs("#estimateImageDownload");
+  const prevButton = qs("#estimateImagePrev");
+  const nextButton = qs("#estimateImageNext");
+  if (!file || !image || !titleNode || !counterNode || !downloadNode) return;
+  const href = estimateFileDownloadUrl(file);
+  image.src = href;
+  image.alt = file.title || file.file_name || "Фото задания";
+  titleNode.textContent = file.title || file.file_name || "Фото задания";
+  counterNode.textContent = `${gallery.index + 1} из ${files.length}`;
+  downloadNode.href = href;
+  prevButton.disabled = files.length < 2;
+  nextButton.disabled = files.length < 2;
+}
+
+function openEstimateGallery(jobId, fileId) {
+  const job = state.estimateJobs.find((item) => Number(item.id) === Number(jobId));
+  const files = (job?.files || []).filter(isEstimateImageFile);
+  if (!files.length) return;
+  const index = Math.max(0, files.findIndex((file) => Number(file.id) === Number(fileId)));
+  state.estimateGallery = { jobId: Number(jobId), files, index };
+  renderEstimateGallery();
+  qs("#estimateImageDialog").showModal();
+}
+
+function moveEstimateGallery(direction) {
+  const gallery = state.estimateGallery || { files: [], index: 0 };
+  const files = gallery.files || [];
+  if (files.length < 2) return;
+  gallery.index = (gallery.index + direction + files.length) % files.length;
+  state.estimateGallery = gallery;
+  renderEstimateGallery();
 }
 
 function renderEstimateJobRow(job) {
@@ -1544,6 +1617,7 @@ function renderEstimateJobRow(job) {
   const canEdit = canEditEstimateJob(job);
   const canStart = canStartEstimateJob(job);
   const canFinish = canFinishEstimateJob(job);
+  const canReturn = canReturnEstimateJob(job);
   const canDelete = canDeleteEstimateJobs();
   return `
     <article class="row estimate-job-row">
@@ -1556,12 +1630,14 @@ function renderEstimateJobRow(job) {
         <div class="muted">${escapeHtml(job.customer_name || "Заказчик не указан")} · ${escapeHtml(job.project_title || "без карточки объекта")} · ${estimateJobTypeLabel(job.estimate_type)}</div>
         <div class="muted">получено: ${formatDateRu(job.received_at) || "не указано"} · менеджер: ${escapeHtml(job.manager_name || "не назначен")} · сметчик: ${escapeHtml(job.estimator_name || "не назначен")}</div>
         ${job.comment ? `<p>${escapeHtml(job.comment)}</p>` : ""}
+        ${job.return_comment ? `<p class="muted danger-text">Возврат менеджеру: ${escapeHtml(job.return_comment)}</p>` : ""}
         ${job.result_comment ? `<p class="muted">Итог: ${escapeHtml(job.result_comment)}</p>` : ""}
-        ${renderEstimateJobFiles(job.files)}
+        ${renderEstimateJobFiles(job.files, job.id)}
       </div>
       <div class="estimate-job-actions">
         ${canEdit ? `<button class="secondary tiny" type="button" data-edit-estimate-job="${job.id}">Редактировать</button>` : ""}
         ${canStart ? `<button class="secondary tiny" type="button" data-estimate-job-status="estimate_in_work" data-estimate-job-id="${job.id}">В работу</button>` : ""}
+        ${canReturn ? `<button class="secondary tiny danger-outline" type="button" data-estimate-job-status="estimate_returned" data-estimate-job-id="${job.id}">Вернуть менеджеру</button>` : ""}
         ${canFinish ? `<button class="primary tiny" type="button" data-estimate-job-status="estimate_done" data-estimate-job-id="${job.id}">Сдано</button>` : ""}
         ${canDelete ? `<button class="danger-button tiny" type="button" data-delete-estimate-job="${job.id}">Удалить</button>` : ""}
       </div>
@@ -3494,6 +3570,28 @@ function bindEvents() {
 
   qsa("[data-close]").forEach((button) => button.addEventListener("click", () => qs(`#${button.dataset.close}`).close()));
 
+  qs("#estimateImagePrev")?.addEventListener("click", () => moveEstimateGallery(-1));
+  qs("#estimateImageNext")?.addEventListener("click", () => moveEstimateGallery(1));
+  let estimateGalleryTouchX = null;
+  qs("#estimateImageStage")?.addEventListener(
+    "touchstart",
+    (event) => {
+      estimateGalleryTouchX = event.changedTouches?.[0]?.clientX ?? null;
+    },
+    { passive: true }
+  );
+  qs("#estimateImageStage")?.addEventListener(
+    "touchend",
+    (event) => {
+      if (estimateGalleryTouchX === null) return;
+      const delta = (event.changedTouches?.[0]?.clientX ?? estimateGalleryTouchX) - estimateGalleryTouchX;
+      estimateGalleryTouchX = null;
+      if (Math.abs(delta) < 45) return;
+      moveEstimateGallery(delta < 0 ? 1 : -1);
+    },
+    { passive: true }
+  );
+
   qs('#materialForm select[name="project_id"]').addEventListener("change", loadMaterialEstimatePicker);
   qs("#loadMaterialEstimateButton").addEventListener("click", loadMaterialEstimatePicker);
   qs("#addExtraMaterialButton").addEventListener("click", () => addExtraMaterialRow());
@@ -3675,6 +3773,12 @@ function bindEvents() {
       return;
     }
 
+    const estimateGalleryButton = event.target.closest("[data-estimate-gallery-file]");
+    if (estimateGalleryButton) {
+      openEstimateGallery(estimateGalleryButton.dataset.estimateGalleryJob, estimateGalleryButton.dataset.estimateGalleryFile);
+      return;
+    }
+
     const estimateJobStatusButton = event.target.closest("[data-estimate-job-status]");
     if (estimateJobStatusButton) {
       const id = estimateJobStatusButton.dataset.estimateJobId;
@@ -3685,6 +3789,15 @@ function bindEvents() {
         if (comment === null) return;
         body.result_comment = comment.trim();
       }
+      if (status === "estimate_returned") {
+        const comment = window.prompt("Что менеджеру нужно исправить или добавить в задании?");
+        if (comment === null) return;
+        if (!comment.trim()) {
+          showToast("Укажите причину возврата задания менеджеру");
+          return;
+        }
+        body.return_comment = comment.trim();
+      }
       await api(`/api/estimate-jobs/${id}/status`, {
         method: "POST",
         body: JSON.stringify(body),
@@ -3692,7 +3805,12 @@ function bindEvents() {
       await loadCoreData();
       await renderEstimateJobs();
       await renderDashboard();
-      showToast(status === "estimate_done" ? "Смета отмечена как сданная" : "Сметное задание взято в работу");
+      const statusToast = {
+        estimate_done: "Смета отмечена как сданная",
+        estimate_returned: "Задание возвращено менеджеру",
+        estimate_in_work: "Сметное задание взято в работу",
+      };
+      showToast(statusToast[status] || "Статус сметного задания изменен");
       return;
     }
 
