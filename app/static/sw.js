@@ -1,9 +1,9 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260603-estimate-return-gallery";
+const CACHE_NAME = "stroitelnyi-kontur-20260603-feedback-status-button";
 const CORE_ASSETS = [
   "/",
-  "/static/styles.css?v=20260603-estimate-return-gallery",
-  "/static/app.js?v=20260603-estimate-return-gallery",
-  "/static/manifest.webmanifest?v=20260603-estimate-return-gallery",
+  "/static/styles.css?v=20260603-feedback-status-button",
+  "/static/app.js?v=20260603-feedback-status-button",
+  "/static/manifest.webmanifest?v=20260603-feedback-status-button",
   "/static/assets/g2-logo-192.png",
   "/static/assets/g2-logo-512.png"
 ];

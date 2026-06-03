@@ -3077,6 +3077,22 @@ function renderFeedbackAttachments(attachments = []) {
     </div>`;
 }
 
+function feedbackStatusButton(item, status, title) {
+  const isActive = item.status === status;
+  const activeLabel = {
+    in_work: "В работе",
+    done: "Готово",
+  }[status];
+  return `
+    <button
+      class="secondary tiny feedback-status-button ${isActive ? "is-active" : ""}"
+      type="button"
+      data-feedback-status="${status}"
+      data-feedback-id="${item.id}"
+      ${isActive ? "disabled" : ""}
+    >${isActive && activeLabel ? activeLabel : title}</button>`;
+}
+
 async function renderFeedback() {
   const rowsNode = qs("#feedbackRows");
   const statsNode = qs("#feedbackStats");
@@ -3138,8 +3154,8 @@ async function renderFeedback() {
               ${item.decision_comment ? `<div class="muted">Комментарий: ${escapeHtml(item.decision_comment)}</div>` : ""}
             </div>
             <div class="feedback-actions">
-              <button class="secondary tiny" type="button" data-feedback-status="in_work" data-feedback-id="${item.id}">В работу</button>
-              <button class="secondary tiny" type="button" data-feedback-status="done" data-feedback-id="${item.id}">Готово</button>
+              ${feedbackStatusButton(item, "in_work", "В работу")}
+              ${feedbackStatusButton(item, "done", "Готово")}
               ${canDeleteFeedback() ? `<button class="danger-button tiny" type="button" data-feedback-delete="${item.id}">Удалить</button>` : ""}
             </div>
           </article>`;
@@ -3714,12 +3730,24 @@ function bindEvents() {
 
     const feedbackStatusButton = event.target.closest("[data-feedback-status]");
     if (feedbackStatusButton) {
-      await api(`/api/feedback/${feedbackStatusButton.dataset.feedbackId}/status`, {
-        method: "POST",
-        body: JSON.stringify({ status: feedbackStatusButton.dataset.feedbackStatus, comment: "" }),
-      });
-      await renderFeedback();
-      showToast("Статус обратной связи обновлен");
+      const nextStatus = feedbackStatusButton.dataset.feedbackStatus;
+      const originalText = feedbackStatusButton.textContent;
+      feedbackStatusButton.disabled = true;
+      feedbackStatusButton.classList.add("is-pending");
+      feedbackStatusButton.textContent = "Отправляю...";
+      try {
+        await api(`/api/feedback/${feedbackStatusButton.dataset.feedbackId}/status`, {
+          method: "POST",
+          body: JSON.stringify({ status: nextStatus, comment: "" }),
+        });
+        await renderFeedback();
+        showToast(nextStatus === "in_work" ? "Замечание взято в работу" : "Замечание отмечено готовым");
+      } catch (error) {
+        feedbackStatusButton.disabled = false;
+        feedbackStatusButton.classList.remove("is-pending");
+        feedbackStatusButton.textContent = originalText;
+        showToast(error.message || "Не удалось обновить статус");
+      }
       return;
     }
 

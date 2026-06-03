@@ -1689,6 +1689,30 @@ h2 {
   gap: 6px;
 }
 
+.feedback-status-button {
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+}
+
+.feedback-status-button.is-active {
+  color: #0d463f;
+  border-color: rgba(32, 122, 111, 0.38);
+  background: #dff1ee;
+  opacity: 1;
+}
+
+.feedback-status-button.is-active[data-feedback-status="done"] {
+  color: #13613b;
+  border-color: rgba(43, 134, 83, 0.35);
+  background: #e1f4e8;
+}
+
+.feedback-status-button.is-pending {
+  color: #6b4b00;
+  border-color: rgba(176, 119, 12, 0.36);
+  background: #fff3cf;
+  cursor: wait;
+}
+
 .max-bindings-panel {
   margin-top: 12px;
 }
