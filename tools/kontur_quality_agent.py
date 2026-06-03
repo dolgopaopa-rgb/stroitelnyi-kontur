@@ -207,7 +207,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
     check_static_contract(
         checks,
         "Login page contract",
-        has_all(login_html, ['id="loginForm"', 'id="passwordInput"', 'id="passwordToggle"', "/api/login", "type=\"password\""])
+        has_all(login_html, ['id="loginForm"', 'id="passwordInput"', 'id="passwordToggle"', 'id="passwordPaste"', 'id="passwordClear"', "navigator.clipboard?.readText", "/api/login", "type=\"password\""])
         and has_all(server_text, ["authenticate_access_account", 'parsed.path == "/api/login"', 'serve_static("login.html")', "login_location(next_path)"]),
         "Страница входа, кнопка видимости пароля и серверный endpoint логина найдены."
         if login_html

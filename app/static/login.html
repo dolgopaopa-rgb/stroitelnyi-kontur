@@ -86,12 +86,13 @@
 
       input {
         width: 100%;
-        min-height: 44px;
+        min-height: 48px;
         border: 1px solid var(--line);
         border-radius: 8px;
         color: var(--text);
         padding: 0 12px;
         background: #fff;
+        font-size: 16px;
       }
 
       input:focus {
@@ -100,27 +101,27 @@
       }
 
       .password-field {
-        position: relative;
+        display: grid;
+        gap: 8px;
       }
 
-      .password-field input {
-        padding-right: 90px;
+      .password-tools {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
       }
 
-      .password-toggle {
-        position: absolute;
-        top: 50%;
-        right: 6px;
-        min-height: 32px;
-        border: 1px solid transparent;
+      .password-tool {
+        min-height: 38px;
+        border: 1px solid var(--line);
         border-radius: 7px;
-        background: transparent;
+        background: #fff;
         color: var(--brand);
         padding: 0 8px;
-        transform: translateY(-50%);
+        white-space: nowrap;
       }
 
-      .password-toggle:focus {
+      .password-tool:focus {
         outline: 3px solid rgba(34, 111, 104, 0.14);
       }
 
@@ -172,6 +173,10 @@
           padding: 20px;
           box-shadow: none;
         }
+
+        .password-tools {
+          grid-template-columns: 1fr;
+        }
       }
     </style>
   </head>
@@ -186,14 +191,28 @@
         <form id="loginForm" novalidate>
           <label>
             Логин
-            <input name="login" autocomplete="username" required />
+            <input name="login" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text" required />
           </label>
 
           <label>
             Пароль
             <span class="password-field">
-              <input id="passwordInput" name="password" type="password" autocomplete="current-password" required />
-              <button class="password-toggle" id="passwordToggle" type="button" aria-controls="passwordInput" aria-pressed="false">Показать</button>
+              <input
+                id="passwordInput"
+                name="password"
+                type="password"
+                autocomplete="current-password"
+                autocapitalize="none"
+                autocorrect="off"
+                spellcheck="false"
+                inputmode="text"
+                required
+              />
+              <span class="password-tools" aria-label="Действия с паролем">
+                <button class="password-tool" id="passwordToggle" type="button" aria-controls="passwordInput" aria-pressed="false">Показать пароль</button>
+                <button class="password-tool" id="passwordPaste" type="button">Вставить пароль</button>
+                <button class="password-tool" id="passwordClear" type="button">Очистить</button>
+              </span>
             </span>
           </label>
 
@@ -209,6 +228,8 @@
       const form = document.querySelector("#loginForm");
       const passwordInput = document.querySelector("#passwordInput");
       const passwordToggle = document.querySelector("#passwordToggle");
+      const passwordPaste = document.querySelector("#passwordPaste");
+      const passwordClear = document.querySelector("#passwordClear");
       const status = document.querySelector("#loginStatus");
       const submitButton = form.querySelector('button[type="submit"]');
 
@@ -220,16 +241,45 @@
       passwordToggle.addEventListener("click", () => {
         const isHidden = passwordInput.type === "password";
         passwordInput.type = isHidden ? "text" : "password";
-        passwordToggle.textContent = isHidden ? "Скрыть" : "Показать";
+        passwordToggle.textContent = isHidden ? "Скрыть пароль" : "Показать пароль";
         passwordToggle.setAttribute("aria-pressed", String(isHidden));
         passwordInput.focus();
+      });
+
+      passwordPaste.addEventListener("click", async () => {
+        status.textContent = "";
+        status.className = "status";
+        passwordInput.focus();
+        try {
+          if (!navigator.clipboard?.readText) {
+            throw new Error("clipboard_unavailable");
+          }
+          const text = await navigator.clipboard.readText();
+          if (!text) {
+            throw new Error("clipboard_empty");
+          }
+          passwordInput.value = text.trim();
+          passwordInput.dispatchEvent(new Event("input", { bubbles: true }));
+          status.textContent = "Пароль вставлен. Можно нажать «Показать пароль» и проверить.";
+          status.className = "status info";
+        } catch (error) {
+          status.textContent = "Если пароль не вставился автоматически, удерживайте палец в поле пароля и выберите «Вставить».";
+          status.className = "status info";
+        }
+      });
+
+      passwordClear.addEventListener("click", () => {
+        passwordInput.value = "";
+        passwordInput.focus();
+        status.textContent = "";
+        status.className = "status";
       });
 
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
         const data = new FormData(form);
         const login = String(data.get("login") || "").trim();
-        const password = String(data.get("password") || "");
+        const password = String(data.get("password") || "").trim();
         if (!login || !password) {
           status.textContent = "Введите логин и пароль.";
           status.className = "status error";

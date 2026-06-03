@@ -1,9 +1,9 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260603-mobile-login-password-toggle";
+const CACHE_NAME = "stroitelnyi-kontur-20260603-mobile-login-paste";
 const CORE_ASSETS = [
   "/",
-  "/static/styles.css?v=20260603-mobile-login-password-toggle",
-  "/static/app.js?v=20260603-mobile-login-password-toggle",
-  "/static/manifest.webmanifest?v=20260603-mobile-login-password-toggle",
+  "/static/styles.css?v=20260603-mobile-login-paste",
+  "/static/app.js?v=20260603-mobile-login-paste",
+  "/static/manifest.webmanifest?v=20260603-mobile-login-paste",
   "/static/assets/g2-logo-192.png",
   "/static/assets/g2-logo-512.png"
 ];
