@@ -1,9 +1,9 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260603-feedback-status-button";
+const CACHE_NAME = "stroitelnyi-kontur-20260603-mobile-login-password-toggle";
 const CORE_ASSETS = [
   "/",
-  "/static/styles.css?v=20260603-feedback-status-button",
-  "/static/app.js?v=20260603-feedback-status-button",
-  "/static/manifest.webmanifest?v=20260603-feedback-status-button",
+  "/static/styles.css?v=20260603-mobile-login-password-toggle",
+  "/static/app.js?v=20260603-mobile-login-password-toggle",
+  "/static/manifest.webmanifest?v=20260603-mobile-login-password-toggle",
   "/static/assets/g2-logo-192.png",
   "/static/assets/g2-logo-512.png"
 ];
@@ -29,13 +29,13 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
 
   const url = new URL(request.url);
-  if (url.pathname.startsWith("/api/") || url.pathname === "/logout") return;
+  if (url.pathname.startsWith("/api/") || url.pathname === "/logout" || url.pathname === "/login") return;
 
   if (request.mode === "navigate") {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          if (response.ok) {
+          if (response.ok && new URL(response.url).pathname !== "/login") {
             const copy = response.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put("/", copy));
           }

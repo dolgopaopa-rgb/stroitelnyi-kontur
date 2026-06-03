@@ -116,6 +116,7 @@ def check_static_contract(
 
 def check_repository_ui_contracts(checks: list[Check], recommendations: list[Recommendation]) -> None:
     html = repository_file("app/static/index.html")
+    login_html = repository_file("app/static/login.html")
     app_text = repository_file("app/static/app.js")
     css_text = repository_file("app/static/styles.css")
     sw_text = repository_file("app/static/sw.js")
@@ -201,6 +202,17 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         if not missing_forms and not missing_form_handlers
         else f"Нет форм: {', '.join(missing_forms) or 'нет'}; нет submit-обработчиков: {', '.join(missing_form_handlers) or 'нет'}.",
         "Восстановить submit-обработчик, чтобы форма не выглядела как сохраненная, когда на самом деле ничего не произошло.",
+    )
+
+    check_static_contract(
+        checks,
+        "Login page contract",
+        has_all(login_html, ['id="loginForm"', 'id="passwordInput"', 'id="passwordToggle"', "/api/login", "type=\"password\""])
+        and has_all(server_text, ["authenticate_access_account", 'parsed.path == "/api/login"', 'serve_static("login.html")', "login_location(next_path)"]),
+        "Страница входа, кнопка видимости пароля и серверный endpoint логина найдены."
+        if login_html
+        else "Файл app/static/login.html не найден.",
+        "Для мобильного входа нужна собственная форма логина с переключателем видимости пароля и cookie-сессией.",
     )
 
     scenario_contracts = [
@@ -536,6 +548,7 @@ def run_checks(base_url: str, username: str | None, password: str | None) -> tup
 
     status, root_headers, body = fetch(base_url, headers=headers)
     html = text_from(body)
+    is_login_page = 'id="loginForm"' in html and "/api/login" in html
 
     if status == 401 and not headers:
         add(
@@ -547,8 +560,22 @@ def run_checks(base_url: str, username: str | None, password: str | None) -> tup
         )
         return checks, recommendations
 
+    if status == 200 and is_login_page and not headers:
+        add(
+            checks,
+            "Public access",
+            "OK",
+            "Боевой сайт закрыт собственной страницей входа. Это нормально для внутреннего сервиса.",
+            "Добавить GitHub Secrets KONTUR_BASIC_USER и KONTUR_BASIC_PASSWORD для глубокой проверки API.",
+        )
+        return checks, recommendations
+
     if status == 401 and headers:
         add(checks, "Authorization", "FAIL", "Логин и пароль переданы, но сайт вернул HTTP 401.", "Проверить GitHub Secrets.")
+        return checks, recommendations
+
+    if status == 200 and is_login_page and headers:
+        add(checks, "Authorization", "FAIL", "Логин и пароль переданы, но сайт показал страницу входа.", "Проверить GitHub Secrets или серверный APP_ACCESS_ACCOUNTS.")
         return checks, recommendations
 
     if status != 200:

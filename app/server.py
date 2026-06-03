@@ -44,6 +44,48 @@ def json_response(handler: BaseHTTPRequestHandler, payload: object, status: int 
     handler.wfile.write(body)
 
 
+def redirect_response(handler: BaseHTTPRequestHandler, location: str, status: int = 303, cookie: str | None = None) -> None:
+    handler.send_response(status)
+    handler.send_header("Location", location)
+    handler.send_header("Cache-Control", "no-store")
+    if cookie:
+        handler.send_header("Set-Cookie", cookie)
+    else:
+        maybe_send_session_cookie(handler)
+    handler.send_header("Content-Length", "0")
+    handler.end_headers()
+
+
+def api_auth_required_response(handler: BaseHTTPRequestHandler) -> None:
+    body = json.dumps({"error": "Требуется вход", "login_url": "/login"}, ensure_ascii=False).encode("utf-8")
+    handler.send_response(401)
+    handler.send_header("Content-Type", "application/json; charset=utf-8")
+    handler.send_header("Cache-Control", "no-store")
+    if request_cookie(handler, SESSION_COOKIE_NAME):
+        handler.send_header("Set-Cookie", expired_session_cookie(handler))
+    handler.send_header("Content-Length", str(len(body)))
+    handler.end_headers()
+    handler.wfile.write(body)
+
+
+def safe_next_path(value: str) -> str:
+    parsed = urlparse(value or "/")
+    if parsed.scheme or parsed.netloc:
+        return "/"
+    path = parsed.path or "/"
+    if not path.startswith("/") or path.startswith("//") or "\\" in path:
+        return "/"
+    query = f"?{parsed.query}" if parsed.query else ""
+    return f"{path}{query}"
+
+
+def login_location(next_path: str = "/") -> str:
+    next_path = safe_next_path(next_path)
+    if next_path == "/":
+        return "/login"
+    return "/login?" + urlencode({"next": next_path})
+
+
 def is_authorized(handler: BaseHTTPRequestHandler) -> bool:
     return current_access_account(handler) is not None
 
@@ -58,6 +100,9 @@ def auth_required_response(handler: BaseHTTPRequestHandler) -> None:
 
 
 def logout_response(handler: BaseHTTPRequestHandler) -> None:
+    if not basic_auth_pair(handler):
+        redirect_response(handler, "/login?logged_out=1", cookie=expired_session_cookie(handler))
+        return
     handler.send_response(401)
     handler.send_header("WWW-Authenticate", 'Basic realm="Stroitelnyi Kontur Logout"')
     handler.send_header("Content-Type", "text/plain; charset=utf-8")
@@ -210,6 +255,17 @@ def configured_access_accounts() -> list[dict]:
     return accounts
 
 
+def authenticate_access_account(login: str, supplied_password: str) -> dict | None:
+    for account in configured_access_accounts():
+        if login == account["login"] and supplied_password == account["password"]:
+            return account
+    username = os.environ.get("APP_BASIC_AUTH_USER")
+    password = os.environ.get("APP_BASIC_AUTH_PASSWORD")
+    if username and password and login == username and supplied_password == password:
+        return {"login": login, "user_id": 1, "role": "owner", "can_switch_role": True}
+    return None
+
+
 def current_access_account(handler: BaseHTTPRequestHandler) -> dict | None:
     if hasattr(handler, "_access_account_checked"):
         return getattr(handler, "_access_account", None)
@@ -217,19 +273,12 @@ def current_access_account(handler: BaseHTTPRequestHandler) -> dict | None:
     handler._access_account = None
     handler._issue_session_cookie = False
 
-    username = os.environ.get("APP_BASIC_AUTH_USER")
-    password = os.environ.get("APP_BASIC_AUTH_PASSWORD")
     pair = basic_auth_pair(handler)
 
     if pair:
         login, supplied_password = pair
-        for account in configured_access_accounts():
-            if login == account["login"] and supplied_password == account["password"]:
-                handler._access_account = account
-                handler._issue_session_cookie = True
-                return account
-        if username and password and login == username and supplied_password == password:
-            account = {"login": login, "user_id": 1, "role": "owner", "can_switch_role": True}
+        account = authenticate_access_account(login, supplied_password)
+        if account:
             handler._access_account = account
             handler._issue_session_cookie = True
             return account
@@ -239,7 +288,7 @@ def current_access_account(handler: BaseHTTPRequestHandler) -> dict | None:
         handler._access_account = cookie_account
         return cookie_account
 
-    if not username and not password and not configured_access_accounts():
+    if not os.environ.get("APP_BASIC_AUTH_USER") and not os.environ.get("APP_BASIC_AUTH_PASSWORD") and not configured_access_accounts():
         account = {"login": "local", "user_id": 1, "role": "owner", "can_switch_role": True}
         handler._access_account = account
         return account
@@ -1696,8 +1745,18 @@ class AppHandler(BaseHTTPRequestHandler):
         if path == "/logout":
             logout_response(self)
             return
+        if path == "/login":
+            if is_authorized(self):
+                redirect_response(self, "/")
+                return
+            self.serve_static("login.html")
+            return
         if path != "/health" and not is_authorized(self):
-            auth_required_response(self)
+            if path.startswith("/api/"):
+                api_auth_required_response(self)
+            else:
+                next_path = path + (f"?{parsed.query}" if parsed.query else "")
+                redirect_response(self, login_location(next_path))
             return
         if path == "/":
             self.serve_static("index.html")
@@ -1736,11 +1795,17 @@ class AppHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path == "/api/login":
+            try:
+                self.handle_login(read_json(self))
+            except Exception:
+                json_response(self, {"error": "Не удалось прочитать данные входа"}, 400)
+            return
         if not parsed.path.startswith("/api/"):
             self.send_error(404)
             return
         if not is_authorized(self):
-            auth_required_response(self)
+            api_auth_required_response(self)
             return
         try:
             self.handle_api_post(parsed.path, read_json(self))
@@ -1782,6 +1847,18 @@ class AppHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def handle_login(self, data: dict) -> None:
+        login = str(data.get("login") or data.get("username") or "").strip()
+        password = str(data.get("password") or "")
+        account = authenticate_access_account(login, password)
+        if not account:
+            json_response(self, {"error": "Логин или пароль не подошли"}, 401)
+            return
+        self._access_account_checked = True
+        self._access_account = account
+        self._issue_session_cookie = True
+        json_response(self, {"ok": True, "redirect": safe_next_path(str(data.get("next") or "/"))})
 
     def serve_document_download(self, document_id: int) -> None:
         with connect() as db:

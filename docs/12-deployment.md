@@ -8,7 +8,7 @@
 - `docker-compose.yml` - запускает приложение и Caddy.
 - `deploy/Caddyfile` - принимает HTTPS-запросы и передает их приложению.
 - Docker volume `app_data` - хранит SQLite-базу вне контейнера, чтобы данные не пропадали при обновлении приложения.
-- Базовый логин и пароль через `APP_BASIC_AUTH_USER` и `APP_BASIC_AUTH_PASSWORD`.
+- Вход через страницу приложения с cookie-сессией. Аккаунты берутся из `APP_ACCESS_ACCOUNTS`; старые `APP_BASIC_AUTH_USER` и `APP_BASIC_AUTH_PASSWORD` остаются запасным админским входом.
 
 ## Какой сервер нужен
 
@@ -51,6 +51,8 @@ nano .env
 DOMAIN=kontur.company.ru
 APP_BASIC_AUTH_USER=admin
 APP_BASIC_AUTH_PASSWORD=long-random-password
+APP_ACCESS_ACCOUNTS=director|long-random-password|1|owner|1;alexey|long-random-password|3|sales_manager|0
+APP_SESSION_SECRET=long-random-session-secret
 ```
 
 3. Запустить:
