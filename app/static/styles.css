@@ -1659,14 +1659,40 @@ h2 {
 
 .feedback-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.feedback-main {
+  min-width: 0;
+}
+
+.feedback-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.feedback-title {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.feedback-title strong {
+  overflow-wrap: anywhere;
 }
 
 .feedback-select {
-  display: flex;
-  align-items: flex-start;
-  padding-top: 2px;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  min-height: 22px;
 }
 
 .feedback-select input {
@@ -1680,6 +1706,8 @@ h2 {
   margin: 5px 0 0;
   font-size: 13px;
   line-height: 1.35;
+  overflow-wrap: anywhere;
+  word-break: normal;
 }
 
 .feedback-actions {
@@ -1687,6 +1715,10 @@ h2 {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 6px;
+}
+
+.feedback-actions .tiny {
+  white-space: nowrap;
 }
 
 .feedback-status-button {
@@ -2819,6 +2851,75 @@ textarea {
 
   .task-stats {
     grid-template-columns: 1fr;
+  }
+
+  #feedbackView .panel-head {
+    gap: 10px;
+  }
+
+  #feedbackView .panel-head .stack-line {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    width: 100%;
+    overflow: visible;
+  }
+
+  #feedbackView .panel-head .stack-line > * {
+    width: 100%;
+  }
+
+  #feedbackView .compact-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #feedbackView .task-stat {
+    min-height: 58px;
+    padding: 8px 10px;
+  }
+
+  .feedback-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .feedback-head {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .feedback-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .feedback-title strong {
+    max-width: 100%;
+    font-size: 14px;
+    line-height: 1.25;
+  }
+
+  .feedback-row p {
+    font-size: 14px;
+    line-height: 1.45;
+    margin-top: 8px;
+  }
+
+  .feedback-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    justify-content: stretch;
+  }
+
+  .feedback-actions .tiny {
+    width: 100%;
+    min-height: 38px;
+    padding-left: 6px;
+    padding-right: 6px;
+    font-size: 13px;
   }
 
   .task-detail-grid {

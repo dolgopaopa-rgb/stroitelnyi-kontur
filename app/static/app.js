@@ -3145,13 +3145,15 @@ async function renderFeedback() {
           const attachments = Array.isArray(item.attachments) ? item.attachments : [];
           return `
           <article class="row feedback-row">
-            <label class="feedback-select">
-              <input type="checkbox" data-feedback-check="${item.id}" ${state.selectedFeedbackIds.has(Number(item.id)) ? "checked" : ""} />
-            </label>
             <div class="feedback-main">
-              <div class="stack-line">
-                <strong>${escapeHtml(item.sender_name || item.sender_id || "MAX")}</strong>
-                ${pill(feedbackStatusLabel(item.status), feedbackStatusLevel(item.status))}
+              <div class="feedback-head">
+                <label class="feedback-select" aria-label="Выбрать сообщение">
+                  <input type="checkbox" data-feedback-check="${item.id}" ${state.selectedFeedbackIds.has(Number(item.id)) ? "checked" : ""} />
+                </label>
+                <div class="feedback-title">
+                  <strong>${escapeHtml(item.sender_name || item.sender_id || "MAX")}</strong>
+                  ${pill(feedbackStatusLabel(item.status), feedbackStatusLevel(item.status))}
+                </div>
               </div>
               <div class="muted">${escapeHtml(item.chat_title || item.chat_id || "Чат MAX")} · ${formatDateRu(item.created_at)}</div>
               <p>${escapeHtml(item.text || "Без текста").replace(/\n/g, "<br>")}</p>

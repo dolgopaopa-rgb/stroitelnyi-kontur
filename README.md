@@ -26,6 +26,12 @@
 18. [Инфографика ролей и доступов](docs/18-role-access-infographic.md)
 19. [Матрица доступов по сотрудникам](docs/19-employee-access-matrix.md)
 20. [Санитизированная переписка и контекст проекта](docs/20-sanitized-conversation-log.md)
+21. [Очистка production перед реальным тестом](docs/21-production-cleanup-2026-05-28.md)
+22. [Исправление сохранения выбранной роли](docs/22-role-persistence-fix.md)
+23. [Исправление сохранения карточки объекта и черновика](docs/23-project-form-save-and-draft-fix.md)
+24. [Контракты проверяющего агента интерфейса](docs/24-quality-agent-ui-contracts.md)
+25. [Правила хранения секретов](docs/25-secrets-management.md)
+26. [Передача проекта в новый чат](docs/26-new-chat-handoff.md)
 
 ## Прототип
 
