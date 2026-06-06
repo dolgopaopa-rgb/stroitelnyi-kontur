@@ -9,10 +9,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Строительный контур</title>
-    <link rel="manifest" href="/static/manifest.webmanifest?v=20260606-estimate-feedback" />
+    <link rel="manifest" href="/static/manifest.webmanifest?v=20260606-draft-files" />
     <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260606-estimate-feedback" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260606-draft-files" />
   </head>
   <body>
     <div class="app">
@@ -386,6 +386,7 @@
           <input name="project_docs_file" type="file" accept=".pdf,.zip,.rar,.7z,.dwg,.dxf,.jpg,.jpeg,.png,.doc,.docx" multiple required />
           <span class="field-hint">Можно выбрать сразу несколько файлов. Новые файлы добавляются к объекту, уже загруженные не заменяются.</span>
         </label>
+        <section class="attached-draft-files" id="projectExistingFiles" hidden></section>
         <p class="form-status file-status" id="projectFileStatus" hidden></p>
         <p class="form-status" id="projectFormStatus" hidden></p>
         <div class="form-actions">
@@ -724,6 +725,6 @@
     </dialog>
 
     <div class="toast" id="toast"></div>
-    <script src="/static/app.js?v=20260606-estimate-feedback"></script>
+    <script src="/static/app.js?v=20260606-draft-files"></script>
   </body>
 </html>

@@ -2554,6 +2554,61 @@ textarea {
   color: #40515a;
 }
 
+.attached-draft-files {
+  border: 1px solid #cbd9dd;
+  background: #f7fafb;
+  border-radius: 8px;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.attached-draft-files-head {
+  display: grid;
+  gap: 2px;
+  color: var(--text);
+}
+
+.attached-draft-files-head span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.attached-draft-files-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.8fr) minmax(0, 1.2fr);
+  gap: 8px;
+  align-items: start;
+  border-top: 1px solid #e3ebee;
+  padding-top: 7px;
+  font-size: 13px;
+}
+
+.attached-draft-files-row strong {
+  font-size: 13px;
+}
+
+.attached-draft-files-row > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.attached-draft-files-row > div span {
+  border-radius: 999px;
+  padding: 2px 7px;
+  background: #e8f5ed;
+  color: #166534;
+  overflow-wrap: anywhere;
+}
+
+.attached-draft-files-row.is-missing > div span {
+  background: #f1f5f6;
+  color: var(--muted);
+}
+
 .form-status {
   border: 1px solid #bfd7d2;
   background: #e9f1ef;
@@ -2767,6 +2822,11 @@ textarea {
 
   .panel {
     padding: 12px;
+  }
+
+  .attached-draft-files-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
   }
 
   .panel-head {

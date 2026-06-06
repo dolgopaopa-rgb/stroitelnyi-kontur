@@ -224,9 +224,9 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         ),
         (
             "New project draft scenario",
-            "Карточка нового объекта имеет автосохранение текстовых полей и понятные ошибки.",
-            ["PROJECT_FORM_DRAFT_KEY", "restoreProjectFormDraft", "missingProjectRequiredFields", "projectFormStatus", "setProjectSaving", "novalidate"],
-            "Вернуть автосохранение и ручную валидацию формы, чтобы менеджер не терял заполненную карточку.",
+            "Карточка нового объекта имеет автосохранение текстовых полей, понятные ошибки и показывает уже сохраненные файлы черновика.",
+            ["PROJECT_FORM_DRAFT_KEY", "restoreProjectFormDraft", "missingProjectRequiredFields", "projectFormStatus", "setProjectSaving", "novalidate", "projectExistingFiles", "setProjectExistingFiles", "Уже сохранено в карточке объекта"],
+            "Вернуть автосохранение, ручную валидацию и блок уже прикрепленных файлов, чтобы менеджер не думал, что документы черновика пропали.",
         ),
         (
             "Navigation access scenario",

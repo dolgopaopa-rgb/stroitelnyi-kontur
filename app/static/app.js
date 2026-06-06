@@ -720,6 +720,46 @@ function setProjectFileStatus(message = "", level = "pending") {
   status.className = `form-status file-status ${level || ""}`.trim();
 }
 
+function setProjectExistingFiles(project = null) {
+  const node = qs("#projectExistingFiles");
+  if (!node) return;
+  if (!project) {
+    node.hidden = true;
+    node.innerHTML = "";
+    return;
+  }
+  const docs = Array.isArray(project.documents) ? project.documents.filter((doc) => doc.status !== "archived") : [];
+  const requiredGroups = [
+    ["smetter_materials", "Файл материалов из Сметтера"],
+    ["smetter_work_task", "Задание на работы из Сметтера"],
+    ["contract", "Первичный договор"],
+    ["main_estimate", "Смета"],
+    ["project_documentation", "Проектная документация"],
+  ];
+  const rows = requiredGroups
+    .map(([type, title]) => {
+      const groupDocs = docs.filter((doc) => doc.type === type);
+      const files = groupDocs.length
+        ? groupDocs
+            .map((doc) => `<span>${escapeHtml(doc.file_name || documentTitle(doc))}</span>`)
+            .join("")
+        : `<span class="muted">не прикреплено</span>`;
+      return `
+        <div class="attached-draft-files-row ${groupDocs.length ? "is-present" : "is-missing"}">
+          <strong>${escapeHtml(title)}</strong>
+          <div>${files}</div>
+        </div>`;
+    })
+    .join("");
+  node.hidden = false;
+  node.innerHTML = `
+    <div class="attached-draft-files-head">
+      <strong>Уже сохранено в карточке объекта</strong>
+      <span>Поля выбора файлов выше остаются пустыми в браузере. Они нужны только для добавления новых файлов.</span>
+    </div>
+    ${rows}`;
+}
+
 function projectFileSummary(form) {
   const fields = [
     ["estimate_file_name", "материалы"],
@@ -748,7 +788,7 @@ function updateProjectFileStatus(form) {
     setProjectFileStatus("");
     return;
   }
-  setProjectFileStatus(`Выбраны файлы для отправки на сервер: ${selected.join("; ")}. После закрытия формы без сохранения браузер не восстановит выбранные файлы.`, "pending");
+  setProjectFileStatus(`Выбраны файлы для отправки на сервер: ${selected.join("; ")}. Чтобы они попали в черновик, нажмите “Сохранить черновик”. После обновления страницы браузер сам не восстановит выбранные файлы.`, "pending");
 }
 
 function projectDraftSnapshot(form) {
@@ -3435,6 +3475,7 @@ function resetProjectDialog() {
   setProjectFileFieldsRequired(true);
   setProjectSaving(false);
   setProjectFileStatus("");
+  setProjectExistingFiles(null);
   restoreProjectFormDraft(form);
 }
 
@@ -3452,6 +3493,7 @@ async function openProjectEditDialog(projectId) {
   setProjectSaving(false);
   setProjectFormStatus("");
   setProjectFileStatus("");
+  setProjectExistingFiles(project);
   form.elements.title.value = project.title || "";
   form.elements.customer_name.value = project.customer_name || "";
   form.elements.customer_phone.value = project.customer_phone || "";
@@ -4196,6 +4238,7 @@ function bindEvents() {
       payload.save_mode = saveMode;
       const isEdit = form.dataset.mode === "edit";
       const projectId = form.dataset.projectId;
+      const uploadedInitialCount = payload.initial_documents.length;
       const hasWorkTaskUpload = payload.initial_documents.some((doc) => doc.type === "smetter_work_task");
       const savedProject = await api(isEdit ? `/api/projects/${projectId}/update` : "/api/projects", {
         method: "POST",
@@ -4211,6 +4254,14 @@ function bindEvents() {
       if (isEdit) {
         state.selectedProjectId = savedProjectId;
         await renderProjectDetail(state.selectedProjectId);
+      }
+      if (saveMode === "draft") {
+        state.selectedProjectId = savedProjectId;
+        switchView("projects");
+        await renderProjects();
+        await renderProjectDetail(savedProjectId);
+        showToast(uploadedInitialCount ? `Черновик сохранен, файлов прикреплено: ${uploadedInitialCount}` : "Черновик сохранен");
+        return;
       }
       if (hasWorkTaskUpload) {
         state.selectedProjectId = savedProjectId;
