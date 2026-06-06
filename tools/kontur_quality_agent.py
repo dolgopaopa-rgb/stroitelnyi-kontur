@@ -242,9 +242,15 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         ),
         (
             "Estimate return and photo carousel scenario",
-            "Сметчик может вернуть неполное задание менеджеру с причиной, а фото задания открываются каруселью на телефоне.",
-            ["estimate_returned", "return_comment", "canReturnEstimateJob", "Укажите причину возврата задания менеджеру", "estimateImageDialog", "openEstimateGallery", "moveEstimateGallery", "data-estimate-gallery-file", "isEstimateImageFile"],
-            "Не убирать возврат задания и карусель: без них сметчик снова зависнет на неполных исходных данных и отдельных фото.",
+            "Сметчик может вернуть неполное задание менеджеру, задать уточняющий вопрос без возврата, а фото задания открываются каруселью на телефоне.",
+            ["estimate_returned", "return_comment", "estimate_question", "question_comment", "canReturnEstimateJob", "canQuestionEstimateJob", "Укажите причину возврата задания менеджеру", "Напишите уточняющий вопрос менеджеру", "estimateImageDialog", "openEstimateGallery", "moveEstimateGallery", "data-estimate-gallery-file", "isEstimateImageFile"],
+            "Не убирать возврат, уточнение и карусель: без них сметчик снова зависнет на неполных исходных данных и отдельных фото.",
+        ),
+        (
+            "Estimate links and print scenario",
+            "В сметном задании видны активные ссылки на Сметтер и есть быстрый вывод вложений на печать.",
+            ['name="smetter_url"', "linkifyText", "data-print-estimate-file", "estimate-file-print", "Открыть Сметтер"],
+            "Ссылки из комментариев и отдельное поле Сметтера должны быть кликабельными, а вложения - быстро открываться для печати.",
         ),
         (
             "Restricted topbar controls scenario",

@@ -211,10 +211,12 @@ def init_db() -> None:
                 status TEXT NOT NULL DEFAULT 'estimate_new',
                 priority TEXT NOT NULL DEFAULT 'normal',
                 source TEXT,
+                smetter_url TEXT,
                 estimate_type TEXT,
                 comment TEXT,
                 result_comment TEXT,
                 return_comment TEXT,
+                question_comment TEXT,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL,
@@ -438,6 +440,8 @@ def init_db() -> None:
         ensure_column(db, "tasks", "accepted_at", "TEXT")
         ensure_column(db, "tasks", "rejection_comment", "TEXT")
         ensure_column(db, "estimate_jobs", "return_comment", "TEXT")
+        ensure_column(db, "estimate_jobs", "question_comment", "TEXT")
+        ensure_column(db, "estimate_jobs", "smetter_url", "TEXT")
         ensure_column(db, "work_extra_items", "estimate_section", "TEXT")
         ensure_column(db, "documents", "file_name", "TEXT")
         ensure_column(db, "documents", "file_path", "TEXT")

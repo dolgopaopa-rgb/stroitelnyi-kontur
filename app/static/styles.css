@@ -2114,8 +2114,16 @@ h2 {
   gap: 6px;
 }
 
+.estimate-file-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: 4px;
+  max-width: 320px;
+}
+
 .estimate-job-files a,
-.estimate-job-files button {
+.estimate-file-button {
   display: inline-grid;
   gap: 1px;
   max-width: 230px;
@@ -2129,12 +2137,14 @@ h2 {
   text-align: left;
 }
 
-.estimate-job-files button {
+.estimate-file-button,
+.estimate-file-print {
   cursor: pointer;
 }
 
 .estimate-job-files a:hover,
-.estimate-job-files button:hover {
+.estimate-file-button:hover,
+.estimate-file-print:hover {
   border-color: #8dbbb5;
 }
 
@@ -2150,8 +2160,22 @@ h2 {
   font-size: 11px;
 }
 
+.estimate-file-print {
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--text);
+  font-size: 12px;
+}
+
 .danger-text {
   color: var(--danger);
+}
+
+.warning-text {
+  color: #92630a;
 }
 
 .danger-outline {

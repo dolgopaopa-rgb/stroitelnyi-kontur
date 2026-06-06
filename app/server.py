@@ -1267,8 +1267,13 @@ def can_manage_estimate_jobs(account: dict | None) -> bool:
     return can_view_estimate_jobs(account)
 
 
-def can_delete_estimate_jobs(account: dict | None) -> bool:
-    return account_role(account) in {"owner", "construction_manager"}
+def can_delete_estimate_job(row, account: dict | None) -> bool:
+    role = account_role(account)
+    if role in {"owner", "construction_manager"}:
+        return True
+    if role == "sales_manager" and estimate_job_owned_by_account(row, account, "manager_id"):
+        return row["status"] in {"estimate_new", "estimate_returned", "estimate_question", "estimate_hold"}
+    return False
 
 
 def estimate_job_owned_by_account(row, account: dict | None, field: str) -> bool:
@@ -1300,6 +1305,8 @@ def can_change_estimate_job_status(row, status: str, account: dict | None) -> bo
     if status == "estimate_done":
         return row["status"] == "estimate_in_work"
     if status == "estimate_returned":
+        return row["status"] in {"estimate_new", "estimate_hold", "estimate_in_work"}
+    if status == "estimate_question":
         return row["status"] in {"estimate_new", "estimate_hold", "estimate_in_work"}
     return False
 
@@ -2202,7 +2209,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     "material_requests": db.execute("SELECT COUNT(*) AS count FROM material_requests WHERE procurement_status != 'closed'").fetchone()["count"],
                     "unresolved_overbudget": db.execute("SELECT COALESCE(SUM(amount), 0) AS total FROM variations WHERE financial_decision = 'not_decided'").fetchone()["total"],
                     "contracts_soon": db.execute("SELECT COUNT(*) AS count FROM contracts WHERE ends_at <= '2026-05-27' AND status = 'active'").fetchone()["count"],
-                    "estimate_jobs_open": db.execute("SELECT COUNT(*) AS count FROM estimate_jobs WHERE status IN ('estimate_new', 'estimate_in_work', 'estimate_returned')").fetchone()["count"],
+                    "estimate_jobs_open": db.execute("SELECT COUNT(*) AS count FROM estimate_jobs WHERE status IN ('estimate_new', 'estimate_in_work', 'estimate_returned', 'estimate_question')").fetchone()["count"],
                     "estimate_jobs_done": db.execute("SELECT COUNT(*) AS count FROM estimate_jobs WHERE status = 'estimate_done'").fetchone()["count"],
                     "estimate_jobs_overdue": db.execute("SELECT COUNT(*) AS count FROM estimate_jobs WHERE status != 'estimate_done' AND due_date IS NOT NULL AND due_date < date('now')").fetchone()["count"],
                 }
@@ -2226,10 +2233,11 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         CASE j.status
                             WHEN 'estimate_new' THEN 1
                             WHEN 'estimate_returned' THEN 2
-                            WHEN 'estimate_in_work' THEN 3
-                            WHEN 'estimate_hold' THEN 4
-                            WHEN 'estimate_done' THEN 5
-                            ELSE 6
+                            WHEN 'estimate_question' THEN 3
+                            WHEN 'estimate_in_work' THEN 4
+                            WHEN 'estimate_hold' THEN 5
+                            WHEN 'estimate_done' THEN 6
+                            ELSE 7
                         END,
                         j.due_date,
                         j.received_at DESC,
@@ -2706,7 +2714,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     ],
                 )
                 status = data.get("status") or "estimate_new"
-                if status not in {"estimate_new", "estimate_in_work", "estimate_done", "estimate_hold", "estimate_returned"}:
+                if status not in {"estimate_new", "estimate_in_work", "estimate_done", "estimate_hold", "estimate_returned", "estimate_question"}:
                     status = "estimate_new"
                 project_id = int(data.get("project_id") or 0) or None
                 cursor = db.execute(
@@ -2714,9 +2722,9 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     INSERT INTO estimate_jobs (
                         project_id, title, customer_name, manager_id, estimator_id,
                         received_at, due_date, delivered_at, status, priority, source,
-                        estimate_type, comment, result_comment, return_comment
+                        smetter_url, estimate_type, comment, result_comment, return_comment, question_comment
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         project_id,
@@ -2730,10 +2738,12 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         status,
                         data.get("priority") or "normal",
                         data.get("source") or "",
+                        data.get("smetter_url") or "",
                         data.get("estimate_type") or "",
                         data.get("comment") or "",
                         data.get("result_comment") or "",
                         data.get("return_comment") or "",
+                        data.get("question_comment") or "",
                     ),
                 )
                 estimate_job_id = int(cursor.lastrowid)
@@ -2761,7 +2771,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     json_response(self, {"error": "Estimate job not found"}, 404)
                     return
                 if action == "delete":
-                    if not can_delete_estimate_jobs(account):
+                    if not can_delete_estimate_job(row, account):
                         json_response(self, {"error": "Forbidden"}, 403)
                         return
                     db.execute("DELETE FROM estimate_jobs WHERE id = ?", (estimate_job_id,))
@@ -2785,9 +2795,10 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             ("due_date", "Плановый срок готовности"),
                         ],
                     )
-                    resend_returned = row["status"] == "estimate_returned" and account_role(account) in {"sales_manager", "owner", "construction_manager"}
-                    next_status = "estimate_new" if resend_returned else row["status"]
-                    next_return_comment = "" if resend_returned else row["return_comment"] or ""
+                    resend_to_estimator = row["status"] in {"estimate_returned", "estimate_question"} and account_role(account) in {"sales_manager", "owner", "construction_manager"}
+                    next_status = "estimate_new" if resend_to_estimator else row["status"]
+                    next_return_comment = "" if resend_to_estimator else row["return_comment"] or ""
+                    next_question_comment = "" if resend_to_estimator else row["question_comment"] or ""
                     db.execute(
                         """
                         UPDATE estimate_jobs
@@ -2800,10 +2811,12 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             due_date = ?,
                             priority = ?,
                             source = ?,
+                            smetter_url = ?,
                             estimate_type = ?,
                             comment = ?,
                             status = ?,
                             return_comment = ?,
+                            question_comment = ?,
                             updated_at = CURRENT_TIMESTAMP
                         WHERE id = ?
                         """,
@@ -2817,38 +2830,44 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             data.get("due_date") or None,
                             data.get("priority") or "normal",
                             data.get("source") or "",
+                            data.get("smetter_url") or "",
                             data.get("estimate_type") or "",
                             data.get("comment") or "",
                             next_status,
                             next_return_comment,
+                            next_question_comment,
                             estimate_job_id,
                         ),
                     )
                     attachments = [item for item in data.get("attachments") or [] if isinstance(item, dict) and item.get("file_base64")]
                     for attachment in attachments:
                         save_estimate_job_file(db, estimate_job_id, attachment, account_user_id(account))
-                    if resend_returned:
+                    if resend_to_estimator:
                         notify_users(
                             db,
                             {int(data.get("estimator_id") or 0), int(data.get("manager_id") or 0), user_id_by_role(db, "construction_manager"), user_id_by_role(db, "owner")} - {0, None},
                             row["project_id"],
-                            "Сметное задание исправлено",
-                            f"{data.get('title')} снова отправлено сметчику после доработки менеджером.",
+                            "Сметное задание уточнено",
+                            f"{data.get('title')} снова отправлено сметчику после ответа менеджера.",
                             "estimate_job",
                             estimate_job_id,
                         )
                     json_response(self, {"id": estimate_job_id})
                     return
                 status = data.get("status") or row["status"]
-                if status not in {"estimate_new", "estimate_in_work", "estimate_done", "estimate_hold", "estimate_returned"}:
+                if status not in {"estimate_new", "estimate_in_work", "estimate_done", "estimate_hold", "estimate_returned", "estimate_question"}:
                     json_response(self, {"error": "Unknown status"}, 400)
                     return
                 if not can_change_estimate_job_status(row, status, account):
                     json_response(self, {"error": "Forbidden"}, 403)
                     return
                 return_comment = str(data.get("return_comment") or "").strip()
+                question_comment = str(data.get("question_comment") or "").strip()
                 if status == "estimate_returned" and not return_comment:
                     json_response(self, {"error": "Укажите причину возврата задания менеджеру"}, 400)
+                    return
+                if status == "estimate_question" and not question_comment:
+                    json_response(self, {"error": "Напишите уточняющий вопрос менеджеру"}, 400)
                     return
                 delivered_at = data.get("delivered_at") or (date.today().isoformat() if status == "estimate_done" else None)
                 result_comment = data.get("result_comment") or row["result_comment"] or ""
@@ -2859,6 +2878,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         delivered_at = ?,
                         result_comment = ?,
                         return_comment = ?,
+                        question_comment = ?,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = ?
                     """,
@@ -2867,6 +2887,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         delivered_at if status == "estimate_done" else None,
                         result_comment,
                         return_comment if status == "estimate_returned" else row["return_comment"] or "",
+                        question_comment if status == "estimate_question" else row["question_comment"] or "",
                         estimate_job_id,
                     ),
                 )
@@ -2875,6 +2896,9 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 if status == "estimate_returned":
                     notification_title = "Сметное задание возвращено менеджеру"
                     notification_message = f"{row['title']}. Причина: {return_comment}"
+                elif status == "estimate_question":
+                    notification_title = "Уточнение по сметному заданию"
+                    notification_message = f"{row['title']}. Вопрос: {question_comment}"
                 elif status == "estimate_in_work":
                     notification_message = f"{row['title']} взято сметчиком в работу."
                 elif status == "estimate_done":
