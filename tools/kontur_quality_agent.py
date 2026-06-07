@@ -283,6 +283,12 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
             "Не терять трассировку заявки: прораб, снабжение, сметчик и руководители должны видеть источник, место учета допов/замен/превышений и факт закупки дороже сметы.",
         ),
         (
+            "MAX outgoing encoding scenario",
+            "Сообщения бота в MAX отправляются в безопасной для кириллицы кодировке.",
+            ['json.dumps({"text": text, "format": "markdown", "notify": True})', "application/json; charset=utf-8"],
+            "Не отправлять русские сообщения в MAX сырым UTF-8 без charset: на стороне платформы это может превращаться в вопросительные знаки.",
+        ),
+        (
             "Knowledge base construction manager scenario",
             "Руководитель строительства может добавлять материалы в базу знаний.",
             ["function canManageKnowledgeBase()", '\"construction_manager\"', 'related_type == \"knowledge_base\" and account_role(account) not in {\"owner\", \"construction_manager\", \"finance_director\"}'],

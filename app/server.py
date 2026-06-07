@@ -1112,12 +1112,12 @@ def send_max_message(chat_id: str, text: str) -> tuple[bool, str]:
         return False, "MAX_TOKEN is not configured"
     if not chat_id:
         return False, "MAX chat is not bound"
-    payload = json.dumps({"text": text, "format": "markdown", "notify": True}, ensure_ascii=False).encode("utf-8")
+    payload = json.dumps({"text": text, "format": "markdown", "notify": True}).encode("utf-8")
     url = f"{MAX_API_URL}/messages?{urlencode({'chat_id': chat_id})}"
     request = Request(
         url,
         data=payload,
-        headers={"Authorization": token, "Content-Type": "application/json"},
+        headers={"Authorization": token, "Content-Type": "application/json; charset=utf-8"},
         method="POST",
     )
     try:
