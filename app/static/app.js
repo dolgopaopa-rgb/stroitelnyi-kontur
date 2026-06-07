@@ -196,6 +196,7 @@ function materialBasisLabel(value) {
     main_estimate: "По смете",
     main_estimate_overspend: "Перерасход по смете",
     additional_work: "Допработа",
+    additional_agreement: "Допник",
     material_replacement: "Замена материала",
     over_budget_cost: "Сверхбюджет",
     internal_error_or_loss: "За счет компании",
@@ -1385,6 +1386,7 @@ function buildMaterialBatches(items) {
         receipt_document_file_name: item.batch_receipt_document_file_name || "",
         receipt_document_title: item.batch_receipt_document_title || "",
         receipt_document_mime_type: item.batch_receipt_document_mime_type || "",
+        actual_purchase_amount: Number(item.batch_actual_purchase_amount || 0),
         variation_id: item.batch_variation_id || "",
         variation_title: item.batch_variation_title || "",
         variation_status: item.batch_variation_status || "",
@@ -1432,6 +1434,25 @@ function materialReceiptAttachment(batch) {
 
 function materialBatchHasDeviation(batch) {
   return batch.items.some((item) => item.basis_type && item.basis_type !== "main_estimate");
+}
+
+function materialBatchBasisSummary(batch) {
+  const counts = (batch.items || []).reduce((acc, item) => {
+    const key = item.basis_type || "main_estimate";
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  return Object.entries(counts)
+    .map(([type, count]) => `${materialBasisLabel(type)}: ${count}`)
+    .join(" · ");
+}
+
+function materialBatchDestination(batch) {
+  if (!materialBatchHasDeviation(batch)) return "Куда внесено: основная смета";
+  if (batch.variation_id) {
+    return `Куда внесено: Допработы и отклонения — ${batch.variation_title || `#${batch.variation_id}`} (${label(batch.variation_status)})`;
+  }
+  return "Куда внести: требуется создать связанную допработу/отклонение";
 }
 
 function canCreateVariationFromBatch(batch) {
@@ -2770,8 +2791,11 @@ async function renderMaterials() {
       <button class="row clickable material-request-row material-batch-row" type="button" data-open-material-batch="${batch.key}">
         <div class="material-main">
           <strong>${materialBatchTitle(batch, currentRoleBase() === "procurement_manager")}</strong>
-          <div class="muted">Объект: ${batch.project_title || "не указан"} · создал: ${batch.creator_name || "не указано"}</div>
+          <div class="muted">Объект: ${batch.project_title || "не указан"} · кто заказал: ${batch.creator_name || "не указано"}</div>
           <div class="muted">Позиций: ${batch.items.length} · желаемая доставка: ${batch.needed_at || "не указана"} · сумма: ${money(batch.total_amount)}</div>
+          ${batch.actual_purchase_amount ? `<div class="muted">Фактическая стоимость закупки: ${money(batch.actual_purchase_amount)}</div>` : ""}
+          <div class="muted">Основания: ${materialBatchBasisSummary(batch)}</div>
+          <div class="muted">${materialBatchDestination(batch)}</div>
           ${batch.revision_comment ? `<div class="muted">Комментарий по доработке: ${batch.revision_comment}</div>` : ""}
           ${state.materialListMode === "archive" && batch.archived_at ? `<div class="muted">В архиве с ${formatDateRu(batch.archived_at)}</div>` : ""}
         </div>
@@ -2832,7 +2856,10 @@ async function openMaterialBatchDialog(batchKey) {
         ${pill(urgencyLabel(batch.delivery_urgency), urgencyLevel(batch.delivery_urgency))}
         ${pill(label(batch.status), materialBatchLevel(batch.status))}
       </div>
-      <p class="muted">Создал: ${batch.creator_name || "не указано"} · желаемая доставка: ${batch.needed_at || "не указана"} · позиций: ${batch.items.length}</p>
+      <p class="muted">Кто заказал: ${batch.creator_name || "не указано"} · желаемая доставка: ${batch.needed_at || "не указана"} · позиций: ${batch.items.length}</p>
+      ${batch.actual_purchase_amount ? `<p class="muted">Фактическая стоимость закупки: ${money(batch.actual_purchase_amount)} · сметная сумма заявки: ${money(batch.total_amount)}</p>` : ""}
+      <p class="muted">Основания: ${materialBatchBasisSummary(batch)}</p>
+      <p class="muted">${materialBatchDestination(batch)}</p>
       ${batch.comment ? `<p>${batch.comment}</p>` : ""}
       ${batch.revision_comment ? `<p class="muted">Комментарий по доработке: ${batch.revision_comment}</p>` : ""}
       ${batch.foreman_response ? `<p class="muted">Ответ прораба: ${batch.foreman_response}</p>` : ""}
@@ -2889,6 +2916,7 @@ async function openMaterialBatchDialog(batchKey) {
         ? `<section class="workflow-panel">
             <h3>Доставка</h3>
             <label>Дата доставки <input id="materialBatchDeliveryDate" type="date" value="${batch.scheduled_delivery_date || batch.needed_at || ""}" /></label>
+            <label>Фактическая стоимость закупки, ₽ <input id="materialBatchActualAmount" type="text" inputmode="decimal" value="${batch.actual_purchase_amount || ""}" placeholder="Например: 125000" /></label>
             <label>Комментарий снабжения <textarea id="materialBatchScheduleComment" rows="3" placeholder="Например: нужна доверенность или кран">${batch.procurement_comment || ""}</textarea></label>
             <div class="form-actions">
               <button class="primary" type="button" data-material-batch-action="schedule" data-material-batch-id="${batch.id}">Уведомить о доставке</button>
@@ -4094,6 +4122,7 @@ function bindEvents() {
       if (action === "schedule") {
         body = {
           scheduled_delivery_date: qs("#materialBatchDeliveryDate")?.value || "",
+          actual_purchase_amount: qs("#materialBatchActualAmount")?.value || "",
           comment: qs("#materialBatchScheduleComment")?.value || "",
         };
       }

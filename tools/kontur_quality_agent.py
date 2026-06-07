@@ -277,6 +277,12 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
             "Сохранять состояние раскрытых разделов и блокировать случайный toggle после свайпа.",
         ),
         (
+            "Material request traceability scenario",
+            "Заявка материалов показывает кто заказал, объект, основания позиций, связь с допработами и фактическую стоимость закупки, а сметчик получает сигнал по позициям вне основной сметы или закупке дороже сметы.",
+            ["materialBatchBasisSummary", "materialBatchDestination", "Кто заказал", "Куда внесено", "actual_purchase_amount", "Фактическая стоимость закупки", "notify_material_deviation_for_estimators", "notify_material_actual_cost_overrun", "Закупка дороже сметы"],
+            "Не терять трассировку заявки: прораб, снабжение, сметчик и руководители должны видеть источник, место учета допов/замен/превышений и факт закупки дороже сметы.",
+        ),
+        (
             "Knowledge base construction manager scenario",
             "Руководитель строительства может добавлять материалы в базу знаний.",
             ["function canManageKnowledgeBase()", '\"construction_manager\"', 'related_type == \"knowledge_base\" and account_role(account) not in {\"owner\", \"construction_manager\", \"finance_director\"}'],
@@ -630,6 +636,16 @@ def run_checks(base_url: str, username: str | None, password: str | None) -> tup
             add(checks, "MAX chat draft fix", "OK", "Во фронтенде есть защита от сброса поля MAX chat_id при автообновлении.")
         else:
             add(checks, "MAX chat draft fix", "WARN", "В app.js не найдена защита поля MAX chat_id.", "Очистить кэш или проверить деплой.")
+        if "materialBatchBasisSummary" in app_text and "materialBatchDestination" in app_text:
+            add(checks, "Material request traceability", "OK", "В заявках материалов видны основания и место, куда внесены допы/отклонения.")
+        else:
+            add(
+                checks,
+                "Material request traceability",
+                "WARN",
+                "В app.js не найдена явная трассировка заявок материалов.",
+                "В карточке заявки показывать кто заказал, объект, основания и связь с допработами.",
+            )
         if "dashboardAttention" in html and "buildDashboardAttention" in app_text:
             add(checks, "Dashboard attention panel", "OK", "На рабочем столе есть блок контроля сигналов агента.")
         else:

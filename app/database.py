@@ -172,6 +172,7 @@ def init_db() -> None:
                 foreman_response TEXT,
                 scheduled_delivery_date TEXT,
                 procurement_comment TEXT,
+                actual_purchase_amount REAL NOT NULL DEFAULT 0,
                 received_at TEXT,
                 receipt_status TEXT,
                 receipt_comment TEXT,
@@ -461,6 +462,7 @@ def init_db() -> None:
         ensure_column(db, "material_request_batches", "foreman_response", "TEXT")
         ensure_column(db, "material_request_batches", "scheduled_delivery_date", "TEXT")
         ensure_column(db, "material_request_batches", "procurement_comment", "TEXT")
+        ensure_column(db, "material_request_batches", "actual_purchase_amount", "REAL NOT NULL DEFAULT 0")
         ensure_column(db, "material_request_batches", "received_at", "TEXT")
         ensure_column(db, "material_request_batches", "receipt_status", "TEXT")
         ensure_column(db, "material_request_batches", "receipt_comment", "TEXT")

@@ -941,7 +941,7 @@ def can_change_material_batch(actor_role: str, actor_id: int | None, batch) -> b
 
 
 def material_variation_type(basis_types: set[str]) -> str:
-    if "additional_work" in basis_types:
+    if "additional_work" in basis_types or "additional_agreement" in basis_types:
         return "additional_work"
     if "material_replacement" in basis_types:
         return "material_replacement"
@@ -952,11 +952,102 @@ def material_variation_type(basis_types: set[str]) -> str:
 
 def material_basis_text(value: str) -> str:
     return {
+        "main_estimate": "По основной смете",
         "main_estimate_overspend": "Превышение по смете",
         "additional_work": "Дополнительная работа",
+        "additional_agreement": "Допник",
         "material_replacement": "Замена материала",
         "over_budget_cost": "Сверх бюджета",
     }.get(value, value or "Основание не указано")
+
+
+def material_deviation_rows(db, batch_id: int):
+    return db.execute(
+        """
+        SELECT m.*, em.unit AS estimate_material_unit
+        FROM material_requests m
+        LEFT JOIN estimate_materials em ON em.id = m.estimate_material_id
+        WHERE m.batch_id = ?
+          AND m.basis_type != 'main_estimate'
+        ORDER BY m.estimate_section, m.title
+        """,
+        (batch_id,),
+    ).fetchall()
+
+
+def notify_material_deviation_for_estimators(db, batch_id: int, project, reason: str = "") -> None:
+    if not project:
+        return
+    rows = material_deviation_rows(db, batch_id)
+    if not rows:
+        return
+    project_keys = set(project.keys())
+    project_id = int(project["project_id"] if "project_id" in project_keys else project["id"])
+    project_title = project["project_title"] if "project_title" in project_keys else project["title"]
+    estimator_id = project["estimator_id"] if "estimator_id" in project_keys else None
+    construction_manager_id = project["construction_manager_id"] if "construction_manager_id" in project_keys else None
+    lines = []
+    for item in rows[:6]:
+        qty = number_value(item["requested_quantity"])
+        unit = item["requested_unit"] or item["estimate_material_unit"] or ""
+        amount = number_value(item["total_amount"])
+        line = f"{item['title']} — {material_basis_text(item['basis_type'])}"
+        if qty:
+            line += f", {qty:g} {unit}".rstrip()
+        if amount:
+            line += f", {amount:g} ₽"
+        lines.append(line)
+    if len(rows) > 6:
+        lines.append(f"Еще позиций: {len(rows) - 6}")
+    reason_text = f" {reason}" if reason else ""
+    text = (
+        f"{project_title}: в заявке материалов есть позиции вне основной сметы.{reason_text} "
+        "Сметчику нужно проверить цены/шаблоны и при необходимости обновить расчет.\n"
+        + "\n".join(f"- {line}" for line in lines)
+    )
+    notify_users(
+        db,
+        {user_id for user_id in {estimator_id, construction_manager_id, user_id_by_role(db, "owner")} if user_id},
+        project_id,
+        "Материалы вне основной сметы",
+        text,
+        "material_request_batch",
+        batch_id,
+    )
+
+
+def notify_material_actual_cost_overrun(db, batch_id: int, project, actual_amount: float, estimate_amount: float) -> None:
+    if not project or actual_amount <= 0 or estimate_amount <= 0 or actual_amount <= estimate_amount:
+        return
+    project_keys = set(project.keys())
+    project_id = int(project["project_id"] if "project_id" in project_keys else project["id"])
+    project_title = project["project_title"] if "project_title" in project_keys else project["title"]
+    estimator_id = project["estimator_id"] if "estimator_id" in project_keys else None
+    construction_manager_id = project["construction_manager_id"] if "construction_manager_id" in project_keys else None
+    difference = actual_amount - estimate_amount
+    text = (
+        f"{project_title}: фактическая закупочная стоимость по заявке материалов выше сметной. "
+        f"По смете: {estimate_amount:g} ₽, закупка: {actual_amount:g} ₽, превышение: {difference:g} ₽. "
+        "Сметчику нужно проверить цены и при необходимости обновить шаблоны/расчет."
+    )
+    notify_users(
+        db,
+        {
+            user_id
+            for user_id in {
+                estimator_id,
+                construction_manager_id,
+                user_id_by_role(db, "owner"),
+                user_id_by_role(db, "finance_director"),
+            }
+            if user_id
+        },
+        project_id,
+        "Закупка дороже сметы",
+        text,
+        "material_request_batch",
+        batch_id,
+    )
 
 
 def require_fields(data: dict, fields: list[tuple[str, str]]) -> None:
@@ -1715,6 +1806,7 @@ def get_project_detail(project_id: int, account: dict | None = None) -> dict | N
                       receipt_doc.file_name AS batch_receipt_document_file_name,
                       receipt_doc.title AS batch_receipt_document_title,
                       receipt_doc.mime_type AS batch_receipt_document_mime_type,
+                      b.actual_purchase_amount AS batch_actual_purchase_amount,
                       source_variation.id AS batch_variation_id,
                       source_variation.title AS batch_variation_title,
                       source_variation.status AS batch_variation_status,
@@ -2428,6 +2520,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                            receipt_doc.file_name AS batch_receipt_document_file_name,
                            receipt_doc.title AS batch_receipt_document_title,
                            receipt_doc.mime_type AS batch_receipt_document_mime_type,
+                           b.actual_purchase_amount AS batch_actual_purchase_amount,
                            source_variation.id AS batch_variation_id,
                            source_variation.title AS batch_variation_title,
                            source_variation.status AS batch_variation_status,
@@ -3720,7 +3813,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 action = material_batch_action.group(2)
                 batch = db.execute(
                     """
-                    SELECT b.*, p.title AS project_title, p.foreman_id, p.construction_manager_id
+                    SELECT b.*, p.title AS project_title, p.foreman_id, p.estimator_id, p.construction_manager_id
                     FROM material_request_batches b
                     JOIN projects p ON p.id = b.project_id
                     WHERE b.id = ?
@@ -3803,7 +3896,11 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     message = f"{batch['project_title']}: по заявке материалов от {format_date_ru(batch['created_at'])} создано отклонение/допработа «{title_text}»."
                     notify_users(
                         db,
-                        {user_id for user_id in (watcher_ids | {user_id_by_role(db, "procurement_manager")}) if user_id},
+                        {
+                            user_id
+                            for user_id in (watcher_ids | {user_id_by_role(db, "procurement_manager"), batch["estimator_id"]})
+                            if user_id
+                        },
                         batch["project_id"],
                         "Создана допработа из заявки материалов",
                         message,
@@ -3952,6 +4049,12 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         "material_request_batch",
                         batch_id,
                     )
+                    notify_material_deviation_for_estimators(
+                        db,
+                        batch_id,
+                        batch,
+                        "Заявка исправлена и повторно отправлена снабжению.",
+                    )
                     db.execute(
                         """
                         INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
@@ -4033,6 +4136,12 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         "material_request_batch",
                         batch_id,
                     )
+                    notify_material_deviation_for_estimators(
+                        db,
+                        batch_id,
+                        batch,
+                        "Заявка повторно отправлена снабжению после доработки.",
+                    )
                     for watcher_id in watcher_ids - {user_id_by_role(db, "procurement_manager") or 0}:
                         create_notification(
                             db,
@@ -4051,16 +4160,24 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     if not delivery_date:
                         raise ValueError("Укажите дату доставки.")
                     comment = str(data.get("comment") or "").strip()
+                    actual_purchase_amount = number_value(data.get("actual_purchase_amount"))
+                    estimate_amount = number_value(
+                        db.execute(
+                            "SELECT COALESCE(SUM(total_amount), 0) AS amount FROM material_requests WHERE batch_id = ?",
+                            (batch_id,),
+                        ).fetchone()["amount"]
+                    )
                     db.execute(
                         """
                         UPDATE material_request_batches
                         SET status = 'delivery_scheduled',
                             scheduled_delivery_date = ?,
                             procurement_comment = ?,
+                            actual_purchase_amount = ?,
                             updated_at = CURRENT_TIMESTAMP
                         WHERE id = ?
                         """,
-                        (delivery_date, comment, batch_id),
+                        (delivery_date, comment, actual_purchase_amount, batch_id),
                     )
                     db.execute(
                         """
@@ -4071,6 +4188,8 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         (delivery_date, comment, batch_id),
                     )
                     message = f"{batch['project_title']}: заявка на материалы от {format_date_ru(batch['created_at'])} обработана. Доставка состоится {format_date_ru(delivery_date)}."
+                    if actual_purchase_amount:
+                        message += f" Фактическая стоимость закупки: {actual_purchase_amount:g} ₽."
                     if comment:
                         message += f" Комментарий снабжения: {comment}"
                     notify_users(
@@ -4082,6 +4201,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         "material_request_batch",
                         batch_id,
                     )
+                    notify_material_actual_cost_overrun(db, batch_id, batch, actual_purchase_amount, estimate_amount)
                     db.execute(
                         """
                         INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
@@ -4374,7 +4494,10 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 if not items and not extra_items:
                     raise ValueError("Выберите хотя бы один материал.")
                 created: list[int] = []
-                project = db.execute("SELECT title, foreman_id FROM projects WHERE id = ?", (project_id,)).fetchone()
+                project = db.execute(
+                    "SELECT id, title, foreman_id, estimator_id, construction_manager_id FROM projects WHERE id = ?",
+                    (project_id,),
+                ).fetchone()
                 creator = db.execute("SELECT name, role FROM users WHERE id = ?", (creator_id,)).fetchone()
                 if creator_role == "foreman" and project and int(project["foreman_id"] or 0) != creator_id:
                     raise ValueError("Этот объект не закреплен за выбранным прорабом.")
@@ -4492,6 +4615,16 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     "material_request_batch",
                     batch_id,
                 )
+                if project and any(
+                    row["basis_type"] != "main_estimate"
+                    for row in db.execute("SELECT basis_type FROM material_requests WHERE batch_id = ?", (batch_id,)).fetchall()
+                ):
+                    notify_material_deviation_for_estimators(
+                        db,
+                        batch_id,
+                        project,
+                        "Заявка создана прорабом или руководителем.",
+                    )
                 db.execute(
                     """
                     INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
