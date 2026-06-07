@@ -279,7 +279,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         (
             "Material request traceability scenario",
             "Заявка материалов показывает кто заказал, объект, основания позиций, связь с допработами и фактическую стоимость закупки, а сметчик получает сигнал по позициям вне основной сметы или закупке дороже сметы.",
-            ["materialBatchBasisSummary", "materialBatchDestination", "Кто заказал", "Куда внесено", "actual_purchase_amount", "Фактическая стоимость закупки", "notify_material_deviation_for_estimators", "notify_material_actual_cost_overrun", "Закупка дороже сметы"],
+            ["materialBatchBasisSummary", "materialBatchDestination", "Кто заказал", "Куда внесено", "actual_unit_price", "actual_total_amount", "collectMaterialActualItems", "Цена закупки за ед.", "Сумма закупки", "notify_material_deviation_for_estimators", "notify_material_actual_cost_overrun", "Закупка дороже сметы"],
             "Не терять трассировку заявки: прораб, снабжение, сметчик и руководители должны видеть источник, место учета допов/замен/превышений и факт закупки дороже сметы.",
         ),
         (

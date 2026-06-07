@@ -151,6 +151,8 @@ def init_db() -> None:
                 smetter_status TEXT NOT NULL DEFAULT 'waiting_to_enter',
                 supplier TEXT,
                 total_amount REAL NOT NULL DEFAULT 0,
+                actual_unit_price REAL NOT NULL DEFAULT 0,
+                actual_total_amount REAL NOT NULL DEFAULT 0,
                 comment TEXT,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -419,6 +421,8 @@ def init_db() -> None:
         ensure_column(db, "material_requests", "delivery_urgency", "TEXT NOT NULL DEFAULT 'standard'")
         ensure_column(db, "material_requests", "actual_delivery_date", "TEXT")
         ensure_column(db, "material_requests", "procurement_comment", "TEXT")
+        ensure_column(db, "material_requests", "actual_unit_price", "REAL NOT NULL DEFAULT 0")
+        ensure_column(db, "material_requests", "actual_total_amount", "REAL NOT NULL DEFAULT 0")
         ensure_column(db, "material_requests", "processed_at", "TEXT")
         ensure_column(db, "projects", "estimate_file_name", "TEXT")
         ensure_column(db, "projects", "customer_id", "INTEGER")

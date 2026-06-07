@@ -1436,6 +1436,16 @@ function materialBatchHasDeviation(batch) {
   return batch.items.some((item) => item.basis_type && item.basis_type !== "main_estimate");
 }
 
+function materialActualTotal(item) {
+  return Number(item.actual_total_amount || 0);
+}
+
+function materialActualOverrun(item) {
+  const actual = materialActualTotal(item);
+  const planned = Number(item.total_amount || 0);
+  return actual > 0 && planned > 0 && actual > planned;
+}
+
 function materialBatchBasisSummary(batch) {
   const counts = (batch.items || []).reduce((acc, item) => {
     const key = item.basis_type || "main_estimate";
@@ -1453,6 +1463,14 @@ function materialBatchDestination(batch) {
     return `Куда внесено: Допработы и отклонения — ${batch.variation_title || `#${batch.variation_id}`} (${label(batch.variation_status)})`;
   }
   return "Куда внести: требуется создать связанную допработу/отклонение";
+}
+
+function collectMaterialActualItems(batch) {
+  return (batch.items || []).map((item) => ({
+    id: item.id,
+    actual_unit_price: qs(`[data-material-actual-unit="${item.id}"]`)?.value || "",
+    actual_total_amount: qs(`[data-material-actual-total="${item.id}"]`)?.value || "",
+  }));
 }
 
 function canCreateVariationFromBatch(batch) {
@@ -2883,6 +2901,7 @@ async function openMaterialBatchDialog(batchKey) {
               ${pill(`${item.requested_quantity || item.estimated_quantity || 0} ${item.requested_unit || item.estimate_material_unit || ""}`, "blue")}
               ${pill(materialBasisLabel(item.basis_type), materialBasisLevel(item.basis_type))}
               ${pill(money(item.total_amount), "success")}
+              ${materialActualTotal(item) ? pill(`Закупка: ${money(materialActualTotal(item))}`, materialActualOverrun(item) ? "danger" : "blue") : ""}
             </div>
           </div>`
         )
@@ -2916,7 +2935,21 @@ async function openMaterialBatchDialog(batchKey) {
         ? `<section class="workflow-panel">
             <h3>Доставка</h3>
             <label>Дата доставки <input id="materialBatchDeliveryDate" type="date" value="${batch.scheduled_delivery_date || batch.needed_at || ""}" /></label>
-            <label>Фактическая стоимость закупки, ₽ <input id="materialBatchActualAmount" type="text" inputmode="decimal" value="${batch.actual_purchase_amount || ""}" placeholder="Например: 125000" /></label>
+            <div class="table material-review-items">
+              ${batch.items
+                .map(
+                  (item) => `
+                  <div class="row estimate-material-row">
+                    <div class="material-main">
+                      <strong>${item.title}</strong>
+                      <div class="muted">Смета: ${money(item.total_amount)} · ${item.requested_quantity || item.estimated_quantity || 0} ${item.requested_unit || item.estimate_material_unit || ""}</div>
+                    </div>
+                    <label>Цена закупки за ед., ₽ <input type="text" inputmode="decimal" data-material-actual-unit="${item.id}" value="${item.actual_unit_price || ""}" placeholder="0" /></label>
+                    <label>Сумма закупки, ₽ <input type="text" inputmode="decimal" data-material-actual-total="${item.id}" value="${item.actual_total_amount || ""}" placeholder="0" /></label>
+                  </div>`
+                )
+                .join("")}
+            </div>
             <label>Комментарий снабжения <textarea id="materialBatchScheduleComment" rows="3" placeholder="Например: нужна доверенность или кран">${batch.procurement_comment || ""}</textarea></label>
             <div class="form-actions">
               <button class="primary" type="button" data-material-batch-action="schedule" data-material-batch-id="${batch.id}">Уведомить о доставке</button>
@@ -4103,6 +4136,7 @@ function bindEvents() {
     if (materialBatchAction) {
       const id = materialBatchAction.dataset.materialBatchId;
       const action = materialBatchAction.dataset.materialBatchAction;
+      const currentBatch = buildMaterialBatches(state.materialRequests || []).find((batch) => String(batch.id) === String(id));
       let body = {};
       if (action === "delete" && !confirm("Удалить заявку на материалы? Это можно сделать только до принятия снабжением в работу.")) return;
       if (action === "return") {
@@ -4122,7 +4156,7 @@ function bindEvents() {
       if (action === "schedule") {
         body = {
           scheduled_delivery_date: qs("#materialBatchDeliveryDate")?.value || "",
-          actual_purchase_amount: qs("#materialBatchActualAmount")?.value || "",
+          actual_items: currentBatch ? collectMaterialActualItems(currentBatch) : [],
           comment: qs("#materialBatchScheduleComment")?.value || "",
         };
       }

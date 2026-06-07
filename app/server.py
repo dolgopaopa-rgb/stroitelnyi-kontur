@@ -1016,19 +1016,47 @@ def notify_material_deviation_for_estimators(db, batch_id: int, project, reason:
     )
 
 
-def notify_material_actual_cost_overrun(db, batch_id: int, project, actual_amount: float, estimate_amount: float) -> None:
-    if not project or actual_amount <= 0 or estimate_amount <= 0 or actual_amount <= estimate_amount:
+def notify_material_actual_cost_overrun(db, batch_id: int, project) -> None:
+    if not project:
+        return
+    rows = db.execute(
+        """
+        SELECT m.*, em.unit AS estimate_material_unit
+        FROM material_requests m
+        LEFT JOIN estimate_materials em ON em.id = m.estimate_material_id
+        WHERE m.batch_id = ?
+          AND m.actual_total_amount > 0
+          AND m.total_amount > 0
+          AND m.actual_total_amount > m.total_amount
+        ORDER BY m.estimate_section, m.title
+        """,
+        (batch_id,),
+    ).fetchall()
+    if not rows:
         return
     project_keys = set(project.keys())
     project_id = int(project["project_id"] if "project_id" in project_keys else project["id"])
     project_title = project["project_title"] if "project_title" in project_keys else project["title"]
     estimator_id = project["estimator_id"] if "estimator_id" in project_keys else None
     construction_manager_id = project["construction_manager_id"] if "construction_manager_id" in project_keys else None
-    difference = actual_amount - estimate_amount
+    lines = []
+    for item in rows[:8]:
+        unit = item["requested_unit"] or item["estimate_material_unit"] or ""
+        qty = number_value(item["requested_quantity"])
+        estimate_amount = number_value(item["total_amount"])
+        actual_amount = number_value(item["actual_total_amount"])
+        difference = actual_amount - estimate_amount
+        line = f"{item['title']}"
+        if qty:
+            line += f", {qty:g} {unit}".rstrip()
+        line += f": смета {estimate_amount:g} ₽, закупка {actual_amount:g} ₽, +{difference:g} ₽"
+        lines.append(line)
+    if len(rows) > 8:
+        lines.append(f"Еще позиций: {len(rows) - 8}")
     text = (
-        f"{project_title}: фактическая закупочная стоимость по заявке материалов выше сметной. "
-        f"По смете: {estimate_amount:g} ₽, закупка: {actual_amount:g} ₽, превышение: {difference:g} ₽. "
-        "Сметчику нужно проверить цены и при необходимости обновить шаблоны/расчет."
+        f"{project_title}: по заявке материалов есть позиции, где закупка дороже сметы. "
+        "Сметчику нужно проверить цены и при необходимости обновить шаблоны/расчет.\n"
+        + "\n".join(f"- {line}" for line in lines)
     )
     notify_users(
         db,
@@ -4160,13 +4188,35 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     if not delivery_date:
                         raise ValueError("Укажите дату доставки.")
                     comment = str(data.get("comment") or "").strip()
-                    actual_purchase_amount = number_value(data.get("actual_purchase_amount"))
-                    estimate_amount = number_value(
+                    actual_items = data.get("actual_items") or []
+                    actual_purchase_amount = 0.0
+                    for item in actual_items:
+                        request_id = int(item.get("id") or 0)
+                        if not request_id:
+                            continue
+                        material = db.execute(
+                            "SELECT requested_quantity FROM material_requests WHERE id = ? AND batch_id = ?",
+                            (request_id, batch_id),
+                        ).fetchone()
+                        if not material:
+                            continue
+                        actual_unit_price = number_value(item.get("actual_unit_price"))
+                        actual_total_amount = number_value(item.get("actual_total_amount"))
+                        if actual_total_amount <= 0 and actual_unit_price > 0:
+                            actual_total_amount = actual_unit_price * number_value(material["requested_quantity"])
+                        if actual_unit_price <= 0 and actual_total_amount > 0 and number_value(material["requested_quantity"]) > 0:
+                            actual_unit_price = actual_total_amount / number_value(material["requested_quantity"])
+                        actual_purchase_amount += actual_total_amount
                         db.execute(
-                            "SELECT COALESCE(SUM(total_amount), 0) AS amount FROM material_requests WHERE batch_id = ?",
-                            (batch_id,),
-                        ).fetchone()["amount"]
-                    )
+                            """
+                            UPDATE material_requests
+                            SET actual_unit_price = ?,
+                                actual_total_amount = ?,
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE id = ? AND batch_id = ?
+                            """,
+                            (actual_unit_price, actual_total_amount, request_id, batch_id),
+                        )
                     db.execute(
                         """
                         UPDATE material_request_batches
@@ -4201,7 +4251,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         "material_request_batch",
                         batch_id,
                     )
-                    notify_material_actual_cost_overrun(db, batch_id, batch, actual_purchase_amount, estimate_amount)
+                    notify_material_actual_cost_overrun(db, batch_id, batch)
                     db.execute(
                         """
                         INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
