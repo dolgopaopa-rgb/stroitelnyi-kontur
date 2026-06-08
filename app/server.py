@@ -1422,7 +1422,7 @@ def can_change_estimate_job_status(row, status: str, account: dict | None) -> bo
     if status == "estimate_in_work":
         return row["status"] in {"estimate_new", "estimate_hold"}
     if status == "estimate_done":
-        return row["status"] == "estimate_in_work"
+        return row["status"] in {"estimate_in_work", "estimate_question"}
     if status == "estimate_returned":
         return row["status"] in {"estimate_new", "estimate_hold", "estimate_in_work"}
     if status == "estimate_question":
@@ -2992,6 +2992,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     return
                 delivered_at = data.get("delivered_at") or (date.today().isoformat() if status == "estimate_done" else None)
                 result_comment = data.get("result_comment") or row["result_comment"] or ""
+                attachments = [item for item in data.get("attachments") or [] if isinstance(item, dict) and item.get("file_base64")]
                 db.execute(
                     """
                     UPDATE estimate_jobs
@@ -3012,6 +3013,9 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         estimate_job_id,
                     ),
                 )
+                if status == "estimate_done":
+                    for attachment in attachments:
+                        save_estimate_job_file(db, estimate_job_id, attachment, account_user_id(account))
                 notification_title = "Статус сметы изменен"
                 notification_message = f"{row['title']}: {status}"
                 if status == "estimate_returned":

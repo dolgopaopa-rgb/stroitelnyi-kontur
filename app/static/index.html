@@ -9,10 +9,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Строительный контур</title>
-    <link rel="manifest" href="/static/manifest.webmanifest?v=20260607-material-lines" />
+    <link rel="manifest" href="/static/manifest.webmanifest?v=20260608-estimate-question-done" />
     <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260607-material-lines" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260608-estimate-question-done" />
   </head>
   <body>
     <div class="app">
@@ -488,6 +488,26 @@
       </form>
     </dialog>
 
+    <dialog id="estimateJobDoneDialog">
+      <form method="dialog" class="form" id="estimateJobDoneForm">
+        <div class="modal-head">
+          <h2 id="estimateJobDoneTitle">Сдать смету</h2>
+          <button type="button" class="icon" data-close="estimateJobDoneDialog">×</button>
+        </div>
+        <input name="id" type="hidden" />
+        <label>Комментарий к сдаче <textarea name="result_comment" rows="3" placeholder="Например: смета готова, файл приложен, можно передавать менеджеру"></textarea></label>
+        <label>
+          Файлы готовой сметы
+          <input name="attachments" type="file" multiple accept=".pdf,.xlsx,.xls,.doc,.docx,.zip,.rar,.7z,.jpg,.jpeg,.png,.webp" />
+          <span class="field-hint">Можно приложить смету, КП, PDF, Excel, архив или сопроводительные материалы.</span>
+        </label>
+        <div class="form-actions">
+          <button type="button" class="secondary" data-close="estimateJobDoneDialog">Отмена</button>
+          <button class="primary" type="submit">Сдать смету</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog id="estimateImageDialog">
       <div class="image-preview">
         <div class="modal-head">
@@ -725,6 +745,6 @@
     </dialog>
 
     <div class="toast" id="toast"></div>
-    <script src="/static/app.js?v=20260607-material-lines"></script>
+    <script src="/static/app.js?v=20260608-estimate-question-done"></script>
   </body>
 </html>

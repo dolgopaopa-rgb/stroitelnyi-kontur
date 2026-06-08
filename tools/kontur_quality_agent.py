@@ -247,6 +247,12 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
             "Не убирать возврат, уточнение и карусель: без них сметчик снова зависнет на неполных исходных данных и отдельных фото.",
         ),
         (
+            "Estimate question completion scenario",
+            "После уточняющего вопроса сметчик может сдать смету и приложить файлы результата.",
+            ["estimateJobDoneForm", "openEstimateJobDoneDialog", "Сдать смету", "Файлы готовой сметы", 'row["status"] in {"estimate_in_work", "estimate_question"}', "save_estimate_job_file(db, estimate_job_id, attachment"],
+            "Не блокировать сдачу сметы из статуса уточнения: это нормальный рабочий сценарий после ответа менеджера.",
+        ),
+        (
             "Estimate links and print scenario",
             "В сметном задании видны активные ссылки на Сметтер и есть быстрый вывод вложений на печать.",
             ['name="smetter_url"', "linkifyText", "data-print-estimate-file", "estimate-file-print", "Открыть Сметтер"],

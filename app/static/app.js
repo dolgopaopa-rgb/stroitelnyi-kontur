@@ -298,7 +298,7 @@ function canStartEstimateJob(job) {
 
 function canFinishEstimateJob(job) {
   const role = currentRoleBase();
-  if (job.status !== "estimate_in_work") return false;
+  if (!["estimate_in_work", "estimate_question"].includes(job.status)) return false;
   return ["owner", "construction_manager"].includes(role) || (role === "estimator" && isOwnEstimateJob(job, "estimator_id"));
 }
 
@@ -1841,6 +1841,16 @@ function openEstimateJobDialog(jobId = "") {
   fillEstimateJobForm(job);
   qs("#estimateJobDialogTitle").textContent = job.id ? "Редактирование задания на смету" : "Новое задание на смету";
   qs("#estimateJobDialog").showModal();
+}
+
+function openEstimateJobDoneDialog(jobId) {
+  const job = state.estimateJobs.find((item) => Number(item.id) === Number(jobId));
+  const form = qs("#estimateJobDoneForm");
+  form.reset();
+  form.elements.id.value = jobId || "";
+  qs("#estimateJobDoneTitle").textContent = job ? `Сдать смету: ${job.title}` : "Сдать смету";
+  form.elements.result_comment.value = job?.result_comment || "";
+  qs("#estimateJobDoneDialog").showModal();
 }
 
 function uniqueMaterialBatches(materialRows = []) {
@@ -4033,9 +4043,8 @@ function bindEvents() {
       const status = estimateJobStatusButton.dataset.estimateJobStatus;
       const body = { status };
       if (status === "estimate_done") {
-        const comment = window.prompt("Комментарий к сдаче сметы. Например: смета отправлена менеджеру, требуется проверка.");
-        if (comment === null) return;
-        body.result_comment = comment.trim();
+        openEstimateJobDoneDialog(id);
+        return;
       }
       if (status === "estimate_returned") {
         const comment = window.prompt("Что менеджеру нужно исправить или добавить в задании?");
@@ -4369,6 +4378,31 @@ function bindEvents() {
     await renderEstimateJobs();
     await renderDashboard();
     showToast(id ? "Сметное задание обновлено" : "Сметное задание создано");
+  });
+  qs("#estimateJobDoneForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = qs("#estimateJobDoneForm");
+    const id = form.elements.id.value;
+    if (!id) {
+      showToast("Не найдено сметное задание");
+      return;
+    }
+    const attachments = Array.from(form.elements.attachments?.files || []);
+    const payload = {
+      status: "estimate_done",
+      result_comment: form.elements.result_comment.value || "",
+      attachments: await Promise.all(attachments.map((file) => fileDocumentPayload(file, file.name, "estimate_job_file", "estimate_job"))),
+    };
+    await api(`/api/estimate-jobs/${id}/status`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    qs("#estimateJobDoneDialog").close();
+    form.reset();
+    await loadCoreData();
+    await renderEstimateJobs();
+    await renderDashboard();
+    showToast("Смета сдана, файлы сохранены");
   });
   qs("#materialForm").addEventListener("submit", (event) => {
     event.preventDefault();
