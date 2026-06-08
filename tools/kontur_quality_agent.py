@@ -121,6 +121,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
     css_text = repository_file("app/static/styles.css")
     sw_text = repository_file("app/static/sw.js")
     server_text = repository_file("app/server.py")
+    max_cli_text = repository_file("app/send_max_message.py")
     database_text = repository_file("app/database.py")
 
     if not html or not app_text:
@@ -292,9 +293,9 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         ),
         (
             "MAX outgoing encoding scenario",
-            "Сообщения бота в MAX отправляются в безопасной для кириллицы кодировке.",
-            ['json.dumps({"text": text, "format": "markdown", "notify": True})', "application/json; charset=utf-8"],
-            "Не отправлять русские сообщения в MAX сырым UTF-8 без charset: на стороне платформы это может превращаться в вопросительные знаки.",
+            "Сообщения бота в MAX отправляются в безопасной для кириллицы кодировке, а ручные обновления проходят через base64.",
+            ["def max_message_payload", "ensure_ascii=True", '.encode("ascii")', "def max_message_text_is_corrupted", "MAX message text looks corrupted", "message_base64", "base64.b64decode"],
+            "Не отправлять русские сообщения в MAX через Windows/SSH-пайпы. Для ручных обновлений использовать app/send_max_message.py с base64.",
         ),
         (
             "Knowledge base construction manager scenario",
@@ -341,7 +342,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
     ]
 
     broken_scenarios = []
-    combined_text = "\n".join([html, app_text, css_text, server_text, database_text])
+    combined_text = "\n".join([html, app_text, css_text, server_text, max_cli_text, database_text])
     for name, details, needles, recommendation in scenario_contracts:
         ok = has_all(combined_text, needles)
         check_static_contract(checks, name, ok, details if ok else f"Нарушен сценарий: {details}", recommendation)

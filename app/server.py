@@ -1134,13 +1134,34 @@ def update_notification_max_status(notification_id: int, status: str, error: str
         return
 
 
+def max_message_text_is_corrupted(text: str) -> bool:
+    value = str(text or "")
+    if not value.strip():
+        return False
+    has_cyrillic = bool(re.search(r"[А-Яа-яЁё]", value))
+    question_count = value.count("?")
+    compact = re.sub(r"\s+", "", value)
+    return not has_cyrillic and ("?????" in compact or (question_count >= 12 and question_count / max(len(value), 1) > 0.12))
+
+
+def max_message_payload(text: str) -> bytes:
+    payload = json.dumps(
+        {"text": str(text or ""), "format": "markdown", "notify": True},
+        ensure_ascii=True,
+        separators=(",", ":"),
+    )
+    return payload.encode("ascii")
+
+
 def send_max_message(chat_id: str, text: str) -> tuple[bool, str]:
     token = os.environ.get("MAX_TOKEN", "").strip()
     if not token:
         return False, "MAX_TOKEN is not configured"
     if not chat_id:
         return False, "MAX chat is not bound"
-    payload = json.dumps({"text": text, "format": "markdown", "notify": True}).encode("utf-8")
+    if max_message_text_is_corrupted(text):
+        return False, "MAX message text looks corrupted; refused to send"
+    payload = max_message_payload(text)
     url = f"{MAX_API_URL}/messages?{urlencode({'chat_id': chat_id})}"
     request = Request(
         url,
