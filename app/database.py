@@ -321,9 +321,21 @@ def init_db() -> None:
                 FOREIGN KEY (responsible_id) REFERENCES users(id)
             );
 
+            CREATE TABLE IF NOT EXISTS knowledge_folders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                parent_id INTEGER,
+                title TEXT NOT NULL,
+                created_by INTEGER,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (parent_id) REFERENCES knowledge_folders(id) ON DELETE CASCADE,
+                FOREIGN KEY (created_by) REFERENCES users(id)
+            );
+
             CREATE TABLE IF NOT EXISTS documents (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 project_id INTEGER NOT NULL,
+                folder_id INTEGER,
                 title TEXT NOT NULL,
                 type TEXT NOT NULL,
                 version TEXT,
@@ -341,6 +353,7 @@ def init_db() -> None:
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+                FOREIGN KEY (folder_id) REFERENCES knowledge_folders(id),
                 FOREIGN KEY (owner_id) REFERENCES users(id),
                 FOREIGN KEY (contract_id) REFERENCES contracts(id)
             );
@@ -408,6 +421,8 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_variations_project ON variations(project_id);
             CREATE INDEX IF NOT EXISTS idx_contracts_ends ON contracts(ends_at);
             CREATE INDEX IF NOT EXISTS idx_documents_project ON documents(project_id);
+            CREATE INDEX IF NOT EXISTS idx_documents_folder ON documents(folder_id);
+            CREATE INDEX IF NOT EXISTS idx_knowledge_folders_parent ON knowledge_folders(parent_id);
             CREATE INDEX IF NOT EXISTS idx_events_project ON events(project_id);
             CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read);
             CREATE INDEX IF NOT EXISTS idx_notifications_role ON notifications(role, is_read);
@@ -452,6 +467,7 @@ def init_db() -> None:
         ensure_column(db, "documents", "file_path", "TEXT")
         ensure_column(db, "documents", "mime_type", "TEXT")
         ensure_column(db, "documents", "file_size", "INTEGER")
+        ensure_column(db, "documents", "folder_id", "INTEGER")
         ensure_column(db, "documents", "related_section", "TEXT")
         ensure_column(db, "documents", "contract_id", "INTEGER")
         ensure_column(db, "documents", "process_type", "TEXT")

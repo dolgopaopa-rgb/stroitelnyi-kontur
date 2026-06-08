@@ -29,6 +29,7 @@ const state = {
   selectedWorkProjectId: initialProjectId,
   openWorkStages: {},
   estimateGallery: { jobId: null, files: [], index: 0 },
+  knowledgeFolders: [],
 };
 
 const PROJECT_FORM_DRAFT_KEY = "projectFormDraft:v1";
@@ -3213,24 +3214,97 @@ async function renderContracts() {
     : `<p class="muted">Контрольных сроков пока нет.</p>`;
 }
 
+function knowledgeFolderOptions(selected = "") {
+  const selectedValue = String(selected || "");
+  const options = [`<option value="">Без папки / корень базы знаний</option>`];
+  (state.knowledgeFolders || []).forEach((folder) => {
+    const value = String(folder.id);
+    const labelText = folder.path || folder.title || `Папка ${folder.id}`;
+    options.push(`<option value="${escapeAttr(value)}" ${value === selectedValue ? "selected" : ""}>${escapeHtml(labelText)}</option>`);
+  });
+  return options.join("");
+}
+
+function fillKnowledgeFolderSelects() {
+  qsa('#documentForm select[name="folder_id"], #knowledgeFolderForm select[name="parent_id"]').forEach((select) => {
+    const current = select.value || "";
+    select.innerHTML = knowledgeFolderOptions(current);
+  });
+}
+
+function renderKnowledgeDocumentCard(doc) {
+  return `
+    <article class="card knowledge-file-card">
+      <div class="document-card-head">
+        <div class="stack-line"><strong>${escapeHtml(documentTitle(doc))}</strong>${pill(documentType(doc.type), "blue")}${pill(label(doc.status))}</div>
+        ${canDeleteKnowledgeBase() ? `<button class="danger-button tiny" type="button" data-document-action="delete" data-document-id="${doc.id}">Удалить</button>` : ""}
+      </div>
+      ${doc.file_path ? documentFileLink(doc) : `<div class="muted">${escapeHtml(doc.file_name || "Файл не загружен")}</div>`}
+    </article>`;
+}
+
+function renderKnowledgeTree(folders = [], docs = []) {
+  const childrenByParent = new Map();
+  folders.forEach((folder) => {
+    const key = String(folder.parent_id || "");
+    childrenByParent.set(key, [...(childrenByParent.get(key) || []), folder]);
+  });
+  const docsByFolder = new Map();
+  docs.forEach((doc) => {
+    const key = String(doc.folder_id || "");
+    docsByFolder.set(key, [...(docsByFolder.get(key) || []), doc]);
+  });
+
+  const renderFolder = (folder, depth = 0) => {
+    const children = childrenByParent.get(String(folder.id)) || [];
+    const folderDocs = docsByFolder.get(String(folder.id)) || [];
+    const isEmpty = !children.length && !folderDocs.length;
+    const deleteButton =
+      canDeleteKnowledgeBase() && isEmpty
+        ? `<button class="danger-button tiny" type="button" data-folder-action="delete" data-folder-id="${folder.id}">Удалить</button>`
+        : "";
+    return `
+      <details class="knowledge-folder" ${depth === 0 ? "open" : ""}>
+        <summary>
+          <span class="knowledge-folder-title">
+            <strong>${escapeHtml(folder.title || "Папка")}</strong>
+            <span class="muted">${escapeHtml(folder.path || "")}</span>
+          </span>
+          <span class="knowledge-folder-meta">${folderDocs.length} файл(ов) · ${children.length} подпапок</span>
+          ${deleteButton}
+        </summary>
+        <div class="knowledge-folder-body">
+          ${folderDocs.length ? folderDocs.map(renderKnowledgeDocumentCard).join("") : `<p class="muted">В этой папке пока нет файлов.</p>`}
+          ${children.map((child) => renderFolder(child, depth + 1)).join("")}
+        </div>
+      </details>`;
+  };
+
+  const rootFolders = childrenByParent.get("") || [];
+  const rootDocs = docsByFolder.get("") || [];
+  const content = [
+    ...rootFolders.map((folder) => renderFolder(folder)),
+    rootDocs.length
+      ? `<section class="knowledge-root-docs"><h3>Без папки</h3>${rootDocs.map(renderKnowledgeDocumentCard).join("")}</section>`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("");
+  return content || `<p class="muted">База знаний пока пустая. Загружайте сюда регламенты, проектные решения, узлы и общую документацию.</p>`;
+}
+
 async function renderDocuments() {
+  const newKnowledgeFolderButton = qs("#newKnowledgeFolderButton");
   const newDocumentButton = qs("#newDocumentButton");
+  if (newKnowledgeFolderButton) newKnowledgeFolderButton.hidden = !canManageKnowledgeBase();
   if (newDocumentButton) newDocumentButton.hidden = !canManageKnowledgeBase();
-  const docs = await api("/api/documents?related_type=knowledge_base");
-  qs("#documentCards").innerHTML = docs.length
-    ? docs
-        .map(
-          (doc) => `
-          <article class="card">
-            <div class="document-card-head">
-              <div class="stack-line"><strong>${documentTitle(doc)}</strong>${pill(documentType(doc.type), "blue")}${pill(label(doc.status))}</div>
-              ${canDeleteKnowledgeBase() ? `<button class="danger-button tiny" type="button" data-document-action="delete" data-document-id="${doc.id}">Удалить</button>` : ""}
-            </div>
-            ${doc.file_path ? documentFileLink(doc) : `<div class="muted">${doc.file_name || "Файл не загружен"}</div>`}
-          </article>`
-        )
-        .join("")
-    : `<p class="muted">База знаний пока пустая. Загружайте сюда регламенты, проектные решения, узлы и общую документацию.</p>`;
+  const [folders, docs] = await Promise.all([
+    api("/api/document-folders?related_type=knowledge_base"),
+    api("/api/documents?related_type=knowledge_base"),
+  ]);
+  state.knowledgeFolders = Array.isArray(folders) ? folders : [];
+  fillKnowledgeFolderSelects();
+  qs("#documentCards").innerHTML = renderKnowledgeTree(state.knowledgeFolders, Array.isArray(docs) ? docs : []);
 }
 
 function feedbackStatusLabel(status) {
@@ -3740,6 +3814,7 @@ function bindEvents() {
     await renderEstimateJobs();
     await renderDashboard();
     await renderMaterials();
+    await renderDocuments();
     fillMaterialProjectSelect();
     updateMaterialActorHint();
     showToast(`Роль: ${roleLabel(state.currentRole)}`);
@@ -3771,7 +3846,18 @@ function bindEvents() {
     qs("#materialDialog").showModal();
   });
   qs("#newVariationButton").addEventListener("click", () => qs("#variationDialog").showModal());
-  qs("#newDocumentButton").addEventListener("click", () => qs("#documentDialog").showModal());
+  qs("#newKnowledgeFolderButton")?.addEventListener("click", () => {
+    const form = qs("#knowledgeFolderForm");
+    form.reset();
+    fillKnowledgeFolderSelects();
+    qs("#knowledgeFolderDialog").showModal();
+  });
+  qs("#newDocumentButton").addEventListener("click", () => {
+    const form = qs("#documentForm");
+    form.reset();
+    fillKnowledgeFolderSelects();
+    qs("#documentDialog").showModal();
+  });
   qs("#newEventButton").addEventListener("click", () => qs("#eventDialog").showModal());
   qs("#refreshFeedbackButton")?.addEventListener("click", () => renderFeedback().then(() => showToast("Обратная связь обновлена")));
   qs("#deleteSelectedFeedbackButton")?.addEventListener("click", async () => {
@@ -4118,6 +4204,27 @@ function bindEvents() {
     if (variationExportButton) {
       window.open(`/api/variations/${variationExportButton.dataset.exportVariation}/export`, "_blank", "noopener");
       return;
+    }
+
+    const folderActionButton = event.target.closest("[data-folder-action]");
+    if (folderActionButton) {
+      const action = folderActionButton.dataset.folderAction;
+      const id = folderActionButton.dataset.folderId;
+      if (action === "delete") {
+        const confirmed = confirm("Удалить пустую папку базы знаний?");
+        if (!confirmed) return;
+        try {
+          await api(`/api/document-folders/${id}/delete`, {
+            method: "POST",
+            body: JSON.stringify({ actor_role: currentRoleBase() }),
+          });
+          await renderDocuments();
+          showToast("Папка удалена");
+        } catch (error) {
+          showToast(error.message || "Не удалось удалить папку");
+        }
+        return;
+      }
     }
 
     const documentActionButton = event.target.closest("[data-document-action]");
@@ -4507,6 +4614,21 @@ function bindEvents() {
     switchView("materials");
     showToast("Материалы сметы загружены в объект");
   });
+  qs("#knowledgeFolderForm")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = qs("#knowledgeFolderForm");
+    try {
+      const payload = formToJson(form);
+      await api("/api/document-folders", { method: "POST", body: JSON.stringify(payload) });
+      qs("#knowledgeFolderDialog").close();
+      form.reset();
+      await renderDocuments();
+      showToast("Папка добавлена в базу знаний");
+    } catch (error) {
+      showToast(error.message || "Не удалось создать папку");
+    }
+  });
+
   qs("#documentForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = qs("#documentForm");
@@ -4514,15 +4636,33 @@ function bindEvents() {
       const data = formToJson(form);
       data.related_type = "knowledge_base";
       delete data.project_id;
-      const file = form.elements.document_file.files[0];
-      if (file) {
-        data.document_file = await fileDocumentPayload(file, data.title || file.name, data.type || "other", "knowledge_base");
+      const looseFiles = Array.from(form.elements.document_files?.files || []);
+      const folderFiles = Array.from(form.elements.document_folder?.files || []);
+      const files = [...looseFiles, ...folderFiles];
+      if (!files.length) {
+        showToast("Выберите файл или папку для загрузки");
+        return;
       }
+      data.documents = await Promise.all(
+        files.map(async (file) => {
+          const relativePath = file.webkitRelativePath || file.name;
+          const fallbackTitle = file.name.replace(/\.[^.]+$/, "") || file.name;
+          return {
+            title: files.length === 1 && data.title ? data.title : fallbackTitle,
+            type: data.type || "other",
+            folder_id: data.folder_id || "",
+            relative_path: relativePath,
+            document_file: await fileDocumentPayload(file, files.length === 1 && data.title ? data.title : file.name, data.type || "other", "knowledge_base"),
+          };
+        })
+      );
+      delete data.document_files;
+      delete data.document_folder;
       await api("/api/documents", { method: "POST", body: JSON.stringify(data) });
       qs("#documentDialog").close();
       form.reset();
-      await loadAll();
-      showToast("Материал добавлен в базу знаний");
+      await renderDocuments();
+      showToast(files.length > 1 ? `Материалы добавлены в базу знаний: ${files.length}` : "Материал добавлен в базу знаний");
     } catch (error) {
       showToast(error.message || "Не удалось сохранить материал");
     }

@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="ru">
   <head>
     <meta charset="utf-8" />
@@ -9,10 +9,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Строительный контур</title>
-    <link rel="manifest" href="/static/manifest.webmanifest?v=20260608-estimate-question-done" />
+    <link rel="manifest" href="/static/manifest.webmanifest?v=20260608-knowledge-folders" />
     <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260608-estimate-question-done" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260608-knowledge-folders" />
   </head>
   <body>
     <div class="app">
@@ -273,7 +273,10 @@
           <div class="panel">
             <div class="panel-head">
               <h2>База знаний</h2>
-              <button class="primary" id="newDocumentButton">Добавить материал</button>
+              <div class="stack-line">
+                <button class="secondary" id="newKnowledgeFolderButton" type="button">Добавить папку</button>
+                <button class="primary" id="newDocumentButton" type="button">Добавить материал</button>
+              </div>
             </div>
             <div class="cards" id="documentCards"></div>
           </div>
@@ -570,13 +573,29 @@
       </div>
     </dialog>
 
+    <dialog id="knowledgeFolderDialog">
+      <form method="dialog" class="form" id="knowledgeFolderForm">
+        <div class="modal-head">
+          <h2>Новая папка базы знаний</h2>
+          <button type="button" class="icon" data-close="knowledgeFolderDialog">×</button>
+        </div>
+        <label>Внутри папки <select name="parent_id"></select></label>
+        <label>Название папки <input name="title" required placeholder="Например: кровля, регламенты, узлы" /></label>
+        <div class="form-actions">
+          <button type="button" class="secondary" data-close="knowledgeFolderDialog">Отмена</button>
+          <button class="primary" type="submit">Создать папку</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog id="documentDialog">
       <form method="dialog" class="form" id="documentForm">
         <div class="modal-head">
           <h2>Новый материал базы знаний</h2>
           <button type="button" class="icon" data-close="documentDialog">×</button>
         </div>
-        <label>Название <input name="title" required placeholder="Регламент, узел, проектное решение..." /></label>
+        <label>Папка <select name="folder_id"></select></label>
+        <label>Название <input name="title" placeholder="Для одного файла можно указать понятное название" /></label>
         <label>
           Тип
           <select name="type">
@@ -588,7 +607,9 @@
             <option value="other">Другое</option>
           </select>
         </label>
-        <label>Файл <input name="document_file" type="file" accept=".pdf,.xlsx,.xls,.csv,.doc,.docx,.jpg,.jpeg,.png,.zip,.rar,.7z,.dwg,.dxf" /></label>
+        <label>Файлы <input name="document_files" type="file" multiple accept=".pdf,.xlsx,.xls,.csv,.doc,.docx,.jpg,.jpeg,.png,.webp,.mp4,.mov,.zip,.rar,.7z,.dwg,.dxf" /></label>
+        <label>Или папка целиком <input name="document_folder" type="file" webkitdirectory directory multiple /></label>
+        <p class="muted">Если выбрать папку целиком, вложенные папки сохранятся в базе знаний с такой же структурой.</p>
         <div class="form-actions">
           <button type="button" class="secondary" data-close="documentDialog">Отмена</button>
           <button class="primary" type="submit">Сохранить</button>
@@ -745,6 +766,6 @@
     </dialog>
 
     <div class="toast" id="toast"></div>
-    <script src="/static/app.js?v=20260608-estimate-question-done"></script>
+    <script src="/static/app.js?v=20260608-knowledge-folders"></script>
   </body>
 </html>

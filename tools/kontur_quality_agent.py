@@ -141,6 +141,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         ("newEstimateJobButton", "Добавить сметное задание", ['qs("#newEstimateJobButton").addEventListener("click"', "openEstimateJobDialog"]),
         ("newMaterialButton", "Добавить заявку", ['qs("#newMaterialButton").addEventListener("click"', 'qs("#materialDialog").showModal()']),
         ("newVariationButton", "Добавить допработу", ['qs("#newVariationButton").addEventListener("click"', 'qs("#variationDialog").showModal()']),
+        ("newKnowledgeFolderButton", "Добавить папку базы знаний", ['qs("#newKnowledgeFolderButton")?.addEventListener("click"', 'qs("#knowledgeFolderDialog").showModal()']),
         ("newDocumentButton", "Добавить материал базы знаний", ['qs("#newDocumentButton").addEventListener("click"', 'qs("#documentDialog").showModal()']),
         ("newEventButton", "Добавить событие", ['qs("#newEventButton").addEventListener("click"', 'qs("#eventDialog").showModal()']),
         ("newContractButton", "Добавить договор", ['qs("#newContractButton")?.addEventListener("click"', "openContractDialog"]),
@@ -178,6 +179,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         ("taskForm", "Форма задачи", ['qs("#taskForm").addEventListener("submit"', "/api/tasks"]),
         ("estimateJobForm", "Форма сметного задания", ['qs("#estimateJobForm").addEventListener("submit"', "/api/estimate-jobs"]),
         ("materialForm", "Форма заявки материалов", ['qs("#materialForm").addEventListener("submit"', "/api/material-requests/bulk"]),
+        ("knowledgeFolderForm", "Форма папки базы знаний", ['qs("#knowledgeFolderForm")?.addEventListener("submit"', "/api/document-folders"]),
         ("documentForm", "Форма базы знаний", ['qs("#documentForm").addEventListener("submit"', "/api/documents"]),
         ("variationForm", "Форма допработы", ['qs("#variationForm").addEventListener("submit"', "/api/variations"]),
         ("workExtraForm", "Форма появившейся работы", ['qs("#workExtraForm").addEventListener("submit"', "/api/work-extra-items"]),
@@ -299,6 +301,12 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
             "Руководитель строительства может добавлять материалы в базу знаний.",
             ["function canManageKnowledgeBase()", '\"construction_manager\"', 'related_type == \"knowledge_base\" and account_role(account) not in {\"owner\", \"construction_manager\", \"finance_director\"}'],
             "Не закрывать загрузку базы знаний для руководителя строительства ни во фронтенде, ни на сервере.",
+        ),
+        (
+            "Knowledge base folders scenario",
+            "В базе знаний можно создавать папки, загружать несколько файлов и загружать папку целиком с сохранением структуры.",
+            ["CREATE TABLE IF NOT EXISTS knowledge_folders", "folder_id", "/api/document-folders", "renderKnowledgeTree", "ensure_knowledge_folder_path", 'name=\"document_files\" type=\"file\" multiple', "webkitdirectory", "relative_path"],
+            "Не возвращать базу знаний к плоскому списку: папки, подпапки и пакетная загрузка нужны для регламентов, узлов и проектных решений.",
         ),
         (
             "Project approval guard",

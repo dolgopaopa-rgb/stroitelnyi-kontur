@@ -1565,6 +1565,115 @@ def yandex_path_part(value: object, fallback: str = "folder") -> str:
     return text[:90] or fallback
 
 
+def normalize_folder_title(value: object) -> str:
+    text = str(value or "").replace("\\", "/").split("/")[-1].strip()
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r'[\\/:*?"<>|\r\n\t]+', " ", text).strip(" .")
+    return text[:90]
+
+
+def normalize_relative_path(value: object) -> list[str]:
+    raw = str(value or "").replace("\\", "/")
+    parts = [normalize_folder_title(part) for part in raw.split("/") if normalize_folder_title(part)]
+    return parts
+
+
+def knowledge_folder_rows(db) -> list[dict]:
+    return rows_to_dicts(
+        db.execute(
+            """
+            SELECT f.*, u.name AS created_by_name
+            FROM knowledge_folders f
+            LEFT JOIN users u ON u.id = f.created_by
+            ORDER BY COALESCE(f.parent_id, 0), LOWER(f.title), f.id
+            """
+        ).fetchall()
+    )
+
+
+def knowledge_folder_path_from_map(folders_by_id: dict[int, dict], folder_id: int | None) -> str:
+    if not folder_id:
+        return ""
+    parts: list[str] = []
+    current_id = int(folder_id)
+    seen: set[int] = set()
+    while current_id and current_id not in seen:
+        seen.add(current_id)
+        row = folders_by_id.get(current_id)
+        if not row:
+            break
+        parts.append(str(row.get("title") or ""))
+        current_id = int(row.get("parent_id") or 0)
+    return "/".join(reversed([part for part in parts if part]))
+
+
+def knowledge_folders_with_paths(db) -> list[dict]:
+    folders = knowledge_folder_rows(db)
+    folders_by_id = {int(row["id"]): row for row in folders}
+    for row in folders:
+        row["path"] = knowledge_folder_path_from_map(folders_by_id, int(row["id"]))
+    return sorted(folders, key=lambda row: str(row.get("path") or "").lower())
+
+
+def knowledge_folder_path(db, folder_id: int | None) -> str:
+    if not folder_id:
+        return ""
+    folders_by_id = {int(row["id"]): row for row in knowledge_folder_rows(db)}
+    return knowledge_folder_path_from_map(folders_by_id, int(folder_id))
+
+
+def validate_knowledge_folder(db, folder_id: int | None) -> int | None:
+    if not folder_id:
+        return None
+    row = db.execute("SELECT id FROM knowledge_folders WHERE id = ?", (int(folder_id),)).fetchone()
+    if not row:
+        raise ValueError("Папка базы знаний не найдена.")
+    return int(row["id"])
+
+
+def ensure_knowledge_folder(db, title: object, parent_id: int | None = None, created_by: int | None = None) -> int:
+    folder_title = normalize_folder_title(title)
+    if not folder_title:
+        raise ValueError("Укажите название папки.")
+    parent_id = validate_knowledge_folder(db, parent_id)
+    rows = db.execute(
+        """
+        SELECT id, title
+        FROM knowledge_folders
+        WHERE COALESCE(parent_id, 0) = COALESCE(?, 0)
+        """,
+        (parent_id,),
+    ).fetchall()
+    for row in rows:
+        if str(row["title"]).strip().lower() == folder_title.lower():
+            return int(row["id"])
+    cursor = db.execute(
+        """
+        INSERT INTO knowledge_folders (parent_id, title, created_by)
+        VALUES (?, ?, ?)
+        """,
+        (parent_id, folder_title, created_by),
+    )
+    return int(cursor.lastrowid)
+
+
+def ensure_knowledge_folder_path(db, parent_id: int | None, segments: list[str], created_by: int | None = None) -> int | None:
+    current_parent = validate_knowledge_folder(db, parent_id)
+    for segment in segments:
+        folder_title = normalize_folder_title(segment)
+        if folder_title:
+            current_parent = ensure_knowledge_folder(db, folder_title, current_parent, created_by)
+    return current_parent
+
+
+def attach_knowledge_folder_paths(db, documents: list[dict]) -> list[dict]:
+    folders_by_id = {int(row["id"]): row for row in knowledge_folder_rows(db)}
+    for document in documents:
+        folder_id = int(document.get("folder_id") or 0) or None
+        document["folder_path"] = knowledge_folder_path_from_map(folders_by_id, folder_id)
+    return documents
+
+
 def yandex_api_request(method: str, resource: str, params: dict[str, str] | None = None) -> dict:
     token = os.environ.get("YANDEX_DISK_TOKEN", "").strip()
     query = f"?{urlencode(params or {})}" if params else ""
@@ -1591,10 +1700,15 @@ def ensure_yandex_folder(folder_path: str) -> None:
                 raise
 
 
-def project_upload_folder(db, project_id: int, related_type: str, doc_type: str) -> str:
+def project_upload_folder(db, project_id: int, related_type: str, doc_type: str, folder_path: str = "") -> str:
     root = yandex_disk_root()
     if related_type == "knowledge_base":
-        return f"{root}/База знаний/{yandex_path_part(doc_type, 'documents')}"
+        base = f"{root}/База знаний"
+        if folder_path:
+            for part in normalize_relative_path(folder_path):
+                base = f"{base}/{yandex_path_part(part, 'folder')}"
+            return base
+        return f"{base}/{yandex_path_part(doc_type, 'documents')}"
     if related_type == "estimate_job":
         row = db.execute("SELECT title FROM estimate_jobs WHERE id = ?", (project_id,)).fetchone()
         title = row["title"] if row else f"estimate_job_{project_id}"
@@ -1604,8 +1718,8 @@ def project_upload_folder(db, project_id: int, related_type: str, doc_type: str)
     return f"{root}/Объекты/{yandex_path_part(project_title, f'project_{project_id}')}/{yandex_path_part(doc_type, 'documents')}"
 
 
-def upload_to_yandex_disk(db, project_id: int, related_type: str, doc_type: str, target_name: str, raw: bytes) -> str:
-    folder = project_upload_folder(db, project_id, related_type, doc_type)
+def upload_to_yandex_disk(db, project_id: int, related_type: str, doc_type: str, target_name: str, raw: bytes, folder_path: str = "") -> str:
+    folder = project_upload_folder(db, project_id, related_type, doc_type, folder_path)
     ensure_yandex_folder(folder)
     remote_path = f"{folder}/{target_name}"
     payload = yandex_api_request("GET", "/resources/upload", {"path": remote_path, "overwrite": "true"})
@@ -1618,21 +1732,23 @@ def upload_to_yandex_disk(db, project_id: int, related_type: str, doc_type: str,
     return f"{YANDEX_DISK_FILE_PREFIX}{remote_path}"
 
 
-def save_to_local_uploads(project_id: int, target_name: str, raw: bytes) -> str:
+def save_to_local_uploads(project_id: int, target_name: str, raw: bytes, folder_path: str = "") -> str:
     project_dir = UPLOAD_DIR / f"project_{project_id}"
+    for part in normalize_relative_path(folder_path):
+        project_dir = project_dir / yandex_path_part(part, "folder")
     project_dir.mkdir(parents=True, exist_ok=True)
     target_path = project_dir / target_name
     target_path.write_bytes(raw)
     return str(target_path.relative_to(DATA_DIR))
 
 
-def save_uploaded_file(db, project_id: int, related_type: str, doc_type: str, target_name: str, raw: bytes) -> str:
+def save_uploaded_file(db, project_id: int, related_type: str, doc_type: str, target_name: str, raw: bytes, folder_path: str = "") -> str:
     if yandex_disk_configured():
         try:
-            return upload_to_yandex_disk(db, project_id, related_type, doc_type, target_name, raw)
+            return upload_to_yandex_disk(db, project_id, related_type, doc_type, target_name, raw, folder_path)
         except (HTTPError, URLError, TimeoutError, RuntimeError, OSError) as exc:
             print(f"Yandex Disk upload failed, saved locally instead: {exc}")
-    return save_to_local_uploads(project_id, target_name, raw)
+    return save_to_local_uploads(project_id, target_name, raw, folder_path)
 
 
 def download_from_yandex_disk(file_path: str) -> bytes:
@@ -1676,7 +1792,17 @@ def knowledge_base_project_id(db) -> int:
     return int(cursor.lastrowid)
 
 
-def save_document_file(db, project_id: int, file_data: dict, title: str, doc_type: str, related_type: str = "project") -> int | None:
+def save_document_file(
+    db,
+    project_id: int,
+    file_data: dict,
+    title: str,
+    doc_type: str,
+    related_type: str = "project",
+    folder_id: int | None = None,
+    folder_path: str = "",
+    owner_id: int | None = None,
+) -> int | None:
     file_name = safe_file_name(file_data.get("file_name") or title)
     encoded = file_data.get("file_base64") or ""
     if not encoded:
@@ -1685,20 +1811,21 @@ def save_document_file(db, project_id: int, file_data: dict, title: str, doc_typ
         encoded = encoded.split(",", 1)[1]
     raw = base64.b64decode(encoded)
     target_name = f"{int(time.time() * 1000)}_{file_name}"
-    stored_path = save_uploaded_file(db, project_id, related_type, doc_type, target_name, raw)
+    stored_path = save_uploaded_file(db, project_id, related_type, doc_type, target_name, raw, folder_path)
     cursor = db.execute(
         """
         INSERT INTO documents (
-            project_id, title, type, version, status, owner_id, due_date, related_type,
+            project_id, folder_id, title, type, version, status, owner_id, due_date, related_type,
             related_section, contract_id, process_type, file_name, file_path, mime_type, file_size
         )
-        VALUES (?, ?, ?, '', 'active', ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, '', 'active', ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             project_id,
+            folder_id,
             title,
             doc_type,
-            user_id_by_role(db, "sales_manager") or 3,
+            owner_id or user_id_by_role(db, "sales_manager") or 3,
             related_type,
             file_data.get("related_section") or "",
             int(file_data.get("contract_id") or 0) or None,
@@ -2672,6 +2799,15 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 json_response(self, rows)
                 return
 
+            if path == "/api/document-folders":
+                related_type = (query.get("related_type") or ["knowledge_base"])[0]
+                if related_type != "knowledge_base" or not can_view_knowledge_base(account):
+                    json_response(self, [])
+                    return
+                folders = knowledge_folders_with_paths(db)
+                json_response(self, folders)
+                return
+
             if path == "/api/documents":
                 related_type = (query.get("related_type") or ["project"])[0]
                 if related_type == "knowledge_base":
@@ -2680,12 +2816,13 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         return
                     rows = db.execute(
                         """
-                        SELECT d.*, p.title AS project_title, u.name AS owner_name
+                        SELECT d.*, p.title AS project_title, u.name AS owner_name, f.title AS folder_title
                         FROM documents d
                         LEFT JOIN projects p ON p.id = d.project_id
                         LEFT JOIN users u ON u.id = d.owner_id
+                        LEFT JOIN knowledge_folders f ON f.id = d.folder_id
                         WHERE d.related_type = 'knowledge_base'
-                        ORDER BY d.created_at DESC
+                        ORDER BY COALESCE(f.title, ''), d.created_at DESC
                         """
                     ).fetchall()
                 else:
@@ -2702,6 +2839,8 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 documents = rows_to_dicts(rows)
                 if related_type != "knowledge_base":
                     documents = filter_documents_for_account(documents, account)
+                else:
+                    documents = attach_knowledge_folder_paths(db, documents)
                 json_response(self, documents)
                 return
 
@@ -3588,6 +3727,26 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     db.commit()
                     json_response(self, {"deleted": project_id})
                     return
+
+            folder_action = re.match(r"^/api/document-folders/(\d+)/delete$", path)
+            if folder_action:
+                folder_id = int(folder_action.group(1))
+                if account_role(account) not in {"owner", "construction_manager"}:
+                    json_response(self, {"error": "Forbidden"}, 403)
+                    return
+                folder = db.execute("SELECT * FROM knowledge_folders WHERE id = ?", (folder_id,)).fetchone()
+                if not folder:
+                    json_response(self, {"error": "Folder not found"}, 404)
+                    return
+                children_count = db.execute("SELECT COUNT(*) AS count FROM knowledge_folders WHERE parent_id = ?", (folder_id,)).fetchone()["count"]
+                document_count = db.execute("SELECT COUNT(*) AS count FROM documents WHERE folder_id = ?", (folder_id,)).fetchone()["count"]
+                if int(children_count or 0) or int(document_count or 0):
+                    json_response(self, {"error": "Папку можно удалить только когда в ней нет файлов и подпапок."}, 400)
+                    return
+                db.execute("DELETE FROM knowledge_folders WHERE id = ?", (folder_id,))
+                db.commit()
+                json_response(self, {"deleted": folder_id})
+                return
 
             document_action = re.match(r"^/api/documents/(\d+)/delete$", path)
             if document_action:
@@ -4769,8 +4928,18 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 json_response(self, {"imported": imported}, 201)
                 return
 
+            if path == "/api/document-folders":
+                if account_role(account) not in {"owner", "construction_manager", "finance_director"}:
+                    json_response(self, {"error": "Forbidden"}, 403)
+                    return
+                parent_id = int(data.get("parent_id") or 0) or None
+                folder_id = ensure_knowledge_folder(db, data.get("title"), parent_id, account_user_id(account) or None)
+                folders = knowledge_folders_with_paths(db)
+                folder = next((item for item in folders if int(item["id"]) == folder_id), {"id": folder_id})
+                json_response(self, folder, 201)
+                return
+
             if path == "/api/documents":
-                file_data = data.get("document_file") or {}
                 related_type = data.get("related_type") or "project"
                 if related_type == "knowledge_base" and account_role(account) not in {"owner", "construction_manager", "finance_director"}:
                     json_response(self, {"error": "Forbidden"}, 403)
@@ -4781,48 +4950,90 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     return
                 if related_type == "knowledge_base":
                     project_id = knowledge_base_project_id(db)
-                if file_data.get("file_base64"):
-                    file_data["related_section"] = data.get("related_section") or ""
-                    file_data["contract_id"] = data.get("contract_id") or None
-                    file_data["process_type"] = data.get("process_type") or ""
+
+                def save_document_payload(item: dict) -> int | None:
+                    item_file = dict(item.get("document_file") or {})
+                    if not item_file.get("file_base64"):
+                        return None
+                    base_folder_id = int(item.get("folder_id") or data.get("folder_id") or 0) or None
+                    relative_path = item.get("relative_path") or item_file.get("relative_path") or ""
+                    relative_parts = normalize_relative_path(relative_path)
+                    file_name = item_file.get("file_name") or item.get("title") or data.get("title") or "Документ"
+                    folder_parts = relative_parts[:-1] if relative_parts else []
+                    folder_id = ensure_knowledge_folder_path(
+                        db,
+                        base_folder_id,
+                        folder_parts if related_type == "knowledge_base" else [],
+                        account_user_id(account) or None,
+                    )
+                    folder_path = knowledge_folder_path(db, folder_id) if related_type == "knowledge_base" else ""
+                    item_file["related_section"] = item.get("related_section") or data.get("related_section") or ""
+                    item_file["contract_id"] = item.get("contract_id") or data.get("contract_id") or None
+                    item_file["process_type"] = item.get("process_type") or data.get("process_type") or ""
+                    title = item.get("title") or data.get("title") or file_name
+                    doc_type = item.get("type") or data.get("type") or "other"
+                    owner_id = int(item.get("owner_id") or data.get("owner_id") or 0) or account_user_id(account) or 2
                     document_id = save_document_file(
                         db,
                         project_id,
-                        file_data,
-                        data.get("title") or "Документ",
-                        data.get("type") or "other",
+                        item_file,
+                        title,
+                        doc_type,
                         related_type,
+                        folder_id=folder_id,
+                        folder_path=folder_path,
+                        owner_id=owner_id,
                     )
+                    if not document_id:
+                        return None
                     db.execute(
                         """
                         UPDATE documents
                         SET version = ?, status = ?, owner_id = ?, due_date = ?,
-                            related_section = ?, contract_id = ?, process_type = ?
+                            related_section = ?, contract_id = ?, process_type = ?, folder_id = ?
                         WHERE id = ?
                         """,
                         (
-                            data.get("version") or "",
-                            data.get("status") or "draft",
-                            int(data.get("owner_id") or 2),
-                            data.get("due_date") or None,
-                            data.get("related_section") or "",
-                            int(data.get("contract_id") or 0) or None,
-                            data.get("process_type") or "",
+                            item.get("version") or data.get("version") or "",
+                            item.get("status") or data.get("status") or "draft",
+                            owner_id,
+                            item.get("due_date") or data.get("due_date") or None,
+                            item.get("related_section") or data.get("related_section") or "",
+                            int(item.get("contract_id") or data.get("contract_id") or 0) or None,
+                            item.get("process_type") or data.get("process_type") or "",
+                            folder_id,
                             document_id,
                         ),
                     )
+                    return document_id
+
+                documents_payload = data.get("documents")
+                if isinstance(documents_payload, list) and documents_payload:
+                    document_ids = [doc_id for doc_id in (save_document_payload(item or {}) for item in documents_payload) if doc_id]
+                    if not document_ids:
+                        json_response(self, {"error": "Не найден ни один файл для загрузки"}, 400)
+                        return
+                    json_response(self, {"ids": document_ids, "count": len(document_ids)}, 201)
+                    return
+
+                file_data = data.get("document_file") or {}
+                if file_data.get("file_base64"):
+                    document_id = save_document_payload(data)
                     json_response(self, {"id": document_id}, 201)
                     return
+
+                folder_id = validate_knowledge_folder(db, int(data.get("folder_id") or 0) or None) if related_type == "knowledge_base" else None
                 cursor = db.execute(
                     """
                     INSERT INTO documents (
-                        project_id, title, type, version, status, owner_id, due_date, related_type,
+                        project_id, folder_id, title, type, version, status, owner_id, due_date, related_type,
                         related_section, contract_id, process_type, file_name, file_path, mime_type, file_size
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL)
                     """,
                     (
                         project_id,
+                        folder_id,
                         data.get("title") or "Новый документ",
                         data.get("type") or "other",
                         data.get("version") or "",
