@@ -421,7 +421,6 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_variations_project ON variations(project_id);
             CREATE INDEX IF NOT EXISTS idx_contracts_ends ON contracts(ends_at);
             CREATE INDEX IF NOT EXISTS idx_documents_project ON documents(project_id);
-            CREATE INDEX IF NOT EXISTS idx_documents_folder ON documents(folder_id);
             CREATE INDEX IF NOT EXISTS idx_knowledge_folders_parent ON knowledge_folders(parent_id);
             CREATE INDEX IF NOT EXISTS idx_events_project ON events(project_id);
             CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read);
@@ -468,6 +467,7 @@ def init_db() -> None:
         ensure_column(db, "documents", "mime_type", "TEXT")
         ensure_column(db, "documents", "file_size", "INTEGER")
         ensure_column(db, "documents", "folder_id", "INTEGER")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_documents_folder ON documents(folder_id)")
         ensure_column(db, "documents", "related_section", "TEXT")
         ensure_column(db, "documents", "contract_id", "INTEGER")
         ensure_column(db, "documents", "process_type", "TEXT")
