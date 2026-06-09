@@ -3436,6 +3436,38 @@ function readKnowledgeDirectoryEntries(reader) {
   });
 }
 
+async function collectKnowledgeHandleFiles(handle, parentPath = "") {
+  if (!handle) return [];
+  const handlePath = `${parentPath}${handle.name || ""}`;
+  if (handle.kind === "file" && typeof handle.getFile === "function") {
+    try {
+      const file = await handle.getFile();
+      return [knowledgeUploadItem(file, handlePath || file.name)];
+    } catch {
+      return [];
+    }
+  }
+  if (handle.kind === "directory") {
+    const children = [];
+    if (typeof handle.values === "function") {
+      for await (const child of handle.values()) children.push(child);
+    } else if (typeof handle.entries === "function") {
+      for await (const [, child] of handle.entries()) children.push(child);
+    }
+    const nested = await Promise.allSettled(children.map((child) => collectKnowledgeHandleFiles(child, `${handlePath}/`)));
+    return nested.filter((item) => item.status === "fulfilled").flatMap((item) => item.value || []);
+  }
+  return [];
+}
+
+async function collectKnowledgeDataTransferHandles(items = []) {
+  const handleItems = Array.from(items || []).filter((item) => typeof item.getAsFileSystemHandle === "function");
+  if (!handleItems.length) return [];
+  const handles = await Promise.all(handleItems.map((item) => item.getAsFileSystemHandle().catch(() => null)));
+  const nested = await Promise.all(handles.filter(Boolean).map((handle) => collectKnowledgeHandleFiles(handle)));
+  return nested.flat();
+}
+
 async function collectKnowledgeEntryFiles(entry, parentPath = "") {
   if (!entry) return [];
   const entryPath = `${parentPath}${entry.name || ""}`;
@@ -3457,12 +3489,19 @@ async function collectKnowledgeEntryFiles(entry, parentPath = "") {
 
 async function collectKnowledgeDroppedFiles(dataTransfer) {
   const items = Array.from(dataTransfer?.items || []);
+  const handleFiles = await collectKnowledgeDataTransferHandles(items).catch(() => []);
+  if (handleFiles.length) return handleFiles;
+
   const entries = items
     .map((item) => (typeof item.webkitGetAsEntry === "function" ? item.webkitGetAsEntry() : null))
     .filter(Boolean);
   if (entries.length) {
-    const nested = await Promise.all(entries.map((entry) => collectKnowledgeEntryFiles(entry)));
-    return nested.flat();
+    const nested = await Promise.allSettled(entries.map((entry) => collectKnowledgeEntryFiles(entry)));
+    const collected = nested.filter((item) => item.status === "fulfilled").flatMap((item) => item.value || []);
+    if (collected.length) return collected;
+    const fallbackFiles = normalizeKnowledgeUploadItems(Array.from(dataTransfer?.files || []));
+    if (fallbackFiles.length) return fallbackFiles;
+    throw new Error("Не удалось прочитать папку. Проверьте, что она находится на компьютере, а не только в облаке, или выберите ее через «Добавить материал» → «Или папка целиком».");
   }
   return normalizeKnowledgeUploadItems(Array.from(dataTransfer?.files || []));
 }
