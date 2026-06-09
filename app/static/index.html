@@ -9,10 +9,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Строительный контур</title>
-    <link rel="manifest" href="/static/manifest.webmanifest?v=20260609-knowledge-folder-drop2" />
+    <link rel="manifest" href="/static/manifest.webmanifest?v=20260609-estimate-partner-sitecosts" />
     <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260609-knowledge-folder-drop2" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260609-estimate-partner-sitecosts" />
   </head>
   <body>
     <div class="app">
@@ -459,6 +459,17 @@
         <label>Ссылка на Сметтер <input name="smetter_url" type="url" placeholder="https://app.smetter.ru/estimate/..." /></label>
         <div class="grid-2">
           <label>
+            Организация строительной площадки
+            <select name="site_costs_policy" required>
+              <option value="include">Включить бытовку, биотуалет и организацию площадки</option>
+              <option value="exclude">Не включать эти затраты</option>
+              <option value="clarify">Нужно отдельно уточнить</option>
+            </select>
+          </label>
+          <label>Комментарий по организации площадки <input name="site_costs_comment" placeholder="Например: бытовка не нужна, биотуалет нужен" /></label>
+        </div>
+        <div class="grid-2">
+          <label>
             Тип сметы
             <select name="estimate_type">
               <option value="primary">Первичная</option>
@@ -773,6 +784,6 @@
     </dialog>
 
     <div class="toast" id="toast"></div>
-    <script src="/static/app.js?v=20260609-knowledge-folder-drop2"></script>
+    <script src="/static/app.js?v=20260609-estimate-partner-sitecosts"></script>
   </body>
 </html>

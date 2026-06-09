@@ -216,6 +216,8 @@ def init_db() -> None:
                 source TEXT,
                 smetter_url TEXT,
                 estimate_type TEXT,
+                site_costs_policy TEXT NOT NULL DEFAULT 'include',
+                site_costs_comment TEXT,
                 comment TEXT,
                 result_comment TEXT,
                 return_comment TEXT,
@@ -461,6 +463,8 @@ def init_db() -> None:
         ensure_column(db, "estimate_jobs", "return_comment", "TEXT")
         ensure_column(db, "estimate_jobs", "question_comment", "TEXT")
         ensure_column(db, "estimate_jobs", "smetter_url", "TEXT")
+        ensure_column(db, "estimate_jobs", "site_costs_policy", "TEXT NOT NULL DEFAULT 'include'")
+        ensure_column(db, "estimate_jobs", "site_costs_comment", "TEXT")
         ensure_column(db, "work_extra_items", "estimate_section", "TEXT")
         ensure_column(db, "documents", "file_name", "TEXT")
         ensure_column(db, "documents", "file_path", "TEXT")
@@ -604,6 +608,12 @@ def ensure_core_users(db: sqlite3.Connection) -> None:
         exists = db.execute("SELECT id FROM users WHERE role = ? LIMIT 1", (role,)).fetchone()
         if not exists:
             db.execute("INSERT INTO users (name, role, email) VALUES (?, ?, ?)", (name, role, email))
+    partner = db.execute("SELECT id FROM users WHERE email = ? LIMIT 1", ("estimate-partner@example.local",)).fetchone()
+    if not partner:
+        db.execute(
+            "INSERT INTO users (name, role, email) VALUES (?, 'estimator', ?)",
+            ("Партнер-сметчик", "estimate-partner@example.local"),
+        )
 
 
 def seed(db: sqlite3.Connection) -> None:

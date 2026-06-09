@@ -1424,6 +1424,17 @@ def estimate_job_owned_by_account(row, account: dict | None, field: str) -> bool
         return False
 
 
+def estimate_job_uses_partner_estimator(db, row) -> bool:
+    try:
+        estimator_id = int(row["estimator_id"] or 0)
+    except (KeyError, TypeError, ValueError):
+        return False
+    if not estimator_id:
+        return False
+    user = db.execute("SELECT email FROM users WHERE id = ? LIMIT 1", (estimator_id,)).fetchone()
+    return bool(user and str(user["email"] or "") == "estimate-partner@example.local")
+
+
 def can_update_estimate_job(row, account: dict | None) -> bool:
     role = account_role(account)
     if role in {"owner", "construction_manager"}:
@@ -1435,10 +1446,21 @@ def can_update_estimate_job(row, account: dict | None) -> bool:
     return False
 
 
-def can_change_estimate_job_status(row, status: str, account: dict | None) -> bool:
+def can_change_estimate_job_status(row, status: str, account: dict | None, db=None) -> bool:
     role = account_role(account)
     if role in {"owner", "construction_manager"}:
         return True
+    if (
+        db is not None
+        and role == "sales_manager"
+        and estimate_job_owned_by_account(row, account, "manager_id")
+        and estimate_job_uses_partner_estimator(db, row)
+    ):
+        if status == "estimate_in_work":
+            return row["status"] in {"estimate_new", "estimate_hold"}
+        if status == "estimate_done":
+            return row["status"] in {"estimate_in_work", "estimate_question"}
+        return False
     if role != "estimator" or not estimate_job_owned_by_account(row, account, "estimator_id"):
         return False
     if status == "estimate_in_work":
@@ -2537,7 +2559,8 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     """
                     SELECT j.*, p.title AS project_title,
                            manager.name AS manager_name,
-                           estimator.name AS estimator_name
+                           estimator.name AS estimator_name,
+                           estimator.email AS estimator_email
                     FROM estimate_jobs j
                     LEFT JOIN projects p ON p.id = j.project_id
                     LEFT JOIN users manager ON manager.id = j.manager_id
@@ -3037,20 +3060,25 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         ("estimator_id", "Сметчик"),
                         ("received_at", "Дата получения задания"),
                         ("due_date", "Плановый срок готовности"),
+                        ("site_costs_policy", "Организация строительной площадки"),
                     ],
                 )
                 status = data.get("status") or "estimate_new"
                 if status not in {"estimate_new", "estimate_in_work", "estimate_done", "estimate_hold", "estimate_returned", "estimate_question"}:
                     status = "estimate_new"
                 project_id = int(data.get("project_id") or 0) or None
+                site_costs_policy = data.get("site_costs_policy") or "include"
+                if site_costs_policy not in {"include", "exclude", "clarify"}:
+                    site_costs_policy = "include"
                 cursor = db.execute(
                     """
                     INSERT INTO estimate_jobs (
                         project_id, title, customer_name, manager_id, estimator_id,
                         received_at, due_date, delivered_at, status, priority, source,
-                        smetter_url, estimate_type, comment, result_comment, return_comment, question_comment
+                        smetter_url, estimate_type, site_costs_policy, site_costs_comment,
+                        comment, result_comment, return_comment, question_comment
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         project_id,
@@ -3066,6 +3094,8 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         data.get("source") or "",
                         data.get("smetter_url") or "",
                         data.get("estimate_type") or "",
+                        site_costs_policy,
+                        data.get("site_costs_comment") or "",
                         data.get("comment") or "",
                         data.get("result_comment") or "",
                         data.get("return_comment") or "",
@@ -3119,8 +3149,12 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             ("estimator_id", "Сметчик"),
                             ("received_at", "Дата получения задания"),
                             ("due_date", "Плановый срок готовности"),
+                            ("site_costs_policy", "Организация строительной площадки"),
                         ],
                     )
+                    site_costs_policy = data.get("site_costs_policy") or "include"
+                    if site_costs_policy not in {"include", "exclude", "clarify"}:
+                        site_costs_policy = "include"
                     resend_to_estimator = row["status"] in {"estimate_returned", "estimate_question"} and account_role(account) in {"sales_manager", "owner", "construction_manager"}
                     next_status = "estimate_new" if resend_to_estimator else row["status"]
                     next_return_comment = "" if resend_to_estimator else row["return_comment"] or ""
@@ -3139,6 +3173,8 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             source = ?,
                             smetter_url = ?,
                             estimate_type = ?,
+                            site_costs_policy = ?,
+                            site_costs_comment = ?,
                             comment = ?,
                             status = ?,
                             return_comment = ?,
@@ -3158,6 +3194,8 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             data.get("source") or "",
                             data.get("smetter_url") or "",
                             data.get("estimate_type") or "",
+                            site_costs_policy,
+                            data.get("site_costs_comment") or "",
                             data.get("comment") or "",
                             next_status,
                             next_return_comment,
@@ -3184,7 +3222,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 if status not in {"estimate_new", "estimate_in_work", "estimate_done", "estimate_hold", "estimate_returned", "estimate_question"}:
                     json_response(self, {"error": "Unknown status"}, 400)
                     return
-                if not can_change_estimate_job_status(row, status, account):
+                if not can_change_estimate_job_status(row, status, account, db):
                     json_response(self, {"error": "Forbidden"}, 403)
                     return
                 return_comment = str(data.get("return_comment") or "").strip()

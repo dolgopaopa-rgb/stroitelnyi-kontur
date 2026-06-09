@@ -286,6 +286,14 @@ function isOwnEstimateJob(job, field) {
   return Boolean(userId && Number(job?.[field] || 0) === Number(userId));
 }
 
+function isPartnerEstimateJob(job) {
+  return String(job?.estimator_email || "") === "estimate-partner@example.local";
+}
+
+function managerControlsPartnerEstimateJob(job) {
+  return currentRoleBase() === "sales_manager" && isOwnEstimateJob(job, "manager_id") && isPartnerEstimateJob(job);
+}
+
 function canEditEstimateJob(job) {
   const role = currentRoleBase();
   if (["owner", "construction_manager"].includes(role)) return true;
@@ -297,13 +305,13 @@ function canEditEstimateJob(job) {
 function canStartEstimateJob(job) {
   const role = currentRoleBase();
   if (!["estimate_new", "estimate_hold"].includes(job.status)) return false;
-  return ["owner", "construction_manager"].includes(role) || (role === "estimator" && isOwnEstimateJob(job, "estimator_id"));
+  return ["owner", "construction_manager"].includes(role) || (role === "estimator" && isOwnEstimateJob(job, "estimator_id")) || managerControlsPartnerEstimateJob(job);
 }
 
 function canFinishEstimateJob(job) {
   const role = currentRoleBase();
   if (!["estimate_in_work", "estimate_question"].includes(job.status)) return false;
-  return ["owner", "construction_manager"].includes(role) || (role === "estimator" && isOwnEstimateJob(job, "estimator_id"));
+  return ["owner", "construction_manager"].includes(role) || (role === "estimator" && isOwnEstimateJob(job, "estimator_id")) || managerControlsPartnerEstimateJob(job);
 }
 
 function canReturnEstimateJob(job) {
@@ -1632,6 +1640,14 @@ function estimateJobTypeLabel(value) {
   }[value] || "Не указан";
 }
 
+function estimateSiteCostsLabel(value) {
+  return {
+    include: "Организацию площадки включить",
+    exclude: "Организацию площадки не включать",
+    clarify: "Организацию площадки уточнить",
+  }[value] || "Организация площадки не указана";
+}
+
 function estimateJobStats(jobs) {
   return {
     active: jobs.filter((job) => ["estimate_new", "estimate_in_work", "estimate_question"].includes(job.status)).length,
@@ -1802,6 +1818,11 @@ function renderEstimateJobRow(job) {
         </div>
         <div class="muted">${escapeHtml(job.customer_name || "Заказчик не указан")} · ${escapeHtml(job.project_title || "без карточки объекта")} · ${estimateJobTypeLabel(job.estimate_type)}</div>
         <div class="muted">получено: ${formatDateRu(job.received_at) || "не указано"} · выдал задание: ${escapeHtml(job.manager_name || "не назначен")} · сметчик: ${escapeHtml(job.estimator_name || "не назначен")}</div>
+        <div class="estimate-job-flags">
+          ${pill(estimateSiteCostsLabel(job.site_costs_policy), job.site_costs_policy === "exclude" ? "warning" : job.site_costs_policy === "clarify" ? "blue" : "success")}
+          ${isPartnerEstimateJob(job) ? pill("Партнерская смета", "blue") : ""}
+        </div>
+        ${job.site_costs_comment ? `<p class="muted">Организация площадки: ${escapeHtml(job.site_costs_comment)}</p>` : ""}
         ${job.smetter_url ? `<a class="link-button inline-link" href="${escapeAttr(job.smetter_url)}" target="_blank" rel="noopener noreferrer">Открыть Сметтер</a>` : ""}
         ${job.comment ? `<p>${linkifyText(job.comment)}</p>` : ""}
         ${job.question_comment ? `<p class="muted warning-text">Уточнение: ${linkifyText(job.question_comment)}</p>` : ""}
@@ -1836,6 +1857,8 @@ function fillEstimateJobForm(job = {}) {
   form.elements.smetter_url.value = job.smetter_url || "";
   form.elements.estimate_type.value = job.estimate_type || "primary";
   form.elements.priority.value = job.priority || "normal";
+  form.elements.site_costs_policy.value = job.site_costs_policy || "include";
+  form.elements.site_costs_comment.value = job.site_costs_comment || "";
   form.elements.source.value = job.source || "";
   form.elements.comment.value = job.comment || "";
 }
