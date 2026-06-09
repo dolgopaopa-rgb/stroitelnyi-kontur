@@ -1,9 +1,9 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260609-knowledge-filemanager";
+const CACHE_NAME = "stroitelnyi-kontur-20260609-knowledge-folder-drop";
 const CORE_ASSETS = [
   "/",
-  "/static/styles.css?v=20260609-knowledge-filemanager",
-  "/static/app.js?v=20260609-knowledge-filemanager",
-  "/static/manifest.webmanifest?v=20260609-knowledge-filemanager",
+  "/static/styles.css?v=20260609-knowledge-folder-drop",
+  "/static/app.js?v=20260609-knowledge-folder-drop",
+  "/static/manifest.webmanifest?v=20260609-knowledge-folder-drop",
   "/static/assets/g2-logo-192.png",
   "/static/assets/g2-logo-512.png"
 ];

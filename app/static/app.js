@@ -3389,7 +3389,7 @@ function renderKnowledgeFileManager(folders = [], docs = []) {
           <h3>${escapeHtml(currentFolder?.title || "База знаний")}</h3>
           <p class="muted">${currentId ? escapeHtml(currentFolder?.path || "") : "Корень базы знаний"} · ${childFolders.length} папок · ${folderDocs.length} файлов</p>
         </div>
-        ${canManageKnowledgeBase() ? `<div class="knowledge-drop-text">Перетащите файлы сюда, чтобы загрузить их в текущую папку</div>` : ""}
+        ${canManageKnowledgeBase() ? `<div class="knowledge-drop-text">Перетащите файлы или папку сюда, чтобы загрузить их в текущую папку</div>` : ""}
       </div>
       <div class="knowledge-list">
         ${rows || `<p class="muted knowledge-empty">${emptyMessage}</p>`}
@@ -3398,8 +3398,77 @@ function renderKnowledgeFileManager(folders = [], docs = []) {
     </section>`;
 }
 
+function knowledgeUploadItem(file, relativePath = "") {
+  return {
+    file,
+    relativePath: relativePath || file.webkitRelativePath || file.name,
+  };
+}
+
+function normalizeKnowledgeUploadItems(files = []) {
+  return Array.from(files || [])
+    .map((item) => {
+      if (!item) return null;
+      if (item.file instanceof File) return knowledgeUploadItem(item.file, item.relativePath);
+      if (item instanceof File) return knowledgeUploadItem(item);
+      return null;
+    })
+    .filter(Boolean);
+}
+
+function readKnowledgeDirectoryEntries(reader) {
+  return new Promise((resolve, reject) => {
+    const entries = [];
+    const readBatch = () => {
+      reader.readEntries(
+        (batch) => {
+          if (!batch.length) {
+            resolve(entries);
+            return;
+          }
+          entries.push(...batch);
+          readBatch();
+        },
+        (error) => reject(error)
+      );
+    };
+    readBatch();
+  });
+}
+
+async function collectKnowledgeEntryFiles(entry, parentPath = "") {
+  if (!entry) return [];
+  const entryPath = `${parentPath}${entry.name || ""}`;
+  if (entry.isFile) {
+    return new Promise((resolve, reject) => {
+      entry.file(
+        (file) => resolve([knowledgeUploadItem(file, entryPath || file.name)]),
+        (error) => reject(error)
+      );
+    });
+  }
+  if (entry.isDirectory) {
+    const children = await readKnowledgeDirectoryEntries(entry.createReader());
+    const nested = await Promise.all(children.map((child) => collectKnowledgeEntryFiles(child, `${entryPath}/`)));
+    return nested.flat();
+  }
+  return [];
+}
+
+async function collectKnowledgeDroppedFiles(dataTransfer) {
+  const items = Array.from(dataTransfer?.items || []);
+  const entries = items
+    .map((item) => (typeof item.webkitGetAsEntry === "function" ? item.webkitGetAsEntry() : null))
+    .filter(Boolean);
+  if (entries.length) {
+    const nested = await Promise.all(entries.map((entry) => collectKnowledgeEntryFiles(entry)));
+    return nested.flat();
+  }
+  return normalizeKnowledgeUploadItems(Array.from(dataTransfer?.files || []));
+}
+
 async function uploadKnowledgeFiles(files, options = {}) {
-  const fileList = Array.from(files || []).filter((file) => file && file.name);
+  const fileList = normalizeKnowledgeUploadItems(files);
   if (!fileList.length) {
     showToast("Выберите файлы для загрузки");
     return;
@@ -3407,12 +3476,13 @@ async function uploadKnowledgeFiles(files, options = {}) {
   const folderId = options.folderId ?? knowledgeCurrentFolderId();
   const type = options.type || "other";
   const title = options.title || "";
-  const message = fileList.length > 1 ? `Загружаем файлы: ${fileList.length}` : `Загружаем файл: ${fileList[0].name}`;
+  const message = fileList.length > 1 ? `Загружаем файлы: ${fileList.length}` : `Загружаем файл: ${fileList[0].file.name}`;
   setKnowledgeUploading(true, message);
   try {
     const documents = await Promise.all(
-      fileList.map(async (file) => {
-        const relativePath = file.webkitRelativePath || file.name;
+      fileList.map(async (item) => {
+        const file = item.file;
+        const relativePath = item.relativePath || file.name;
         const fallbackTitle = file.name.replace(/\.[^.]+$/, "") || file.name;
         const itemTitle = fileList.length === 1 && title ? title : fallbackTitle;
         return {
@@ -4558,12 +4628,12 @@ function bindEvents() {
     if (!dropZone || !canManageKnowledgeBase()) return;
     event.preventDefault();
     dropZone.classList.remove("is-drag-over");
-    const files = Array.from(event.dataTransfer?.files || []);
-    if (!files.length) {
-      showToast("Перетащите один или несколько файлов");
-      return;
-    }
     try {
+      const files = await collectKnowledgeDroppedFiles(event.dataTransfer);
+      if (!files.length) {
+        showToast("Перетащите файлы или папку с файлами");
+        return;
+      }
       await uploadKnowledgeFiles(files, { folderId: dropZone.dataset.folderId || "" });
     } catch (error) {
       showToast(error.message || "Не удалось загрузить файлы");
@@ -4845,6 +4915,7 @@ function bindEvents() {
       await uploadKnowledgeFiles(files, { folderId: data.folder_id || "", title: data.title || "", type: data.type || "other" });
       qs("#documentDialog").close();
       form.reset();
+      fillKnowledgeFolderSelects();
     } catch (error) {
       showToast(error.message || "Не удалось сохранить материал");
     } finally {

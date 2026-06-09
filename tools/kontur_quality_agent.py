@@ -252,7 +252,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         (
             "Estimate question completion scenario",
             "После уточняющего вопроса сметчик может сдать смету и приложить файлы результата.",
-            ["estimateJobDoneForm", "openEstimateJobDoneDialog", "Сдать смету", "Файлы готовой сметы", 'row["status"] in {"estimate_in_work", "estimate_question"}', "save_estimate_job_file(db, estimate_job_id, attachment"],
+            ["estimateJobDoneForm", "openEstimateJobDoneDialog", "form.elements.attachments", "result_comment", 'row["status"] in {"estimate_in_work", "estimate_question"}', "save_estimate_job_file(db, estimate_job_id, attachment"],
             "Не блокировать сдачу сметы из статуса уточнения: это нормальный рабочий сценарий после ответа менеджера.",
         ),
         (
@@ -306,7 +306,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         (
             "Knowledge base folders scenario",
             "База знаний работает как файловый менеджер: текущая папка, хлебные крошки, загрузка файлов и папок, перенос старых материалов и drag-and-drop.",
-            ["CREATE TABLE IF NOT EXISTS knowledge_folders", "folder_id", "/api/document-folders", "renderKnowledgeFileManager", "knowledge-breadcrumb", "data-knowledge-folder-open", "data-knowledge-drop-zone", "uploadKnowledgeFiles", "apple-spinner", "ensure_knowledge_folder_path", 'name=\"document_files\" type=\"file\" multiple', "webkitdirectory", "relative_path", "/api/documents/${id}/move", "data-document-move-folder", "move_stored_file", "/resources/move"],
+            ["CREATE TABLE IF NOT EXISTS knowledge_folders", "folder_id", "/api/document-folders", "renderKnowledgeFileManager", "knowledge-breadcrumb", "data-knowledge-folder-open", "data-knowledge-drop-zone", "uploadKnowledgeFiles", "collectKnowledgeDroppedFiles", "webkitGetAsEntry", "collectKnowledgeEntryFiles", "apple-spinner", "ensure_knowledge_folder_path", 'name=\"document_files\" type=\"file\" multiple', "webkitdirectory", "relative_path", "/api/documents/${id}/move", "data-document-move-folder", "move_stored_file", "/resources/move"],
             "Не возвращать базу знаний к плоскому дереву: людям нужен привычный проводник с текущей папкой, drag-and-drop, пакетной загрузкой и переносом старых файлов.",
         ),
         (
