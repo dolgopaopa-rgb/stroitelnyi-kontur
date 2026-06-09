@@ -1648,6 +1648,29 @@ function estimateSiteCostsLabel(value) {
   }[value] || "Организация площадки не указана";
 }
 
+function defaultSiteCostsPolicyForEstimateType(estimateType) {
+  return estimateType === "primary" ? "include" : "clarify";
+}
+
+function estimateSiteCostsHint(estimateType) {
+  if (estimateType === "primary") {
+    return "Первичная смета: бытовку, биотуалет и организацию площадки включаем по умолчанию. Если не нужны, выберите другой вариант.";
+  }
+  return "Не первичная смета: возможно, площадка уже организована или работы велись раньше. Лучше отдельно уточнить решение.";
+}
+
+function syncEstimateSiteCostsByType() {
+  const form = qs("#estimateJobForm");
+  if (!form) return;
+  const estimateType = form.elements.estimate_type?.value || "primary";
+  const policyField = form.elements.site_costs_policy;
+  const hint = qs("#estimateSiteCostsHint");
+  if (hint) hint.textContent = estimateSiteCostsHint(estimateType);
+  if (policyField && form.dataset.siteCostsTouched !== "true") {
+    policyField.value = defaultSiteCostsPolicyForEstimateType(estimateType);
+  }
+}
+
 function estimateJobStats(jobs) {
   return {
     active: jobs.filter((job) => ["estimate_new", "estimate_in_work", "estimate_question"].includes(job.status)).length,
@@ -1844,6 +1867,7 @@ function renderEstimateJobRow(job) {
 function fillEstimateJobForm(job = {}) {
   const form = qs("#estimateJobForm");
   form.reset();
+  form.dataset.siteCostsTouched = job.id ? "true" : "false";
   form.elements.id.value = job.id || "";
   form.elements.title.value = job.title || "";
   form.elements.customer_name.value = job.customer_name || "";
@@ -1857,10 +1881,11 @@ function fillEstimateJobForm(job = {}) {
   form.elements.smetter_url.value = job.smetter_url || "";
   form.elements.estimate_type.value = job.estimate_type || "primary";
   form.elements.priority.value = job.priority || "normal";
-  form.elements.site_costs_policy.value = job.site_costs_policy || "include";
+  form.elements.site_costs_policy.value = job.site_costs_policy || defaultSiteCostsPolicyForEstimateType(form.elements.estimate_type.value);
   form.elements.site_costs_comment.value = job.site_costs_comment || "";
   form.elements.source.value = job.source || "";
   form.elements.comment.value = job.comment || "";
+  syncEstimateSiteCostsByType();
 }
 
 function openEstimateJobDialog(jobId = "") {
@@ -4110,6 +4135,10 @@ function bindEvents() {
     qs("#taskDialog").showModal();
   });
   qs("#newEstimateJobButton").addEventListener("click", () => openEstimateJobDialog());
+  qs('#estimateJobForm select[name="estimate_type"]')?.addEventListener("change", () => syncEstimateSiteCostsByType());
+  qs('#estimateJobForm select[name="site_costs_policy"]')?.addEventListener("change", () => {
+    qs("#estimateJobForm").dataset.siteCostsTouched = "true";
+  });
   qs("#newMaterialButton").addEventListener("click", async () => {
     const form = qs("#materialForm");
     form.reset();

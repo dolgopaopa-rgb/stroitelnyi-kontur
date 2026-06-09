@@ -1,9 +1,9 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260609-estimate-partner-sitecosts";
+const CACHE_NAME = "stroitelnyi-kontur-20260609-estimate-site-defaults";
 const CORE_ASSETS = [
   "/",
-  "/static/styles.css?v=20260609-estimate-partner-sitecosts",
-  "/static/app.js?v=20260609-estimate-partner-sitecosts",
-  "/static/manifest.webmanifest?v=20260609-estimate-partner-sitecosts",
+  "/static/styles.css?v=20260609-estimate-site-defaults",
+  "/static/app.js?v=20260609-estimate-site-defaults",
+  "/static/manifest.webmanifest?v=20260609-estimate-site-defaults",
   "/static/assets/g2-logo-192.png",
   "/static/assets/g2-logo-512.png"
 ];
