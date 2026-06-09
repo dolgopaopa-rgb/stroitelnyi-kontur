@@ -1700,6 +1700,20 @@ h2 {
   border-radius: 7px;
 }
 
+.knowledge-move-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.knowledge-move-row select {
+  min-height: 30px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
 .knowledge-root-docs {
   display: grid;
   gap: 7px;
@@ -3080,6 +3094,10 @@ textarea {
 
   .knowledge-folder .knowledge-folder {
     margin-left: 0;
+  }
+
+  .knowledge-move-row {
+    grid-template-columns: 1fr;
   }
 
   .task-detail-grid {

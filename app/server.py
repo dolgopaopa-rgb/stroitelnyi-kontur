@@ -9,6 +9,7 @@ import json
 import mimetypes
 import os
 import re
+import shutil
 import threading
 import time
 import zipfile
@@ -1796,6 +1797,50 @@ def delete_stored_file(file_path: str | None) -> None:
     local_path = (DATA_DIR / str(file_path)).resolve()
     if DATA_DIR.resolve() in local_path.parents and local_path.is_file():
         local_path.unlink()
+
+
+def stored_file_name(file_path: str | None, fallback: str = "file") -> str:
+    text = str(file_path or "").removeprefix(YANDEX_DISK_FILE_PREFIX)
+    name = re.split(r"[\\/]+", text.strip("/\\"))[-1] if text else ""
+    return safe_file_name(name or fallback)
+
+
+def move_stored_file(db, document, folder_id: int | None) -> str | None:
+    file_path = str(document["file_path"] or "")
+    if not file_path:
+        return None
+    project_id = int(document["project_id"])
+    doc_type = str(document["type"] or "documents")
+    related_type = str(document["related_type"] or "project")
+    folder_path = knowledge_folder_path(db, folder_id) if related_type == "knowledge_base" else ""
+    target_name = stored_file_name(file_path, document["file_name"] or document["title"] or "file")
+
+    if file_path.startswith(YANDEX_DISK_FILE_PREFIX):
+        source_path = file_path.removeprefix(YANDEX_DISK_FILE_PREFIX)
+        target_folder = project_upload_folder(db, project_id, related_type, doc_type, folder_path)
+        target_path = f"{target_folder}/{target_name}"
+        if source_path == target_path:
+            return file_path
+        ensure_yandex_folder(target_folder)
+        yandex_api_request("POST", "/resources/move", {"from": source_path, "path": target_path, "overwrite": "true"})
+        return f"{YANDEX_DISK_FILE_PREFIX}{target_path}"
+
+    source_path = (DATA_DIR / file_path).resolve()
+    if not source_path.is_file() or DATA_DIR.resolve() not in source_path.parents:
+        return file_path
+    target_dir = UPLOAD_DIR / f"project_{project_id}"
+    for part in normalize_relative_path(folder_path):
+        target_dir = target_dir / yandex_path_part(part, "folder")
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_path = (target_dir / target_name).resolve()
+    if source_path == target_path:
+        return file_path
+    if DATA_DIR.resolve() not in target_path.parents:
+        raise RuntimeError("Target path is outside data directory")
+    if target_path.exists():
+        target_path.unlink()
+    shutil.move(str(source_path), str(target_path))
+    return str(target_path.relative_to(DATA_DIR))
 
 
 def knowledge_base_project_id(db) -> int:
@@ -3767,6 +3812,43 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 db.execute("DELETE FROM knowledge_folders WHERE id = ?", (folder_id,))
                 db.commit()
                 json_response(self, {"deleted": folder_id})
+                return
+
+            document_move_action = re.match(r"^/api/documents/(\d+)/move$", path)
+            if document_move_action:
+                document_id = int(document_move_action.group(1))
+                if account_role(account) not in {"owner", "construction_manager", "finance_director"}:
+                    json_response(self, {"error": "Forbidden"}, 403)
+                    return
+                document = db.execute("SELECT * FROM documents WHERE id = ?", (document_id,)).fetchone()
+                if not document:
+                    json_response(self, {"error": "Document not found"}, 404)
+                    return
+                if (document["related_type"] or "") != "knowledge_base":
+                    raise ValueError("Перемещать через эту кнопку можно только материалы базы знаний.")
+                folder_id = validate_knowledge_folder(db, int(data.get("folder_id") or 0) or None)
+                try:
+                    moved_path = move_stored_file(db, document, folder_id)
+                except (HTTPError, URLError, TimeoutError, RuntimeError, OSError) as exc:
+                    json_response(self, {"error": f"Не удалось переместить файл в хранилище: {exc}"}, 500)
+                    return
+                db.execute(
+                    """
+                    UPDATE documents
+                    SET folder_id = ?, file_path = COALESCE(?, file_path), updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                    """,
+                    (folder_id, moved_path, document_id),
+                )
+                db.commit()
+                json_response(
+                    self,
+                    {
+                        "id": document_id,
+                        "folder_id": folder_id,
+                        "folder_path": knowledge_folder_path(db, folder_id),
+                    },
+                )
                 return
 
             document_action = re.match(r"^/api/documents/(\d+)/delete$", path)

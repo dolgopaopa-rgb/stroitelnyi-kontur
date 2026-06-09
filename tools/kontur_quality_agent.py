@@ -305,9 +305,9 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         ),
         (
             "Knowledge base folders scenario",
-            "В базе знаний можно создавать папки, загружать несколько файлов и загружать папку целиком с сохранением структуры.",
-            ["CREATE TABLE IF NOT EXISTS knowledge_folders", "folder_id", "/api/document-folders", "renderKnowledgeTree", "ensure_knowledge_folder_path", 'name=\"document_files\" type=\"file\" multiple', "webkitdirectory", "relative_path"],
-            "Не возвращать базу знаний к плоскому списку: папки, подпапки и пакетная загрузка нужны для регламентов, узлов и проектных решений.",
+            "В базе знаний можно создавать папки, загружать несколько файлов, загружать папку целиком и переносить старые материалы в нужную папку.",
+            ["CREATE TABLE IF NOT EXISTS knowledge_folders", "folder_id", "/api/document-folders", "renderKnowledgeTree", "ensure_knowledge_folder_path", 'name=\"document_files\" type=\"file\" multiple', "webkitdirectory", "relative_path", "/api/documents/${id}/move", "data-document-move-folder", "move_stored_file", "/resources/move"],
+            "Не возвращать базу знаний к плоскому списку: папки, подпапки, пакетная загрузка и перемещение старых файлов нужны для регламентов, узлов и проектных решений.",
         ),
         (
             "Project approval guard",

@@ -3233,6 +3233,13 @@ function fillKnowledgeFolderSelects() {
 }
 
 function renderKnowledgeDocumentCard(doc) {
+  const moveControls = canManageKnowledgeBase()
+    ? `
+      <div class="knowledge-move-row">
+        <select data-document-move-folder="${doc.id}" aria-label="Папка материала">${knowledgeFolderOptions(doc.folder_id || "")}</select>
+        <button class="secondary tiny" type="button" data-document-action="move" data-document-id="${doc.id}">Переместить</button>
+      </div>`
+    : "";
   return `
     <article class="card knowledge-file-card">
       <div class="document-card-head">
@@ -3240,6 +3247,7 @@ function renderKnowledgeDocumentCard(doc) {
         ${canDeleteKnowledgeBase() ? `<button class="danger-button tiny" type="button" data-document-action="delete" data-document-id="${doc.id}">Удалить</button>` : ""}
       </div>
       ${doc.file_path ? documentFileLink(doc) : `<div class="muted">${escapeHtml(doc.file_name || "Файл не загружен")}</div>`}
+      ${moveControls}
     </article>`;
 }
 
@@ -4231,6 +4239,20 @@ function bindEvents() {
     if (documentActionButton) {
       const action = documentActionButton.dataset.documentAction;
       const id = documentActionButton.dataset.documentId;
+      if (action === "move") {
+        const select = qs(`[data-document-move-folder="${id}"]`);
+        try {
+          await api(`/api/documents/${id}/move`, {
+            method: "POST",
+            body: JSON.stringify({ folder_id: select?.value || "", actor_role: currentRoleBase() }),
+          });
+          await renderDocuments();
+          showToast("Материал перемещён");
+        } catch (error) {
+          showToast(error.message || "Не удалось переместить материал");
+        }
+        return;
+      }
       if (action === "delete") {
         const confirmed = confirm("Удалить материал из базы знаний? Файл также будет удалён из хранилища.");
         if (!confirmed) return;
