@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="ru">
   <head>
     <meta charset="utf-8" />
@@ -9,10 +9,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Строительный контур</title>
-    <link rel="manifest" href="/static/manifest.webmanifest?v=20260609-knowledge-move" />
+    <link rel="manifest" href="/static/manifest.webmanifest?v=20260609-knowledge-filemanager" />
     <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260609-knowledge-move" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260609-knowledge-filemanager" />
   </head>
   <body>
     <div class="app">
@@ -610,9 +610,16 @@
         <label>Файлы <input name="document_files" type="file" multiple accept=".pdf,.xlsx,.xls,.csv,.doc,.docx,.jpg,.jpeg,.png,.webp,.mp4,.mov,.zip,.rar,.7z,.dwg,.dxf" /></label>
         <label>Или папка целиком <input name="document_folder" type="file" webkitdirectory directory multiple /></label>
         <p class="muted">Если выбрать папку целиком, вложенные папки сохранятся в базе знаний с такой же структурой.</p>
+        <div class="upload-status" id="documentUploadState" hidden>
+          <span class="apple-spinner" aria-hidden="true"></span>
+          <div>
+            <strong data-upload-message>Загружаем файлы</strong>
+            <span>Не закрывайте окно, пока загрузка не завершится.</span>
+          </div>
+        </div>
         <div class="form-actions">
           <button type="button" class="secondary" data-close="documentDialog">Отмена</button>
-          <button class="primary" type="submit">Сохранить</button>
+          <button class="primary" id="documentSubmitButton" type="submit">Сохранить</button>
         </div>
       </form>
     </dialog>
@@ -766,6 +773,6 @@
     </dialog>
 
     <div class="toast" id="toast"></div>
-    <script src="/static/app.js?v=20260609-knowledge-move"></script>
+    <script src="/static/app.js?v=20260609-knowledge-filemanager"></script>
   </body>
 </html>

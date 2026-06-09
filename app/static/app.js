@@ -30,6 +30,9 @@ const state = {
   openWorkStages: {},
   estimateGallery: { jobId: null, files: [], index: 0 },
   knowledgeFolders: [],
+  knowledgeCurrentFolderId: localStorage.getItem("knowledgeCurrentFolderId") || "",
+  knowledgeUploading: false,
+  knowledgeUploadMessage: "",
 };
 
 const PROJECT_FORM_DRAFT_KEY = "projectFormDraft:v1";
@@ -3232,7 +3235,79 @@ function fillKnowledgeFolderSelects() {
   });
 }
 
-function renderKnowledgeDocumentCard(doc) {
+function knowledgeCurrentFolderId() {
+  const current = String(state.knowledgeCurrentFolderId || "");
+  if (!current) return "";
+  const exists = (state.knowledgeFolders || []).some((folder) => String(folder.id) === current);
+  if (!exists) {
+    state.knowledgeCurrentFolderId = "";
+    localStorage.setItem("knowledgeCurrentFolderId", "");
+    return "";
+  }
+  return current;
+}
+
+function setKnowledgeCurrentFolderId(folderId = "") {
+  state.knowledgeCurrentFolderId = String(folderId || "");
+  localStorage.setItem("knowledgeCurrentFolderId", state.knowledgeCurrentFolderId);
+}
+
+function knowledgeFolderById(folderId, folders = state.knowledgeFolders || []) {
+  const id = String(folderId || "");
+  return folders.find((folder) => String(folder.id) === id) || null;
+}
+
+function knowledgeFolderAncestors(folderId, folders = state.knowledgeFolders || []) {
+  const byId = new Map(folders.map((folder) => [String(folder.id), folder]));
+  const result = [];
+  let current = byId.get(String(folderId || ""));
+  const visited = new Set();
+  while (current && !visited.has(String(current.id))) {
+    visited.add(String(current.id));
+    result.unshift(current);
+    current = current.parent_id ? byId.get(String(current.parent_id)) : null;
+  }
+  return result;
+}
+
+function setKnowledgeUploading(isUploading, message = "") {
+  state.knowledgeUploading = Boolean(isUploading);
+  state.knowledgeUploadMessage = message || (isUploading ? "Загружаем файлы" : "");
+  updateKnowledgeUploadState();
+}
+
+function updateKnowledgeUploadState() {
+  const status = qs("#documentUploadState");
+  if (status) {
+    status.hidden = !state.knowledgeUploading;
+    status.querySelector("[data-upload-message]").textContent = state.knowledgeUploadMessage || "Загружаем файлы";
+  }
+  const submit = qs("#documentSubmitButton");
+  if (submit) submit.disabled = state.knowledgeUploading;
+  const manager = qs("[data-knowledge-drop-zone]");
+  if (manager) {
+    manager.classList.toggle("is-uploading", state.knowledgeUploading);
+    manager.setAttribute("aria-busy", state.knowledgeUploading ? "true" : "false");
+  }
+  const overlay = qs(".knowledge-upload-overlay");
+  if (overlay) {
+    overlay.hidden = !state.knowledgeUploading;
+    overlay.querySelector("[data-upload-message]").textContent = state.knowledgeUploadMessage || "Загружаем файлы";
+  }
+}
+
+function renderKnowledgeUploadOverlay() {
+  return `
+    <div class="knowledge-upload-overlay" ${state.knowledgeUploading ? "" : "hidden"}>
+      <div class="upload-card">
+        <span class="apple-spinner" aria-hidden="true"></span>
+        <strong data-upload-message>${escapeHtml(state.knowledgeUploadMessage || "Загружаем файлы")}</strong>
+        <span>Пожалуйста, подождите. Большие фото и видео могут загружаться дольше.</span>
+      </div>
+    </div>`;
+}
+
+function renderKnowledgeDocumentRow(doc) {
   const moveControls = canManageKnowledgeBase()
     ? `
       <div class="knowledge-move-row">
@@ -3241,64 +3316,123 @@ function renderKnowledgeDocumentCard(doc) {
       </div>`
     : "";
   return `
-    <article class="card knowledge-file-card">
-      <div class="document-card-head">
-        <div class="stack-line"><strong>${escapeHtml(documentTitle(doc))}</strong>${pill(documentType(doc.type), "blue")}${pill(label(doc.status))}</div>
+    <article class="knowledge-item knowledge-file-card">
+      <div class="knowledge-item-icon" aria-hidden="true">□</div>
+      <div class="knowledge-item-main">
+        ${doc.file_path ? documentFileLink(doc) : `<div><strong>${escapeHtml(documentTitle(doc))}</strong><div class="muted">${escapeHtml(doc.file_name || "Файл не загружен")}</div></div>`}
+        <div class="stack-line">${pill(documentType(doc.type), "blue")}${pill(label(doc.status))}</div>
+      </div>
+      <div class="knowledge-item-actions">
+        ${moveControls}
         ${canDeleteKnowledgeBase() ? `<button class="danger-button tiny" type="button" data-document-action="delete" data-document-id="${doc.id}">Удалить</button>` : ""}
       </div>
-      ${doc.file_path ? documentFileLink(doc) : `<div class="muted">${escapeHtml(doc.file_name || "Файл не загружен")}</div>`}
-      ${moveControls}
     </article>`;
 }
 
-function renderKnowledgeTree(folders = [], docs = []) {
-  const childrenByParent = new Map();
-  folders.forEach((folder) => {
-    const key = String(folder.parent_id || "");
-    childrenByParent.set(key, [...(childrenByParent.get(key) || []), folder]);
-  });
-  const docsByFolder = new Map();
-  docs.forEach((doc) => {
-    const key = String(doc.folder_id || "");
-    docsByFolder.set(key, [...(docsByFolder.get(key) || []), doc]);
-  });
+function renderKnowledgeFolderRow(folder, folders = [], docs = []) {
+  const id = String(folder.id);
+  const childCount = folders.filter((item) => String(item.parent_id || "") === id).length;
+  const fileCount = docs.filter((doc) => String(doc.folder_id || "") === id).length;
+  const isEmpty = !childCount && !fileCount;
+  return `
+    <article class="knowledge-item knowledge-folder-row">
+      <button class="knowledge-folder-open" type="button" data-knowledge-folder-open="${folder.id}">
+        <span class="knowledge-item-icon" aria-hidden="true">▣</span>
+        <span class="knowledge-item-main">
+          <strong>${escapeHtml(folder.title || "Папка")}</strong>
+          <span class="muted">${fileCount} файл(ов) · ${childCount} подпапок</span>
+        </span>
+      </button>
+      <div class="knowledge-item-actions">
+        ${canDeleteKnowledgeBase() && isEmpty ? `<button class="danger-button tiny" type="button" data-folder-action="delete" data-folder-id="${folder.id}">Удалить</button>` : ""}
+      </div>
+    </article>`;
+}
 
-  const renderFolder = (folder, depth = 0) => {
-    const children = childrenByParent.get(String(folder.id)) || [];
-    const folderDocs = docsByFolder.get(String(folder.id)) || [];
-    const isEmpty = !children.length && !folderDocs.length;
-    const deleteButton =
-      canDeleteKnowledgeBase() && isEmpty
-        ? `<button class="danger-button tiny" type="button" data-folder-action="delete" data-folder-id="${folder.id}">Удалить</button>`
-        : "";
-    return `
-      <details class="knowledge-folder" ${depth === 0 ? "open" : ""}>
-        <summary>
-          <span class="knowledge-folder-title">
-            <strong>${escapeHtml(folder.title || "Папка")}</strong>
-            <span class="muted">${escapeHtml(folder.path || "")}</span>
-          </span>
-          <span class="knowledge-folder-meta">${folderDocs.length} файл(ов) · ${children.length} подпапок</span>
-          ${deleteButton}
-        </summary>
-        <div class="knowledge-folder-body">
-          ${folderDocs.length ? folderDocs.map(renderKnowledgeDocumentCard).join("") : `<p class="muted">В этой папке пока нет файлов.</p>`}
-          ${children.map((child) => renderFolder(child, depth + 1)).join("")}
-        </div>
-      </details>`;
-  };
+function renderKnowledgeBreadcrumb(currentId, folders = []) {
+  const ancestors = knowledgeFolderAncestors(currentId, folders);
+  const items = [
+    `<button type="button" data-knowledge-folder-open="">База знаний</button>`,
+    ...ancestors.map((folder) => `<button type="button" data-knowledge-folder-open="${folder.id}">${escapeHtml(folder.title || "Папка")}</button>`),
+  ];
+  return `<nav class="knowledge-breadcrumb" aria-label="Путь в базе знаний">${items.join("<span>/</span>")}</nav>`;
+}
 
-  const rootFolders = childrenByParent.get("") || [];
-  const rootDocs = docsByFolder.get("") || [];
-  const content = [
-    ...rootFolders.map((folder) => renderFolder(folder)),
-    rootDocs.length
-      ? `<section class="knowledge-root-docs"><h3>Без папки</h3>${rootDocs.map(renderKnowledgeDocumentCard).join("")}</section>`
+function renderKnowledgeFileManager(folders = [], docs = []) {
+  const currentId = knowledgeCurrentFolderId();
+  const currentFolder = knowledgeFolderById(currentId, folders);
+  const childFolders = folders
+    .filter((folder) => String(folder.parent_id || "") === currentId)
+    .sort((a, b) => String(a.title || "").localeCompare(String(b.title || ""), "ru"));
+  const folderDocs = docs
+    .filter((doc) => String(doc.folder_id || "") === currentId)
+    .sort((a, b) => String(documentTitle(a) || "").localeCompare(String(documentTitle(b) || ""), "ru"));
+  const parentId = currentFolder?.parent_id ? String(currentFolder.parent_id) : "";
+  const emptyMessage = currentId
+    ? "В этой папке пока нет файлов и подпапок."
+    : "База знаний пока пустая. Загружайте сюда регламенты, проектные решения, узлы и общую документацию.";
+  const rows = [
+    currentId
+      ? `<article class="knowledge-item knowledge-back-row"><button class="knowledge-folder-open" type="button" data-knowledge-folder-open="${escapeAttr(parentId)}"><span class="knowledge-item-icon">↩</span><span class="knowledge-item-main"><strong>Назад</strong><span class="muted">В родительскую папку</span></span></button></article>`
       : "",
+    ...childFolders.map((folder) => renderKnowledgeFolderRow(folder, folders, docs)),
+    ...folderDocs.map(renderKnowledgeDocumentRow),
   ]
     .filter(Boolean)
     .join("");
-  return content || `<p class="muted">База знаний пока пустая. Загружайте сюда регламенты, проектные решения, узлы и общую документацию.</p>`;
+
+  return `
+    <section class="knowledge-manager" data-knowledge-drop-zone data-folder-id="${escapeAttr(currentId)}">
+      ${renderKnowledgeBreadcrumb(currentId, folders)}
+      <div class="knowledge-current-head">
+        <div>
+          <h3>${escapeHtml(currentFolder?.title || "База знаний")}</h3>
+          <p class="muted">${currentId ? escapeHtml(currentFolder?.path || "") : "Корень базы знаний"} · ${childFolders.length} папок · ${folderDocs.length} файлов</p>
+        </div>
+        ${canManageKnowledgeBase() ? `<div class="knowledge-drop-text">Перетащите файлы сюда, чтобы загрузить их в текущую папку</div>` : ""}
+      </div>
+      <div class="knowledge-list">
+        ${rows || `<p class="muted knowledge-empty">${emptyMessage}</p>`}
+      </div>
+      ${canManageKnowledgeBase() ? renderKnowledgeUploadOverlay() : ""}
+    </section>`;
+}
+
+async function uploadKnowledgeFiles(files, options = {}) {
+  const fileList = Array.from(files || []).filter((file) => file && file.name);
+  if (!fileList.length) {
+    showToast("Выберите файлы для загрузки");
+    return;
+  }
+  const folderId = options.folderId ?? knowledgeCurrentFolderId();
+  const type = options.type || "other";
+  const title = options.title || "";
+  const message = fileList.length > 1 ? `Загружаем файлы: ${fileList.length}` : `Загружаем файл: ${fileList[0].name}`;
+  setKnowledgeUploading(true, message);
+  try {
+    const documents = await Promise.all(
+      fileList.map(async (file) => {
+        const relativePath = file.webkitRelativePath || file.name;
+        const fallbackTitle = file.name.replace(/\.[^.]+$/, "") || file.name;
+        const itemTitle = fileList.length === 1 && title ? title : fallbackTitle;
+        return {
+          title: itemTitle,
+          type,
+          folder_id: folderId || "",
+          relative_path: relativePath,
+          document_file: await fileDocumentPayload(file, fileList.length === 1 && title ? title : file.name, type, "knowledge_base"),
+        };
+      })
+    );
+    await api("/api/documents", {
+      method: "POST",
+      body: JSON.stringify({ related_type: "knowledge_base", folder_id: folderId || "", type, documents }),
+    });
+    await renderDocuments();
+    showToast(fileList.length > 1 ? `Материалы добавлены в базу знаний: ${fileList.length}` : "Материал добавлен в базу знаний");
+  } finally {
+    setKnowledgeUploading(false);
+  }
 }
 
 async function renderDocuments() {
@@ -3312,7 +3446,8 @@ async function renderDocuments() {
   ]);
   state.knowledgeFolders = Array.isArray(folders) ? folders : [];
   fillKnowledgeFolderSelects();
-  qs("#documentCards").innerHTML = renderKnowledgeTree(state.knowledgeFolders, Array.isArray(docs) ? docs : []);
+  qs("#documentCards").innerHTML = renderKnowledgeFileManager(state.knowledgeFolders, Array.isArray(docs) ? docs : []);
+  updateKnowledgeUploadState();
 }
 
 function feedbackStatusLabel(status) {
@@ -3858,12 +3993,15 @@ function bindEvents() {
     const form = qs("#knowledgeFolderForm");
     form.reset();
     fillKnowledgeFolderSelects();
+    form.elements.parent_id.value = knowledgeCurrentFolderId();
     qs("#knowledgeFolderDialog").showModal();
   });
   qs("#newDocumentButton").addEventListener("click", () => {
     const form = qs("#documentForm");
     form.reset();
     fillKnowledgeFolderSelects();
+    form.elements.folder_id.value = knowledgeCurrentFolderId();
+    updateKnowledgeUploadState();
     qs("#documentDialog").showModal();
   });
   qs("#newEventButton").addEventListener("click", () => qs("#eventDialog").showModal());
@@ -4214,6 +4352,13 @@ function bindEvents() {
       return;
     }
 
+    const knowledgeFolderOpenButton = event.target.closest("[data-knowledge-folder-open]");
+    if (knowledgeFolderOpenButton) {
+      setKnowledgeCurrentFolderId(knowledgeFolderOpenButton.dataset.knowledgeFolderOpen || "");
+      await renderDocuments();
+      return;
+    }
+
     const folderActionButton = event.target.closest("[data-folder-action]");
     if (folderActionButton) {
       const action = folderActionButton.dataset.folderAction;
@@ -4389,6 +4534,40 @@ function bindEvents() {
     if (tabButton) {
       state.selectedProjectTab = tabButton.dataset.projectTab;
       await renderProjectDetail(state.selectedProjectId);
+    }
+  });
+
+  document.addEventListener("dragover", (event) => {
+    const dropZone = event.target.closest?.("[data-knowledge-drop-zone]");
+    if (!dropZone || !canManageKnowledgeBase()) return;
+    event.preventDefault();
+    dropZone.classList.add("is-drag-over");
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+  });
+
+  document.addEventListener("dragleave", (event) => {
+    const dropZone = event.target.closest?.("[data-knowledge-drop-zone]");
+    if (!dropZone) return;
+    const nextTarget = event.relatedTarget;
+    if (nextTarget && dropZone.contains(nextTarget)) return;
+    dropZone.classList.remove("is-drag-over");
+  });
+
+  document.addEventListener("drop", async (event) => {
+    const dropZone = event.target.closest?.("[data-knowledge-drop-zone]");
+    if (!dropZone || !canManageKnowledgeBase()) return;
+    event.preventDefault();
+    dropZone.classList.remove("is-drag-over");
+    const files = Array.from(event.dataTransfer?.files || []);
+    if (!files.length) {
+      showToast("Перетащите один или несколько файлов");
+      return;
+    }
+    try {
+      await uploadKnowledgeFiles(files, { folderId: dropZone.dataset.folderId || "" });
+    } catch (error) {
+      showToast(error.message || "Не удалось загрузить файлы");
+      setKnowledgeUploading(false);
     }
   });
 
@@ -4656,8 +4835,6 @@ function bindEvents() {
     const form = qs("#documentForm");
     try {
       const data = formToJson(form);
-      data.related_type = "knowledge_base";
-      delete data.project_id;
       const looseFiles = Array.from(form.elements.document_files?.files || []);
       const folderFiles = Array.from(form.elements.document_folder?.files || []);
       const files = [...looseFiles, ...folderFiles];
@@ -4665,28 +4842,13 @@ function bindEvents() {
         showToast("Выберите файл или папку для загрузки");
         return;
       }
-      data.documents = await Promise.all(
-        files.map(async (file) => {
-          const relativePath = file.webkitRelativePath || file.name;
-          const fallbackTitle = file.name.replace(/\.[^.]+$/, "") || file.name;
-          return {
-            title: files.length === 1 && data.title ? data.title : fallbackTitle,
-            type: data.type || "other",
-            folder_id: data.folder_id || "",
-            relative_path: relativePath,
-            document_file: await fileDocumentPayload(file, files.length === 1 && data.title ? data.title : file.name, data.type || "other", "knowledge_base"),
-          };
-        })
-      );
-      delete data.document_files;
-      delete data.document_folder;
-      await api("/api/documents", { method: "POST", body: JSON.stringify(data) });
+      await uploadKnowledgeFiles(files, { folderId: data.folder_id || "", title: data.title || "", type: data.type || "other" });
       qs("#documentDialog").close();
       form.reset();
-      await renderDocuments();
-      showToast(files.length > 1 ? `Материалы добавлены в базу знаний: ${files.length}` : "Материал добавлен в базу знаний");
     } catch (error) {
       showToast(error.message || "Не удалось сохранить материал");
+    } finally {
+      setKnowledgeUploading(false);
     }
   });
   qs("#contractForm").addEventListener("submit", async (event) => {
