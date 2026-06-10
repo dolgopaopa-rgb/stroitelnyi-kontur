@@ -1440,7 +1440,7 @@ def can_update_estimate_job(row, account: dict | None) -> bool:
     if role in {"owner", "construction_manager"}:
         return True
     if role == "sales_manager":
-        return estimate_job_owned_by_account(row, account, "manager_id") and row["status"] != "estimate_done"
+        return estimate_job_owned_by_account(row, account, "manager_id")
     if role == "estimator":
         return estimate_job_owned_by_account(row, account, "estimator_id") and row["status"] not in {"estimate_done", "estimate_returned"}
     return False
@@ -3173,13 +3173,19 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     json_response(self, {"error": "Forbidden"}, 403)
                     return
                 attachments = [item for item in data.get("attachments") or [] if isinstance(item, dict) and item.get("file_base64")]
-                if not attachments:
-                    json_response(self, {"error": "Прикрепите файл сметы"}, 400)
+                smetter_url = str(data.get("smetter_url") or "").strip()
+                if not attachments and not smetter_url:
+                    json_response(self, {"error": "Прикрепите файл сметы или укажите ссылку на Сметтер"}, 400)
                     return
+                if smetter_url:
+                    db.execute(
+                        "UPDATE estimate_jobs SET smetter_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        (smetter_url, estimate_job_id),
+                    )
                 replace_file_id = int(data.get("replace_file_id") or 0) or None
                 replacement_note = str(data.get("replacement_note") or "").strip()
                 saved_ids: list[int] = []
-                if replace_file_id:
+                if replace_file_id and attachments:
                     replaced_file = db.execute(
                         "SELECT * FROM estimate_job_files WHERE id = ? AND estimate_job_id = ?",
                         (replace_file_id, estimate_job_id),
@@ -3200,18 +3206,18 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     )
                     if new_file_id:
                         saved_ids.append(new_file_id)
-                else:
+                elif attachments:
                     for attachment in attachments:
                         new_file_id = save_estimate_job_file(db, estimate_job_id, attachment, account_user_id(account))
                         if new_file_id:
                             saved_ids.append(new_file_id)
-                action_text = "заменен" if replace_file_id else "добавлен"
+                action_text = "заменен файл сметы" if replace_file_id and attachments else ("добавлен файл сметы" if attachments else "обновлена ссылка на Сметтер")
                 notify_users(
                     db,
                     {row["manager_id"], row["estimator_id"], user_id_by_role(db, "construction_manager"), user_id_by_role(db, "owner")} - {None},
                     row["project_id"],
                     "Файлы сданной сметы обновлены",
-                    f"{row['title']}: {action_text} файл сметы. Новых файлов: {len(saved_ids)}",
+                    f"{row['title']}: {action_text}. Новых файлов: {len(saved_ids)}",
                     "estimate_job",
                     estimate_job_id,
                 )
@@ -3223,11 +3229,72 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         """,
                         (
                             row["project_id"],
-                            f"{row['title']}: {action_text} файл сметы. Новых файлов: {len(saved_ids)}",
+                            f"{row['title']}: {action_text}. Новых файлов: {len(saved_ids)}",
                             account_user_id(account),
                         ),
                     )
                 json_response(self, {"id": estimate_job_id, "files": saved_ids})
+                return
+
+            estimate_job_file_delete = re.match(r"^/api/estimate-job-files/(\d+)/delete$", path)
+            if estimate_job_file_delete:
+                file_id = int(estimate_job_file_delete.group(1))
+                file_row = db.execute("SELECT * FROM estimate_job_files WHERE id = ?", (file_id,)).fetchone()
+                if not file_row:
+                    json_response(self, {"error": "Estimate file not found"}, 404)
+                    return
+                row = db.execute("SELECT * FROM estimate_jobs WHERE id = ?", (int(file_row["estimate_job_id"]),)).fetchone()
+                if not row:
+                    json_response(self, {"error": "Estimate job not found"}, 404)
+                    return
+                if not can_manage_estimate_job_files(row, account):
+                    json_response(self, {"error": "Forbidden"}, 403)
+                    return
+                was_current = int(file_row["is_current"] or 0) != 0
+                db.execute("DELETE FROM estimate_job_files WHERE id = ?", (file_id,))
+                if was_current:
+                    latest_file = db.execute(
+                        """
+                        SELECT id
+                        FROM estimate_job_files
+                        WHERE estimate_job_id = ?
+                        ORDER BY version_no DESC, id DESC
+                        LIMIT 1
+                        """,
+                        (int(file_row["estimate_job_id"]),),
+                    ).fetchone()
+                    if latest_file:
+                        db.execute(
+                            """
+                            UPDATE estimate_job_files
+                            SET is_current = 1,
+                                replaced_at = NULL
+                            WHERE id = ?
+                            """,
+                            (int(latest_file["id"]),),
+                        )
+                notify_users(
+                    db,
+                    {row["manager_id"], row["estimator_id"], user_id_by_role(db, "construction_manager"), user_id_by_role(db, "owner")} - {None},
+                    row["project_id"],
+                    "Файл сданной сметы удален",
+                    f"{row['title']}: удален файл {file_row['file_name']}.",
+                    "estimate_job",
+                    int(file_row["estimate_job_id"]),
+                )
+                if row["project_id"]:
+                    db.execute(
+                        """
+                        INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
+                        VALUES (?, 'estimate_files', ?, ?, 'internal', 'estimate_job')
+                        """,
+                        (
+                            row["project_id"],
+                            f"{row['title']}: удален файл сданной сметы {file_row['file_name']}.",
+                            account_user_id(account),
+                        ),
+                    )
+                json_response(self, {"deleted": file_id})
                 return
 
             estimate_job_action = re.match(r"^/api/estimate-jobs/(\d+)/(update|status|delete)$", path)

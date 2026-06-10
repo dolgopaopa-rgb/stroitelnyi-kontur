@@ -257,14 +257,14 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         ),
         (
             "Estimate file versions scenario",
-            "После сдачи сметы можно добавить файл или заменить текущий файл, сохранив старую версию в истории.",
-            ["estimateJobFileForm", "openEstimateJobFileDialog", "/api/estimate-jobs/${id}/files", "replace_file_id", "version_no", "is_current", "previous-version", "Файл сметы заменен, старая версия сохранена"],
-            "Не удалять старые версии сданной сметы: при споре должно быть видно, какой файл был раньше и что стало актуальным.",
+            "После сдачи сметы можно добавить файл, заменить текущий файл с историей версий, сохранить ссылку на Сметтер и удалить лишний файл.",
+            ["estimateJobFileForm", "openEstimateJobFileDialog", "/api/estimate-jobs/${id}/files", "data-delete-estimate-file", "/api/estimate-job-files/${deleteEstimateFileButton.dataset.deleteEstimateFile}/delete", "replace_file_id", "version_no", "is_current", "previous-version", "Файл сметы заменен, старая версия сохранена"],
+            "Не удалять старые версии при замене файла сданной сметы. Кнопка удаления нужна только для явно лишних файлов и должна работать через отдельное подтверждение.",
         ),
         (
             "Estimate links and print scenario",
             "В сметном задании видны активные ссылки на Сметтер и есть быстрый вывод вложений на печать.",
-            ['name="smetter_url"', "linkifyText", "data-print-estimate-file", "estimate-file-print", "Открыть Сметтер"],
+            ['name="smetter_url"', "estimateSmetterHref", "firstUrlFromText", "linkifyText(job.result_comment)", "data-print-estimate-file", "estimate-file-print", "Открыть Сметтер"],
             "Ссылки из комментариев и отдельное поле Сметтера должны быть кликабельными, а вложения - быстро открываться для печати.",
         ),
         (
