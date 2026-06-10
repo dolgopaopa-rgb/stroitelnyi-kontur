@@ -2395,10 +2395,14 @@ h2 {
 
 .estimate-file-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: stretch;
   gap: 4px;
   max-width: 320px;
+}
+
+.estimate-file-card.previous-version {
+  opacity: 0.72;
 }
 
 .estimate-job-files a,

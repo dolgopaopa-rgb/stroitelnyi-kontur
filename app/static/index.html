@@ -9,10 +9,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Строительный контур</title>
-    <link rel="manifest" href="/static/manifest.webmanifest?v=20260609-estimate-site-defaults" />
+    <link rel="manifest" href="/static/manifest.webmanifest?v=20260610-estimate-file-versions" />
     <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260609-estimate-site-defaults" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260610-estimate-file-versions" />
   </head>
   <body>
     <div class="app">
@@ -523,6 +523,38 @@
       </form>
     </dialog>
 
+    <dialog id="estimateJobFileDialog">
+      <form method="dialog" class="form" id="estimateJobFileForm">
+        <div class="modal-head">
+          <h2 id="estimateJobFileTitle">Файлы сданной сметы</h2>
+          <button type="button" class="icon" data-close="estimateJobFileDialog">×</button>
+        </div>
+        <input name="id" type="hidden" />
+        <label>
+          Действие
+          <select name="mode">
+            <option value="add">Добавить новый файл</option>
+            <option value="replace">Заменить файл с сохранением прошлой версии</option>
+          </select>
+        </label>
+        <label id="estimateReplaceFileWrap">
+          Какой файл заменить
+          <select name="replace_file_id"></select>
+          <span class="field-hint">Старая версия останется в истории сметы.</span>
+        </label>
+        <label>Комментарий <textarea name="replacement_note" rows="2" placeholder="Например: новая версия после правок заказчика"></textarea></label>
+        <label>
+          Файл
+          <input name="attachments" type="file" multiple accept=".pdf,.xlsx,.xls,.doc,.docx,.zip,.rar,.7z,.jpg,.jpeg,.png,.webp" />
+          <span class="field-hint">В режиме замены выберите один файл. В режиме добавления можно выбрать несколько.</span>
+        </label>
+        <div class="form-actions">
+          <button type="button" class="secondary" data-close="estimateJobFileDialog">Отмена</button>
+          <button class="primary" type="submit">Сохранить файлы</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog id="estimateImageDialog">
       <div class="image-preview">
         <div class="modal-head">
@@ -785,6 +817,6 @@
     </dialog>
 
     <div class="toast" id="toast"></div>
-    <script src="/static/app.js?v=20260609-estimate-site-defaults"></script>
+    <script src="/static/app.js?v=20260610-estimate-file-versions"></script>
   </body>
 </html>

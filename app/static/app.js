@@ -314,6 +314,15 @@ function canFinishEstimateJob(job) {
   return ["owner", "construction_manager"].includes(role) || (role === "estimator" && isOwnEstimateJob(job, "estimator_id")) || managerControlsPartnerEstimateJob(job);
 }
 
+function canManageEstimateJobFiles(job) {
+  const role = currentRoleBase();
+  if (job.status !== "estimate_done") return false;
+  if (["owner", "construction_manager"].includes(role)) return true;
+  if (role === "sales_manager") return isOwnEstimateJob(job, "manager_id");
+  if (role === "estimator") return isOwnEstimateJob(job, "estimator_id");
+  return false;
+}
+
 function canReturnEstimateJob(job) {
   const role = currentRoleBase();
   if (["estimate_done", "estimate_returned"].includes(job.status)) return false;
@@ -1748,7 +1757,7 @@ function isEstimateImageFile(file) {
   return mime.startsWith("image/") || /\.(jpe?g|png|webp|gif|bmp|heic|heif)$/i.test(fileName);
 }
 
-function renderEstimateJobFiles(files = [], jobId = "") {
+function renderEstimateJobFiles(files = [], jobId = "", canManageFiles = false) {
   if (!Array.isArray(files) || !files.length) return "";
   return `
     <div class="estimate-job-files">
@@ -1758,24 +1767,32 @@ function renderEstimateJobFiles(files = [], jobId = "") {
             const title = escapeHtml(file.title || file.file_name || "Файл");
             const fileName = escapeHtml(file.file_name || "");
             const href = escapeAttr(estimateFileDownloadUrl(file));
+            const isCurrent = Number(file.is_current ?? 1) !== 0;
+            const version = Number(file.version_no || 1);
+            const versionText = `v${version}${isCurrent ? "" : " · предыдущая"}`;
+            const note = file.replacement_note ? ` · ${escapeHtml(file.replacement_note)}` : "";
             const printButton = `<button class="estimate-file-print" type="button" data-print-estimate-file="${escapeAttr(file.id)}">Печать</button>`;
+            const replaceButton = canManageFiles && isCurrent ? `<button class="estimate-file-print" type="button" data-replace-estimate-file="${escapeAttr(file.id)}" data-estimate-job-id="${escapeAttr(jobId)}">Заменить</button>` : "";
+            const meta = `<span>${fileName}</span><span>${versionText}${note}</span>`;
             if (isEstimateImageFile(file)) {
               return `
-          <div class="estimate-file-card">
+          <div class="estimate-file-card ${isCurrent ? "" : "previous-version"}">
             <button class="estimate-file-button" type="button" data-estimate-gallery-job="${escapeAttr(jobId)}" data-estimate-gallery-file="${escapeAttr(file.id)}">
               <strong>${title}</strong>
-              <span>${fileName}</span>
+              ${meta}
             </button>
             ${printButton}
+            ${replaceButton}
           </div>`;
             }
             return `
-          <div class="estimate-file-card">
+          <div class="estimate-file-card ${isCurrent ? "" : "previous-version"}">
             <a href="${href}" target="_blank" rel="noopener noreferrer">
               <strong>${escapeHtml(file.title || file.file_name || "Файл")}</strong>
-              <span>${escapeHtml(file.file_name || "")}</span>
+              ${meta}
             </a>
             ${printButton}
+            ${replaceButton}
           </div>`;
           }
         )
@@ -1830,6 +1847,7 @@ function renderEstimateJobRow(job) {
   const canFinish = canFinishEstimateJob(job);
   const canReturn = canReturnEstimateJob(job);
   const canQuestion = canQuestionEstimateJob(job);
+  const canManageFiles = canManageEstimateJobFiles(job);
   const canDelete = canDeleteEstimateJob(job);
   return `
     <article class="row estimate-job-row">
@@ -1851,7 +1869,7 @@ function renderEstimateJobRow(job) {
         ${job.question_comment ? `<p class="muted warning-text">Уточнение: ${linkifyText(job.question_comment)}</p>` : ""}
         ${job.return_comment ? `<p class="muted danger-text">Возврат менеджеру: ${escapeHtml(job.return_comment)}</p>` : ""}
         ${job.result_comment ? `<p class="muted">Итог: ${escapeHtml(job.result_comment)}</p>` : ""}
-        ${renderEstimateJobFiles(job.files, job.id)}
+        ${renderEstimateJobFiles(job.files, job.id, canManageFiles)}
       </div>
       <div class="estimate-job-actions">
         ${canEdit ? `<button class="secondary tiny" type="button" data-edit-estimate-job="${job.id}">Редактировать</button>` : ""}
@@ -1859,6 +1877,7 @@ function renderEstimateJobRow(job) {
         ${canQuestion ? `<button class="secondary tiny" type="button" data-estimate-job-status="estimate_question" data-estimate-job-id="${job.id}">Уточнить</button>` : ""}
         ${canReturn ? `<button class="secondary tiny danger-outline" type="button" data-estimate-job-status="estimate_returned" data-estimate-job-id="${job.id}">Вернуть менеджеру</button>` : ""}
         ${canFinish ? `<button class="primary tiny" type="button" data-estimate-job-status="estimate_done" data-estimate-job-id="${job.id}">Сдано</button>` : ""}
+        ${canManageFiles ? `<button class="secondary tiny" type="button" data-open-estimate-files="${job.id}">Добавить файл</button>` : ""}
         ${canDelete ? `<button class="danger-button tiny" type="button" data-delete-estimate-job="${job.id}">Удалить</button>` : ""}
       </div>
     </article>`;
@@ -1903,6 +1922,43 @@ function openEstimateJobDoneDialog(jobId) {
   qs("#estimateJobDoneTitle").textContent = job ? `Сдать смету: ${job.title}` : "Сдать смету";
   form.elements.result_comment.value = job?.result_comment || "";
   qs("#estimateJobDoneDialog").showModal();
+}
+
+function updateEstimateFileDialogMode() {
+  const form = qs("#estimateJobFileForm");
+  if (!form) return;
+  const mode = form.elements.mode.value || "add";
+  const replaceWrap = qs("#estimateReplaceFileWrap");
+  const fileInput = form.elements.attachments;
+  if (replaceWrap) replaceWrap.hidden = mode !== "replace";
+  if (fileInput) fileInput.multiple = mode !== "replace";
+}
+
+function openEstimateJobFileDialog(jobId, replaceFileId = "") {
+  const job = state.estimateJobs.find((item) => Number(item.id) === Number(jobId));
+  const form = qs("#estimateJobFileForm");
+  if (!job || !form) return;
+  form.reset();
+  form.elements.id.value = job.id;
+  qs("#estimateJobFileTitle").textContent = `Файлы сметы: ${job.title}`;
+  const currentFiles = (job.files || []).filter((file) => Number(file.is_current ?? 1) !== 0);
+  form.elements.replace_file_id.innerHTML = currentFiles
+    .map((file) => `<option value="${escapeAttr(file.id)}">${escapeHtml(file.title || file.file_name || "Файл")} · v${Number(file.version_no || 1)}</option>`)
+    .join("");
+  if (replaceFileId) {
+    form.elements.mode.value = "replace";
+    form.elements.replace_file_id.value = String(replaceFileId);
+  } else {
+    form.elements.mode.value = "add";
+  }
+  if (!currentFiles.length) {
+    form.elements.mode.value = "add";
+    form.elements.mode.querySelector('option[value="replace"]').disabled = true;
+  } else {
+    form.elements.mode.querySelector('option[value="replace"]').disabled = false;
+  }
+  updateEstimateFileDialogMode();
+  qs("#estimateJobFileDialog").showModal();
 }
 
 function uniqueMaterialBatches(materialRows = []) {
@@ -4139,6 +4195,7 @@ function bindEvents() {
   qs('#estimateJobForm select[name="site_costs_policy"]')?.addEventListener("change", () => {
     qs("#estimateJobForm").dataset.siteCostsTouched = "true";
   });
+  qs('#estimateJobFileForm select[name="mode"]')?.addEventListener("change", updateEstimateFileDialogMode);
   qs("#newMaterialButton").addEventListener("click", async () => {
     const form = qs("#materialForm");
     form.reset();
@@ -4427,6 +4484,18 @@ function bindEvents() {
           // Some browsers block scripted printing for downloaded documents.
         }
       }, 900);
+      return;
+    }
+
+    const openEstimateFilesButton = event.target.closest("[data-open-estimate-files]");
+    if (openEstimateFilesButton) {
+      openEstimateJobFileDialog(openEstimateFilesButton.dataset.openEstimateFiles);
+      return;
+    }
+
+    const replaceEstimateFileButton = event.target.closest("[data-replace-estimate-file]");
+    if (replaceEstimateFileButton) {
+      openEstimateJobFileDialog(replaceEstimateFileButton.dataset.estimateJobId, replaceEstimateFileButton.dataset.replaceEstimateFile);
       return;
     }
 
@@ -4872,6 +4941,42 @@ function bindEvents() {
     await renderEstimateJobs();
     await renderDashboard();
     showToast("Смета сдана, файлы сохранены");
+  });
+  qs("#estimateJobFileForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = qs("#estimateJobFileForm");
+    const id = form.elements.id.value;
+    const mode = form.elements.mode.value || "add";
+    const attachments = Array.from(form.elements.attachments?.files || []);
+    if (!id) {
+      showToast("Не найдено сметное задание");
+      return;
+    }
+    if (!attachments.length) {
+      showToast("Прикрепите файл сметы");
+      return;
+    }
+    if (mode === "replace" && attachments.length !== 1) {
+      showToast("Для замены выберите один новый файл");
+      return;
+    }
+    const payload = {
+      replacement_note: form.elements.replacement_note.value || "",
+      attachments: await Promise.all(attachments.map((file) => fileDocumentPayload(file, file.name, "estimate_job_file", "estimate_job"))),
+    };
+    if (mode === "replace") {
+      payload.replace_file_id = form.elements.replace_file_id.value;
+    }
+    await api(`/api/estimate-jobs/${id}/files`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    qs("#estimateJobFileDialog").close();
+    form.reset();
+    await loadCoreData();
+    await renderEstimateJobs();
+    await renderDashboard();
+    showToast(mode === "replace" ? "Файл сметы заменен, старая версия сохранена" : "Файлы сметы добавлены");
   });
   qs("#materialForm").addEventListener("submit", (event) => {
     event.preventDefault();

@@ -1474,6 +1474,17 @@ def can_change_estimate_job_status(row, status: str, account: dict | None, db=No
     return False
 
 
+def can_manage_estimate_job_files(row, account: dict | None) -> bool:
+    role = account_role(account)
+    if role in {"owner", "construction_manager"}:
+        return True
+    if role == "sales_manager":
+        return estimate_job_owned_by_account(row, account, "manager_id")
+    if role == "estimator":
+        return estimate_job_owned_by_account(row, account, "estimator_id")
+    return False
+
+
 def can_view_variations(account: dict | None) -> bool:
     return account_role(account) in {"owner", "construction_manager", "finance_director", "accountant", "sales_manager", "estimator", "foreman"}
 
@@ -1927,7 +1938,14 @@ def save_document_file(
     return int(cursor.lastrowid)
 
 
-def save_estimate_job_file(db, estimate_job_id: int, file_data: dict, uploaded_by: int | None = None) -> int | None:
+def save_estimate_job_file(
+    db,
+    estimate_job_id: int,
+    file_data: dict,
+    uploaded_by: int | None = None,
+    replace_file_id: int | None = None,
+    replacement_note: str = "",
+) -> int | None:
     file_name = safe_file_name(file_data.get("file_name") or file_data.get("title") or "file")
     encoded = file_data.get("file_base64") or ""
     if not encoded:
@@ -1937,20 +1955,43 @@ def save_estimate_job_file(db, estimate_job_id: int, file_data: dict, uploaded_b
     raw = base64.b64decode(encoded)
     target_name = f"{int(time.time() * 1000)}_{file_name}"
     stored_path = save_uploaded_file(db, estimate_job_id, "estimate_job", "attachments", target_name, raw)
+    replaced_file = None
+    version_no = 1
+    if replace_file_id:
+        replaced_file = db.execute(
+            "SELECT * FROM estimate_job_files WHERE id = ? AND estimate_job_id = ?",
+            (replace_file_id, estimate_job_id),
+        ).fetchone()
+        if replaced_file:
+            version_no = int(replaced_file["version_no"] or 1) + 1
+            db.execute(
+                """
+                UPDATE estimate_job_files
+                SET is_current = 0,
+                    replaced_at = CURRENT_TIMESTAMP,
+                    replacement_note = ?
+                WHERE id = ?
+                """,
+                (replacement_note, int(replaced_file["id"])),
+            )
     cursor = db.execute(
         """
         INSERT INTO estimate_job_files (
-            estimate_job_id, title, file_name, file_path, mime_type, file_size, uploaded_by
+            estimate_job_id, title, file_name, file_path, mime_type, file_size,
+            version_no, is_current, replaced_file_id, replacement_note, uploaded_by
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
         """,
         (
             estimate_job_id,
-            str(file_data.get("title") or file_name).strip() or file_name,
+            str(file_data.get("title") or (replaced_file["title"] if replaced_file else "") or file_name).strip() or file_name,
             file_name,
             stored_path,
             file_data.get("mime_type") or mimetypes.guess_type(file_name)[0] or "application/octet-stream",
             len(raw),
+            version_no,
+            int(replaced_file["id"]) if replaced_file else None,
+            replacement_note,
             uploaded_by,
         ),
     )
@@ -3116,6 +3157,77 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     estimate_job_id,
                 )
                 json_response(self, {"id": estimate_job_id}, 201)
+                return
+
+            estimate_job_files_action = re.match(r"^/api/estimate-jobs/(\d+)/files$", path)
+            if estimate_job_files_action:
+                estimate_job_id = int(estimate_job_files_action.group(1))
+                row = db.execute("SELECT * FROM estimate_jobs WHERE id = ?", (estimate_job_id,)).fetchone()
+                if not row:
+                    json_response(self, {"error": "Estimate job not found"}, 404)
+                    return
+                if row["status"] != "estimate_done":
+                    json_response(self, {"error": "Файлы можно добавлять этим способом только после сдачи сметы"}, 400)
+                    return
+                if not can_manage_estimate_job_files(row, account):
+                    json_response(self, {"error": "Forbidden"}, 403)
+                    return
+                attachments = [item for item in data.get("attachments") or [] if isinstance(item, dict) and item.get("file_base64")]
+                if not attachments:
+                    json_response(self, {"error": "Прикрепите файл сметы"}, 400)
+                    return
+                replace_file_id = int(data.get("replace_file_id") or 0) or None
+                replacement_note = str(data.get("replacement_note") or "").strip()
+                saved_ids: list[int] = []
+                if replace_file_id:
+                    replaced_file = db.execute(
+                        "SELECT * FROM estimate_job_files WHERE id = ? AND estimate_job_id = ?",
+                        (replace_file_id, estimate_job_id),
+                    ).fetchone()
+                    if not replaced_file:
+                        json_response(self, {"error": "Файл для замены не найден"}, 404)
+                        return
+                    if len(attachments) > 1:
+                        json_response(self, {"error": "Для замены выберите один новый файл"}, 400)
+                        return
+                    new_file_id = save_estimate_job_file(
+                        db,
+                        estimate_job_id,
+                        attachments[0],
+                        account_user_id(account),
+                        replace_file_id,
+                        replacement_note,
+                    )
+                    if new_file_id:
+                        saved_ids.append(new_file_id)
+                else:
+                    for attachment in attachments:
+                        new_file_id = save_estimate_job_file(db, estimate_job_id, attachment, account_user_id(account))
+                        if new_file_id:
+                            saved_ids.append(new_file_id)
+                action_text = "заменен" if replace_file_id else "добавлен"
+                notify_users(
+                    db,
+                    {row["manager_id"], row["estimator_id"], user_id_by_role(db, "construction_manager"), user_id_by_role(db, "owner")} - {None},
+                    row["project_id"],
+                    "Файлы сданной сметы обновлены",
+                    f"{row['title']}: {action_text} файл сметы. Новых файлов: {len(saved_ids)}",
+                    "estimate_job",
+                    estimate_job_id,
+                )
+                if row["project_id"]:
+                    db.execute(
+                        """
+                        INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
+                        VALUES (?, 'estimate_files', ?, ?, 'internal', 'estimate_job')
+                        """,
+                        (
+                            row["project_id"],
+                            f"{row['title']}: {action_text} файл сметы. Новых файлов: {len(saved_ids)}",
+                            account_user_id(account),
+                        ),
+                    )
+                json_response(self, {"id": estimate_job_id, "files": saved_ids})
                 return
 
             estimate_job_action = re.match(r"^/api/estimate-jobs/(\d+)/(update|status|delete)$", path)

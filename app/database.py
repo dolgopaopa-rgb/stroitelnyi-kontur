@@ -237,9 +237,15 @@ def init_db() -> None:
                 file_path TEXT NOT NULL,
                 mime_type TEXT,
                 file_size INTEGER,
+                version_no INTEGER NOT NULL DEFAULT 1,
+                is_current INTEGER NOT NULL DEFAULT 1,
+                replaced_file_id INTEGER,
+                replaced_at TEXT,
+                replacement_note TEXT,
                 uploaded_by INTEGER,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (estimate_job_id) REFERENCES estimate_jobs(id) ON DELETE CASCADE,
+                FOREIGN KEY (replaced_file_id) REFERENCES estimate_job_files(id),
                 FOREIGN KEY (uploaded_by) REFERENCES users(id)
             );
 
@@ -465,6 +471,11 @@ def init_db() -> None:
         ensure_column(db, "estimate_jobs", "smetter_url", "TEXT")
         ensure_column(db, "estimate_jobs", "site_costs_policy", "TEXT NOT NULL DEFAULT 'include'")
         ensure_column(db, "estimate_jobs", "site_costs_comment", "TEXT")
+        ensure_column(db, "estimate_job_files", "version_no", "INTEGER NOT NULL DEFAULT 1")
+        ensure_column(db, "estimate_job_files", "is_current", "INTEGER NOT NULL DEFAULT 1")
+        ensure_column(db, "estimate_job_files", "replaced_file_id", "INTEGER")
+        ensure_column(db, "estimate_job_files", "replaced_at", "TEXT")
+        ensure_column(db, "estimate_job_files", "replacement_note", "TEXT")
         ensure_column(db, "work_extra_items", "estimate_section", "TEXT")
         ensure_column(db, "documents", "file_name", "TEXT")
         ensure_column(db, "documents", "file_path", "TEXT")

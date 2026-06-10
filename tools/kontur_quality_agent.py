@@ -256,6 +256,12 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
             "Не блокировать сдачу сметы из статуса уточнения: это нормальный рабочий сценарий после ответа менеджера.",
         ),
         (
+            "Estimate file versions scenario",
+            "После сдачи сметы можно добавить файл или заменить текущий файл, сохранив старую версию в истории.",
+            ["estimateJobFileForm", "openEstimateJobFileDialog", "/api/estimate-jobs/${id}/files", "replace_file_id", "version_no", "is_current", "previous-version", "Файл сметы заменен, старая версия сохранена"],
+            "Не удалять старые версии сданной сметы: при споре должно быть видно, какой файл был раньше и что стало актуальным.",
+        ),
+        (
             "Estimate links and print scenario",
             "В сметном задании видны активные ссылки на Сметтер и есть быстрый вывод вложений на печать.",
             ['name="smetter_url"', "linkifyText", "data-print-estimate-file", "estimate-file-print", "Открыть Сметтер"],
