@@ -9,10 +9,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Строительный контур</title>
-    <link rel="manifest" href="/static/manifest.webmanifest?v=20260610-estimate-links-delete" />
+    <link rel="manifest" href="/static/manifest.webmanifest?v=20260611-android-pwa" />
     <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260610-estimate-links-delete" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260611-android-pwa" />
   </head>
   <body>
     <div class="app">
@@ -61,6 +61,7 @@
             </label>
             <button class="secondary" id="refreshButton">Обновить</button>
             <button class="primary" id="newProjectButton">Новый объект</button>
+            <button class="secondary install-button" id="installAppButton" type="button" hidden>Установить</button>
             <button class="secondary logout-button" id="logoutButton" type="button">Выйти</button>
           </div>
         </header>
@@ -822,6 +823,6 @@
     </dialog>
 
     <div class="toast" id="toast"></div>
-    <script src="/static/app.js?v=20260610-estimate-links-delete"></script>
+    <script src="/static/app.js?v=20260611-android-pwa"></script>
   </body>
 </html>

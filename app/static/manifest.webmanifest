@@ -7,6 +7,7 @@
   "start_url": "/?source=pwa",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "browser"],
   "orientation": "portrait",
   "background_color": "#eef3f4",
   "theme_color": "#132126",
@@ -24,5 +25,32 @@
       "purpose": "any maskable"
     }
   ],
-  "categories": ["business", "productivity"]
+  "shortcuts": [
+    {
+      "name": "Рабочий стол",
+      "short_name": "Стол",
+      "url": "/?source=pwa&view=dashboard",
+      "icons": [{ "src": "/static/assets/g2-logo-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Объекты",
+      "short_name": "Объекты",
+      "url": "/?source=pwa&view=projects",
+      "icons": [{ "src": "/static/assets/g2-logo-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Задачи",
+      "short_name": "Задачи",
+      "url": "/?source=pwa&view=tasks",
+      "icons": [{ "src": "/static/assets/g2-logo-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Материалы",
+      "short_name": "Материалы",
+      "url": "/?source=pwa&view=materials",
+      "icons": [{ "src": "/static/assets/g2-logo-192.png", "sizes": "192x192" }]
+    }
+  ],
+  "categories": ["business", "productivity"],
+  "prefer_related_applications": false
 }

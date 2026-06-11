@@ -33,6 +33,8 @@ const state = {
   knowledgeCurrentFolderId: localStorage.getItem("knowledgeCurrentFolderId") || "",
   knowledgeUploading: false,
   knowledgeUploadMessage: "",
+  installPromptEvent: null,
+  installPromptReady: false,
 };
 
 const PROJECT_FORM_DRAFT_KEY = "projectFormDraft:v1";
@@ -384,9 +386,45 @@ function syncTopbarAccess() {
   if (refreshButton) refreshButton.hidden = !canUseRoleTools || ownerOnlyPageActions;
   if (logoutButton) logoutButton.hidden = false;
   if (newProjectButton) newProjectButton.hidden = !canEditProject() || ownerOnlyPageActions;
+  syncInstallButton();
   if (actions) {
     actions.classList.toggle("role-tools-hidden", !canUseRoleTools);
     actions.classList.toggle("manager-actions", currentRoleBase() === "sales_manager" && !canUseRoleTools);
+  }
+}
+
+function isAndroidDevice() {
+  return /Android/i.test(navigator.userAgent || "");
+}
+
+function isStandaloneApp() {
+  return window.matchMedia?.("(display-mode: standalone)")?.matches || window.navigator.standalone === true;
+}
+
+function canShowInstallButton() {
+  return !isStandaloneApp() && (state.installPromptReady || isAndroidDevice());
+}
+
+function syncInstallButton() {
+  const button = qs("#installAppButton");
+  if (!button) return;
+  button.hidden = !canShowInstallButton();
+  button.textContent = state.installPromptReady ? "Установить" : "На главный экран";
+}
+
+async function installAndroidApp() {
+  const promptEvent = state.installPromptEvent;
+  if (!promptEvent) {
+    showToast("На Android откройте меню Chrome ⋮ и выберите «Установить приложение» или «Добавить на главный экран».");
+    return;
+  }
+  promptEvent.prompt();
+  const choice = await promptEvent.userChoice.catch(() => null);
+  state.installPromptEvent = null;
+  state.installPromptReady = false;
+  syncInstallButton();
+  if (choice?.outcome === "accepted") {
+    showToast("Контур устанавливается на главный экран.");
   }
 }
 
@@ -917,6 +955,7 @@ function switchView(view) {
   qsa(".view").forEach((node) => node.classList.remove("active"));
   qs(`#${view}View`).classList.add("active");
   qs("#pageTitle").textContent = viewTitles[view];
+  syncTopbarAccess();
   initSortableZones();
 }
 
@@ -5194,6 +5233,7 @@ function bindEvents() {
 async function boot() {
   await loadSession();
   bindEvents();
+  bindInstallEvents();
   switchView(state.view);
   await loadAll();
   registerServiceWorker();
@@ -5202,6 +5242,25 @@ async function boot() {
 function registerServiceWorker() {
   if (!("serviceWorker" in navigator) || location.protocol === "file:") return;
   navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+}
+
+function bindInstallEvents() {
+  qs("#installAppButton")?.addEventListener("click", () => {
+    installAndroidApp().catch((error) => showToast(error.message || "Не удалось начать установку"));
+  });
+  window.addEventListener("beforeinstallprompt", (event) => {
+    event.preventDefault();
+    state.installPromptEvent = event;
+    state.installPromptReady = true;
+    syncInstallButton();
+  });
+  window.addEventListener("appinstalled", () => {
+    state.installPromptEvent = null;
+    state.installPromptReady = false;
+    syncInstallButton();
+    showToast("Контур установлен на устройство.");
+  });
+  syncInstallButton();
 }
 
 boot().catch((error) => showToast(error.message));

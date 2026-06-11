@@ -1,9 +1,9 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260610-estimate-links-delete";
+const CACHE_NAME = "stroitelnyi-kontur-20260611-android-pwa";
 const CORE_ASSETS = [
   "/",
-  "/static/styles.css?v=20260610-estimate-links-delete",
-  "/static/app.js?v=20260610-estimate-links-delete",
-  "/static/manifest.webmanifest?v=20260610-estimate-links-delete",
+  "/static/styles.css?v=20260611-android-pwa",
+  "/static/app.js?v=20260611-android-pwa",
+  "/static/manifest.webmanifest?v=20260611-android-pwa",
   "/static/assets/g2-logo-192.png",
   "/static/assets/g2-logo-512.png"
 ];

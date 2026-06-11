@@ -206,6 +206,17 @@ h2 {
   border-color: #d99a9a;
 }
 
+.install-button {
+  background: #f3faf7;
+  border-color: #b9d7cc;
+  color: var(--brand-strong);
+}
+
+.install-button:hover {
+  background: #e6f3ee;
+  border-color: #8ebfac;
+}
+
 .actions.role-tools-hidden {
   margin-left: auto;
 }
@@ -3892,6 +3903,16 @@ textarea {
     max-height: 30dvh;
     overflow: auto;
     font-size: 12px;
+  }
+}
+
+@media (display-mode: standalone) {
+  body {
+    overscroll-behavior-y: contain;
+  }
+
+  .install-button {
+    display: none !important;
   }
 }
 

@@ -120,6 +120,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
     app_text = repository_file("app/static/app.js")
     css_text = repository_file("app/static/styles.css")
     sw_text = repository_file("app/static/sw.js")
+    manifest_text = repository_file("app/static/manifest.webmanifest")
     server_text = repository_file("app/server.py")
     max_cli_text = repository_file("app/send_max_message.py")
     database_text = repository_file("app/database.py")
@@ -219,6 +220,12 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
     )
 
     scenario_contracts = [
+        (
+            "Android PWA install scenario",
+            "Контур можно установить на Android как приложение: manifest и service worker доступны до логина, на входе и внутри приложения есть кнопка установки.",
+            ["display_override", "prefer_related_applications", "shortcuts", 'id="installAppButton"', 'id="loginInstallButton"', "beforeinstallprompt", "installAndroidApp", "syncInstallButton", 'navigator.serviceWorker.register("/sw.js")', 'if path == "/sw.js":', 'if path.startswith("/static/"):'],
+            "Для Android не ломать PWA-контур: manifest, service worker и static-ассеты должны открываться без авторизации, а данные приложения остаются закрытыми логином.",
+        ),
         (
             "Role persistence scenario",
             "Выбранная тестовая роль сохраняется после обновления страницы.",
@@ -348,7 +355,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
     ]
 
     broken_scenarios = []
-    combined_text = "\n".join([html, app_text, css_text, server_text, max_cli_text, database_text])
+    combined_text = "\n".join([html, login_html, app_text, css_text, sw_text, manifest_text, server_text, max_cli_text, database_text])
     for name, details, needles, recommendation in scenario_contracts:
         ok = has_all(combined_text, needles)
         check_static_contract(checks, name, ok, details if ok else f"Нарушен сценарий: {details}", recommendation)

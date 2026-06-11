@@ -2136,6 +2136,12 @@ class AppHandler(BaseHTTPRequestHandler):
                 return
             self.serve_static("login.html")
             return
+        if path == "/sw.js":
+            self.serve_static("sw.js")
+            return
+        if path.startswith("/static/"):
+            self.serve_static(path.replace("/static/", "", 1))
+            return
         if path != "/health" and not is_authorized(self):
             if path.startswith("/api/"):
                 api_auth_required_response(self)
@@ -2146,14 +2152,8 @@ class AppHandler(BaseHTTPRequestHandler):
         if path == "/":
             self.serve_static("index.html")
             return
-        if path == "/sw.js":
-            self.serve_static("sw.js")
-            return
         if path == "/health":
             json_response(self, {"status": "ok"})
-            return
-        if path.startswith("/static/"):
-            self.serve_static(path.replace("/static/", "", 1))
             return
         if path == "/api/material-requests/export":
             self.serve_material_requests_export(parse_qs(parsed.query))

@@ -1333,3 +1333,36 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 - `app/static/sw.js`
 - `tools/kontur_quality_agent.py`
 - `docs/16-project-worklog.md`
+
+### Первый Android-вариант через PWA
+
+**Запрос.** Нужно начать делать мобильную версию, в первую очередь для Android.
+
+**Решение.**
+
+- Выбран первый практичный вариант: PWA-приложение поверх текущего Контура.
+- Это позволяет установить Контур на Android из Chrome без отдельной базы и без переписывания приложения с нуля.
+- Manifest, service worker и `/static/*` теперь доступны до авторизации. Это нужно для установки и обновления приложения.
+- API и рабочие данные по-прежнему закрыты логином.
+- На странице входа добавлена кнопка `Установить на Android`.
+- Внутри приложения добавлена кнопка `Установить` / `На главный экран`.
+- Manifest дополнен `display_override`, ярлыками Android shortcuts и запретом поиска связанного внешнего приложения.
+- Добавлена инструкция `docs/27-android-mobile-version.md`.
+- QA-агент получил сценарий `Android PWA install scenario`.
+
+**Следующий этап.**
+
+Если PWA-установка устроит по поведению, ее можно оставить рабочей Android-версией. Если понадобится APK или публикация в магазине, следующий шаг - Trusted Web Activity-обертка.
+
+**Измененные файлы.**
+
+- `app/server.py`
+- `app/static/app.js`
+- `app/static/index.html`
+- `app/static/login.html`
+- `app/static/manifest.webmanifest`
+- `app/static/styles.css`
+- `app/static/sw.js`
+- `tools/kontur_quality_agent.py`
+- `docs/16-project-worklog.md`
+- `docs/27-android-mobile-version.md`

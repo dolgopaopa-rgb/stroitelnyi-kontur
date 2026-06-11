@@ -6,6 +6,9 @@
     <meta name="theme-color" content="#132126" />
     <meta name="robots" content="noindex" />
     <title>Вход - Строительный контур</title>
+    <link rel="manifest" href="/static/manifest.webmanifest?v=20260611-android-pwa" />
+    <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
+    <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
     <style>
       :root {
         --bg: #f4f6f8;
@@ -145,6 +148,17 @@
         opacity: 0.72;
       }
 
+      .install-button {
+        width: 100%;
+        min-height: 42px;
+        margin-top: 12px;
+        border: 1px solid #b9d7cc;
+        border-radius: 8px;
+        background: #f3faf7;
+        color: var(--brand-strong);
+        padding: 0 12px;
+      }
+
       .status {
         min-height: 20px;
         color: var(--danger);
@@ -219,6 +233,7 @@
           <p class="status" id="loginStatus" aria-live="polite"></p>
           <button class="submit-button" type="submit">Войти</button>
         </form>
+        <button class="install-button" id="loginInstallButton" type="button" hidden>Установить на Android</button>
       </section>
     </main>
 
@@ -232,6 +247,51 @@
       const passwordClear = document.querySelector("#passwordClear");
       const status = document.querySelector("#loginStatus");
       const submitButton = form.querySelector('button[type="submit"]');
+      const installButton = document.querySelector("#loginInstallButton");
+      let deferredInstallPrompt = null;
+
+      function isAndroidDevice() {
+        return /Android/i.test(navigator.userAgent || "");
+      }
+
+      function isStandaloneApp() {
+        return window.matchMedia?.("(display-mode: standalone)")?.matches || window.navigator.standalone === true;
+      }
+
+      function syncInstallButton() {
+        installButton.hidden = isStandaloneApp() || (!deferredInstallPrompt && !isAndroidDevice());
+        installButton.textContent = deferredInstallPrompt ? "Установить на Android" : "Добавить на главный экран";
+      }
+
+      function registerServiceWorker() {
+        if (!("serviceWorker" in navigator) || location.protocol === "file:") return;
+        navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+      }
+
+      window.addEventListener("beforeinstallprompt", (event) => {
+        event.preventDefault();
+        deferredInstallPrompt = event;
+        syncInstallButton();
+      });
+
+      window.addEventListener("appinstalled", () => {
+        deferredInstallPrompt = null;
+        syncInstallButton();
+        status.textContent = "Контур установлен на устройство.";
+        status.className = "status info";
+      });
+
+      installButton.addEventListener("click", async () => {
+        if (!deferredInstallPrompt) {
+          status.textContent = "На Android откройте меню Chrome ⋮ и выберите «Установить приложение» или «Добавить на главный экран».";
+          status.className = "status info";
+          return;
+        }
+        deferredInstallPrompt.prompt();
+        await deferredInstallPrompt.userChoice.catch(() => undefined);
+        deferredInstallPrompt = null;
+        syncInstallButton();
+      });
 
       if (params.get("logged_out")) {
         status.textContent = "Вы вышли. Для продолжения войдите заново.";
@@ -310,6 +370,8 @@
           submitButton.textContent = "Войти";
         }
       });
+      syncInstallButton();
+      registerServiceWorker();
     </script>
   </body>
 </html>
