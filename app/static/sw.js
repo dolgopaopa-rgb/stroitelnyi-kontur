@@ -1,8 +1,8 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260611-material-receipt";
+const CACHE_NAME = "stroitelnyi-kontur-20260611-task-workflow";
 const CORE_ASSETS = [
   "/",
-  "/static/styles.css?v=20260611-material-receipt",
-  "/static/app.js?v=20260611-material-receipt",
+  "/static/styles.css?v=20260611-task-workflow",
+  "/static/app.js?v=20260611-task-workflow",
   "/static/manifest.webmanifest?v=20260611-android-pwa",
   "/static/assets/g2-logo-192.png",
   "/static/assets/g2-logo-512.png"

@@ -1301,8 +1301,8 @@ def create_task_event(
     status_to: str | None = None,
     comment: str = "",
     due_date: str | None = None,
-) -> None:
-    db.execute(
+) -> int:
+    cursor = db.execute(
         """
         INSERT INTO task_events (
             task_id, project_id, actor_id, action, status_from, status_to, comment, due_date
@@ -1311,6 +1311,7 @@ def create_task_event(
         """,
         (task_id, project_id, actor_id, action, status_from, status_to, comment, due_date),
     )
+    return int(cursor.lastrowid)
 
 
 def project_archive_blockers(db, project_id: int) -> list[str]:
@@ -1366,6 +1367,34 @@ def attach_task_events(db, tasks: list[dict]) -> list[dict]:
     for row in rows:
         item = row_to_dict(row)
         grouped.setdefault(int(item["task_id"]), []).append(item)
+    event_ids = [int(row["id"]) for row in rows]
+    attachments_by_event: dict[int, list[dict]] = {}
+    if event_ids:
+        event_placeholders = ",".join("?" for _ in event_ids)
+        process_keys = [f"task_event:{event_id}" for event_id in event_ids]
+        attachment_rows = rows_to_dicts(
+            db.execute(
+                f"""
+                SELECT id, title, type, file_name, file_path, mime_type, file_size, process_type, created_at
+                FROM documents
+                WHERE related_type = 'task'
+                  AND process_type IN ({event_placeholders})
+                ORDER BY created_at, id
+                """,
+                process_keys,
+            ).fetchall()
+        )
+        for attachment in attachment_rows:
+            process_type = str(attachment.get("process_type") or "")
+            if process_type.startswith("task_event:"):
+                try:
+                    event_id = int(process_type.split(":", 1)[1])
+                except ValueError:
+                    continue
+                attachments_by_event.setdefault(event_id, []).append(attachment)
+    for event_rows in grouped.values():
+        for event in event_rows:
+            event["attachments"] = attachments_by_event.get(int(event["id"]), [])
     for task in tasks:
         task["events"] = grouped.get(int(task["id"]), [])
     return tasks
@@ -1940,6 +1969,27 @@ def save_document_file(
     return int(cursor.lastrowid)
 
 
+def save_task_event_attachments(db, *, project_id: int, event_id: int, attachments: list[dict], owner_id: int | None = None) -> list[int]:
+    document_ids: list[int] = []
+    for attachment in attachments or []:
+        if not attachment or not attachment.get("file_base64"):
+            continue
+        payload = dict(attachment)
+        payload["process_type"] = f"task_event:{event_id}"
+        document_id = save_document_file(
+            db,
+            project_id,
+            payload,
+            payload.get("title") or payload.get("file_name") or "Вложение к задаче",
+            "other",
+            "task",
+            owner_id=owner_id,
+        )
+        if document_id:
+            document_ids.append(document_id)
+    return document_ids
+
+
 def save_estimate_job_file(
     db,
     estimate_job_id: int,
@@ -2063,11 +2113,13 @@ def get_project_detail(project_id: int, account: dict | None = None) -> dict | N
             rows_to_dicts(
                 db.execute(
                     """
-                    SELECT t.*, assignee.name AS assignee_name, creator.name AS creator_name, reviewer.name AS reviewer_name
+                    SELECT t.*, assignee.name AS assignee_name, creator.name AS creator_name, reviewer.name AS reviewer_name,
+                           c.title AS contract_title, c.type AS contract_type
                     FROM tasks t
                     LEFT JOIN users assignee ON assignee.id = t.assignee_id
                     LEFT JOIN users creator ON creator.id = t.creator_id
                     LEFT JOIN users reviewer ON reviewer.id = t.reviewer_id
+                    LEFT JOIN contracts c ON c.id = t.contract_id
                     WHERE t.project_id = ?
                     ORDER BY t.due_date
                     """,
@@ -2853,12 +2905,14 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     SELECT t.*, p.title AS project_title, p.foreman_id AS project_foreman_id,
                            assignee.name AS assignee_name, assignee.role AS assignee_role,
                            creator.name AS creator_name, creator.role AS creator_role,
-                           reviewer.name AS reviewer_name, reviewer.role AS reviewer_role
+                           reviewer.name AS reviewer_name, reviewer.role AS reviewer_role,
+                           c.title AS contract_title, c.type AS contract_type
                     FROM tasks t
                     JOIN projects p ON p.id = t.project_id
                     LEFT JOIN users assignee ON assignee.id = t.assignee_id
                     LEFT JOIN users creator ON creator.id = t.creator_id
                     LEFT JOIN users reviewer ON reviewer.id = t.reviewer_id
+                    LEFT JOIN contracts c ON c.id = t.contract_id
                     WHERE p.status != 'archived'
                     ORDER BY
                         CASE t.status
@@ -4167,7 +4221,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 json_response(self, {"id": variation_id, "status": action})
                 return
 
-            task_action = re.match(r"^/api/tasks/(\d+)/(complete|accept|return|delete)$", path)
+            task_action = re.match(r"^/api/tasks/(\d+)/(complete|accept|return|postpone|delete)$", path)
             if task_action:
                 task_id = int(task_action.group(1))
                 action = task_action.group(2)
@@ -4185,8 +4239,18 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     json_response(self, {"error": "Task not found"}, 404)
                     return
 
+                request_role = account_role(account)
+                request_user_id = account_user_id(account)
+                privileged_task_role = request_role in {"owner", "construction_manager", "finance_director"}
+                if action in {"complete", "postpone"} and not privileged_task_role and (not request_user_id or request_user_id != task["assignee_id"]):
+                    json_response(self, {"error": "Forbidden"}, 403)
+                    return
+                if action in {"accept", "return"} and not privileged_task_role and (not request_user_id or request_user_id not in {task["reviewer_id"], task["creator_id"]}):
+                    json_response(self, {"error": "Forbidden"}, 403)
+                    return
+
                 if action == "delete":
-                    if data.get("actor_role") not in {"owner", "construction_manager"}:
+                    if request_role not in {"owner", "construction_manager"}:
                         raise ValueError("Удалять задачи может только ген.директор или руководитель строительства.")
                     create_task_event(
                         db,
@@ -4204,6 +4268,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     return
 
                 if action == "complete":
+                    comment = str(data.get("comment") or "").strip() or "Исполнитель отметил задачу выполненной."
                     db.execute(
                         """
                         UPDATE tasks
@@ -4214,7 +4279,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         """,
                         (task_id,),
                     )
-                    create_task_event(
+                    event_id = create_task_event(
                         db,
                         task_id=task_id,
                         project_id=task["project_id"],
@@ -4222,9 +4287,10 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         action="complete",
                         status_from=task["status"],
                         status_to="completed_pending_acceptance",
-                        comment=data.get("comment") or "Исполнитель отметил задачу выполненной.",
+                        comment=comment,
                         due_date=task["due_date"],
                     )
+                    save_task_event_attachments(db, project_id=task["project_id"], event_id=event_id, attachments=data.get("attachments") or [], owner_id=actor_id or task["assignee_id"])
                     reviewer_id = task["reviewer_id"] or task["creator_id"] or user_id_by_role(db, "construction_manager")
                     create_notification(
                         db,
@@ -4249,6 +4315,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     return
 
                 if action == "accept":
+                    comment = str(data.get("comment") or "").strip() or "Проверяющий принял выполнение."
                     db.execute(
                         """
                         UPDATE tasks
@@ -4260,7 +4327,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         """,
                         (task_id,),
                     )
-                    create_task_event(
+                    event_id = create_task_event(
                         db,
                         task_id=task_id,
                         project_id=task["project_id"],
@@ -4268,9 +4335,10 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         action="accept",
                         status_from=task["status"],
                         status_to="accepted",
-                        comment=data.get("comment") or "Проверяющий принял выполнение.",
+                        comment=comment,
                         due_date=task["due_date"],
                     )
+                    save_task_event_attachments(db, project_id=task["project_id"], event_id=event_id, attachments=data.get("attachments") or [], owner_id=actor_id or task["reviewer_id"] or task["creator_id"])
                     create_notification(
                         db,
                         task["project_id"],
@@ -4297,7 +4365,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         """,
                         (comment, due_date, task_id),
                     )
-                    create_task_event(
+                    event_id = create_task_event(
                         db,
                         task_id=task_id,
                         project_id=task["project_id"],
@@ -4308,6 +4376,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         comment=comment,
                         due_date=due_date,
                     )
+                    save_task_event_attachments(db, project_id=task["project_id"], event_id=event_id, attachments=data.get("attachments") or [], owner_id=actor_id or task["reviewer_id"] or task["creator_id"])
                     create_notification(
                         db,
                         task["project_id"],
@@ -4320,13 +4389,59 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     json_response(self, {"id": task_id, "status": "returned"})
                     return
 
+                if action == "postpone":
+                    comment = str(data.get("comment") or "").strip()
+                    due_date = data.get("due_date") or task["due_date"]
+                    if not comment:
+                        raise ValueError("Напишите причину переноса или частичного выполнения.")
+                    db.execute(
+                        """
+                        UPDATE tasks
+                        SET status = 'in_progress_task',
+                            rejection_comment = ?,
+                            due_date = ?,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (comment, due_date, task_id),
+                    )
+                    event_id = create_task_event(
+                        db,
+                        task_id=task_id,
+                        project_id=task["project_id"],
+                        actor_id=actor_id or task["assignee_id"],
+                        action="postpone",
+                        status_from=task["status"],
+                        status_to="in_progress_task",
+                        comment=comment,
+                        due_date=due_date,
+                    )
+                    save_task_event_attachments(db, project_id=task["project_id"], event_id=event_id, attachments=data.get("attachments") or [], owner_id=actor_id or task["assignee_id"])
+                    watcher_ids = {task["creator_id"], task["reviewer_id"], user_id_by_role(db, "construction_manager"), user_id_by_role(db, "owner")}
+                    for watcher_id in watcher_ids:
+                        if watcher_id and watcher_id != actor_id:
+                            create_notification(
+                                db,
+                                task["project_id"],
+                                int(watcher_id),
+                                role_by_user_id(db, int(watcher_id)),
+                                "Задача перенесена или выполнена частично",
+                                f"{task['project_title']}: {task['title']}. {comment}",
+                                "task",
+                                task_id,
+                            )
+                    db.commit()
+                    json_response(self, {"id": task_id, "status": "in_progress_task"})
+                    return
+
             task_comment = re.match(r"^/api/tasks/(\d+)/comment$", path)
             if task_comment:
                 task_id = int(task_comment.group(1))
                 actor_id = int(data.get("actor_id") or 0) or account_user_id(account) or None
                 comment = str(data.get("comment") or "").strip()
-                if not comment:
-                    raise ValueError("Напишите комментарий по задаче.")
+                attachments = data.get("attachments") or []
+                if not comment and not attachments:
+                    raise ValueError("Напишите комментарий по задаче или прикрепите файл.")
                 task = db.execute(
                     """
                     SELECT t.*, p.title AS project_title, p.foreman_id AS project_foreman_id,
@@ -4351,7 +4466,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 if not can_comment:
                     json_response(self, {"error": "Forbidden"}, 403)
                     return
-                create_task_event(
+                event_id = create_task_event(
                     db,
                     task_id=task_id,
                     project_id=task["project_id"],
@@ -4362,6 +4477,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     comment=comment,
                     due_date=task["due_date"],
                 )
+                save_task_event_attachments(db, project_id=task["project_id"], event_id=event_id, attachments=attachments, owner_id=actor_id)
                 watcher_ids = {
                     task["assignee_id"],
                     task["creator_id"],
@@ -5040,9 +5156,9 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     """
                     INSERT INTO tasks (
                         project_id, title, assignee_id, creator_id, reviewer_id, due_date,
-                        status, priority, related_type, description
+                        status, priority, related_type, description, start_date, contract_id
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, 'new', ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?, ?)
                     """,
                     (
                         int(data["project_id"]),
@@ -5054,6 +5170,8 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         data.get("priority") or "normal",
                         data.get("related_type") or "project",
                         data.get("description") or "",
+                        data.get("start_date") or None,
+                        int(data.get("contract_id") or 0) or None,
                     ),
                 )
                 project = db.execute("SELECT title FROM projects WHERE id = ?", (int(data["project_id"]),)).fetchone()

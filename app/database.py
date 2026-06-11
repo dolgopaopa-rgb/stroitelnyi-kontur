@@ -476,6 +476,8 @@ def init_db() -> None:
         ensure_column(db, "estimate_job_files", "replaced_file_id", "INTEGER")
         ensure_column(db, "estimate_job_files", "replaced_at", "TEXT")
         ensure_column(db, "estimate_job_files", "replacement_note", "TEXT")
+        ensure_column(db, "tasks", "start_date", "TEXT")
+        ensure_column(db, "tasks", "contract_id", "INTEGER")
         ensure_column(db, "work_extra_items", "estimate_section", "TEXT")
         ensure_column(db, "documents", "file_name", "TEXT")
         ensure_column(db, "documents", "file_path", "TEXT")

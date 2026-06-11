@@ -12,7 +12,7 @@
     <link rel="manifest" href="/static/manifest.webmanifest?v=20260611-android-pwa" />
     <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260611-material-receipt" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260611-task-workflow" />
   </head>
   <body>
     <div class="app">
@@ -418,6 +418,17 @@
           <label>Исполнитель <select name="assignee_id"></select></label>
           <label>Срок <input name="due_date" type="date" /></label>
         </div>
+        <div class="grid-2">
+          <label>Дата начала <input name="start_date" type="date" /></label>
+          <label>Приоритет
+            <select name="priority">
+              <option value="normal">Обычный</option>
+              <option value="high">Высокий</option>
+              <option value="urgent">Срочный</option>
+            </select>
+          </label>
+        </div>
+        <label>Договор / доп. соглашение <select name="contract_id"><option value="">Без привязки к договору</option></select></label>
         <label>Кому сдать выполнение <select name="reviewer_id"></select></label>
         <input name="creator_role" type="hidden" />
         <input name="creator_id" type="hidden" />
@@ -832,6 +843,6 @@
     </dialog>
 
     <div class="toast" id="toast"></div>
-    <script src="/static/app.js?v=20260611-material-receipt"></script>
+    <script src="/static/app.js?v=20260611-task-workflow"></script>
   </body>
 </html>

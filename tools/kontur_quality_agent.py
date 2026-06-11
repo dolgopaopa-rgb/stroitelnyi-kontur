@@ -243,6 +243,12 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
             "Не возвращать рабочий стол к бесконечному журналу и равнозначным нулям: критичное подсвечивать, нули скрывать/приглушать, уведомления группировать, обсуждение вести внутри задачи.",
         ),
         (
+            "Task workflow detail scenario",
+            "Карточка задачи хранит рабочий контекст: дата начала, приоритет, договор/доп. соглашение, история, комментарии, вложения, частичное выполнение и перенос срока.",
+            ["loadTaskContractOptions", 'name=\"start_date\"', 'name=\"priority\"', 'name=\"contract_id\"', "taskPriorityLabel", "taskProjectIndicatorPills", "compact-tabs", "renderTaskActionPanel", "data-task-action=\"postpone\"", "data-task-action-files", "renderTaskEventAttachments", "save_task_event_attachments", "start_date, contract_id", "complete|accept|return|postpone|delete"],
+            "Не упрощать задачу обратно до кнопки «Выполнено»: исполнителю и принимающему нужны комментарии, файлы, перенос срока и понятная связь с договором.",
+        ),
+        (
             "Feedback refresh scenario",
             "Раздел обратной связи должен подтягивать свежие сообщения без закрытия страницы.",
             ["feedbackRefreshStatus", "feedbackRefreshing", "Обновляю...", "/api/feedback?_", "cache: \"no-store\"", "Cache-Control", "no-cache"],

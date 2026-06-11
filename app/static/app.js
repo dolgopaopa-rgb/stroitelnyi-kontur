@@ -216,6 +216,21 @@ function materialBasisLevel(value) {
   return value === "main_estimate" ? "success" : "warning";
 }
 
+function moneyDecisionLabel(value) {
+  return {
+    not_decided: "Решение не принято",
+    customer: "Оплата: заказчик",
+    company: "Оплата: компания",
+    contractor: "Оплата: подрядчик",
+    disputed: "Требуется разбор",
+  }[value] || value || "Решение не принято";
+}
+
+function variationAmountLabel(row) {
+  const amount = Number(row?.amount || 0);
+  return amount > 0 ? money(amount) : "сумма не задана";
+}
+
 function urgencyLabel(value) {
   return value === "urgent" ? "Срочно" : "Стандартная";
 }
@@ -1135,6 +1150,24 @@ function fillSelects() {
   updateMaterialActorHint();
 }
 
+async function loadTaskContractOptions(projectId) {
+  const select = qs('#taskForm select[name="contract_id"]');
+  if (!select) return;
+  select.innerHTML = `<option value="">Без привязки к договору</option>`;
+  if (!projectId) return;
+  try {
+    const project = await api(`/api/projects/${projectId}`);
+    const contracts = Array.isArray(project.contracts) ? project.contracts : [];
+    select.innerHTML =
+      `<option value="">Без привязки к договору</option>` +
+      contracts
+        .map((contract) => `<option value="${contract.id}">${contractType(contract.type)}: ${escapeHtml(contract.title || "документ")}</option>`)
+        .join("");
+  } catch (error) {
+    select.innerHTML = `<option value="">Без привязки к договору</option>`;
+  }
+}
+
 function fillRoleSwitcher() {
   const select = qs("#currentRoleSelect");
   if (!select) return;
@@ -1686,7 +1719,7 @@ function renderTaskStats(tasks, activeFilter = state.taskFilter, options = {}) {
     return `<div class="task-stats-empty">${escapeHtml(options.emptyText || "Активных задач пока нет.")}</div>`;
   }
   return `
-    <div class="task-stats ${options.hideZero ? "hide-zero" : ""}">
+    <div class="task-stats ${options.hideZero ? "hide-zero" : ""} ${options.compact ? "compact-tabs" : ""}">
       ${visibleSegments
         .map(
           ([key, title, count, level]) => `
@@ -1700,6 +1733,17 @@ function renderTaskStats(tasks, activeFilter = state.taskFilter, options = {}) {
     </div>`;
 }
 
+function taskProjectIndicatorPills(stats, openCount, newCount) {
+  const items = [];
+  if (newCount) items.push(pill(`${newCount} требует внимания`, "warning"));
+  if (stats.active) items.push(pill(`В работе ${stats.active}`, "warning"));
+  if (stats.returned) items.push(pill(`На доработке ${stats.returned}`, "danger"));
+  if (stats.waiting) items.push(pill(`Ждет приемки ${stats.waiting}`, "blue"));
+  if (stats.accepted) items.push(pill(`Принято ${stats.accepted}`, "success"));
+  if (!openCount && !newCount) items.push(`<span class="muted">открытых задач нет</span>`);
+  return items.join("");
+}
+
 function taskStatusLevel(status) {
   return {
     completed_pending_acceptance: "blue",
@@ -1709,6 +1753,24 @@ function taskStatusLevel(status) {
     in_progress_task: "warning",
     review: "blue",
   }[status] || "";
+}
+
+function taskPriorityLabel(priority) {
+  return {
+    urgent: "Срочно",
+    high: "Высокий",
+    normal: "Обычный",
+    low: "Низкий",
+  }[priority] || "Обычный";
+}
+
+function taskPriorityLevel(priority) {
+  return {
+    urgent: "danger",
+    high: "warning",
+    normal: "",
+    low: "success",
+  }[priority] || "";
 }
 
 function estimateJobStatusLevel(job) {
@@ -2789,14 +2851,14 @@ async function renderTasks() {
           const openCount = project.tasks.filter(isOpenTask).length;
           return `
             <button class="row clickable task-project-row ${state.selectedTaskProjectId === project.id ? "active" : ""}" data-task-project="${project.id}">
-              <div class="stack-line"><strong>${project.title}</strong>${newCount ? pill(`${newCount} требует внимания`, "warning") : ""}</div>
-              <div class="muted">Открытых: ${openCount} · в работе: ${stats.active} · на доработке: ${stats.returned} · ждет приемки: ${stats.waiting} · принято: ${stats.accepted}</div>
+              <div class="stack-line"><strong>${project.title}</strong></div>
+              <div class="task-project-indicators">${taskProjectIndicatorPills(stats, openCount, newCount)}</div>
             </button>`;
         })
         .join("")
     : `<p class="muted">${currentRoleBase() === "foreman" ? "За этим прорабом пока нет объектов с задачами." : "Задач пока нет."}</p>`;
   qs("#taskStats").innerHTML =
-    renderTaskStats(tasks) +
+    renderTaskStats(tasks, state.taskFilter, { compact: true }) +
     `<p class="muted task-status-help">Не принято / ждет приемки — исполнитель отметил выполнение, но проверяющий еще не принял. На доработке — проверяющий вернул задачу исполнителю с комментарием и новым сроком.</p>`;
   const visibleTasks = tasks.filter((task) => taskMatchesFilter(task, state.taskFilter));
   qs("#taskRows").innerHTML = visibleTasks.length
@@ -2810,8 +2872,8 @@ async function renderTasks() {
               <div class="row-grid">
                 <div class="task-main">
                   <button class="link-button task-title-button" type="button" data-open-task="${task.id}">${task.title}</button>
-                  <div class="stack-line">${pill(label(task.status), taskStatusLevel(task.status))}${pill(task.due_date || "без срока", levelByDate(task.due_date))}</div>
-                  <div class="muted">${task.project_title} · поставил: ${task.creator_name || "не указано"} · создана: ${formatDateRu(task.created_at)}</div>
+                  <div class="stack-line">${pill(label(task.status), taskStatusLevel(task.status))}${pill(task.due_date || "без срока", levelByDate(task.due_date))}${pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority))}</div>
+                  <div class="muted">${task.project_title} · поставил: ${task.creator_name || "не указано"} · создана: ${formatDateRu(task.created_at)}${task.start_date ? ` · начало: ${formatDateRu(task.start_date)}` : ""}${task.contract_title ? ` · ${contractType(task.contract_type)}: ${task.contract_title}` : ""}</div>
                   ${task.description ? `<div>${task.description}</div>` : ""}
                   ${task.rejection_comment ? `<div class="muted">Комментарий по возврату: ${task.rejection_comment}</div>` : ""}
                   ${lastComment ? `<div class="task-last-comment"><strong>${escapeHtml(lastComment.actor_name || "Комментарий")}:</strong> ${escapeHtml(lastComment.comment)}</div>` : ""}
@@ -2867,15 +2929,23 @@ function taskTimeline(task) {
     complete: "Выполнена исполнителем",
     accept: "Принята",
     return: "Возвращена на доработку",
+    postpone: "Частично / перенесена",
     delete: "Удалена",
   };
-  const rows = task.events?.length
-    ? task.events.map((event) => [
-        actionTitle[event.action] || event.action,
-        event.created_at,
-        [event.actor_name, event.comment, event.due_date ? `срок: ${formatDateRu(event.due_date)}` : ""].filter(Boolean).join(" · "),
-      ])
-    : [
+  if (task.events?.length) {
+    return `<div class="task-timeline">${task.events
+      .map(
+        (event) => `
+          <div class="task-timeline-item">
+            <strong>${actionTitle[event.action] || event.action}</strong>
+            <span>${formatDateRu(event.created_at)}</span>
+            <p class="muted">${[event.actor_name, event.comment, event.due_date ? `срок: ${formatDateRu(event.due_date)}` : ""].filter(Boolean).join(" · ")}</p>
+            ${renderTaskEventAttachments(event)}
+          </div>`
+      )
+      .join("")}</div>`;
+  }
+  const rows = [
         ["Поставлена", task.created_at, task.creator_name || "автор не указан"],
         ["Выполнена исполнителем", task.completed_at, task.assignee_name || "исполнитель не указан"],
         ["Принята", task.accepted_at, task.reviewer_name || task.creator_name || "принимающий не указан"],
@@ -2898,11 +2968,31 @@ function taskTimeline(task) {
 }
 
 function taskDiscussionEvents(task) {
-  return (task.events || []).filter((event) => String(event.comment || "").trim());
+  return (task.events || []).filter((event) => event.action === "comment" && (String(event.comment || "").trim() || (event.attachments || []).length));
 }
 
 function latestTaskComment(task) {
   return [...taskDiscussionEvents(task)].reverse().find((event) => event.action === "comment") || null;
+}
+
+function renderTaskEventAttachments(event) {
+  const attachments = event.attachments || [];
+  if (!attachments.length) return "";
+  return `
+    <div class="task-attachments">
+      ${attachments
+        .map((file) => {
+          const href = `/api/documents/${file.id}/download`;
+          const fileName = escapeHtml(file.file_name || file.title || "Файл");
+          const isImage = String(file.mime_type || "").startsWith("image/");
+          return `
+            <a class="task-attachment" href="${href}" target="_blank" rel="noopener">
+              ${isImage ? `<img src="${href}" alt="${fileName}" />` : ""}
+              <span>${fileName}</span>
+            </a>`;
+        })
+        .join("")}
+    </div>`;
 }
 
 function renderTaskDiscussion(task) {
@@ -2918,7 +3008,8 @@ function renderTaskDiscussion(task) {
                 ${pill(event.action === "comment" ? "Комментарий" : label(event.status_to || event.action), event.action === "comment" ? "" : taskStatusLevel(event.status_to))}
                 <span class="muted">${formatDateRu(event.created_at)}</span>
               </div>
-              <p>${escapeHtml(event.comment)}</p>
+              ${event.comment ? `<p>${escapeHtml(event.comment)}</p>` : ""}
+              ${renderTaskEventAttachments(event)}
             </div>`;
         })
         .join("")
@@ -2932,7 +3023,30 @@ function renderTaskDiscussion(task) {
       <div class="task-comment-list">${commentRows}</div>
       <div class="task-comment-form" data-task-comment-form data-task-id="${task.id}">
         <textarea rows="2" placeholder="Написать комментарий по задаче"></textarea>
+        <input type="file" multiple />
         <button class="primary" type="button" data-task-comment-send="${task.id}">Отправить</button>
+      </div>
+    </section>`;
+}
+
+function renderTaskActionPanel(task) {
+  const canComplete = task.status !== "accepted" && task.status !== "completed_pending_acceptance" && (canActAsTaskUser(task, "assignee") || ["owner", "construction_manager", "finance_director"].includes(currentRoleBase()));
+  const canReview = task.status === "completed_pending_acceptance" && (["owner", "construction_manager", "finance_director"].includes(currentRoleBase()) || canActAsTaskUser(task, "reviewer"));
+  if (!canComplete && !canReview) return "";
+  return `
+    <section class="workflow-panel task-action-panel" data-task-action-panel data-task-id="${task.id}">
+      <div class="panel-head">
+        <h3>Действия по задаче</h3>
+        <span class="muted">Результат, перенос срока и файлы фиксируются в истории</span>
+      </div>
+      <label>Комментарий <textarea rows="3" data-task-action-comment placeholder="Что сделано, что осталось, почему нужен перенос или что принять/вернуть"></textarea></label>
+      <div class="grid-2">
+        <label>Новый срок при переносе/возврате <input type="date" data-task-action-due-date value="${task.due_date || ""}" /></label>
+        <label>Фото / видео / документ <input type="file" data-task-action-files multiple /></label>
+      </div>
+      <div class="form-actions">
+        ${canComplete ? `<button class="primary" type="button" data-task-action="complete" data-task-id="${task.id}">Выполнено</button><button class="secondary" type="button" data-task-action="postpone" data-task-id="${task.id}">Частично / перенести срок</button>` : ""}
+        ${canReview ? `<button class="primary" type="button" data-task-action="accept" data-task-id="${task.id}">Принять выполнение</button><button class="secondary" type="button" data-task-action="return" data-task-id="${task.id}">Вернуть на доработку</button>` : ""}
       </div>
     </section>`;
 }
@@ -2950,12 +3064,15 @@ function openTaskDetail(taskId) {
         <h3>${task.project_title || "Объект не указан"}</h3>
         ${pill(label(task.status), taskStatusLevel(task.status))}
         ${pill(task.due_date || "без срока", levelByDate(task.due_date))}
+        ${pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority))}
       </div>
       <div class="task-detail-grid">
         <div><span class="muted">Поставил</span><strong>${task.creator_name || "не указано"}</strong></div>
         <div><span class="muted">Исполнитель</span><strong>${task.assignee_name || "не назначен"}</strong></div>
         <div><span class="muted">Принимает</span><strong>${task.reviewer_name || task.creator_name || "не назначен"}</strong></div>
         <div><span class="muted">Дата постановки</span><strong>${formatDateRu(task.created_at)}</strong></div>
+        <div><span class="muted">Дата начала</span><strong>${task.start_date ? formatDateRu(task.start_date) : "не указана"}</strong></div>
+        <div><span class="muted">Договор</span><strong>${task.contract_title ? `${contractType(task.contract_type)}: ${task.contract_title}` : "без привязки"}</strong></div>
       </div>
       ${task.description ? `<p class="preserve-lines">${task.description}</p>` : ""}
       ${task.rejection_comment ? `<div class="hint-box warning"><strong>Причина возврата / непринятия</strong><p>${task.rejection_comment}</p></div>` : ""}
@@ -2964,6 +3081,7 @@ function openTaskDetail(taskId) {
       <h3>История задачи</h3>
       ${taskTimeline(task)}
     </section>
+    ${renderTaskActionPanel(task)}
     ${renderTaskDiscussion(task)}`;
   qs("#taskDetailDialog").showModal();
 }
@@ -3359,8 +3477,8 @@ async function renderVariations() {
                 <div class="muted">${row.project_title} · ${variationType(row.type)}${row.estimate_section ? ` · ${row.estimate_section}` : ""}${row.source_type === "material_request_batch" ? ` · из заявки материалов #${row.source_id}` : ""}</div>
               </div>
               ${pill(label(row.status), variationStatusLevel(row.status))}
-              ${canViewFinancials() ? pill(money(row.amount), row.financial_decision === "not_decided" ? "danger" : "warning") : ""}
-              ${canViewFinancials() ? `<div>${moneyDecision(row.financial_decision)}</div>` : ""}
+              ${canViewFinancials() ? pill(variationAmountLabel(row), Number(row.amount || 0) > 0 ? "warning" : "danger") : ""}
+              ${canViewFinancials() ? `<div>${moneyDecisionLabel(row.financial_decision)}</div>` : ""}
               ${pill(row.due_date || "без срока", levelByDate(row.due_date))}
             </div>
           </button>`
@@ -3379,13 +3497,17 @@ async function openVariationDialog(variationId) {
       <div class="stack-line">
         <h3>${variation.project_title || "Объект не указан"}</h3>
         ${pill(variationType(variation.type), "blue")}
-        ${canViewFinancials() ? pill(moneyDecision(variation.financial_decision), variation.financial_decision === "not_decided" ? "danger" : "warning") : ""}
+        ${canViewFinancials() ? pill(moneyDecisionLabel(variation.financial_decision), variation.financial_decision === "not_decided" ? "danger" : "warning") : ""}
       </div>
-      <p class="muted">${canViewFinancials() ? `Сумма: ${money(variation.amount)} · ` : ""}срок решения: ${variation.due_date || "не указан"}</p>
+      <p class="muted">${canViewFinancials() ? `Сумма: ${variationAmountLabel(variation)} · ` : ""}срок решения: ${variation.due_date || "не указан"}</p>
       ${variation.estimate_section ? `<p class="muted">Раздел / этап сметы: ${variation.estimate_section}</p>` : ""}
       <p class="muted">Статус: ${label(variation.status)} · инициатор: ${variation.requester_name || "не указан"}${variation.approver_name ? ` · решение: ${variation.approver_name}` : ""}</p>
       ${variation.source_type === "material_request_batch" ? `<p class="muted">Источник: заявка материалов #${variation.source_id}</p>` : ""}
       ${variation.description ? `<p class="preserve-lines">${variation.description}</p>` : ""}
+      <div class="hint-box neutral">
+        <strong>Что здесь решить</strong>
+        <p>Нужно определить основание отклонения и кто оплачивает: заказчик по допсоглашению, компания, подрядчик или спорная позиция. Если сумма не задана, сметчику или менеджеру нужно приложить расчет/смету.</p>
+      </div>
       <div class="form-actions">
         ${canViewFinancials() ? `<button class="secondary" type="button" data-export-variation="${variation.id}" ${materials.length ? "" : "disabled"}>Выгрузить Excel</button>` : ""}
         ${["owner", "construction_manager", "finance_director"].includes(currentRoleBase()) && !["approved", "rejected"].includes(variation.status) ? `<button class="primary" type="button" data-variation-action="approve" data-variation-id="${variation.id}">Согласовать</button><button class="secondary" type="button" data-variation-action="reject" data-variation-id="${variation.id}">Отклонить</button>` : ""}
@@ -4353,21 +4475,47 @@ async function handleProjectAction(button) {
 async function handleTaskAction(button) {
   const taskId = button.dataset.taskId;
   const action = button.dataset.taskAction;
+  const panel = button.closest("[data-task-action-panel]");
+  const panelComment = panel?.querySelector("[data-task-action-comment]")?.value.trim() || "";
+  const panelDueDate = panel?.querySelector("[data-task-action-due-date]")?.value || "";
+  const panelFiles = [...(panel?.querySelector("[data-task-action-files]")?.files || [])];
   let payload = {};
   let message = "Задача обновлена";
   if (action === "complete") {
+    const answer = panel ? panelComment : window.prompt("Что сделано по задаче? Можно оставить пустым.", "");
+    if (answer === null) return;
+    const comment = answer || "";
+    payload = { ...payload, comment };
     message = "Задача отмечена выполненной";
   }
   if (action === "accept") {
+    const answer = panel ? panelComment : window.prompt("Комментарий к приемке. Можно оставить пустым.", "");
+    if (answer === null) return;
+    const comment = answer || "";
+    payload = { ...payload, comment };
     message = "Выполнение принято";
   }
   if (action === "return") {
-    const comment = window.prompt("Что нужно доработать?");
-    if (comment === null) return;
-    const dueDate = window.prompt("Новый срок выполнения в формате ГГГГ-ММ-ДД. Можно оставить пустым.");
+    const comment = panel ? panelComment : window.prompt("Что нужно доработать?");
+    if (comment === null || !String(comment).trim()) {
+      showToast("Напишите, что нужно доработать");
+      return;
+    }
+    const dueDate = panel ? panelDueDate : window.prompt("Новый срок выполнения в формате ГГГГ-ММ-ДД. Можно оставить пустым.");
     if (dueDate === null) return;
     payload = { ...payload, comment, due_date: dueDate.trim() };
     message = "Задача возвращена на доработку";
+  }
+  if (action === "postpone") {
+    const comment = panel ? panelComment : window.prompt("Почему переносим срок или что выполнено частично?");
+    if (comment === null || !String(comment).trim()) {
+      showToast("Напишите причину переноса или частичного выполнения");
+      return;
+    }
+    const dueDate = panel ? panelDueDate : window.prompt("Новый срок выполнения в формате ГГГГ-ММ-ДД", "");
+    if (dueDate === null) return;
+    payload = { ...payload, comment, due_date: String(dueDate).trim() };
+    message = "Задача оставлена в работе с новым комментарием";
   }
   if (action === "delete") {
     const confirmed = window.confirm("Удалить задачу? Это действие нельзя отменить.");
@@ -4375,6 +4523,11 @@ async function handleTaskAction(button) {
     message = "Задача удалена";
     payload = { ...payload, comment: "Удалено из интерфейса задач." };
   }
+  if (panelFiles.length) {
+    payload.attachments = await Promise.all(panelFiles.map((file) => fileDocumentPayload(file, file.name, "other", "task")));
+  }
+  payload.actor_id = currentUserId() || null;
+  payload.actor_role = currentRoleBase();
   await api(`/api/tasks/${taskId}/${action}`, {
     method: "POST",
     body: JSON.stringify(payload),
@@ -4388,6 +4541,8 @@ async function handleTaskAction(button) {
   state.selectedTaskProjectId = selectedTaskProjectId;
   if (state.view === "tasks") await renderTasks();
   if (state.selectedProjectId) await renderProjectDetail(state.selectedProjectId);
+  if (qs("#taskDetailDialog")?.open && action !== "delete") openTaskDetail(taskId);
+  if (action === "delete" && qs("#taskDetailDialog")?.open) qs("#taskDetailDialog").close();
   showToast(message);
 }
 
@@ -4395,9 +4550,10 @@ async function handleTaskComment(button) {
   const taskId = button.dataset.taskCommentSend;
   const form = button.closest("[data-task-comment-form]");
   const textarea = form?.querySelector("textarea");
+  const files = [...(form?.querySelector('input[type="file"]')?.files || [])];
   const comment = textarea?.value.trim() || "";
-  if (!comment) {
-    showToast("Напишите комментарий по задаче");
+  if (!comment && !files.length) {
+    showToast("Напишите комментарий по задаче или прикрепите файл");
     return;
   }
   button.disabled = true;
@@ -4407,6 +4563,7 @@ async function handleTaskComment(button) {
       body: JSON.stringify({
         actor_id: currentUserId() || null,
         comment,
+        attachments: await Promise.all(files.map((file) => fileDocumentPayload(file, file.name, "other", "task"))),
       }),
     });
     const selectedProjectId = state.selectedProjectId;
@@ -4459,8 +4616,11 @@ function bindEvents() {
     const userId = currentUserId();
     form.elements.creator_id.value = userId || "";
     if (userId && form.elements.reviewer_id) form.elements.reviewer_id.value = String(userId);
+    if (state.selectedProjectId && form.elements.project_id) form.elements.project_id.value = String(state.selectedProjectId);
+    loadTaskContractOptions(form.elements.project_id?.value || "");
     qs("#taskDialog").showModal();
   });
+  qs('#taskForm select[name="project_id"]')?.addEventListener("change", (event) => loadTaskContractOptions(event.target.value));
   qs("#newEstimateJobButton").addEventListener("click", () => openEstimateJobDialog());
   qs('#estimateJobForm select[name="estimate_type"]')?.addEventListener("change", () => syncEstimateSiteCostsByType());
   qs('#estimateJobForm select[name="site_costs_policy"]')?.addEventListener("change", () => {
