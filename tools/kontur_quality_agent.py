@@ -121,6 +121,10 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
     css_text = repository_file("app/static/styles.css")
     sw_text = repository_file("app/static/sw.js")
     manifest_text = repository_file("app/static/manifest.webmanifest")
+    android_manifest_text = repository_file("mobile/android/app/src/main/AndroidManifest.xml")
+    android_main_text = repository_file("mobile/android/app/src/main/java/ru/derevgroup/kontur/MainActivity.java")
+    android_gradle_text = repository_file("mobile/android/app/build.gradle")
+    android_build_script_text = repository_file("tools/build-android-apk.ps1")
     server_text = repository_file("app/server.py")
     max_cli_text = repository_file("app/send_max_message.py")
     database_text = repository_file("app/database.py")
@@ -225,6 +229,12 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
             "Контур можно установить на Android как приложение: manifest и service worker доступны до логина, на входе и внутри приложения есть кнопка установки.",
             ["display_override", "prefer_related_applications", "shortcuts", 'id="installAppButton"', 'id="loginInstallButton"', "beforeinstallprompt", "installAndroidApp", "syncInstallButton", 'navigator.serviceWorker.register("/sw.js")', 'if path == "/sw.js":', 'if path.startswith("/static/"):'],
             "Для Android не ломать PWA-контур: manifest, service worker и static-ассеты должны открываться без авторизации, а данные приложения остаются закрытыми логином.",
+        ),
+        (
+            "Android APK wrapper scenario",
+            "Контур можно собрать в APK: нативная Android-обертка открывает боевой сайт, поддерживает вход, загрузку файлов, скачивание и внешние ссылки.",
+            ["applicationId \"ru.derevgroup.kontur\"", "APP_URL = \"https://kontur.derevgroup.ru/\"", "APP_HOST = \"kontur.derevgroup.ru\"", "setJavaScriptEnabled(true)", "setDomStorageEnabled(true)", "MIXED_CONTENT_NEVER_ALLOW", "onShowFileChooser", "DownloadManager.Request", "shouldOverrideUrlLoading", "android:usesCleartextTraffic=\"false\"", "assembleDebug"],
+            "Не ломать Android APK: WebView должен открывать только Контур внутри приложения, внешние ссылки отдавать Android, а загрузку файлов оставлять через системный выбор файла.",
         ),
         (
             "Role persistence scenario",
@@ -355,7 +365,21 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
     ]
 
     broken_scenarios = []
-    combined_text = "\n".join([html, login_html, app_text, css_text, sw_text, manifest_text, server_text, max_cli_text, database_text])
+    combined_text = "\n".join([
+        html,
+        login_html,
+        app_text,
+        css_text,
+        sw_text,
+        manifest_text,
+        android_manifest_text,
+        android_main_text,
+        android_gradle_text,
+        android_build_script_text,
+        server_text,
+        max_cli_text,
+        database_text,
+    ])
     for name, details, needles, recommendation in scenario_contracts:
         ok = has_all(combined_text, needles)
         check_static_contract(checks, name, ok, details if ok else f"Нарушен сценарий: {details}", recommendation)

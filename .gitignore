@@ -19,3 +19,14 @@ app/backups/
 
 .DS_Store
 Thumbs.db
+
+# Local Android build tooling and generated files
+.android-sdk/
+.android-build-tools/
+.jdk/
+.gradle-cache/
+gradle-*/
+mobile/android/.gradle/
+mobile/android/local.properties
+mobile/android/build/
+mobile/android/app/build/

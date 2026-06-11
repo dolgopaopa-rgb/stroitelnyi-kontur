@@ -1366,3 +1366,34 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 - `tools/kontur_quality_agent.py`
 - `docs/16-project-worklog.md`
 - `docs/27-android-mobile-version.md`
+
+### Первый APK для Android
+
+**Запрос.** После PWA-варианта нужен более понятный APK для Android.
+
+**Решение.**
+
+- Добавлен Android-проект в `mobile/android`.
+- APK сделан как нативная WebView-обертка вокруг `https://kontur.derevgroup.ru`.
+- Данные, документы, роли и уведомления остаются на сервере, отдельная мобильная база не создается.
+- В APK включена поддержка загрузки файлов с телефона через системный выбор файла.
+- Скачивание файлов уходит в папку Downloads.
+- Внешние ссылки, включая Яндекс.Карты, открываются во внешнем Android-приложении.
+- Кнопка Android `Назад` работает внутри истории Контура.
+- Добавлен скрипт `tools/build-android-apk.ps1`, который скачивает локальные JDK, Gradle и Android SDK и собирает APK.
+- Готовый тестовый APK формируется в `dist/android/stroitelnyi-kontur-debug.apk`.
+- QA-агент получил сценарий `Android APK wrapper scenario`.
+
+**Ограничение.**
+
+Это debug-сборка для внутреннего тестирования. Для постоянного распространения нужен release APK с отдельным ключом подписи, который нельзя хранить в репозитории.
+
+**Измененные файлы.**
+
+- `.gitignore`
+- `mobile/android/`
+- `tools/build-android-apk.ps1`
+- `tools/kontur_quality_agent.py`
+- `docs/16-project-worklog.md`
+- `docs/28-android-apk.md`
+- `dist/android/stroitelnyi-kontur-debug.apk`
