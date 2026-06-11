@@ -1390,6 +1390,37 @@ h2 {
   line-height: 1.35;
 }
 
+.material-receipt-note {
+  width: fit-content;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 8px;
+  background: #eef4f3;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.material-receipt-note.active {
+  border-color: #9fd4c6;
+  background: #e6f7ef;
+  color: #0d6a54;
+  font-weight: 700;
+}
+
+.material-receipt-note.danger {
+  border-color: #f1b0b0;
+  background: #fff0f0;
+  color: #a23a3a;
+}
+
+.material-receipt-note.success {
+  border-color: #b8dfc1;
+  background: #effaf1;
+  color: #1f7a38;
+}
+
 #materialsView .material-request-row .stack-line,
 #materialsView .estimate-material-row .stack-line,
 #materialDialog .estimate-material-row .stack-line {

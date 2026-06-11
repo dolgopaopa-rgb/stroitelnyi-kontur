@@ -1554,6 +1554,34 @@ function canEditMaterialBatch(batch) {
   return currentRoleBase() === "foreman" && [Number(batch.project_foreman_id), Number(batch.creator_id)].includes(Number(currentUserId()));
 }
 
+function isCurrentForemanForMaterialBatch(batch) {
+  return currentRoleBase() === "foreman" && [Number(batch.project_foreman_id), Number(batch.creator_id)].includes(Number(currentUserId()));
+}
+
+function canReceiveMaterialBatch(batch) {
+  return Boolean(batch.id && batch.status === "delivery_scheduled" && isCurrentForemanForMaterialBatch(batch));
+}
+
+function materialReceiptActionNote(batch) {
+  if (state.materialListMode === "archive" || currentRoleBase() !== "foreman") return "";
+  if (canReceiveMaterialBatch(batch)) {
+    return `<div class="material-receipt-note active">Доставка назначена${batch.scheduled_delivery_date ? ` на ${formatDateRu(batch.scheduled_delivery_date)}` : ""}. Откройте заявку и подтвердите получение или проблему.</div>`;
+  }
+  if (["new", "revision_requested"].includes(batch.status)) {
+    return `<div class="muted">Приемка появится после того, как снабжение примет заявку и назначит доставку.</div>`;
+  }
+  if (batch.status === "in_work") {
+    return `<div class="muted">Заявка в работе у снабжения. Подтверждение получения появится после назначения даты доставки.</div>`;
+  }
+  if (batch.status === "receipt_issue") {
+    return `<div class="material-receipt-note danger">Проблема при приемке отправлена снабжению. Ожидается исправление или повторная доставка.</div>`;
+  }
+  if (batch.status === "received") {
+    return `<div class="material-receipt-note success">Получение по заявке подтверждено.</div>`;
+  }
+  return "";
+}
+
 function renderMaterialBatchEditSection(batch) {
   return `
     <section class="workflow-panel material-batch-edit-panel">
@@ -3107,6 +3135,7 @@ async function renderMaterials() {
           ${batch.actual_purchase_amount ? `<div class="muted">Фактическая стоимость закупки: ${money(batch.actual_purchase_amount)}</div>` : ""}
           <div class="muted">Основания: ${materialBatchBasisSummary(batch)}</div>
           <div class="muted">${materialBatchDestination(batch)}</div>
+          ${materialReceiptActionNote(batch)}
           ${batch.revision_comment ? `<div class="muted">Комментарий по доработке: ${batch.revision_comment}</div>` : ""}
           ${state.materialListMode === "archive" && batch.archived_at ? `<div class="muted">В архиве с ${formatDateRu(batch.archived_at)}</div>` : ""}
         </div>
@@ -3159,7 +3188,7 @@ async function openMaterialBatchDialog(batchKey) {
   const canResolveIssue = currentRoleBase() === "procurement_manager" && batch.id && batch.status === "receipt_issue";
   const canEdit = canEditMaterialBatch(batch);
   const canCreateVariation = canCreateVariationFromBatch(batch);
-  const canReceive = currentRoleBase() === "foreman" && batch.id && batch.status === "delivery_scheduled" && Number(batch.project_foreman_id) === Number(currentUserId());
+  const canReceive = canReceiveMaterialBatch(batch);
   qs("#materialReviewContent").innerHTML = `
     <section class="workflow-panel compact-workflow">
       <div class="stack-line">
@@ -3270,12 +3299,13 @@ async function openMaterialBatchDialog(batchKey) {
     }
     ${
       canReceive
-        ? `<section class="workflow-panel">
-            <h3>Приемка материалов</h3>
-            <label>Если есть проблема <textarea id="materialBatchReceiptComment" rows="3" placeholder="Что именно не так: не довезли, повреждено, не тот материал"></textarea></label>
+        ? `<section class="workflow-panel material-receipt-panel">
+            <h3>Приемка доставки</h3>
+            <p class="muted">Доставка назначена${batch.scheduled_delivery_date ? ` на ${formatDateRu(batch.scheduled_delivery_date)}` : ""}. Если все по списку, подтвердите получение. Если что-то не так, опишите проблему и прикрепите фото или видео.</p>
+            <label>Комментарий при проблеме <textarea id="materialBatchReceiptComment" rows="3" placeholder="Что именно не так: не довезли, повреждено, не тот материал"></textarea></label>
             <label>Фото или видео <input id="materialBatchReceiptFile" type="file" accept="image/*,video/*" /></label>
             <div class="form-actions">
-              <button class="primary" type="button" data-material-batch-action="receive" data-receipt-status="received" data-material-batch-id="${batch.id}">Материал получен по списку</button>
+              <button class="primary" type="button" data-material-batch-action="receive" data-receipt-status="received" data-material-batch-id="${batch.id}">Материалы получены</button>
               <button class="secondary" type="button" data-material-batch-action="receive" data-receipt-status="issue" data-material-batch-id="${batch.id}">Есть проблема</button>
             </div>
           </section>`

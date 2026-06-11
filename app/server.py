@@ -4865,6 +4865,12 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     json_response(self, {"id": batch_id, "status": "delivery_scheduled"})
                     return
                 if action == "receive":
+                    allowed_receivers = {int(batch["foreman_id"] or 0), int(batch["creator_id"] or 0)} - {0}
+                    can_receive = actor_role == "foreman" and actor_id and int(actor_id) in allowed_receivers
+                    if not can_receive:
+                        raise ValueError("Подтвердить получение материалов может прораб объекта или прораб, создавший заявку.")
+                    if str(batch["status"] or "") != "delivery_scheduled":
+                        raise ValueError("Подтверждение получения появится после того, как снабжение назначит доставку.")
                     receipt_status = data.get("receipt_status") or "received"
                     if receipt_status not in {"received", "issue"}:
                         raise ValueError("Некорректный статус приемки.")

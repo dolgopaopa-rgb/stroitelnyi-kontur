@@ -333,6 +333,12 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
             "Не терять трассировку заявки: прораб, снабжение, сметчик и руководители должны видеть источник, место учета допов/замен/превышений и факт закупки дороже сметы.",
         ),
         (
+            "Material receipt confirmation scenario",
+            "Прораб видит, когда можно подтвердить получение доставки материалов, и может отправить проблему с фото/видео.",
+            ["canReceiveMaterialBatch", "materialReceiptActionNote", "material-receipt-panel", "Приемка доставки", "Материалы получены", "Есть проблема", "data-material-batch-action=\"receive\"", "Подтверждение получения появится после того, как снабжение назначит доставку.", "Подтвердить получение материалов может прораб объекта"],
+            "Не прятать приемку доставки: после назначения снабжением у прораба должна быть явная кнопка подтверждения и сценарий проблемы.",
+        ),
+        (
             "MAX outgoing encoding scenario",
             "Сообщения бота в MAX отправляются в безопасной для кириллицы кодировке, а ручные обновления проходят через base64.",
             ["def max_message_payload", "ensure_ascii=True", '.encode("ascii")', "def max_message_text_is_corrupted", "MAX message text looks corrupted", "message_base64", "base64.b64decode"],
