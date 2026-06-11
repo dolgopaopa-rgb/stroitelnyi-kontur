@@ -1290,6 +1290,26 @@ def ensure_customer(db, name: str | None, phone: str | None = None, email: str |
     return int(cursor.lastrowid)
 
 
+def first_project_contract_id(db, project_id: int) -> int | None:
+    row = db.execute(
+        """
+        SELECT id
+        FROM contracts
+        WHERE project_id = ?
+        ORDER BY
+            CASE type
+                WHEN 'customer_contract' THEN 1
+                WHEN 'additional_agreement' THEN 2
+                ELSE 3
+            END,
+            id
+        LIMIT 1
+        """,
+        (project_id,),
+    ).fetchone()
+    return int(row["id"]) if row else None
+
+
 def create_task_event(
     db,
     *,
@@ -4252,6 +4272,8 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 if action == "delete":
                     if request_role not in {"owner", "construction_manager"}:
                         raise ValueError("Удалять задачи может только ген.директор или руководитель строительства.")
+                    if task["status"] in {"accepted", "completed_pending_acceptance"}:
+                        raise ValueError("Завершенную задачу удалить нельзя. Она остается в истории объекта.")
                     create_task_event(
                         db,
                         task_id=task_id,
@@ -5152,6 +5174,8 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 creator_id = int(data.get("creator_id") or 0) or user_id_by_role(db, creator_role) or user_id_by_role(db, "construction_manager") or 2
                 reviewer_id = int(data.get("reviewer_id") or creator_id)
                 assignee_id = int(data.get("assignee_id") or 2)
+                project_id = int(data["project_id"])
+                contract_id = int(data.get("contract_id") or 0) or first_project_contract_id(db, project_id)
                 cursor = db.execute(
                     """
                     INSERT INTO tasks (
@@ -5161,7 +5185,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     VALUES (?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?, ?)
                     """,
                     (
-                        int(data["project_id"]),
+                        project_id,
                         data.get("title") or "Новая задача",
                         assignee_id,
                         creator_id,
@@ -5171,14 +5195,14 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         data.get("related_type") or "project",
                         data.get("description") or "",
                         data.get("start_date") or None,
-                        int(data.get("contract_id") or 0) or None,
+                        contract_id,
                     ),
                 )
-                project = db.execute("SELECT title FROM projects WHERE id = ?", (int(data["project_id"]),)).fetchone()
+                project = db.execute("SELECT title FROM projects WHERE id = ?", (project_id,)).fetchone()
                 create_task_event(
                     db,
                     task_id=int(cursor.lastrowid),
-                    project_id=int(data["project_id"]),
+                    project_id=project_id,
                     actor_id=creator_id,
                     action="create",
                     status_from="",
@@ -5188,7 +5212,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 )
                 create_notification(
                     db,
-                    int(data["project_id"]),
+                    project_id,
                     assignee_id,
                     role_by_user_id(db, assignee_id),
                     "Назначена новая задача",
@@ -5198,7 +5222,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     if watcher_id and watcher_id not in {assignee_id, creator_id}:
                         create_notification(
                             db,
-                            int(data["project_id"]),
+                            project_id,
                             watcher_id,
                             role_by_user_id(db, watcher_id),
                             "Назначена новая задача",

@@ -466,10 +466,16 @@ const documentAccess = {
   technical_supervisor: new Set(["smetter_materials", "smetter_work_task", "project_documentation", "detail_node", "regulation", "standard", "instruction", "other"]),
 };
 
+function isProjectDocument(doc) {
+  const relatedType = String(doc.related_type || "project");
+  return !["task", "material_request", "material_request_batch", "variation"].includes(relatedType);
+}
+
 function visibleDocuments(docs = []) {
+  const projectDocs = docs.filter(isProjectDocument);
   const allowed = documentAccess[currentRoleBase()];
-  if (!allowed) return docs;
-  return docs.filter((doc) => allowed.has(doc.type || "other"));
+  if (!allowed) return projectDocs;
+  return projectDocs.filter((doc) => allowed.has(doc.type || "other"));
 }
 
 function projectTabs() {
@@ -1159,10 +1165,11 @@ async function loadTaskContractOptions(projectId) {
     const project = await api(`/api/projects/${projectId}`);
     const contracts = Array.isArray(project.contracts) ? project.contracts : [];
     select.innerHTML =
-      `<option value="">Без привязки к договору</option>` +
+      `<option value="">${contracts.length ? "Выберите договор / доп. соглашение" : "Без привязки к договору"}</option>` +
       contracts
         .map((contract) => `<option value="${contract.id}">${contractType(contract.type)}: ${escapeHtml(contract.title || "документ")}</option>`)
         .join("");
+    if (contracts.length) select.value = String(contracts[0].id);
   } catch (error) {
     select.innerHTML = `<option value="">Без привязки к договору</option>`;
   }
@@ -2250,6 +2257,7 @@ function canActAsTaskUser(task, kind) {
 }
 
 function canDeleteTask(task) {
+  if (["accepted", "completed_pending_acceptance"].includes(task.status)) return false;
   return ["owner", "construction_manager"].includes(currentRoleBase());
 }
 
