@@ -249,6 +249,12 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
             "Не полагаться на перезаход в раздел: кнопка обновления должна явно показывать процесс, API-запрос должен обходить кэш, а JSON-ответы должны запрещать кэширование.",
         ),
         (
+            "Feedback actions implementation scenario",
+            "Новые замечания из MAX закрыты в интерфейсе: принятые задачи не шумят на рабочем столе, карточка объекта компактнее, доп. соглашения называются правильно.",
+            ["openRoleTasks", "isOpenTask", "project-contact-strip", "Позвонить", "Написать", "Я.Карты", "normalizeCustomerBasedTitle", "Доп. соглашение", "work-process-note"],
+            "Не возвращать принятые задачи в оперативный счетчик рабочего стола; контакты объекта держать в одной рабочей строке; использовать термин «доп. соглашение» в интерфейсе.",
+        ),
+        (
             "Role persistence scenario",
             "Выбранная тестовая роль сохраняется после обновления страницы.",
             ["localStorage.getItem(\"currentRole\")", "state.canSwitchRole && savedRole ? savedRole : ownRole", "localStorage.setItem(\"currentRole\", state.currentRole)"],
@@ -305,14 +311,14 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         (
             "New project contact fields scenario",
             "Новая карточка объекта требует телефон, e-mail и ссылку на локацию из Яндекса.",
-            ['name="customer_phone"', 'name="customer_email"', 'name="navigator_url"', "PROJECT_TEXT_DRAFT_FIELDS", "formatRuPhone", "normalize_phone", "project-info-grid", "ensure_customer(db, data.get(\"customer_name\"), data.get(\"customer_phone\"), data.get(\"customer_email\"))"],
+            ['name="customer_phone"', 'name="customer_email"', 'name="navigator_url"', "PROJECT_TEXT_DRAFT_FIELDS", "formatRuPhone", "normalize_phone", "project-contact-strip", "ensure_customer(db, data.get(\"customer_name\"), data.get(\"customer_phone\"), data.get(\"customer_email\"))"],
             "Вернуть поля контактов и локации в форму, черновик и серверное сохранение.",
         ),
         (
             "Addendum Smetter files scenario",
-            "Материалы и работы по допнику загружаются файлами Excel из Сметтера и разносятся в заявки/допработы.",
+            "Материалы и работы по доп. соглашению загружаются файлами Excel из Сметтера и разносятся в заявки/допработы.",
             ['name="contract_materials_file"', 'name="contract_works_file"', "payload.materials_file", "payload.works_file", "parse_uploaded_materials(materials_file)", "parse_uploaded_works(works_file)", "create_addendum_material_requests", "create_addendum_work_extras"],
-            "Не возвращать ручной ввод строк по допнику: основанием должны быть Excel-файлы из Сметтера.",
+            "Не возвращать ручной ввод строк по доп. соглашению: основанием должны быть Excel-файлы из Сметтера.",
         ),
         (
             "Mobile material accordion scenario",

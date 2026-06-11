@@ -725,7 +725,7 @@ def create_addendum_material_requests(db, *, project_id: int, actor_id: int | No
         project_id=project_id,
         creator_id=actor_id,
         needed_at=None,
-        comment=f"Материалы по договору/допнику: {contract_title}",
+        comment=f"Материалы по договору/доп. соглашению: {contract_title}",
     )
     request_ids: list[int] = []
     for row in clean_rows:
@@ -739,14 +739,14 @@ def create_addendum_material_requests(db, *, project_id: int, actor_id: int | No
                 project_id=project_id,
                 creator_id=actor_id,
                 estimate_material_id=None,
-                title=row.get("name") or "Материал по допнику",
+                title=row.get("name") or "Материал по доп. соглашению",
                 basis_type="additional_agreement",
-                estimate_section=row.get("section") or "Материалы по допнику",
+                estimate_section=row.get("section") or "Материалы по доп. соглашению",
                 needed_at=None,
                 requested_quantity=quantity,
                 requested_unit=row.get("unit") or "",
                 total_amount=total_amount,
-                comment=f"По допнику: {contract_title}".strip(),
+                comment=f"По доп. соглашению: {contract_title}".strip(),
             )
         )
     return batch_id, request_ids
@@ -762,8 +762,8 @@ def create_addendum_work_extras(db, *, project_id: int, actor_id: int | None, co
             continue
         unit_price = number_value(row.get("unit_price"))
         total_amount = number_value(row.get("total_price")) or quantity * unit_price
-        section = row.get("section") or "Работы по допнику"
-        comment = f"По допнику: {contract_title}".strip()
+        section = row.get("section") or "Работы по доп. соглашению"
+        comment = f"По доп. соглашению: {contract_title}".strip()
         work_cursor = db.execute(
             """
             INSERT INTO work_extra_items (
@@ -958,7 +958,7 @@ def material_basis_text(value: str) -> str:
         "main_estimate": "По основной смете",
         "main_estimate_overspend": "Превышение по смете",
         "additional_work": "Дополнительная работа",
-        "additional_agreement": "Допник",
+        "additional_agreement": "Доп. соглашение",
         "material_replacement": "Замена материала",
         "over_budget_cost": "Сверх бюджета",
     }.get(value, value or "Основание не указано")
@@ -5608,14 +5608,14 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 if materials_file.get("file_base64"):
                     material_rows = parse_uploaded_materials(materials_file)
                     if not material_rows:
-                        raise ValueError("В файле материалов по допнику не найдены позиции. Загрузите выгрузку материалов из Сметтера.")
+                        raise ValueError("В файле материалов по доп. соглашению не найдены позиции. Загрузите выгрузку материалов из Сметтера.")
                     materials_file["contract_id"] = contract_id
                     materials_file["process_type"] = "additional_agreement_materials"
                     save_document_file(
                         db,
                         project_id,
                         materials_file,
-                        "Материалы по допнику из Сметтера",
+                        "Материалы по доп. соглашению из Сметтера",
                         "smetter_materials",
                         "contract",
                     )
@@ -5632,7 +5632,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             project_id,
                             user_id_by_role(db, "procurement_manager"),
                             "procurement_manager",
-                            "Материалы по допнику",
+                            "Материалы по доп. соглашению",
                             f"{contract_title}: {len(material_request_ids)} позиций",
                             "material_request_batch",
                             material_batch_id,
@@ -5644,14 +5644,14 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 if works_file.get("file_base64"):
                     work_rows = parse_uploaded_works(works_file)
                     if not work_rows:
-                        raise ValueError("В файле работ по допнику не найдены работы. Загрузите задание на работы из Сметтера.")
+                        raise ValueError("В файле работ по доп. соглашению не найдены работы. Загрузите задание на работы из Сметтера.")
                     works_file["contract_id"] = contract_id
                     works_file["process_type"] = "additional_agreement_works"
                     save_document_file(
                         db,
                         project_id,
                         works_file,
-                        "Задание на работы по допнику из Сметтера",
+                        "Задание на работы по доп. соглашению из Сметтера",
                         "smetter_work_task",
                         "contract",
                     )
@@ -5667,7 +5667,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         db,
                         {user_id_by_role(db, "construction_manager"), user_id_by_role(db, "owner")} - {None},
                         project_id,
-                        "Работы по допнику требуют решения",
+                        "Работы по доп. соглашению требуют решения",
                         f"{contract_title}: {len(extra_work_ids)} позиций",
                         "variation",
                         variation_ids[0] if variation_ids else None,

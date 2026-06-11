@@ -639,6 +639,53 @@ h2 {
   background: #edf7ee;
 }
 
+.project-contact-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid #d8e4e7;
+  background: #eef5f4;
+  border-radius: 8px;
+  padding: 7px 9px;
+  margin: 7px 0 8px;
+}
+
+.project-contact-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.project-contact-main strong {
+  font-size: 13px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.project-contact-main span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.project-contact-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+
+.project-contact-actions .inline-link,
+.project-contact-actions .project-smetter-button,
+.project-contact-actions .pill {
+  min-height: 26px;
+  padding: 4px 8px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .manager-note-panel {
   border: 1px solid #d8e4e7;
   background: #fff8e7;
@@ -3749,6 +3796,15 @@ textarea {
   .metric span:last-child {
     font-size: 12px;
     line-height: 1.2;
+  }
+
+  .project-contact-strip {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .project-contact-actions {
+    justify-content: flex-start;
   }
 
   #dashboardView .panel {

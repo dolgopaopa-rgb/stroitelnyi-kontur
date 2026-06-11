@@ -12,7 +12,7 @@
     <link rel="manifest" href="/static/manifest.webmanifest?v=20260611-android-pwa" />
     <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260611-feedback-refresh" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260611-feedback-actions" />
   </head>
   <body>
     <div class="app">
@@ -350,7 +350,11 @@
           <h2 id="projectDialogTitle">Новый объект</h2>
           <button type="button" class="icon" data-close="projectDialog">×</button>
         </div>
-        <label>Название <input name="title" required placeholder="Дом, Павловская Слобода" /></label>
+        <label>
+          Название объекта / сметы
+          <input name="title" required placeholder="Например: монтаж забора 2 часть" />
+          <span class="field-hint">При сохранении Контур добавит заказчика к названию, если его там еще нет.</span>
+        </label>
         <label>Заказчик <input name="customer_name" required placeholder="ФИО или компания" /></label>
         <div class="grid-2">
           <label>Телефон заказчика <input name="customer_phone" type="tel" required placeholder="+7-999-000-00-00" /></label>
@@ -445,7 +449,11 @@
           <button type="button" class="icon" data-close="estimateJobDialog">×</button>
         </div>
         <input name="id" type="hidden" />
-        <label>Название задания <input name="title" required placeholder="Например: дом 180 м2, расчет КП" /></label>
+        <label>
+          Название сметы
+          <input name="title" required placeholder="Например: подшив с покраской" />
+          <span class="field-hint">При сохранении Контур добавит заказчика к названию, если его там еще нет.</span>
+        </label>
         <div class="grid-2">
           <label>Заказчик <input name="customer_name" required placeholder="ФИО или компания" /></label>
           <label>Связанный объект <select name="project_id"></select></label>
@@ -767,18 +775,18 @@
           <label>Дата окончания <input name="ends_at" type="date" /></label>
           <label>Ответственный <select name="responsible_id"></select></label>
         </div>
-        <label>Файл договора / допника <input name="contract_document_file" type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" /></label>
+        <label>Файл договора / доп. соглашения <input name="contract_document_file" type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" /></label>
         <section class="hint-box contract-extra-section">
-          <strong>Материалы и работы по этому допнику</strong>
-          <p class="muted">Загрузите выгрузки из Сметтера в Excel. Если по допнику пока нет материалов или работ, оставьте файл пустым.</p>
+          <strong>Материалы и работы по этому доп. соглашению</strong>
+          <p class="muted">Загрузите выгрузки из Сметтера в Excel. Если по доп. соглашению пока нет материалов или работ, оставьте файл пустым.</p>
         </section>
         <div class="grid-2">
           <label>
-            Материалы по допнику из Сметтера / Excel
+            Материалы по доп. соглашению из Сметтера / Excel
             <input name="contract_materials_file" type="file" accept=".xlsx,.csv" />
           </label>
           <label>
-            Задание на работы по допнику из Сметтера / Excel
+            Задание на работы по доп. соглашению из Сметтера / Excel
             <input name="contract_works_file" type="file" accept=".xlsx,.csv" />
           </label>
         </div>
@@ -824,6 +832,6 @@
     </dialog>
 
     <div class="toast" id="toast"></div>
-    <script src="/static/app.js?v=20260611-feedback-refresh"></script>
+    <script src="/static/app.js?v=20260611-feedback-actions"></script>
   </body>
 </html>

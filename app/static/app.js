@@ -205,7 +205,7 @@ function materialBasisLabel(value) {
     main_estimate: "По смете",
     main_estimate_overspend: "Перерасход по смете",
     additional_work: "Допработа",
-    additional_agreement: "Допник",
+    additional_agreement: "Доп. соглашение",
     material_replacement: "Замена материала",
     over_budget_cost: "Сверхбюджет",
     internal_error_or_loss: "За счет компании",
@@ -704,7 +704,7 @@ function renderGroupedProjectDocuments(docs, contracts = []) {
   const activeDocs = docs.filter((doc) => doc.status !== "archived");
   const archivedDocs = docs.filter((doc) => doc.status === "archived");
   const groups = activeDocs.reduce((acc, doc) => {
-    const key = doc.contract_id ? byContract[Number(doc.contract_id)] || "Договор / допник" : "Общие документы объекта";
+    const key = doc.contract_id ? byContract[Number(doc.contract_id)] || "Договор / доп. соглашение" : "Общие документы объекта";
     acc[key] = acc[key] || [];
     acc[key].push(doc);
     return acc;
@@ -760,10 +760,10 @@ function renderCollapsibleList({ items, visibleCount = 3, emptyText = "Пока 
 
 function renderDashboardTaskRow(task) {
   return `
-    <div class="row dashboard-task-row">
+    <button class="row clickable dashboard-task-row" type="button" data-open-task="${task.id}">
       <div class="stack-line"><strong>${task.title}</strong>${pill(label(task.status), taskStatusLevel(task.status))}${pill(task.due_date || "без срока", levelByDate(task.due_date))}</div>
       <div class="muted">${task.project_title} · ответственный: ${task.assignee_name || "не назначен"} · принимает: ${task.reviewer_name || task.creator_name || "не назначен"}</div>
-    </div>`;
+    </button>`;
 }
 
 function showToast(message) {
@@ -1632,6 +1632,10 @@ function taskMatchesFilter(task, filter) {
   return true;
 }
 
+function isOpenTask(task) {
+  return task.status !== "accepted";
+}
+
 function visibleTasksForRole(tasks) {
   if (currentRoleBase() !== "foreman") return tasks;
   const userId = currentUserId();
@@ -1718,6 +1722,19 @@ function estimateSiteCostsHint(estimateType) {
     return "Первичная смета: бытовку, биотуалет и организацию площадки включаем по умолчанию. Если не нужны, выберите другой вариант.";
   }
   return "Не первичная смета: возможно, площадка уже организована или работы велись раньше. Лучше отдельно уточнить решение.";
+}
+
+function normalizeCustomerBasedTitle(customerName, rawTitle) {
+  const customer = String(customerName || "").trim();
+  const title = String(rawTitle || "").trim();
+  if (!customer) return title;
+  if (!title) return customer;
+  if (title.toLowerCase().includes(customer.toLowerCase())) return title;
+  return `${customer} - ${title}`;
+}
+
+function normalizeEstimateJobTitle(customerName, estimateTitle) {
+  return normalizeCustomerBasedTitle(customerName, estimateTitle);
 }
 
 function syncEstimateSiteCostsByType() {
@@ -2149,8 +2166,9 @@ function canDeleteTask(task) {
 async function renderDashboard() {
   const [summary, tasks, materialRows] = await Promise.all([api("/api/summary"), api("/api/tasks"), api("/api/material-requests")]);
   const roleTasks = visibleTasksForRole(tasks);
+  const openRoleTasks = roleTasks.filter(isOpenTask);
   state.lastTasks = roleTasks;
-  const dashboardStats = taskStats(roleTasks);
+  const dashboardStats = taskStats(openRoleTasks);
   const metricRows = [
     renderDashboardMetric({ title: "Объекты", count: summary.projects, details: "В базе MVP", view: "projects", always: true }),
     renderDashboardMetric({ title: "У менеджера", count: summary.pending_handover, details: "Черновики и доработки", view: "projects", level: "warning" }),
@@ -2161,8 +2179,10 @@ async function renderDashboard() {
     canView("estimates") ? renderDashboardMetric({ title: "Сметы просрочены", count: summary.estimate_jobs_overdue || 0, details: "Срок уже прошел", view: "estimates", level: "danger" }) : "",
   ].filter(Boolean);
   qs("#summaryCards").innerHTML = metricRows.length ? metricRows.join("") : `<div class="dashboard-empty-strip">Активных сигналов по роли пока нет.</div>`;
-  qs("#dashboardAttention").innerHTML = renderDashboardAttention(buildDashboardAttention(summary, roleTasks, materialRows));
-  qs("#dashboardTaskStats").innerHTML = renderTaskStats(roleTasks, state.taskFilter, { hideZero: true, emptyText: "Активных задач по выбранной роли пока нет." });
+  qs("#dashboardAttention").innerHTML = renderDashboardAttention(buildDashboardAttention(summary, openRoleTasks, materialRows));
+  qs("#dashboardTaskStats").innerHTML =
+    renderTaskStats(openRoleTasks, state.taskFilter, { hideZero: true, emptyText: "Активных задач по выбранной роли пока нет." }) +
+    `<p class="muted dashboard-context-note">На рабочем столе показаны только открытые задачи. Принятые задачи остаются в полном разделе «Задачи» в фильтре «Принято».</p>`;
   qs("#dashboardProjects").innerHTML = state.projects
     .slice(0, 4)
     .map(
@@ -2174,9 +2194,9 @@ async function renderDashboard() {
     )
     .join("");
   qs("#dashboardTasks").innerHTML = renderCollapsibleList({
-    items: roleTasks,
+    items: openRoleTasks,
     visibleCount: 3,
-    emptyText: "Задач пока нет.",
+    emptyText: "Активных задач пока нет.",
     renderItem: renderDashboardTaskRow,
     moreLabel: "Остальные задачи",
     key: "dashboardTasks",
@@ -2316,9 +2336,9 @@ async function renderProjectDetail(projectId) {
     ? `
       <div class="detail-grid">
         <div class="info"><span>Основная смета</span><strong>${money(project.main_estimate_amount)}</strong></div>
-        <div class="info"><span>Допработы</span><strong>${money(project.approved_variations_amount)}</strong></div>
         <div class="info"><span>Сверхбюджет без решения</span><strong>${money(project.unresolved_overbudget_amount)}</strong></div>
         <div class="info"><span>Срок</span><strong>${project.planned_end_date || "не задан"}</strong></div>
+        <div class="info"><span>Допработы</span><strong>${money(project.approved_variations_amount)}</strong></div>
       </div>`
     : `
       <div class="detail-grid">
@@ -2369,36 +2389,31 @@ async function renderProjectDetail(projectId) {
   const mapHref = yandexMapsUrl(project.address, project.navigator_url) || String(project.navigator_url || "").trim();
   const phoneLink = phoneHref(customerPhone);
   const managerNote = String(project.manager_note || "").trim();
+  const smetterText = String(project.smetter_ref || "").trim();
+  const smetterIsUrl = /^https?:\/\//i.test(smetterText);
+  const smetterLooksLikeDomain = /^(www\.|[a-z0-9-]+\.[a-z0-9.-]+\/?)/i.test(smetterText) && !/\s/.test(smetterText);
+  const smetterHref = smetterIsUrl ? smetterText : smetterLooksLikeDomain ? `https://${smetterText}` : "";
+  const smetterButton = canViewExternalRefs() && smetterText
+    ? smetterHref
+      ? `<a class="secondary tiny project-smetter-button" href="${escapeAttr(smetterHref)}" target="_blank" rel="noopener noreferrer">Открыть Сметтер</a>`
+      : `<span class="pill success">Сметтер: ${escapeHtml(smetterText)}</span>`
+    : "";
   const customerInfoHtml = `
-    <div class="project-info-grid">
-      <div class="project-info-chip">
-        <span>Клиент</span>
-        <strong>${escapeHtml(project.customer_name || "не указан")}</strong>
+    <div class="project-contact-strip">
+      <div class="project-contact-main">
+        <strong>${escapeHtml(project.customer_name || "Клиент не указан")}</strong>
+        <span>${customerHistory} ${customerHistory === 1 ? "объект/договор" : "объектов/договоров"} в истории</span>
       </div>
-      <div class="project-info-chip">
-        <span>История</span>
-        <strong>${customerHistory}</strong>
-        <small>${customerHistory === 1 ? "объект/договор" : "объектов/договоров"}</small>
+      <div class="project-contact-actions">
+        ${phoneLink ? `<a class="link-button inline-link" href="${escapeAttr(phoneLink)}">Позвонить</a>` : `<span class="muted">Телефон не указан</span>`}
+        ${customerEmail ? `<a class="link-button inline-link" href="mailto:${escapeAttr(customerEmail)}">Написать</a>` : `<span class="muted">E-mail не указан</span>`}
+        ${mapHref ? `<a class="link-button inline-link" href="${escapeAttr(mapHref)}" target="_blank" rel="noopener noreferrer">Я.Карты</a>` : `<span class="muted">Локация не указана</span>`}
+        ${smetterButton}
       </div>
-      ${
-        phoneLink
-          ? `<a class="project-info-chip info-link" href="${escapeAttr(phoneLink)}"><span>Телефон</span><strong>${escapeHtml(customerPhone)}</strong></a>`
-          : `<div class="project-info-chip"><span>Телефон</span><strong>не указан</strong></div>`
-      }
-      ${
-        customerEmail
-          ? `<a class="project-info-chip info-link" href="mailto:${escapeAttr(customerEmail)}"><span>E-mail</span><strong>${escapeHtml(customerEmail)}</strong></a>`
-          : `<div class="project-info-chip"><span>E-mail</span><strong>не указан</strong></div>`
-      }
-      ${
-        mapHref
-          ? `<a class="project-info-chip info-link map-chip" href="${escapeAttr(mapHref)}" target="_blank" rel="noopener noreferrer"><span>Локация</span><strong>Я.Карты</strong><small>${project.address ? "Адрес объекта" : "ссылка"}</small></a>`
-          : `<div class="project-info-chip"><span>Локация</span><strong>не указана</strong></div>`
-      }
     </div>`;
   const managerNoteHtml = managerNote
     ? `<section class="manager-note-panel">
-        <div class="stack-line"><strong>Заметка менеджера</strong>${pill(project.sales_manager_name || "Менеджер", "blue")}</div>
+        <div class="stack-line"><strong>Вводные менеджера при передаче</strong>${pill(project.sales_manager_name || "Менеджер", "blue")}</div>
         <p>${escapeHtml(managerNote)}</p>
       </section>`
     : "";
@@ -2406,13 +2421,6 @@ async function renderProjectDetail(projectId) {
     <div class="stack-line"><h2>${project.title}</h2>${pill(label(project.status), "blue")}</div>
     ${customerInfoHtml}
     ${managerNoteHtml}
-    <div class="stack-line">
-      ${pill(`Прораб: ${project.foreman_name || "не назначен"}`)}
-      ${pill(`Сметчик: ${project.estimator_name || "не назначен"}`)}
-      ${pill(`Снабжение: ${project.procurement_name || "не назначено"}`)}
-      ${pill(`Технадзор: ${project.tech_supervisor_name || "не назначен"}`)}
-      ${canViewExternalRefs() ? externalRefLink(project.smetter_ref, project.smetter_ref ? "Открыть Сметтер" : "Сметтер не указан", "success") : ""}
-    </div>
     <div class="project-detail-blocks sortable-zone" data-sortable-zone="project-detail-v2">
       ${detailBlocks.filter(([, html]) => String(html || "").trim()).map(([key, html]) => `<div class="project-detail-block" data-sortable-block="${key}">${html}</div>`).join("")}
     </div>
@@ -2442,12 +2450,12 @@ function renderProjectContractPanel(project) {
   return `
     <section class="workflow-panel compact-workflow contract-action-panel">
       <div class="stack-line">
-        <h3>Договоры и допники</h3>
-        ${pill("Материалы и работы можно привязать к допнику", "blue")}
+        <h3>Договоры и доп. соглашения</h3>
+        ${pill("Материалы и работы можно привязать к доп. соглашению", "blue")}
       </div>
       <div class="form-actions">
         <span class="muted">Добавляйте договор, допсоглашение, материалы и работы по нему из одного окна.</span>
-        <button class="primary" type="button" data-add-contract="${project.id}">Добавить договор / допник</button>
+        <button class="primary" type="button" data-add-contract="${project.id}">Добавить договор / доп. соглашение</button>
       </div>
     </section>`;
 }
@@ -2656,6 +2664,7 @@ async function fileDocumentPayload(file, title, type, relatedType = "handover") 
 
 async function projectFormToJson(form) {
   const data = formToJson(form);
+  data.title = normalizeCustomerBasedTitle(data.customer_name, data.title);
   data.customer_phone = formatRuPhone(data.customer_phone);
   const files = form.elements;
   const materialFile = files.estimate_file_name.files[0];
@@ -2749,10 +2758,11 @@ async function renderTasks() {
         .map((project) => {
           const stats = taskStats(project.tasks);
           const newCount = project.tasks.filter((task) => ["new", "returned", "completed_pending_acceptance"].includes(task.status)).length;
+          const openCount = project.tasks.filter(isOpenTask).length;
           return `
             <button class="row clickable task-project-row ${state.selectedTaskProjectId === project.id ? "active" : ""}" data-task-project="${project.id}">
               <div class="stack-line"><strong>${project.title}</strong>${newCount ? pill(`${newCount} требует внимания`, "warning") : ""}</div>
-              <div class="muted">Задач: ${project.tasks.length} · в работе: ${stats.active} · на доработке: ${stats.returned} · не принято: ${stats.waiting}</div>
+              <div class="muted">Открытых: ${openCount} · в работе: ${stats.active} · на доработке: ${stats.returned} · ждет приемки: ${stats.waiting} · принято: ${stats.accepted}</div>
             </button>`;
         })
         .join("")
@@ -2965,9 +2975,14 @@ async function renderWorks() {
   const fileNote = project?.work_task_file_name
     ? `<p class="muted">Файл задания: ${project.work_task_file_name} · загружено работ: ${works.length}</p>`
     : `<p class="muted">Файл задания на работы по этому объекту еще не загружен.</p>`;
+  const processNote = `
+    <section class="hint-box neutral work-process-note">
+      <strong>Как читать раздел</strong>
+      <p>Слева — плановые работы из файла «Задание на работы» Сметтера. Справа — появившиеся работы: допы, превышения, переделки и расходы компании. На рабочем столе показываются задачи и контрольные сигналы, а не весь список работ по смете.</p>
+    </section>`;
   const workTree = buildWorkTree(works);
   qs("#workRows").innerHTML =
-    `<div class="work-file-note">${fileNote}</div>` +
+    `${processNote}<div class="work-file-note">${fileNote}</div>` +
     (works.length
       ? Object.entries(workTree)
         .map(
@@ -3412,7 +3427,7 @@ async function handleVariationAction(button) {
 function contractType(type) {
   return {
     customer_contract: "Заказчик",
-    additional_agreement: "Допник",
+    additional_agreement: "Доп. соглашение",
     supplier_contract: "Поставщик",
     contractor_contract: "Подрядчик",
     equipment_rent: "Аренда",
@@ -5158,6 +5173,7 @@ function bindEvents() {
     const payload = formToJson(form);
     const id = payload.id;
     delete payload.id;
+    payload.title = normalizeEstimateJobTitle(payload.customer_name, payload.title);
     const attachments = Array.from(form.elements.attachments?.files || []);
     payload.attachments = await Promise.all(attachments.map((file) => fileDocumentPayload(file, file.name, "estimate_job_file", "estimate_job")));
     await api(id ? `/api/estimate-jobs/${id}/update` : "/api/estimate-jobs", {
@@ -5385,11 +5401,11 @@ function bindEvents() {
       }
       const materialsFile = form.elements.contract_materials_file?.files?.[0];
       if (materialsFile) {
-        payload.materials_file = await fileDocumentPayload(materialsFile, "Материалы по допнику из Сметтера", "smetter_materials", "contract");
+        payload.materials_file = await fileDocumentPayload(materialsFile, "Материалы по доп. соглашению из Сметтера", "smetter_materials", "contract");
       }
       const worksFile = form.elements.contract_works_file?.files?.[0];
       if (worksFile) {
-        payload.works_file = await fileDocumentPayload(worksFile, "Задание на работы по допнику из Сметтера", "smetter_work_task", "contract");
+        payload.works_file = await fileDocumentPayload(worksFile, "Задание на работы по доп. соглашению из Сметтера", "smetter_work_task", "contract");
       }
       await api("/api/contracts", { method: "POST", body: JSON.stringify(payload) });
       qs("#contractDialog").close();
@@ -5400,7 +5416,7 @@ function bindEvents() {
         switchView("projects");
         await renderProjectDetail(state.selectedProjectId);
       }
-      showToast("Договор или допник добавлен в карточку объекта");
+      showToast("Договор или доп. соглашение добавлено в карточку объекта");
     } catch (error) {
       showToast(error.message || "Не удалось сохранить договор");
     }
