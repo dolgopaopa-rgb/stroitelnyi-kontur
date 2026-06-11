@@ -237,6 +237,12 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
             "Не ломать Android APK: WebView должен открывать только Контур внутри приложения, внешние ссылки отдавать Android, а загрузку файлов оставлять через системный выбор файла.",
         ),
         (
+            "Dashboard feedback scenario",
+            "Главный экран должен быть пультом управления: нулевые сигналы не шумят, агент компактный, уведомления сгруппированы по объектам, а задачи имеют обсуждение.",
+            ["renderDashboardMetric", "hideZero: true", "task-stats-empty", "item.compact ? \"compact\"", "notificationGroupsOpen", "notification-group", "notification-groups", "task-discussion", "task-comment-form", "/api/tasks/${taskId}/comment"],
+            "Не возвращать рабочий стол к бесконечному журналу и равнозначным нулям: критичное подсвечивать, нули скрывать/приглушать, уведомления группировать, обсуждение вести внутри задачи.",
+        ),
+        (
             "Role persistence scenario",
             "Выбранная тестовая роль сохраняется после обновления страницы.",
             ["localStorage.getItem(\"currentRole\")", "state.canSwitchRole && savedRole ? savedRole : ownRole", "localStorage.setItem(\"currentRole\", state.currentRole)"],

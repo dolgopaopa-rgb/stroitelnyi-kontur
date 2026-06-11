@@ -25,6 +25,7 @@ const state = {
   selectedTaskProjectId: initialProjectId,
   lastTasks: [],
   notificationsOpen: false,
+  notificationGroupsOpen: {},
   expandedLists: {},
   selectedWorkProjectId: initialProjectId,
   openWorkStages: {},
@@ -1635,7 +1636,7 @@ function visibleTasksForRole(tasks) {
   return tasks.filter((task) => task.project_foreman_id === userId || task.assignee_id === userId || task.reviewer_id === userId);
 }
 
-function renderTaskStats(tasks, activeFilter = state.taskFilter) {
+function renderTaskStats(tasks, activeFilter = state.taskFilter, options = {}) {
   const stats = taskStats(tasks);
   const total = Math.max(tasks.length, 1);
   const segments = [
@@ -1646,12 +1647,16 @@ function renderTaskStats(tasks, activeFilter = state.taskFilter) {
     ["accepted", "Принято", stats.accepted, "success"],
     ["overdue", "Просрочено", stats.overdue, "danger"],
   ];
+  const visibleSegments = options.hideZero ? segments.filter(([, , count]) => Number(count || 0) > 0) : segments;
+  if (!visibleSegments.length) {
+    return `<div class="task-stats-empty">${escapeHtml(options.emptyText || "Активных задач пока нет.")}</div>`;
+  }
   return `
-    <div class="task-stats">
-      ${segments
+    <div class="task-stats ${options.hideZero ? "hide-zero" : ""}">
+      ${visibleSegments
         .map(
           ([key, title, count, level]) => `
-          <button class="task-stat ${level} ${activeFilter === key ? "active" : ""}" data-task-filter="${key}" type="button">
+          <button class="task-stat ${level} ${Number(count || 0) === 0 ? "is-zero" : ""} ${activeFilter === key ? "active" : ""}" data-task-filter="${key}" type="button">
             <span>${title}</span>
             <strong>${count}</strong>
             <div class="stat-bar"><i style="width: ${(count / total) * 100}%"></i></div>
@@ -2028,8 +2033,21 @@ function uniqueMaterialBatches(materialRows = []) {
   return [...batches.values()];
 }
 
-function attentionItem(title, count, details, level, action) {
-  return { title, count, details, level, action };
+function attentionItem(title, count, details, level, action, options = {}) {
+  return { title, count, details, level, action, ...options };
+}
+
+function renderDashboardMetric({ title, count, details, view, taskFilter, level = "", always = false }) {
+  const numeric = Number(count || 0);
+  if (!always && numeric === 0) return "";
+  const target = taskFilter ? `data-task-filter="${taskFilter}"` : `data-view-target="${view || "dashboard"}"`;
+  const stateClass = numeric === 0 ? "is-zero" : level === "danger" ? "is-critical" : "is-active";
+  return `
+    <button class="metric clickable ${stateClass} ${level}" ${target} type="button">
+      <span class="muted">${escapeHtml(title)}</span>
+      <strong>${escapeHtml(String(count ?? 0))}</strong>
+      <span>${escapeHtml(details)}</span>
+    </button>`;
 }
 
 function buildDashboardAttention(summary, tasks, materialRows) {
@@ -2082,7 +2100,7 @@ function buildDashboardAttention(summary, tasks, materialRows) {
   if (["owner", "construction_manager", "finance_director"].includes(currentRoleBase())) {
     const unboundMaxUsers = state.users.filter((user) => user.is_active && ["owner", "construction_manager", "finance_director", "accountant", "foreman", "procurement_manager", "technical_supervisor", "estimator"].includes(user.role) && !user.max_chat_id).length;
     if (unboundMaxUsers) {
-      items.push(attentionItem("MAX не привязан", unboundMaxUsers, "Личные уведомления не будут доходить до всех участников процесса.", "blue", { view: "feedback" }));
+      items.push(attentionItem("MAX не привязан", unboundMaxUsers, "Личные уведомления не будут доходить до всех участников процесса.", "blue", { view: "feedback" }, { compact: true }));
     }
   }
 
@@ -2103,7 +2121,7 @@ function renderDashboardAttention(items) {
         .map((item) => {
           const attrs = item.action?.taskFilter ? `data-task-filter="${item.action.taskFilter}"` : `data-view-target="${item.action?.view || "dashboard"}"`;
           return `
-            <button class="attention-item ${item.level}" type="button" ${attrs}>
+            <button class="attention-item ${item.level} ${item.compact ? "compact" : ""}" type="button" ${attrs}>
               <span class="attention-count">${escapeHtml(String(item.count))}</span>
               <span class="attention-body">
                 <strong>${escapeHtml(item.title)}</strong>
@@ -2129,25 +2147,20 @@ function canDeleteTask(task) {
 async function renderDashboard() {
   const [summary, tasks, materialRows] = await Promise.all([api("/api/summary"), api("/api/tasks"), api("/api/material-requests")]);
   const roleTasks = visibleTasksForRole(tasks);
-  qs("#summaryCards").innerHTML = `
-    <button class="metric clickable" data-view-target="projects" type="button"><span class="muted">Объекты</span><strong>${summary.projects}</strong><span>В базе MVP</span></button>
-    <button class="metric clickable" data-view-target="projects" type="button"><span class="muted">У менеджера</span><strong>${summary.pending_handover}</strong><span>Черновики и доработки</span></button>
-    <button class="metric clickable" data-view-target="projects" type="button"><span class="muted">На передаче</span><strong>${summary.construction_review || 0}</strong><span>Ждут решения строительства</span></button>
-    ${
-      canView("tasks")
-        ? `<button class="metric clickable" data-task-filter="waiting" type="button"><span class="muted">Задачи к приемке</span><strong>${summary.task_done_waiting || 0}</strong><span>Выполнены, но не приняты</span></button>
-           <button class="metric clickable" data-task-filter="overdue" type="button"><span class="muted">Просрочено</span><strong>${taskStats(roleTasks).overdue}</strong><span>По открытым задачам</span></button>`
-        : ""
-    }
-    ${
-      canView("estimates")
-        ? `<button class="metric clickable" data-view-target="estimates" type="button"><span class="muted">Сметы в работе</span><strong>${summary.estimate_jobs_open || 0}</strong><span>Нужно рассчитать</span></button>
-           <button class="metric clickable" data-view-target="estimates" type="button"><span class="muted">Сметы просрочены</span><strong>${summary.estimate_jobs_overdue || 0}</strong><span>Срок уже прошел</span></button>`
-        : ""
-    }
-  `;
+  state.lastTasks = roleTasks;
+  const dashboardStats = taskStats(roleTasks);
+  const metricRows = [
+    renderDashboardMetric({ title: "Объекты", count: summary.projects, details: "В базе MVP", view: "projects", always: true }),
+    renderDashboardMetric({ title: "У менеджера", count: summary.pending_handover, details: "Черновики и доработки", view: "projects", level: "warning" }),
+    renderDashboardMetric({ title: "На передаче", count: summary.construction_review || 0, details: "Ждут решения строительства", view: "projects", level: "warning" }),
+    canView("tasks") ? renderDashboardMetric({ title: "Задачи к приемке", count: summary.task_done_waiting || 0, details: "Выполнены, но не приняты", taskFilter: "waiting", level: "blue" }) : "",
+    canView("tasks") ? renderDashboardMetric({ title: "Просрочено", count: dashboardStats.overdue, details: "По открытым задачам", taskFilter: "overdue", level: "danger" }) : "",
+    canView("estimates") ? renderDashboardMetric({ title: "Сметы в работе", count: summary.estimate_jobs_open || 0, details: "Нужно рассчитать", view: "estimates", level: "blue" }) : "",
+    canView("estimates") ? renderDashboardMetric({ title: "Сметы просрочены", count: summary.estimate_jobs_overdue || 0, details: "Срок уже прошел", view: "estimates", level: "danger" }) : "",
+  ].filter(Boolean);
+  qs("#summaryCards").innerHTML = metricRows.length ? metricRows.join("") : `<div class="dashboard-empty-strip">Активных сигналов по роли пока нет.</div>`;
   qs("#dashboardAttention").innerHTML = renderDashboardAttention(buildDashboardAttention(summary, roleTasks, materialRows));
-  qs("#dashboardTaskStats").innerHTML = renderTaskStats(roleTasks);
+  qs("#dashboardTaskStats").innerHTML = renderTaskStats(roleTasks, state.taskFilter, { hideZero: true, emptyText: "Активных задач по выбранной роли пока нет." });
   qs("#dashboardProjects").innerHTML = state.projects
     .slice(0, 4)
     .map(
@@ -2188,33 +2201,76 @@ async function renderEstimateJobs() {
     : `<p class="muted">Сметных заданий пока нет. Нажмите “Добавить задание”, чтобы зафиксировать входящую смету в работе.</p>`;
 }
 
+function notificationTargetAttrs(row) {
+  if (row.related_type === "material_request_batch" && row.related_id) return `data-open-material-batch="batch-${row.related_id}"`;
+  if (row.related_type === "task" || row.related_type === "tasks") return `data-view-target="tasks"`;
+  if (row.related_type === "estimate_job") return `data-view-target="estimates"`;
+  if (row.related_type === "variation") return `data-view-target="variations"`;
+  if (row.project_id) return `data-open-project="${row.project_id}"`;
+  return `data-view-target="dashboard"`;
+}
+
 async function renderNotifications() {
   const rows = await api("/api/notifications");
-  qs("#notificationRows").innerHTML = rows.length
-    ? `<details class="inline-collapsible notification-collapsible" ${state.notificationsOpen ? "open" : ""}>
-        <summary>Показать уведомления: ${rows.length}</summary>
-        <div class="list compact-hidden-list">
-          ${rows
-            .map(
-              (row) => {
-                const target =
-                  row.related_type === "material_request_batch" && row.related_id
-                    ? `data-open-material-batch="batch-${row.related_id}"`
-                    : `data-open-project="${row.project_id}"`;
-                return `
-              <button class="row clickable notification-row" ${target}>
-                <div class="stack-line"><strong>${row.title}</strong>${pill(row.user_name || row.role, row.is_read ? "" : "warning")}</div>
-                <div class="notification-text">${row.text}</div>
-                <div class="muted">${row.project_title || "Без объекта"} · ${row.created_at}</div>
-              </button>`;
-              }
-            )
-            .join("")}
-        </div>
-      </details>`
-    : `<p class="muted">Уведомлений пока нет.</p>`;
+  if (!rows.length) {
+    qs("#notificationRows").innerHTML = `<p class="muted">Уведомлений пока нет.</p>`;
+    return;
+  }
+  const groups = rows.reduce((acc, row) => {
+    const key = row.project_id ? `project-${row.project_id}` : "general";
+    if (!acc[key]) {
+      acc[key] = {
+        key,
+        title: row.project_title || "Без объекта",
+        unread: 0,
+        rows: [],
+      };
+    }
+    if (!row.is_read) acc[key].unread += 1;
+    acc[key].rows.push(row);
+    return acc;
+  }, {});
+  const groupRows = Object.values(groups)
+    .sort((a, b) => b.rows.length - a.rows.length || a.title.localeCompare(b.title, "ru"))
+    .map((group, index) => {
+      const open = state.notificationGroupsOpen[group.key] ?? index === 0;
+      return `
+        <details class="notification-group" data-notification-group="${group.key}" ${open ? "open" : ""}>
+          <summary>
+            <span>
+              <strong>${escapeHtml(group.title)}</strong>
+              <small>${group.rows.length} событий${group.unread ? ` · новых: ${group.unread}` : ""}</small>
+            </span>
+            ${group.unread ? pill(`${group.unread} новых`, "warning") : ""}
+          </summary>
+          <div class="notification-group-list">
+            ${group.rows
+              .slice(0, 8)
+              .map(
+                (row) => `
+                <button class="row clickable notification-row" ${notificationTargetAttrs(row)}>
+                  <div class="stack-line"><strong>${escapeHtml(row.title)}</strong>${pill(row.user_name || row.role, row.is_read ? "" : "warning")}</div>
+                  <div class="notification-text">${escapeHtml(row.text)}</div>
+                  <div class="muted">${formatDateRu(row.created_at)}</div>
+                </button>`
+              )
+              .join("")}
+          </div>
+        </details>`;
+    })
+    .join("");
+  qs("#notificationRows").innerHTML = `
+    <details class="inline-collapsible notification-collapsible" ${state.notificationsOpen ? "open" : ""}>
+      <summary>Последние события: ${rows.length}</summary>
+      <div class="notification-groups">${groupRows}</div>
+    </details>`;
   qs(".notification-collapsible")?.addEventListener("toggle", (event) => {
     state.notificationsOpen = event.currentTarget.open;
+  });
+  qsa("[data-notification-group]").forEach((details) => {
+    details.addEventListener("toggle", (event) => {
+      state.notificationGroupsOpen[event.currentTarget.dataset.notificationGroup] = event.currentTarget.open;
+    });
   });
 }
 
@@ -2708,6 +2764,7 @@ async function renderTasks() {
         .map((task) => {
           const canComplete = task.status !== "accepted" && task.status !== "completed_pending_acceptance" && (canActAsTaskUser(task, "assignee") || ["owner", "construction_manager", "finance_director"].includes(currentRoleBase()));
           const canReview = task.status === "completed_pending_acceptance" && (["owner", "construction_manager", "finance_director"].includes(currentRoleBase()) || canActAsTaskUser(task, "reviewer"));
+          const lastComment = latestTaskComment(task);
           return `
             <article class="row task-row">
               <div class="row-grid">
@@ -2717,6 +2774,7 @@ async function renderTasks() {
                   <div class="muted">${task.project_title} · поставил: ${task.creator_name || "не указано"} · создана: ${formatDateRu(task.created_at)}</div>
                   ${task.description ? `<div>${task.description}</div>` : ""}
                   ${task.rejection_comment ? `<div class="muted">Комментарий по возврату: ${task.rejection_comment}</div>` : ""}
+                  ${lastComment ? `<div class="task-last-comment"><strong>${escapeHtml(lastComment.actor_name || "Комментарий")}:</strong> ${escapeHtml(lastComment.comment)}</div>` : ""}
                 </div>
                 <div class="task-people">Ответственный: ${task.assignee_name || "не назначен"}<br /><span class="muted">Принимает: ${task.reviewer_name || task.creator_name || "не назначен"}</span></div>
               </div>
@@ -2765,6 +2823,7 @@ function fillWorkExtraSectionSelect(works) {
 function taskTimeline(task) {
   const actionTitle = {
     create: "Поставлена",
+    comment: "Комментарий",
     complete: "Выполнена исполнителем",
     accept: "Принята",
     return: "Возвращена на доработку",
@@ -2798,6 +2857,46 @@ function taskTimeline(task) {
     : `<p class="muted">Истории по задаче пока нет.</p>`;
 }
 
+function taskDiscussionEvents(task) {
+  return (task.events || []).filter((event) => String(event.comment || "").trim());
+}
+
+function latestTaskComment(task) {
+  return [...taskDiscussionEvents(task)].reverse().find((event) => event.action === "comment") || null;
+}
+
+function renderTaskDiscussion(task) {
+  const comments = taskDiscussionEvents(task).slice(-8);
+  const commentRows = comments.length
+    ? comments
+        .map((event) => {
+          const own = Number(event.actor_id || 0) === Number(currentUserId() || 0);
+          return `
+            <div class="task-comment ${own ? "own" : ""}">
+              <div class="stack-line">
+                <strong>${escapeHtml(event.actor_name || "Участник")}</strong>
+                ${pill(event.action === "comment" ? "Комментарий" : label(event.status_to || event.action), event.action === "comment" ? "" : taskStatusLevel(event.status_to))}
+                <span class="muted">${formatDateRu(event.created_at)}</span>
+              </div>
+              <p>${escapeHtml(event.comment)}</p>
+            </div>`;
+        })
+        .join("")
+    : `<p class="muted">Комментариев по задаче пока нет.</p>`;
+  return `
+    <section class="workflow-panel task-discussion">
+      <div class="panel-head">
+        <h3>Обсуждение</h3>
+        <span class="muted">Комментарии остаются внутри задачи</span>
+      </div>
+      <div class="task-comment-list">${commentRows}</div>
+      <div class="task-comment-form" data-task-comment-form data-task-id="${task.id}">
+        <textarea rows="2" placeholder="Написать комментарий по задаче"></textarea>
+        <button class="primary" type="button" data-task-comment-send="${task.id}">Отправить</button>
+      </div>
+    </section>`;
+}
+
 function openTaskDetail(taskId) {
   const task = state.lastTasks.find((item) => Number(item.id) === Number(taskId));
   if (!task) {
@@ -2824,7 +2923,8 @@ function openTaskDetail(taskId) {
     <section class="workflow-panel">
       <h3>История задачи</h3>
       ${taskTimeline(task)}
-    </section>`;
+    </section>
+    ${renderTaskDiscussion(task)}`;
   qs("#taskDetailDialog").showModal();
 }
 
@@ -4209,6 +4309,37 @@ async function handleTaskAction(button) {
   showToast(message);
 }
 
+async function handleTaskComment(button) {
+  const taskId = button.dataset.taskCommentSend;
+  const form = button.closest("[data-task-comment-form]");
+  const textarea = form?.querySelector("textarea");
+  const comment = textarea?.value.trim() || "";
+  if (!comment) {
+    showToast("Напишите комментарий по задаче");
+    return;
+  }
+  button.disabled = true;
+  try {
+    await api(`/api/tasks/${taskId}/comment`, {
+      method: "POST",
+      body: JSON.stringify({
+        actor_id: currentUserId() || null,
+        comment,
+      }),
+    });
+    const selectedProjectId = state.selectedProjectId;
+    const selectedTaskProjectId = state.selectedTaskProjectId;
+    await loadAll();
+    state.selectedProjectId = selectedProjectId;
+    state.selectedTaskProjectId = selectedTaskProjectId;
+    if (state.view === "tasks") await renderTasks();
+    openTaskDetail(taskId);
+    showToast("Комментарий добавлен");
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function bindEvents() {
   bindStableDetailsTouchGuard();
   qsa("[data-view]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
@@ -4408,6 +4539,12 @@ function bindEvents() {
     const openTaskButton = event.target.closest("[data-open-task]");
     if (openTaskButton) {
       openTaskDetail(openTaskButton.dataset.openTask);
+      return;
+    }
+
+    const taskCommentButton = event.target.closest("[data-task-comment-send]");
+    if (taskCommentButton) {
+      await handleTaskComment(taskCommentButton);
       return;
     }
 

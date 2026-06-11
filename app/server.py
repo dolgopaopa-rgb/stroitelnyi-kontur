@@ -4318,6 +4318,71 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     json_response(self, {"id": task_id, "status": "returned"})
                     return
 
+            task_comment = re.match(r"^/api/tasks/(\d+)/comment$", path)
+            if task_comment:
+                task_id = int(task_comment.group(1))
+                actor_id = int(data.get("actor_id") or 0) or account_user_id(account) or None
+                comment = str(data.get("comment") or "").strip()
+                if not comment:
+                    raise ValueError("Напишите комментарий по задаче.")
+                task = db.execute(
+                    """
+                    SELECT t.*, p.title AS project_title, p.foreman_id AS project_foreman_id,
+                           p.tech_supervisor_id AS project_tech_supervisor_id
+                    FROM tasks t
+                    JOIN projects p ON p.id = t.project_id
+                    WHERE t.id = ?
+                    """,
+                    (task_id,),
+                ).fetchone()
+                if not task:
+                    json_response(self, {"error": "Task not found"}, 404)
+                    return
+                role = account_role(account)
+                user_id = account_user_id(account)
+                participant_ids = {
+                    int(value)
+                    for value in (task["assignee_id"], task["creator_id"], task["reviewer_id"], task["project_foreman_id"], task["project_tech_supervisor_id"])
+                    if value
+                }
+                can_comment = role in {"owner", "construction_manager", "finance_director"} or user_id in participant_ids
+                if not can_comment:
+                    json_response(self, {"error": "Forbidden"}, 403)
+                    return
+                create_task_event(
+                    db,
+                    task_id=task_id,
+                    project_id=task["project_id"],
+                    actor_id=actor_id,
+                    action="comment",
+                    status_from=task["status"],
+                    status_to=task["status"],
+                    comment=comment,
+                    due_date=task["due_date"],
+                )
+                watcher_ids = {
+                    task["assignee_id"],
+                    task["creator_id"],
+                    task["reviewer_id"],
+                    user_id_by_role(db, "construction_manager"),
+                    user_id_by_role(db, "owner"),
+                }
+                for watcher_id in watcher_ids:
+                    if watcher_id and watcher_id != actor_id:
+                        create_notification(
+                            db,
+                            task["project_id"],
+                            int(watcher_id),
+                            role_by_user_id(db, int(watcher_id)),
+                            "Комментарий к задаче",
+                            f"{task['project_title']}: {task['title']}. {comment[:180]}",
+                            "task",
+                            task_id,
+                        )
+                db.commit()
+                json_response(self, {"id": task_id, "comment": comment})
+                return
+
             material_batch_action = re.match(r"^/api/material-request-batches/(\d+)/(accept|return|resubmit|schedule|resolve_issue|receive|update|delete|create_variation)$", path)
             if material_batch_action:
                 batch_id = int(material_batch_action.group(1))
