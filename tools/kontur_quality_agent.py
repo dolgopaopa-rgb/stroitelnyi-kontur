@@ -243,6 +243,12 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
             "Не возвращать рабочий стол к бесконечному журналу и равнозначным нулям: критичное подсвечивать, нули скрывать/приглушать, уведомления группировать, обсуждение вести внутри задачи.",
         ),
         (
+            "Feedback refresh scenario",
+            "Раздел обратной связи должен подтягивать свежие сообщения без закрытия страницы.",
+            ["feedbackRefreshStatus", "feedbackRefreshing", "Обновляю...", "/api/feedback?_", "cache: \"no-store\"", "Cache-Control", "no-cache"],
+            "Не полагаться на перезаход в раздел: кнопка обновления должна явно показывать процесс, API-запрос должен обходить кэш, а JSON-ответы должны запрещать кэширование.",
+        ),
+        (
             "Role persistence scenario",
             "Выбранная тестовая роль сохраняется после обновления страницы.",
             ["localStorage.getItem(\"currentRole\")", "state.canSwitchRole && savedRole ? savedRole : ownRole", "localStorage.setItem(\"currentRole\", state.currentRole)"],

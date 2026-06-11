@@ -1624,6 +1624,26 @@ h2 {
   margin-bottom: 10px;
 }
 
+#feedbackView .panel-head {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  background: var(--surface);
+  padding-top: 2px;
+}
+
+.feedback-refresh-note {
+  margin: -4px 0 10px;
+  font-size: 12px;
+}
+
+#refreshFeedbackButton.is-pending {
+  color: #6b4b00;
+  border-color: rgba(176, 119, 12, 0.36);
+  background: #fff3cf;
+  cursor: wait;
+}
+
 #locationsView .panel-head h2,
 #estimatesView .panel-head h2,
 #documentsView .panel-head h2,

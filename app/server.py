@@ -39,6 +39,8 @@ def json_response(handler: BaseHTTPRequestHandler, payload: object, status: int 
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     handler.send_response(status)
     handler.send_header("Content-Type", "application/json; charset=utf-8")
+    handler.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+    handler.send_header("Pragma", "no-cache")
     maybe_send_session_cookie(handler)
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()

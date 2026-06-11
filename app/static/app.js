@@ -21,6 +21,8 @@ const state = {
   taskFilter: "all",
   feedbackFilter: "all",
   selectedFeedbackIds: new Set(),
+  feedbackRefreshing: false,
+  feedbackLastUpdatedAt: "",
   maxChatDrafts: {},
   selectedTaskProjectId: initialProjectId,
   lastTasks: [],
@@ -3886,9 +3888,30 @@ function feedbackStatusButton(item, status, title) {
     >${isActive && activeLabel ? activeLabel : title}</button>`;
 }
 
-async function renderFeedback() {
+function updateFeedbackRefreshUi(isLoading, message = "") {
+  state.feedbackRefreshing = Boolean(isLoading);
+  const button = qs("#refreshFeedbackButton");
+  const statusNode = qs("#feedbackRefreshStatus");
+  if (button) {
+    button.disabled = state.feedbackRefreshing;
+    button.classList.toggle("is-pending", state.feedbackRefreshing);
+    button.textContent = state.feedbackRefreshing ? "Обновляю..." : "Обновить";
+  }
+  if (statusNode && message) {
+    statusNode.textContent = message;
+  }
+}
+
+function feedbackRefreshMessage(itemsCount = null) {
+  const countText = itemsCount === null ? "" : `Сообщений: ${itemsCount}. `;
+  return `${countText}Последнее обновление: ${state.feedbackLastUpdatedAt || "еще не было"}`;
+}
+
+async function renderFeedback(options = {}) {
+  const { silent = false } = options;
   const rowsNode = qs("#feedbackRows");
   const statsNode = qs("#feedbackStats");
+  const statusNode = qs("#feedbackRefreshStatus");
   const bindingsPanel = qs("#maxBindingsPanel");
   const bindingsRows = qs("#maxBindingRows");
   const deleteSelectedButton = qs("#deleteSelectedFeedbackButton");
@@ -3896,13 +3919,26 @@ async function renderFeedback() {
   if (!canView("feedback")) {
     rowsNode.innerHTML = "";
     statsNode.innerHTML = "";
+    if (statusNode) statusNode.textContent = "";
     if (bindingsPanel) bindingsPanel.hidden = true;
     if (deleteSelectedButton) deleteSelectedButton.hidden = true;
     return;
   }
   if (deleteSelectedButton) deleteSelectedButton.hidden = !canDeleteFeedback();
   renderMaxBindings(bindingsPanel, bindingsRows);
-  const items = await api("/api/feedback");
+  if (!silent) updateFeedbackRefreshUi(true, "Обновляю список обратной связи...");
+  let items = [];
+  try {
+    items = await api(`/api/feedback?_=${Date.now()}`, { cache: "no-store" });
+    state.feedbackLastUpdatedAt = new Date().toLocaleTimeString("ru-RU", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  } catch (error) {
+    updateFeedbackRefreshUi(false, `Не удалось обновить обратную связь: ${error.message || "ошибка загрузки"}`);
+    throw error;
+  }
   const counts = items.reduce(
     (acc, item) => {
       acc.all += 1;
@@ -3957,6 +3993,7 @@ async function renderFeedback() {
         })
         .join("")
     : `<p class="muted">Сообщений из MAX пока нет.</p>`;
+  updateFeedbackRefreshUi(false, feedbackRefreshMessage(items.length));
 }
 
 function renderMaxBindings(panel, rowsNode) {
@@ -4111,7 +4148,7 @@ async function refreshLiveData() {
   } else if (state.view === "estimates") {
     await renderEstimateJobs();
   } else if (state.view === "feedback") {
-    await renderFeedback();
+    await renderFeedback({ silent: true });
   }
 }
 
@@ -4412,7 +4449,14 @@ function bindEvents() {
     qs("#documentDialog").showModal();
   });
   qs("#newEventButton").addEventListener("click", () => qs("#eventDialog").showModal());
-  qs("#refreshFeedbackButton")?.addEventListener("click", () => renderFeedback().then(() => showToast("Обратная связь обновлена")));
+  qs("#refreshFeedbackButton")?.addEventListener("click", async () => {
+    try {
+      await renderFeedback();
+      showToast("Обратная связь обновлена");
+    } catch (error) {
+      showToast(error.message || "Не удалось обновить обратную связь");
+    }
+  });
   qs("#deleteSelectedFeedbackButton")?.addEventListener("click", async () => {
     if (!canDeleteFeedback()) {
       showToast("Удаление сообщений недоступно для текущей роли");
