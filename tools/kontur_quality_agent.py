@@ -249,6 +249,12 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
             "Не упрощать задачу обратно до кнопки «Выполнено»: исполнителю и принимающему нужны комментарии, файлы, перенос срока и понятная связь с договором.",
         ),
         (
+            "Mobile document download scenario",
+            "Document downloads must work on mobile browsers and external viewers: HEAD requests, byte ranges, streamed local files, and Yandex Disk redirects are supported.",
+            ["def do_HEAD", "parse_range_header", "stream_local_file", "Accept-Ranges", "Content-Range", "yandex_disk_download_url", "redirect_response(self, href, 302)"],
+            "Keep document downloads mobile-safe: do not read large files into memory before sending, preserve Range support, and redirect Yandex Disk files after access checks.",
+        ),
+        (
             "Feedback refresh scenario",
             "Раздел обратной связи должен подтягивать свежие сообщения без закрытия страницы.",
             ["feedbackRefreshStatus", "feedbackRefreshing", "Обновляю...", "/api/feedback?_", "cache: \"no-store\"", "Cache-Control", "no-cache"],

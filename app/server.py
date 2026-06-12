@@ -1858,13 +1858,87 @@ def save_uploaded_file(db, project_id: int, related_type: str, doc_type: str, ta
 
 
 def download_from_yandex_disk(file_path: str) -> bytes:
-    remote_path = file_path.removeprefix(YANDEX_DISK_FILE_PREFIX)
+    href = yandex_disk_download_url(file_path)
+    with urlopen(href, timeout=120) as response:
+        return response.read()
+
+
+def yandex_disk_download_url(file_path: str) -> str:
+    remote_path = str(file_path).removeprefix(YANDEX_DISK_FILE_PREFIX)
     payload = yandex_api_request("GET", "/resources/download", {"path": remote_path})
     href = payload.get("href")
     if not href:
         raise RuntimeError("Yandex Disk did not return download URL")
-    with urlopen(href, timeout=120) as response:
-        return response.read()
+    return str(href)
+
+
+def parse_range_header(range_header: str | None, file_size: int) -> tuple[int, int] | None:
+    header = str(range_header or "").strip()
+    if not header or not header.startswith("bytes=") or file_size <= 0:
+        return None
+    spec = header.removeprefix("bytes=").split(",", 1)[0].strip()
+    if "-" not in spec:
+        return None
+    start_text, end_text = spec.split("-", 1)
+    try:
+        if start_text == "":
+            suffix_length = int(end_text)
+            if suffix_length <= 0:
+                return None
+            return max(file_size - suffix_length, 0), file_size - 1
+        start = int(start_text)
+        end = int(end_text) if end_text else file_size - 1
+    except ValueError:
+        return None
+    if start < 0 or start >= file_size or end < start:
+        return None
+    return start, min(end, file_size - 1)
+
+
+def stream_local_file(
+    handler: BaseHTTPRequestHandler,
+    file_path: Path,
+    file_name: str,
+    content_type: str,
+) -> None:
+    file_size = file_path.stat().st_size
+    range_header = handler.headers.get("Range")
+    byte_range = parse_range_header(range_header, file_size)
+    if range_header and not byte_range:
+        handler.send_response(416)
+        handler.send_header("Content-Range", f"bytes */{file_size}")
+        handler.send_header("Accept-Ranges", "bytes")
+        handler.send_header("Content-Length", "0")
+        handler.end_headers()
+        return
+
+    start, end = byte_range if byte_range else (0, max(file_size - 1, 0))
+    content_length = max(end - start + 1, 0)
+    handler.send_response(206 if byte_range else 200)
+    handler.send_header("Content-Type", content_type)
+    handler.send_header("Accept-Ranges", "bytes")
+    handler.send_header("Content-Length", str(content_length))
+    if byte_range:
+        handler.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
+    handler.send_header("Content-Disposition", f"inline; filename*=UTF-8''{quote(file_name)}")
+    handler.send_header("Cache-Control", "private, max-age=300")
+    handler.end_headers()
+
+    if handler.command == "HEAD":
+        return
+
+    try:
+        with file_path.open("rb") as source:
+            source.seek(start)
+            remaining = content_length
+            while remaining > 0:
+                chunk = source.read(min(1024 * 1024, remaining))
+                if not chunk:
+                    break
+                handler.wfile.write(chunk)
+                remaining -= len(chunk)
+    except (BrokenPipeError, ConnectionResetError):
+        return
 
 
 def delete_stored_file(file_path: str | None) -> None:
@@ -2197,6 +2271,34 @@ def get_project_detail(project_id: int, account: dict | None = None) -> dict | N
 
 
 class AppHandler(BaseHTTPRequestHandler):
+    def do_HEAD(self) -> None:
+        parsed = urlparse(self.path)
+        path = parsed.path
+        if path != "/health" and not is_authorized(self):
+            if path.startswith("/api/"):
+                self.send_response(401)
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+            else:
+                next_path = path + (f"?{parsed.query}" if parsed.query else "")
+                redirect_response(self, login_location(next_path))
+            return
+        if path == "/health":
+            self.send_response(200)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        document_download = re.match(r"^/api/documents/(\d+)/download$", path)
+        if document_download:
+            self.serve_document_download(int(document_download.group(1)))
+            return
+        estimate_job_file_download = re.match(r"^/api/estimate-job-files/(\d+)/download$", path)
+        if estimate_job_file_download:
+            self.serve_estimate_job_file_download(int(estimate_job_file_download.group(1)))
+            return
+        self.send_error(404)
+
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         path = parsed.path
@@ -2333,11 +2435,12 @@ class AppHandler(BaseHTTPRequestHandler):
             stored_path = str(document["file_path"])
             if stored_path.startswith(YANDEX_DISK_FILE_PREFIX):
                 try:
-                    body = download_from_yandex_disk(stored_path)
+                    href = yandex_disk_download_url(stored_path)
                 except (HTTPError, URLError, TimeoutError, RuntimeError, OSError):
                     self.send_error(502)
                     return
-                file_name = document["file_name"] or Path(stored_path.removeprefix(YANDEX_DISK_FILE_PREFIX)).name
+                redirect_response(self, href, 302)
+                return
             else:
                 file_path = (DATA_DIR / stored_path).resolve()
                 if DATA_DIR.resolve() not in file_path.parents and file_path != DATA_DIR.resolve():
@@ -2346,15 +2449,9 @@ class AppHandler(BaseHTTPRequestHandler):
                 if not file_path.exists() or not file_path.is_file():
                     self.send_error(404)
                     return
-                body = file_path.read_bytes()
                 file_name = document["file_name"] or file_path.name
             content_type = document["mime_type"] or mimetypes.guess_type(file_name)[0] or "application/octet-stream"
-            self.send_response(200)
-            self.send_header("Content-Type", content_type)
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Content-Disposition", f"inline; filename*=UTF-8''{quote(file_name)}")
-            self.end_headers()
-            self.wfile.write(body)
+            stream_local_file(self, file_path, file_name, content_type)
 
     def serve_estimate_job_file_download(self, file_id: int) -> None:
         with connect() as db:
@@ -2368,11 +2465,12 @@ class AppHandler(BaseHTTPRequestHandler):
             stored_path = str(item["file_path"])
             if stored_path.startswith(YANDEX_DISK_FILE_PREFIX):
                 try:
-                    body = download_from_yandex_disk(stored_path)
+                    href = yandex_disk_download_url(stored_path)
                 except (HTTPError, URLError, TimeoutError, RuntimeError, OSError):
                     self.send_error(502)
                     return
-                file_name = item["file_name"] or Path(stored_path.removeprefix(YANDEX_DISK_FILE_PREFIX)).name
+                redirect_response(self, href, 302)
+                return
             else:
                 file_path = (DATA_DIR / stored_path).resolve()
                 if DATA_DIR.resolve() not in file_path.parents and file_path != DATA_DIR.resolve():
@@ -2381,15 +2479,9 @@ class AppHandler(BaseHTTPRequestHandler):
                 if not file_path.exists() or not file_path.is_file():
                     self.send_error(404)
                     return
-                body = file_path.read_bytes()
                 file_name = item["file_name"] or file_path.name
             content_type = item["mime_type"] or mimetypes.guess_type(file_name)[0] or "application/octet-stream"
-            self.send_response(200)
-            self.send_header("Content-Type", content_type)
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Content-Disposition", f"inline; filename*=UTF-8''{quote(file_name)}")
-            self.end_headers()
-            self.wfile.write(body)
+            stream_local_file(self, file_path, file_name, content_type)
 
     def serve_material_requests_export(self, query: dict[str, list[str]]) -> None:
         project_id = int(query.get("project_id", ["0"])[0] or 0)

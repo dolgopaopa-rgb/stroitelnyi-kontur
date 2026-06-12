@@ -1332,6 +1332,24 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 - `app/static/styles.css`
 - `app/static/sw.js`
 - `tools/kontur_quality_agent.py`
+
+### Mobile knowledge-base file downloads
+
+**Problem.** On mobile, files from the knowledge base could fail to open. Server logs showed repeated `ConnectionResetError` / `BrokenPipeError` while processing `/api/documents/.../download`, which means the mobile browser or viewer interrupted the transfer. This was not only a weak-network symptom: the server sent the whole file as one large response and did not support mobile-friendly partial reads.
+
+**Decision.**
+
+- Local uploaded documents are now streamed in chunks instead of being fully read into memory before sending.
+- File downloads now support `Range` requests with `206 Partial Content`, `Content-Range`, and `Accept-Ranges: bytes`. This is important for mobile PDF/video viewers and unstable mobile internet.
+- `HEAD` requests are now handled for document downloads, so mobile viewers can check file metadata before opening.
+- Files stored on Yandex Disk are no longer proxied through the app server after access is checked. The app creates a temporary Yandex Disk download URL and redirects the browser there.
+- The QA agent now checks this mobile-download contract so future changes do not accidentally remove it.
+
+**Changed files.**
+
+- `app/server.py`
+- `tools/kontur_quality_agent.py`
+- `docs/16-project-worklog.md`
 - `docs/16-project-worklog.md`
 
 ### Первый Android-вариант через PWA
