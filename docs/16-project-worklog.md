@@ -1350,6 +1350,28 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 - `app/server.py`
 - `tools/kontur_quality_agent.py`
 - `docs/16-project-worklog.md`
+
+### Mobile task accordion
+
+**Problem.** On mobile, an opened task card stayed expanded as a long block. To get to the next task, the user had to scroll through all opened details.
+
+**Decision.**
+
+- Task rows in the `Задачи` view are now rendered as inline collapsible cards.
+- The visible task header contains the title and status chips.
+- Tapping the header opens the task; tapping it again collapses it.
+- Detailed metadata, comments, responsible users, and action buttons remain inside the opened body.
+- The existing global collapsible-state handler stores opened/closed state by `task:<id>`, so rerenders do not immediately reset the card.
+- The QA agent now checks that task rows keep the collapsible structure.
+
+**Changed files.**
+
+- `app/static/app.js`
+- `app/static/styles.css`
+- `app/static/index.html`
+- `app/static/sw.js`
+- `tools/kontur_quality_agent.py`
+- `docs/16-project-worklog.md`
 - `docs/16-project-worklog.md`
 
 ### Первый Android-вариант через PWA

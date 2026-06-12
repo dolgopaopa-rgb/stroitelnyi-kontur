@@ -2875,12 +2875,18 @@ async function renderTasks() {
           const canComplete = task.status !== "accepted" && task.status !== "completed_pending_acceptance" && (canActAsTaskUser(task, "assignee") || ["owner", "construction_manager", "finance_director"].includes(currentRoleBase()));
           const canReview = task.status === "completed_pending_acceptance" && (["owner", "construction_manager", "finance_director"].includes(currentRoleBase()) || canActAsTaskUser(task, "reviewer"));
           const lastComment = latestTaskComment(task);
+          const taskKey = `task:${task.id}`;
           return `
-            <article class="row task-row">
+            <details class="row task-row task-collapsible" data-collapsible-key="${escapeAttr(taskKey)}"${openAttrForKey(taskKey)}>
+              <summary class="task-summary">
+                <span class="task-summary-main">
+                  <strong>${task.title}</strong>
+                  <span class="stack-line">${pill(label(task.status), taskStatusLevel(task.status))}${pill(task.due_date || "без срока", levelByDate(task.due_date))}${pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority))}</span>
+                </span>
+              </summary>
+              <div class="task-row-body">
               <div class="row-grid">
                 <div class="task-main">
-                  <button class="link-button task-title-button" type="button" data-open-task="${task.id}">${task.title}</button>
-                  <div class="stack-line">${pill(label(task.status), taskStatusLevel(task.status))}${pill(task.due_date || "без срока", levelByDate(task.due_date))}${pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority))}</div>
                   <div class="muted">${task.project_title} · поставил: ${task.creator_name || "не указано"} · создана: ${formatDateRu(task.created_at)}${task.start_date ? ` · начало: ${formatDateRu(task.start_date)}` : ""}${task.contract_title ? ` · ${contractType(task.contract_type)}: ${task.contract_title}` : ""}</div>
                   ${task.description ? `<div>${task.description}</div>` : ""}
                   ${task.rejection_comment ? `<div class="muted">Комментарий по возврату: ${task.rejection_comment}</div>` : ""}
@@ -2889,11 +2895,13 @@ async function renderTasks() {
                 <div class="task-people">Ответственный: ${task.assignee_name || "не назначен"}<br /><span class="muted">Принимает: ${task.reviewer_name || task.creator_name || "не назначен"}</span></div>
               </div>
               <div class="task-actions">
+                <button class="secondary" type="button" data-open-task="${task.id}">Подробнее</button>
                 ${canComplete ? `<button class="secondary" data-task-action="complete" data-task-id="${task.id}">Выполнено</button>` : ""}
                 ${canReview ? `<button class="primary" data-task-action="accept" data-task-id="${task.id}">Принять</button><button class="secondary" data-task-action="return" data-task-id="${task.id}">Вернуть</button>` : ""}
                 ${canDeleteTask(task) ? `<button class="danger-button" data-task-action="delete" data-task-id="${task.id}">Удалить</button>` : ""}
               </div>
-            </article>`;
+              </div>
+            </details>`;
         })
         .join("")
     : `<p class="muted">${tasks.length ? "В этом фильтре задач нет." : "Задач пока нет."}</p>`;

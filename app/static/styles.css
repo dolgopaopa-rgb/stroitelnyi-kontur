@@ -2892,6 +2892,57 @@ h2 {
   gap: 8px;
 }
 
+.task-collapsible {
+  display: block;
+  padding: 0;
+}
+
+.task-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+  padding: 8px 9px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.task-summary::-webkit-details-marker {
+  display: none;
+}
+
+.task-summary::after {
+  content: "▾";
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.2;
+  transition: transform 0.16s ease;
+}
+
+.task-collapsible[open] .task-summary::after {
+  transform: rotate(180deg);
+}
+
+.task-summary-main {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.task-row-body {
+  display: grid;
+  gap: 8px;
+  padding: 0 9px 9px;
+}
+
+.task-collapsible:not([open]) {
+  background: #fff;
+}
+
+.task-collapsible[open] {
+  background: #fdfefe;
+}
+
 .task-row .row-grid {
   grid-template-columns: minmax(0, 1fr) minmax(140px, 0.42fr);
   align-items: start;

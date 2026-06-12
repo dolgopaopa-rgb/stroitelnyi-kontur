@@ -249,6 +249,12 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
             "Не упрощать задачу обратно до кнопки «Выполнено»: исполнителю и принимающему нужны комментарии, файлы, перенос срока и понятная связь с договором.",
         ),
         (
+            "Task collapsible rows scenario",
+            "Task rows must collapse and expand inline on mobile, so users do not have to scroll past long opened task cards.",
+            ["task-collapsible", "task-summary", "task-row-body", "data-collapsible-key", "openAttrForKey(taskKey)"],
+            "Keep task lists accordion-like: the task summary opens and closes the details, while deeper actions stay inside the opened body.",
+        ),
+        (
             "Mobile document download scenario",
             "Document downloads must work on mobile browsers and external viewers: HEAD requests, byte ranges, streamed local files, and Yandex Disk redirects are supported.",
             ["def do_HEAD", "parse_range_header", "stream_local_file", "Accept-Ranges", "Content-Range", "yandex_disk_download_url", "redirect_response(self, href, 302)"],
