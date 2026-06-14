@@ -27,6 +27,7 @@
 
 html {
   overflow-x: hidden;
+  overscroll-behavior-y: contain;
 }
 
 body {
@@ -35,6 +36,7 @@ body {
   color: var(--text);
   font-family: "Segoe UI", Arial, sans-serif;
   overflow-x: hidden;
+  overscroll-behavior-y: contain;
 }
 
 button,
@@ -2040,10 +2042,125 @@ h2 {
   animation: appleSpin 0.82s linear infinite;
 }
 
+.apple-spinner.large {
+  width: 44px;
+  height: 44px;
+  flex-basis: 44px;
+  background: conic-gradient(from 0deg, rgba(29, 120, 108, 0.04), rgba(29, 120, 108, 0.98));
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px));
+}
+
 @keyframes appleSpin {
   to {
     transform: rotate(360deg);
   }
+}
+
+.pull-refresh-indicator {
+  --pull-offset: -72px;
+  --pull-angle: 32deg;
+  position: fixed;
+  top: calc(10px + env(safe-area-inset-top));
+  left: 50%;
+  z-index: 90;
+  min-height: 42px;
+  max-width: calc(100vw - 28px);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(197, 211, 216, 0.92);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.88);
+  color: var(--text);
+  padding: 6px 14px 6px 7px;
+  box-shadow: 0 18px 42px rgba(23, 32, 38, 0.14);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate3d(-50%, var(--pull-offset), 0) scale(0.96);
+  transition: opacity 0.18s ease, transform 0.18s ease, border-color 0.18s ease;
+}
+
+.pull-refresh-indicator.is-visible {
+  opacity: 1;
+  transform: translate3d(-50%, var(--pull-offset), 0) scale(1);
+}
+
+.pull-refresh-indicator.is-ready {
+  border-color: rgba(34, 111, 104, 0.42);
+}
+
+.pull-refresh-indicator strong {
+  min-width: 0;
+  max-width: 230px;
+  font-size: 13px;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pull-refresh-ring {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  border-radius: 50%;
+  background: conic-gradient(var(--brand) var(--pull-angle), #e4ecef 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px));
+}
+
+.pull-refresh-indicator.is-refreshing .pull-refresh-ring {
+  background: conic-gradient(from 0deg, rgba(29, 120, 108, 0.06), rgba(29, 120, 108, 0.98));
+  animation: appleSpin 0.82s linear infinite;
+}
+
+.app-loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 85;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(244, 246, 248, 0.42);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  opacity: 0;
+  transition: opacity 0.16s ease;
+  pointer-events: none;
+}
+
+.app-loading-overlay.is-active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.app-loading-card {
+  width: min(290px, calc(100vw - 48px));
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  border: 1px solid rgba(206, 217, 221, 0.9);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 22px 20px;
+  text-align: center;
+  box-shadow: 0 24px 70px rgba(20, 32, 38, 0.2);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.app-loading-card strong {
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.app-loading-card span:not(.apple-spinner) {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
 }
 
 .knowledge-upload-overlay {

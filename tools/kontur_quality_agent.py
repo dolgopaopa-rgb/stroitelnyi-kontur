@@ -141,7 +141,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         return
 
     button_contracts = [
-        ("refreshButton", "Обновить данные", ['qs("#refreshButton").addEventListener("click"', "loadAll().then"]),
+        ("refreshButton", "Обновить данные", ['qs("#refreshButton").addEventListener("click"', "refreshAppFromUser"]),
         ("logoutButton", "Выйти", ['qs("#logoutButton")?.addEventListener("click"', 'window.location.href = "/logout"']),
         ("newProjectButton", "Новый объект", ['qs("#newProjectButton").addEventListener("click"', "resetProjectDialog()", 'qs("#projectDialog").showModal()']),
         ("newTaskButton", "Добавить задачу", ['qs("#newTaskButton").addEventListener("click"', 'qs("#taskDialog").showModal()']),
@@ -270,8 +270,14 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         (
             "Mobile load stability scenario",
             "Mobile startup must stay light, recover from stale PWA cache after deploys, and serve a Huawei-compatible frontend bundle.",
-            ["g2-logo-192.png", "app.compat.js?v=20260614-project-toggle", "controllerchange", "registration.update", "SKIP_WAITING", "stroitelnyi-kontur-20260614-project-toggle"],
+            ["g2-logo-192.png", "app.compat.js?v=20260614-pull-refresh", "controllerchange", "registration.update", "SKIP_WAITING", "stroitelnyi-kontur-20260614-pull-refresh"],
             "Keep the startup logo lightweight, preserve service-worker auto-update handling, and serve the compatibility bundle so phones do not stay stuck on stale cached app shells.",
+        ),
+        (
+            "Mobile pull refresh and loading indicator scenario",
+            "On phones every page can be refreshed with a downward pull, and explicit long actions show an Apple-like loading indicator instead of looking frozen.",
+            ["initPullToRefresh", "pullRefreshIndicator", "triggerPullRefresh", "refreshAppFromUser", "appLoadingOverlay", "setAppLoading", "withAppLoading", "apple-spinner large"],
+            "Keep pull-to-refresh and the global loading overlay working together: quiet background polling must stay silent, but user-triggered refreshes and saves should show progress.",
         ),
         (
             "Feedback refresh scenario",

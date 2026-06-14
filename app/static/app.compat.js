@@ -19,6 +19,18 @@
     return a;
   };
   var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
+  var __objRest = (source, exclude) => {
+    var target = {};
+    for (var prop in source)
+      if (__hasOwnProp.call(source, prop) && exclude.indexOf(prop) < 0)
+        target[prop] = source[prop];
+    if (source != null && __getOwnPropSymbols)
+      for (var prop of __getOwnPropSymbols(source)) {
+        if (exclude.indexOf(prop) < 0 && __propIsEnum.call(source, prop))
+          target[prop] = source[prop];
+      }
+    return target;
+  };
   var __forAwait = (obj, it, method) => (it = obj[__knownSymbol("asyncIterator")]) ? it.call(obj) : (obj = obj[__knownSymbol("iterator")](), it = {}, method = (key, fn) => (fn = obj[key]) && (it[key] = (arg) => new Promise((yes, no, done) => (arg = fn.call(obj, arg), done = arg.done, Promise.resolve(arg.value).then((value) => yes({ value, done }), no)))), method("next"), method("return"), it);
 
   // app/static/app.js
@@ -60,7 +72,9 @@
     knowledgeUploading: false,
     knowledgeUploadMessage: "",
     installPromptEvent: null,
-    installPromptReady: false
+    installPromptReady: false,
+    loadingKeys: /* @__PURE__ */ new Set(),
+    pullRefresh: { tracking: false, startY: 0, distance: 0, ready: false, refreshing: false }
   };
   var PROJECT_FORM_DRAFT_KEY = "projectFormDraft:v1";
   var PROJECT_TEXT_DRAFT_FIELDS = [
@@ -157,9 +171,27 @@
     return [...document.querySelectorAll(selector)];
   }
   async function api(path, options = {}) {
-    const response = await fetch(path, __spreadValues({
-      headers: { "Content-Type": "application/json" }
-    }, options));
+    const _a = options, { loadingMessage = "Сохраняем данные", silentLoading = false, showLoading = false } = _a, fetchOptions = __objRest(_a, ["loadingMessage", "silentLoading", "showLoading"]);
+    const method = String(fetchOptions.method || "GET").toUpperCase();
+    const shouldShowLoading = showLoading || !silentLoading && method !== "GET";
+    const loadingKey = "api-".concat(method, "-").concat(path, "-").concat(Date.now(), "-").concat(Math.random());
+    let loadingTimer = null;
+    let loadingStarted = false;
+    if (shouldShowLoading) {
+      loadingTimer = window.setTimeout(() => {
+        loadingStarted = true;
+        setAppLoading(true, loadingMessage, loadingKey);
+      }, 220);
+    }
+    let response;
+    try {
+      response = await fetch(path, __spreadProps(__spreadValues({}, fetchOptions), {
+        headers: __spreadValues({ "Content-Type": "application/json" }, fetchOptions.headers || {})
+      }));
+    } finally {
+      if (loadingTimer) window.clearTimeout(loadingTimer);
+      if (loadingStarted) setAppLoading(false, "", loadingKey);
+    }
     if (!response.ok) {
       const text = await response.text();
       let message = text;
@@ -660,6 +692,34 @@
     toast.classList.add("active");
     setTimeout(() => toast.classList.remove("active"), 2200);
   }
+  function setAppLoading(isLoading, message = "", key = "global") {
+    if (isLoading) state.loadingKeys.add(key);
+    else state.loadingKeys.delete(key);
+    const overlay = qs("#appLoadingOverlay");
+    if (!overlay) return;
+    const active = state.loadingKeys.size > 0;
+    overlay.hidden = !active;
+    overlay.classList.toggle("is-active", active);
+    document.body.classList.toggle("app-is-loading", active);
+    if (message) {
+      const messageNode = overlay.querySelector("[data-app-loading-message]");
+      if (messageNode) messageNode.textContent = message;
+    }
+  }
+  async function withAppLoading(message, task, key = "manual-".concat(Date.now())) {
+    setAppLoading(true, message, key);
+    try {
+      return await task();
+    } finally {
+      setAppLoading(false, "", key);
+    }
+  }
+  async function refreshAppFromUser(message = "Обновляем данные") {
+    await withAppLoading(message, async () => {
+      await loadAll();
+      showToast("Данные обновлены");
+    }, "user-refresh");
+  }
   function setProjectFormStatus(message = "", level = "pending") {
     const status = qs("#projectFormStatus");
     if (!status) return;
@@ -782,6 +842,7 @@
     updateProjectFileStatus(form);
   }
   function setProjectSaving(isSaving, message = "") {
+    setAppLoading(isSaving, message || "Сохраняем карточку", "project-form");
     const form = qs("#projectForm");
     if (form) {
       form.classList.toggle("is-saving", isSaving);
@@ -965,6 +1026,97 @@
     ]);
     initSortableZones();
     syncNavigationAccess();
+  }
+  function isMobileTouchViewport() {
+    return window.matchMedia("(max-width: 760px)").matches && "ontouchstart" in window;
+  }
+  function pageAtTop() {
+    return window.scrollY <= 0 && document.documentElement.scrollTop <= 0 && document.body.scrollTop <= 0;
+  }
+  function updatePullRefreshIndicator(distance = 0, phase = "idle") {
+    const indicator = qs("#pullRefreshIndicator");
+    if (!indicator) return;
+    const clamped = Math.max(0, Math.min(distance, 112));
+    const ready = phase === "ready";
+    const refreshing = phase === "refreshing";
+    indicator.classList.toggle("is-visible", clamped > 10 || refreshing);
+    indicator.classList.toggle("is-ready", ready);
+    indicator.classList.toggle("is-refreshing", refreshing);
+    indicator.style.setProperty("--pull-offset", "".concat(Math.max(-72, Math.round(clamped - 92)), "px"));
+    indicator.style.setProperty("--pull-angle", "".concat(Math.max(32, Math.round(clamped / 92 * 360)), "deg"));
+    const message = indicator.querySelector("[data-pull-refresh-message]");
+    if (message) {
+      message.textContent = refreshing ? "Обновляем Контур" : ready ? "Отпустите, чтобы обновить" : "Потяните вниз для обновления";
+    }
+  }
+  function resetPullRefreshIndicator(delay = 0) {
+    window.setTimeout(() => {
+      state.pullRefresh = { tracking: false, startY: 0, distance: 0, ready: false, refreshing: false };
+      updatePullRefreshIndicator(0, "idle");
+      document.body.classList.remove("pull-refresh-active");
+    }, delay);
+  }
+  async function triggerPullRefresh() {
+    if (state.pullRefresh.refreshing) return;
+    state.pullRefresh.refreshing = true;
+    updatePullRefreshIndicator(96, "refreshing");
+    try {
+      await refreshAppFromUser("Обновляем Контур");
+    } catch (error) {
+      showToast(error.message || "Не удалось обновить данные");
+    } finally {
+      resetPullRefreshIndicator(450);
+    }
+  }
+  function initPullToRefresh() {
+    window.addEventListener(
+      "touchstart",
+      (event) => {
+        var _a, _b;
+        if (!isMobileTouchViewport() || hasOpenDialog() || state.pullRefresh.refreshing) return;
+        if (event.touches.length !== 1 || !pageAtTop()) return;
+        if ((_b = (_a = event.target).closest) == null ? void 0 : _b.call(_a, "input, textarea, select, button, a, .sidebar, dialog")) return;
+        state.pullRefresh.tracking = true;
+        state.pullRefresh.startY = event.touches[0].clientY;
+        state.pullRefresh.distance = 0;
+        state.pullRefresh.ready = false;
+      },
+      { passive: true }
+    );
+    window.addEventListener(
+      "touchmove",
+      (event) => {
+        if (!state.pullRefresh.tracking || state.pullRefresh.refreshing || event.touches.length !== 1) return;
+        const distance = event.touches[0].clientY - state.pullRefresh.startY;
+        if (distance <= 0 || !pageAtTop()) {
+          resetPullRefreshIndicator();
+          return;
+        }
+        event.preventDefault();
+        const eased = Math.min(120, Math.pow(distance, 0.86) * 2.25);
+        state.pullRefresh.distance = eased;
+        state.pullRefresh.ready = eased >= 88;
+        document.body.classList.add("pull-refresh-active");
+        updatePullRefreshIndicator(eased, state.pullRefresh.ready ? "ready" : "pulling");
+      },
+      { passive: false }
+    );
+    window.addEventListener(
+      "touchend",
+      () => {
+        if (!state.pullRefresh.tracking || state.pullRefresh.refreshing) return;
+        if (state.pullRefresh.ready) triggerPullRefresh();
+        else resetPullRefreshIndicator();
+      },
+      { passive: true }
+    );
+    window.addEventListener(
+      "touchcancel",
+      () => {
+        if (!state.pullRefresh.refreshing) resetPullRefreshIndicator();
+      },
+      { passive: true }
+    );
   }
   function fillSelects() {
     const projectOptions = state.projects.map((project) => '<option value="'.concat(project.id, '">').concat(project.title, "</option>")).join("");
@@ -2518,6 +2670,7 @@
   function setKnowledgeUploading(isUploading, message = "") {
     state.knowledgeUploading = Boolean(isUploading);
     state.knowledgeUploadMessage = message || (isUploading ? "Загружаем файлы" : "");
+    setAppLoading(state.knowledgeUploading, state.knowledgeUploadMessage || "Загружаем файлы", "knowledge-upload");
     updateKnowledgeUploadState();
   }
   function updateKnowledgeUploadState() {
@@ -3249,9 +3402,10 @@
   function bindEvents() {
     var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n;
     bindStableDetailsTouchGuard();
+    initPullToRefresh();
     qsa("[data-view]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
     qsa("[data-view-target]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.viewTarget)));
-    qs("#refreshButton").addEventListener("click", () => loadAll().then(() => showToast("Данные обновлены")));
+    qs("#refreshButton").addEventListener("click", () => refreshAppFromUser("Обновляем данные").catch((error) => showToast(error.message)));
     (_a = qs("#logoutButton")) == null ? void 0 : _a.addEventListener("click", () => {
       localStorage.removeItem("currentRole");
       window.location.href = "/logout";
@@ -4270,7 +4424,7 @@
     bindEvents();
     bindInstallEvents();
     switchView(state.view);
-    await loadAll();
+    await withAppLoading("Загружаем Контур", () => loadAll(), "boot");
     registerServiceWorker();
   }
   function registerServiceWorker() {

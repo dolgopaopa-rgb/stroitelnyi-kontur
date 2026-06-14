@@ -1373,6 +1373,29 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 - `tools/kontur_quality_agent.py`
 - `docs/16-project-worklog.md`
 
+### Мобильное обновление жестом вниз и общий индикатор загрузки
+
+**Запрос.** На любой странице мобильной версии нужно иметь возможность потянуть экран вниз и обновить данные. Также нужен понятный визуальный индикатор загрузки, похожий на системный аккуратный индикатор Apple, чтобы пользователь видел, что программа работает.
+
+**Решение.**
+
+- Добавлен мобильный жест pull-to-refresh: если страница находится в самом верху, пользователь тянет вниз, видит верхнюю капсулу с прогрессом и после отпускания запускает обновление данных.
+- Жест работает на всех разделах, но не мешает формам, кнопкам, ссылкам, нижнему меню и открытым модальным окнам.
+- Добавлен общий слой загрузки `appLoadingOverlay` с крупным плавным круговым индикатором.
+- Индикатор показывается при явных действиях пользователя: ручное обновление, pull-to-refresh, первичная загрузка, сохранение карточки объекта, загрузка базы знаний и долгие POST-действия. Тихое фоновое обновление каждые 10 секунд остается без всплывающего индикатора.
+- QA-агент дополнен сценарием `Mobile pull refresh and loading indicator scenario`.
+- Версия фронтенда обновлена до `20260614-pull-refresh`.
+
+**Измененные файлы.**
+
+- `app/static/app.js`
+- `app/static/app.compat.js`
+- `app/static/index.html`
+- `app/static/styles.css`
+- `app/static/sw.js`
+- `tools/kontur_quality_agent.py`
+- `docs/16-project-worklog.md`
+
 ### Mobile task accordion
 
 **Problem.** On mobile, an opened task card stayed expanded as a long block. To get to the next task, the user had to scroll through all opened details.

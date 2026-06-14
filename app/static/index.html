@@ -842,7 +842,18 @@
       </form>
     </dialog>
 
+    <div class="pull-refresh-indicator" id="pullRefreshIndicator" aria-live="polite" aria-hidden="true">
+      <span class="pull-refresh-ring" aria-hidden="true"></span>
+      <strong data-pull-refresh-message>Потяните вниз для обновления</strong>
+    </div>
+    <div class="app-loading-overlay" id="appLoadingOverlay" hidden aria-live="polite" aria-busy="true">
+      <div class="app-loading-card">
+        <span class="apple-spinner large" aria-hidden="true"></span>
+        <strong data-app-loading-message>Загрузка</strong>
+        <span>Подождите немного, Контур обрабатывает данные.</span>
+      </div>
+    </div>
     <div class="toast" id="toast"></div>
-    <script src="/static/app.compat.js?v=20260614-project-toggle"></script>
+    <script src="/static/app.compat.js?v=20260614-pull-refresh"></script>
   </body>
 </html>
