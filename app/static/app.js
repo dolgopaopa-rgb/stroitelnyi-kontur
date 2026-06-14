@@ -983,6 +983,12 @@ function switchView(view) {
   initSortableZones();
 }
 
+function clearProjectDetail() {
+  const detail = qs("#projectDetail");
+  if (!detail) return;
+  detail.innerHTML = `<p class="muted">&#1042;&#1099;&#1073;&#1077;&#1088;&#1080;&#1090;&#1077; &#1086;&#1073;&#1098;&#1077;&#1082;&#1090; &#1080;&#1079; &#1089;&#1087;&#1080;&#1089;&#1082;&#1072;.</p>`;
+}
+
 function sortableOrderKey(zoneId) {
   return `sortable-order:${zoneId}`;
 }
@@ -1104,9 +1110,8 @@ async function loadCoreData() {
   state.estimateJobs = estimateJobs;
   const availableProjects = state.projectListMode === "archive" ? archivedProjects : projects;
   if (state.selectedProjectId && !availableProjects.some((project) => Number(project.id) === Number(state.selectedProjectId))) {
-    state.selectedProjectId = availableProjects[0]?.id || projects[0]?.id || null;
+    state.selectedProjectId = null;
   }
-  if (!state.selectedProjectId && projects.length) state.selectedProjectId = projects[0].id;
   fillSelects();
   syncNavigationAccess();
 }
@@ -2421,7 +2426,9 @@ async function renderProjects() {
         )
         .join("")
     : `<p class="muted">${state.projectListMode === "archive" ? "В архиве пока пусто." : "Объектов пока нет."}</p>`;
-  if (state.selectedProjectId) await renderProjectDetail(state.selectedProjectId);
+  const hasSelectedProject = state.selectedProjectId && projects.some((project) => Number(project.id) === Number(state.selectedProjectId));
+  if (hasSelectedProject) await renderProjectDetail(state.selectedProjectId);
+  else clearProjectDetail();
 }
 
 function projectFinancialSummaryHtml(project) {
@@ -5264,9 +5271,18 @@ function bindEvents() {
 
     const projectButton = event.target.closest("[data-open-project]");
     if (projectButton) {
-      state.selectedProjectId = Number(projectButton.dataset.openProject);
+      const projectId = Number(projectButton.dataset.openProject);
+      const sameProjectAlreadyOpen = state.view === "projects" && Number(state.selectedProjectId) === projectId;
       state.selectedProjectTab = "overview";
       switchView("projects");
+      if (sameProjectAlreadyOpen) {
+        state.selectedProjectId = null;
+        await renderProjects();
+        clearProjectDetail();
+        return;
+      }
+      state.selectedProjectId = projectId;
+      await renderProjects();
       await renderProjectDetail(state.selectedProjectId);
     }
     const tabButton = event.target.closest("[data-project-tab]");

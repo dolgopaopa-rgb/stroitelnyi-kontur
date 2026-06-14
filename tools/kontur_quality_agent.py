@@ -256,6 +256,12 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
             "Keep task lists accordion-like: the task summary opens and closes the details, while deeper actions stay inside the opened body.",
         ),
         (
+            "Project detail toggle scenario",
+            "Project rows must work like an accordion on mobile: tapping a project opens details, tapping the same project again hides details and returns to the plain object list.",
+            ["clearProjectDetail", "sameProjectAlreadyOpen", "state.selectedProjectId = null", "await renderProjects();", "data-open-project"],
+            "Keep the objects page reversible: users must be able to close a large opened project card without leaving the page.",
+        ),
+        (
             "Mobile document download scenario",
             "Document downloads must work on mobile browsers and external viewers: HEAD requests, byte ranges, streamed local files, and Yandex Disk redirects are supported.",
             ["def do_HEAD", "parse_range_header", "stream_local_file", "Accept-Ranges", "Content-Range", "yandex_disk_download_url", "redirect_response(self, href, 302)"],
@@ -264,7 +270,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         (
             "Mobile load stability scenario",
             "Mobile startup must stay light, recover from stale PWA cache after deploys, and serve a Huawei-compatible frontend bundle.",
-            ["g2-logo-192.png", "app.compat.js?v=20260614-feedback-materials", "controllerchange", "registration.update", "SKIP_WAITING", "stroitelnyi-kontur-20260614-feedback-materials"],
+            ["g2-logo-192.png", "app.compat.js?v=20260614-project-toggle", "controllerchange", "registration.update", "SKIP_WAITING", "stroitelnyi-kontur-20260614-project-toggle"],
             "Keep the startup logo lightweight, preserve service-worker auto-update handling, and serve the compatibility bundle so phones do not stay stuck on stale cached app shells.",
         ),
         (
