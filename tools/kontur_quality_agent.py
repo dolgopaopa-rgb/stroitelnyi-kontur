@@ -270,7 +270,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         (
             "Mobile load stability scenario",
             "Mobile startup must stay light, recover from stale PWA cache after deploys, and serve a Huawei-compatible frontend bundle.",
-            ["g2-logo-192.png", "app.compat.js?v=20260614-pull-refresh", "controllerchange", "registration.update", "SKIP_WAITING", "stroitelnyi-kontur-20260614-pull-refresh"],
+            ["g2-logo-192.png", "app.compat.js?v=20260614-yandex-routes", "controllerchange", "registration.update", "SKIP_WAITING", "stroitelnyi-kontur-20260614-yandex-routes"],
             "Keep the startup logo lightweight, preserve service-worker auto-update handling, and serve the compatibility bundle so phones do not stay stuck on stale cached app shells.",
         ),
         (
@@ -426,7 +426,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         (
             "Yandex route links scenario",
             "Ссылки локаций открывают Яндекс.Карты в режиме построения маршрута.",
-            ["function yandexCoordinateDestination", "mode=routes", "rtext=~", "function mapLink(address, mapsUrl", "yandexMapsUrl(addressText, url)"],
+            ["function yandexCoordinateDestination", "function yandexRouteTextDestination", "lat_to", "lon_to", "rtext=~", "rtt=auto", "function mapLink(address, mapsUrl", "yandexMapsUrl(addressText, url)"],
             "Локации должны вести не просто на текстовый поиск, а на построение маршрута по адресу или координатам.",
         ),
         (

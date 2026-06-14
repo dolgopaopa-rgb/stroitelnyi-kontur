@@ -642,30 +642,65 @@ function externalRefLink(value, fallbackText, level = "") {
   return `<a class="pill link-pill ${level}" href="${escapeAttr(href)}" target="_blank" rel="noopener noreferrer">${fallbackText}</a>`;
 }
 
+function yandexCoordinatePair(first, second, order = "lonlat") {
+  const a = Number(String(first || "").replace(",", "."));
+  const b = Number(String(second || "").replace(",", "."));
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return "";
+  const lat = order === "latlon" ? a : b;
+  const lon = order === "latlon" ? b : a;
+  if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return "";
+  return `${lat},${lon}`;
+}
+
+function yandexPairFromText(value, order = "lonlat") {
+  const match = String(value || "").match(/(-?\d+(?:[\.,]\d+)?),\s*(-?\d+(?:[\.,]\d+)?)/);
+  return match ? yandexCoordinatePair(match[1], match[2], order) : "";
+}
+
+function yandexRouteTextDestination(value) {
+  const text = decodeURIComponent(String(value || "").trim());
+  if (!text) return "";
+  const parts = text.split("~").map((part) => part.trim()).filter(Boolean);
+  const destination = parts[parts.length - 1] || "";
+  if (!destination) return "";
+  return yandexPairFromText(destination, "latlon") || destination;
+}
+
 function yandexCoordinateDestination(mapsUrl) {
   const text = String(mapsUrl || "").trim();
   if (!text) return "";
-  const parsePair = (value) => {
-    const match = String(value || "").match(/(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/);
-    return match ? `${match[2]},${match[1]}` : "";
-  };
   try {
     const url = new URL(/^https?:\/\//i.test(text) ? text : `https://${text}`);
+    const latTo = url.searchParams.get("lat_to") || url.searchParams.get("to_lat") || url.searchParams.get("lat");
+    const lonTo = url.searchParams.get("lon_to") || url.searchParams.get("to_lon") || url.searchParams.get("lon");
+    const toByParams = yandexCoordinatePair(latTo, lonTo, "latlon");
+    if (toByParams) return toByParams;
+    const routeDestination = yandexRouteTextDestination(url.searchParams.get("rtext"));
+    if (routeDestination) return routeDestination;
     for (const key of ["pt", "ll", "whatshere[point]"]) {
-      const destination = parsePair(url.searchParams.get(key));
+      const destination = yandexPairFromText(url.searchParams.get(key), "lonlat");
       if (destination) return destination;
     }
   } catch {
-    // Short share links do not expose coordinates before redirect; fall back to address below.
+    // Custom schemes and short share links may not parse as HTTPS URLs; try raw params below.
   }
-  const rawMatch = text.match(/(?:pt|ll|whatshere(?:%5B|\[)point(?:%5D|\]))=(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/i);
-  return rawMatch ? `${rawMatch[2]},${rawMatch[1]}` : "";
+  const latToMatch = text.match(/(?:lat_to|to_lat|lat)=(-?\d+(?:[\.,]\d+)?).*?(?:lon_to|to_lon|lon)=(-?\d+(?:[\.,]\d+)?)/i);
+  const toByParams = latToMatch ? yandexCoordinatePair(latToMatch[1], latToMatch[2], "latlon") : "";
+  if (toByParams) return toByParams;
+  const lonToMatch = text.match(/(?:lon_to|to_lon|lon)=(-?\d+(?:[\.,]\d+)?).*?(?:lat_to|to_lat|lat)=(-?\d+(?:[\.,]\d+)?)/i);
+  const toByReverseParams = lonToMatch ? yandexCoordinatePair(lonToMatch[2], lonToMatch[1], "latlon") : "";
+  if (toByReverseParams) return toByReverseParams;
+  const routeMatch = text.match(/rtext=([^&#]+)/i);
+  const routeDestination = routeMatch ? yandexRouteTextDestination(routeMatch[1]) : "";
+  if (routeDestination) return routeDestination;
+  const rawMatch = text.match(/(?:pt|ll|whatshere(?:%5B|\[)point(?:%5D|\]))=(-?\d+(?:[\.,]\d+)?),\s*(-?\d+(?:[\.,]\d+)?)/i);
+  return rawMatch ? yandexCoordinatePair(rawMatch[1], rawMatch[2], "lonlat") : "";
 }
 
 function yandexMapsUrl(address, mapsUrl = "") {
   const destination = yandexCoordinateDestination(mapsUrl) || String(address || "").trim();
   if (!destination) return "";
-  return `https://yandex.ru/maps/?mode=routes&rtext=~${encodeURIComponent(destination)}&rtt=auto`;
+  return `https://yandex.ru/maps/?rtext=~${encodeURIComponent(destination)}&rtt=auto`;
 }
 
 function addressLink(address, className = "") {
