@@ -227,7 +227,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         (
             "Android PWA install scenario",
             "Контур можно установить на Android как приложение: manifest и service worker доступны до логина, на входе и внутри приложения есть кнопка установки.",
-            ["display_override", "prefer_related_applications", "shortcuts", 'id="installAppButton"', 'id="loginInstallButton"', "beforeinstallprompt", "installAndroidApp", "syncInstallButton", 'navigator.serviceWorker.register("/sw.js")', 'if path == "/sw.js":', 'if path.startswith("/static/"):'],
+            ["display_override", "prefer_related_applications", "shortcuts", 'id="installAppButton"', 'id="loginInstallButton"', "beforeinstallprompt", "installAndroidApp", "syncInstallButton", '.register("/sw.js")', 'if path == "/sw.js":', 'if path.startswith("/static/"):'],
             "Для Android не ломать PWA-контур: manifest, service worker и static-ассеты должны открываться без авторизации, а данные приложения остаются закрытыми логином.",
         ),
         (
@@ -259,6 +259,12 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
             "Document downloads must work on mobile browsers and external viewers: HEAD requests, byte ranges, streamed local files, and Yandex Disk redirects are supported.",
             ["def do_HEAD", "parse_range_header", "stream_local_file", "Accept-Ranges", "Content-Range", "yandex_disk_download_url", "redirect_response(self, href, 302)"],
             "Keep document downloads mobile-safe: do not read large files into memory before sending, preserve Range support, and redirect Yandex Disk files after access checks.",
+        ),
+        (
+            "Mobile load stability scenario",
+            "Mobile startup must stay light and recover from stale PWA cache after deploys.",
+            ["g2-logo-192.png", "controllerchange", "registration.update", "SKIP_WAITING", "20260614-load-stability"],
+            "Keep the startup logo lightweight and preserve service-worker auto-update handling so phones do not stay stuck on stale cached app shells.",
         ),
         (
             "Feedback refresh scenario",

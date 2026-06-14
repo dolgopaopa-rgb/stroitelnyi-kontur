@@ -1,8 +1,8 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260612-task-collapse";
+const CACHE_NAME = "stroitelnyi-kontur-20260614-load-stability";
 const CORE_ASSETS = [
   "/",
-  "/static/styles.css?v=20260612-task-collapse",
-  "/static/app.js?v=20260612-task-collapse",
+  "/static/styles.css?v=20260614-load-stability",
+  "/static/app.js?v=20260614-load-stability",
   "/static/manifest.webmanifest?v=20260611-android-pwa",
   "/static/assets/g2-logo-192.png",
   "/static/assets/g2-logo-512.png"
@@ -13,6 +13,10 @@ self.addEventListener("install", (event) => {
     caches.open(CACHE_NAME).then((cache) => cache.addAll(CORE_ASSETS)).catch(() => undefined)
   );
   self.skipWaiting();
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {

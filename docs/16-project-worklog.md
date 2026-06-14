@@ -1351,6 +1351,28 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 - `tools/kontur_quality_agent.py`
 - `docs/16-project-worklog.md`
 
+### Mobile app startup stability
+
+**Problem.** On 2026-06-14 the production server was healthy (`/health` returned 200 and containers were up), but mobile users reported that the app did not load. Caddy logs showed mobile clients aborting startup asset requests, including the large sidebar logo. Another likely contributor was stale PWA/service-worker cache after recent deploys.
+
+**Decision.**
+
+- The sidebar brand image now uses `g2-logo-192.png` instead of the heavy `g2-logo.png`, reducing the startup image from about 790 KB to about 19 KB.
+- Static asset versions and the service-worker cache were bumped to `20260614-load-stability`.
+- The main app and login page now listen for `controllerchange` and reload once when a new service worker takes control.
+- Service-worker registration now explicitly calls `registration.update()` and tells a waiting/new worker to `SKIP_WAITING`.
+- The service worker now handles `SKIP_WAITING` messages.
+- The QA agent now checks the lightweight logo and service-worker update contract.
+
+**Changed files.**
+
+- `app/static/index.html`
+- `app/static/app.js`
+- `app/static/login.html`
+- `app/static/sw.js`
+- `tools/kontur_quality_agent.py`
+- `docs/16-project-worklog.md`
+
 ### Mobile task accordion
 
 **Problem.** On mobile, an opened task card stayed expanded as a long block. To get to the next task, the user had to scroll through all opened details.
