@@ -23,6 +23,7 @@ Thumbs.db
 # Local Android build tooling and generated files
 .android-sdk/
 .android-build-tools/
+.web-build-tools/
 .jdk/
 .gradle-cache/
 gradle-*/

@@ -1,8 +1,8 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260614-load-stability";
+const CACHE_NAME = "stroitelnyi-kontur-20260614-huawei-compat";
 const CORE_ASSETS = [
   "/",
   "/static/styles.css?v=20260614-load-stability",
-  "/static/app.js?v=20260614-load-stability",
+  "/static/app.compat.js?v=20260614-huawei-compat",
   "/static/manifest.webmanifest?v=20260611-android-pwa",
   "/static/assets/g2-logo-192.png",
   "/static/assets/g2-logo-512.png"
@@ -16,7 +16,7 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("message", (event) => {
-  if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
+  if (event.data && event.data.type === "SKIP_WAITING") self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {

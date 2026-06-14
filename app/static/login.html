@@ -255,7 +255,8 @@
       }
 
       function isStandaloneApp() {
-        return window.matchMedia?.("(display-mode: standalone)")?.matches || window.navigator.standalone === true;
+        const displayMode = typeof window.matchMedia === "function" ? window.matchMedia("(display-mode: standalone)") : null;
+        return Boolean((displayMode && displayMode.matches) || window.navigator.standalone === true);
       }
 
       function syncInstallButton() {
@@ -284,7 +285,9 @@
                 }
               });
             });
-            registration.update?.().catch(() => undefined);
+            if (typeof registration.update === "function") {
+              registration.update().catch(() => undefined);
+            }
           })
           .catch(() => undefined);
       }
@@ -332,7 +335,7 @@
         status.className = "status";
         passwordInput.focus();
         try {
-          if (!navigator.clipboard?.readText) {
+          if (!navigator.clipboard || typeof navigator.clipboard.readText !== "function") {
             throw new Error("clipboard_unavailable");
           }
           const text = await navigator.clipboard.readText();

@@ -1625,3 +1625,33 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 - `app/static/sw.js`
 - `docs/16-project-worklog.md`
 - `tools/kontur_quality_agent.py`
+
+### Huawei / старый Android: стабильная загрузка приложения
+
+**Запрос.** На Huawei приложение «Контур» не открывалось, при этом сервер оставался доступен.
+
+**Диагностика.**
+
+- Проверка `https://kontur.derevgroup.ru/health` вернула `200 OK`, контейнер приложения работал.
+- На стороне мобильных клиентов ранее были обрывы загрузки статических файлов, поэтому основной риск был не в сервере, а в мобильном браузере/WebView и старом PWA-кэше.
+- В боевом фронтенде были современные JS-конструкции `optional chaining`/`nullish coalescing`, которые могут не разбираться частью старых Huawei/Honor WebView.
+
+**Решение.**
+
+- Добавлена совместимая сборка фронтенда `app/static/app.compat.js`, собранная из обычного `app/static/app.js` под более старый Chrome/WebView.
+- `index.html` теперь подключает `app.compat.js?v=20260614-huawei-compat`.
+- Service worker переведен на новый кэш `stroitelnyi-kontur-20260614-huawei-compat` и кэширует совместимую сборку.
+- Из критичных файлов `login.html` и `sw.js` убраны современные конструкции `?.` и `??`, чтобы телефон не ломался еще до загрузки приложения.
+- Добавлен скрипт `tools/build-web-compat.ps1`: после будущих изменений `app/static/app.js` нужно пересобирать совместимый файл этой командой.
+- QA-агент теперь проверяет Huawei-совместимую загрузку, наличие `app.compat.js` и отсутствие `?.`/`??` в мобильной стартовой цепочке.
+
+**Измененные файлы.**
+
+- `app/static/app.compat.js`
+- `app/static/index.html`
+- `app/static/login.html`
+- `app/static/sw.js`
+- `tools/build-web-compat.ps1`
+- `tools/kontur_quality_agent.py`
+- `.gitignore`
+- `docs/16-project-worklog.md`

@@ -82,7 +82,7 @@ def extract_asset(html: str, pattern: str) -> str | None:
 
 
 def asset_version_from_html(html: str) -> str | None:
-    match = re.search(r'app\.js\?v=([^"]+)', html)
+    match = re.search(r'app(?:\.compat)?\.js\?v=([^"]+)', html)
     return match.group(1) if match else None
 
 
@@ -118,6 +118,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
     html = repository_file("app/static/index.html")
     login_html = repository_file("app/static/login.html")
     app_text = repository_file("app/static/app.js")
+    app_compat_text = repository_file("app/static/app.compat.js")
     css_text = repository_file("app/static/styles.css")
     sw_text = repository_file("app/static/sw.js")
     manifest_text = repository_file("app/static/manifest.webmanifest")
@@ -215,7 +216,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
     check_static_contract(
         checks,
         "Login page contract",
-        has_all(login_html, ['id="loginForm"', 'id="passwordInput"', 'id="passwordToggle"', 'id="passwordPaste"', 'id="passwordClear"', "navigator.clipboard?.readText", "/api/login", "type=\"password\""])
+        has_all(login_html, ['id="loginForm"', 'id="passwordInput"', 'id="passwordToggle"', 'id="passwordPaste"', 'id="passwordClear"', "navigator.clipboard", "readText", "/api/login", "type=\"password\""])
         and has_all(server_text, ["authenticate_access_account", 'parsed.path == "/api/login"', 'serve_static("login.html")', "login_location(next_path)"]),
         "Страница входа, кнопка видимости пароля и серверный endpoint логина найдены."
         if login_html
@@ -262,9 +263,9 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         ),
         (
             "Mobile load stability scenario",
-            "Mobile startup must stay light and recover from stale PWA cache after deploys.",
-            ["g2-logo-192.png", "controllerchange", "registration.update", "SKIP_WAITING", "20260614-load-stability"],
-            "Keep the startup logo lightweight and preserve service-worker auto-update handling so phones do not stay stuck on stale cached app shells.",
+            "Mobile startup must stay light, recover from stale PWA cache after deploys, and serve a Huawei-compatible frontend bundle.",
+            ["g2-logo-192.png", "app.compat.js?v=20260614-huawei-compat", "controllerchange", "registration.update", "SKIP_WAITING", "stroitelnyi-kontur-20260614-huawei-compat"],
+            "Keep the startup logo lightweight, preserve service-worker auto-update handling, and serve the compatibility bundle so phones do not stay stuck on stale cached app shells.",
         ),
         (
             "Feedback refresh scenario",
@@ -419,6 +420,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         app_text,
         css_text,
         sw_text,
+        app_compat_text,
         manifest_text,
         android_manifest_text,
         android_main_text,
@@ -442,6 +444,18 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         sw_has_version,
         f"Версия фронтенда `{repo_version}` есть в service worker." if sw_has_version else "Версия app.js из index.html не найдена в service worker.",
         "После каждой фронтенд-правки обновлять версию в index.html и sw.js, иначе мобильная версия может взять старый код.",
+    )
+
+    mobile_startup_text = "\n".join([app_compat_text, login_html, sw_text])
+    modern_syntax_found = bool(re.search(r"\?\.|\?\?", mobile_startup_text))
+    check_static_contract(
+        checks,
+        "Huawei compatible startup syntax",
+        not modern_syntax_found,
+        "Runtime mobile bundle, login page, and service worker avoid optional chaining/nullish coalescing."
+        if not modern_syntax_found
+        else "Runtime mobile bundle still contains optional chaining or nullish coalescing.",
+        "Rebuild app/static/app.compat.js with tools/build-web-compat.ps1 and keep login.html/sw.js free from ?. and ??.",
     )
 
     if broken_scenarios:
@@ -721,7 +735,7 @@ def run_checks(base_url: str, username: str | None, password: str | None) -> tup
                 "После push нужно обновить сервер или вручную перезапустить проверку после деплоя.",
             )
 
-    app_js = extract_asset(html, r'<script[^>]+src="([^"]*app\.js[^"]*)"')
+    app_js = extract_asset(html, r'<script[^>]+src="([^"]*app(?:\.compat)?\.js[^"]*)"')
     styles_css = extract_asset(html, r'<link[^>]+href="([^"]*styles\.css[^"]*)"')
     manifest = extract_asset(html, r'<link[^>]+rel="manifest"[^>]+href="([^"]*)"')
 
