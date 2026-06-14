@@ -264,7 +264,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         (
             "Mobile load stability scenario",
             "Mobile startup must stay light, recover from stale PWA cache after deploys, and serve a Huawei-compatible frontend bundle.",
-            ["g2-logo-192.png", "app.compat.js?v=20260614-huawei-compat", "controllerchange", "registration.update", "SKIP_WAITING", "stroitelnyi-kontur-20260614-huawei-compat"],
+            ["g2-logo-192.png", "app.compat.js?v=20260614-feedback-materials", "controllerchange", "registration.update", "SKIP_WAITING", "stroitelnyi-kontur-20260614-feedback-materials"],
             "Keep the startup logo lightweight, preserve service-worker auto-update handling, and serve the compatibility bundle so phones do not stay stuck on stale cached app shells.",
         ),
         (
@@ -354,8 +354,20 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         (
             "Material request traceability scenario",
             "Заявка материалов показывает кто заказал, объект, основания позиций, связь с допработами и фактическую стоимость закупки, а сметчик получает сигнал по позициям вне основной сметы или закупке дороже сметы.",
-            ["materialBatchBasisSummary", "materialBatchDestination", "Кто заказал", "Куда внесено", "actual_unit_price", "actual_total_amount", "collectMaterialActualItems", "Цена закупки за ед.", "Сумма закупки", "notify_material_deviation_for_estimators", "notify_material_actual_cost_overrun", "Закупка дороже сметы"],
+            ["materialBatchBasisSummary", "materialBatchDestination", "Кто заказал", "Куда внесено", "actual_unit_price", "actual_total_amount", "collectMaterialActualItems", "Цена закупки за ед.", "Сумма закупки", "save_actuals", "save_material_actual_items", "notify_material_deviation_for_estimators", "notify_material_actual_cost_overrun", "Закупка дороже сметы"],
             "Не терять трассировку заявки: прораб, снабжение, сметчик и руководители должны видеть источник, место учета допов/замен/превышений и факт закупки дороже сметы.",
+        ),
+        (
+            "Material request direct open scenario",
+            "Заявка материалов должна открываться по уведомлению или прямой ссылке даже после смены фильтра/обновления списка.",
+            ["Promise.all([", "/api/material-requests?archive=0", "/api/material-requests?archive=1", "batch = findMaterialBatch(batchKey)"],
+            "При открытии заявки по id нельзя полагаться только на текущий список в интерфейсе; если карточка не найдена, нужно дозагрузить активные и архивные заявки.",
+        ),
+        (
+            "Project financial summary scenario",
+            "Карточка объекта показывает не одну слепую сумму, а сводку: основная смета, принятые допработы/доп. соглашения, итог и нерешенный сверхбюджет.",
+            ["projectFinancialSummaryHtml", "Итого по принятым основаниям", "Прогноз с нерешенным сверхбюджетом", "Факт закупок по заявкам"],
+            "Финансы объекта нужно показывать по основаниям, чтобы несколько смет/допников не превращались в одну непонятную цифру.",
         ),
         (
             "Material receipt confirmation scenario",

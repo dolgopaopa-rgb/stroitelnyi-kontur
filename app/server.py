@@ -1081,6 +1081,39 @@ def notify_material_actual_cost_overrun(db, batch_id: int, project) -> None:
     )
 
 
+def save_material_actual_items(db, batch_id: int, actual_items: list[dict]) -> float:
+    actual_purchase_amount = 0.0
+    for item in actual_items:
+        request_id = int(item.get("id") or 0)
+        if not request_id:
+            continue
+        material = db.execute(
+            "SELECT requested_quantity FROM material_requests WHERE id = ? AND batch_id = ?",
+            (request_id, batch_id),
+        ).fetchone()
+        if not material:
+            continue
+        actual_unit_price = number_value(item.get("actual_unit_price"))
+        actual_total_amount = number_value(item.get("actual_total_amount"))
+        requested_quantity = number_value(material["requested_quantity"])
+        if actual_total_amount <= 0 and actual_unit_price > 0:
+            actual_total_amount = actual_unit_price * requested_quantity
+        if actual_unit_price <= 0 and actual_total_amount > 0 and requested_quantity > 0:
+            actual_unit_price = actual_total_amount / requested_quantity
+        actual_purchase_amount += actual_total_amount
+        db.execute(
+            """
+            UPDATE material_requests
+            SET actual_unit_price = ?,
+                actual_total_amount = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND batch_id = ?
+            """,
+            (actual_unit_price, actual_total_amount, request_id, batch_id),
+        )
+    return actual_purchase_amount
+
+
 def require_fields(data: dict, fields: list[tuple[str, str]]) -> None:
     missing = [label for key, label in fields if not str(data.get(key) or "").strip()]
     if missing:
@@ -4615,7 +4648,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 json_response(self, {"id": task_id, "comment": comment})
                 return
 
-            material_batch_action = re.match(r"^/api/material-request-batches/(\d+)/(accept|return|resubmit|schedule|resolve_issue|receive|update|delete|create_variation)$", path)
+            material_batch_action = re.match(r"^/api/material-request-batches/(\d+)/(accept|return|resubmit|schedule|save_actuals|resolve_issue|receive|update|delete|create_variation)$", path)
             if material_batch_action:
                 batch_id = int(material_batch_action.group(1))
                 action = material_batch_action.group(2)
@@ -4958,45 +4991,37 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             role_by_user_id(db, watcher_id),
                             "Заявка на материалы повторно отправлена",
                             message,
-                            "material_request_batch",
-                            batch_id,
-                        )
+                        "material_request_batch",
+                        batch_id,
+                    )
                     json_response(self, {"id": batch_id, "status": "new"})
+                    return
+                if action == "save_actuals":
+                    if str(data.get("actor_role") or "") != "procurement_manager":
+                        raise ValueError("Сохранить цены закупки может только снабжение.")
+                    if str(batch["status"] or "") not in {"in_work", "delivery_scheduled"}:
+                        raise ValueError("Цены закупки можно сохранять после принятия заявки снабжением в работу.")
+                    comment = str(data.get("comment") or "").strip()
+                    actual_purchase_amount = save_material_actual_items(db, batch_id, data.get("actual_items") or [])
+                    db.execute(
+                        """
+                        UPDATE material_request_batches
+                        SET actual_purchase_amount = ?,
+                            procurement_comment = ?,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (actual_purchase_amount, comment or batch["procurement_comment"] or "", batch_id),
+                    )
+                    notify_material_actual_cost_overrun(db, batch_id, batch)
+                    json_response(self, {"id": batch_id, "status": batch["status"], "actual_purchase_amount": actual_purchase_amount})
                     return
                 if action == "schedule":
                     delivery_date = data.get("scheduled_delivery_date") or ""
                     if not delivery_date:
                         raise ValueError("Укажите дату доставки.")
                     comment = str(data.get("comment") or "").strip()
-                    actual_items = data.get("actual_items") or []
-                    actual_purchase_amount = 0.0
-                    for item in actual_items:
-                        request_id = int(item.get("id") or 0)
-                        if not request_id:
-                            continue
-                        material = db.execute(
-                            "SELECT requested_quantity FROM material_requests WHERE id = ? AND batch_id = ?",
-                            (request_id, batch_id),
-                        ).fetchone()
-                        if not material:
-                            continue
-                        actual_unit_price = number_value(item.get("actual_unit_price"))
-                        actual_total_amount = number_value(item.get("actual_total_amount"))
-                        if actual_total_amount <= 0 and actual_unit_price > 0:
-                            actual_total_amount = actual_unit_price * number_value(material["requested_quantity"])
-                        if actual_unit_price <= 0 and actual_total_amount > 0 and number_value(material["requested_quantity"]) > 0:
-                            actual_unit_price = actual_total_amount / number_value(material["requested_quantity"])
-                        actual_purchase_amount += actual_total_amount
-                        db.execute(
-                            """
-                            UPDATE material_requests
-                            SET actual_unit_price = ?,
-                                actual_total_amount = ?,
-                                updated_at = CURRENT_TIMESTAMP
-                            WHERE id = ? AND batch_id = ?
-                            """,
-                            (actual_unit_price, actual_total_amount, request_id, batch_id),
-                        )
+                    actual_purchase_amount = save_material_actual_items(db, batch_id, data.get("actual_items") or [])
                     db.execute(
                         """
                         UPDATE material_request_batches

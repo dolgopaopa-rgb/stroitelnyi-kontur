@@ -2424,6 +2424,30 @@ async function renderProjects() {
   if (state.selectedProjectId) await renderProjectDetail(state.selectedProjectId);
 }
 
+function projectFinancialSummaryHtml(project) {
+  const base = Number(project.main_estimate_amount || 0);
+  const approved = Number(project.approved_variations_amount || 0);
+  const unresolved = Number(project.unresolved_overbudget_amount || 0);
+  const acceptedTotal = base + approved;
+  const forecastTotal = acceptedTotal + unresolved;
+  const materialActual = buildMaterialBatches(project.materials || []).reduce((sum, batch) => sum + Number(batch.actual_purchase_amount || 0), 0);
+  const rows = [
+    ["Основная смета", base],
+    ["Принятые допработы / доп. соглашения", approved],
+    ["Итого по принятым основаниям", acceptedTotal],
+    ["Сверхбюджет без решения", unresolved],
+    ["Прогноз с нерешенным сверхбюджетом", forecastTotal],
+  ];
+  if (materialActual > 0) rows.push(["Факт закупок по заявкам", materialActual]);
+  rows.push(["Срок", project.planned_end_date || "не задан"]);
+  return `
+    <div class="detail-grid financial-summary-grid">
+      ${rows
+        .map(([title, value]) => `<div class="info"><span>${title}</span><strong>${typeof value === "number" ? money(value) : value}</strong></div>`)
+        .join("")}
+    </div>`;
+}
+
 async function renderProjectDetail(projectId) {
   const project = await api(`/api/projects/${projectId}`);
   state.selectedProjectId = project.id;
@@ -2431,13 +2455,7 @@ async function renderProjectDetail(projectId) {
   const tabs = projectTabs();
   if (!tabs.includes(state.selectedProjectTab)) state.selectedProjectTab = tabs[0] || "overview";
   const overviewHtml = canViewFinancials()
-    ? `
-      <div class="detail-grid">
-        <div class="info"><span>Основная смета</span><strong>${money(project.main_estimate_amount)}</strong></div>
-        <div class="info"><span>Сверхбюджет без решения</span><strong>${money(project.unresolved_overbudget_amount)}</strong></div>
-        <div class="info"><span>Срок</span><strong>${project.planned_end_date || "не задан"}</strong></div>
-        <div class="info"><span>Допработы</span><strong>${money(project.approved_variations_amount)}</strong></div>
-      </div>`
+    ? projectFinancialSummaryHtml(project)
     : `
       <div class="detail-grid">
         <div class="info"><span>Статус</span><strong>${label(project.status)}</strong></div>
@@ -3311,7 +3329,15 @@ async function openMaterialBatchDialog(batchKey) {
   if (!state.materialRequests.length) {
     state.materialRequests = await api(`/api/material-requests?archive=${state.materialListMode === "archive" ? "1" : "0"}`);
   }
-  const batch = findMaterialBatch(batchKey);
+  let batch = findMaterialBatch(batchKey);
+  if (!batch) {
+    const [activeItems, archivedItems] = await Promise.all([
+      api("/api/material-requests?archive=0"),
+      api("/api/material-requests?archive=1"),
+    ]);
+    state.materialRequests = [...activeItems, ...archivedItems];
+    batch = findMaterialBatch(batchKey);
+  }
   if (!batch) {
     showToast("Заявка не найдена");
     return;
@@ -3409,6 +3435,7 @@ async function openMaterialBatchDialog(batchKey) {
             <label>Комментарий снабжения <textarea id="materialBatchScheduleComment" rows="3" placeholder="Например: нужна доверенность или кран">${batch.procurement_comment || ""}</textarea></label>
             <div class="form-actions">
               <button class="primary" type="button" data-material-batch-action="schedule" data-material-batch-id="${batch.id}">Уведомить о доставке</button>
+              <button class="secondary" type="button" data-material-batch-action="save_actuals" data-material-batch-id="${batch.id}">Сохранить цены закупки</button>
             </div>
           </section>`
         : ""
@@ -5148,6 +5175,12 @@ function bindEvents() {
           comment: qs("#materialBatchScheduleComment")?.value || "",
         };
       }
+      if (action === "save_actuals") {
+        body = {
+          actual_items: currentBatch ? collectMaterialActualItems(currentBatch) : [],
+          comment: qs("#materialBatchScheduleComment")?.value || "",
+        };
+      }
       if (action === "resolve_issue") {
         body = {
           scheduled_delivery_date: qs("#materialBatchResolveDate")?.value || "",
@@ -5189,6 +5222,7 @@ function bindEvents() {
           return: "Заявка возвращена на доработку",
           resubmit: "Заявка повторно отправлена снабжению",
           schedule: "Прораб уведомлен о доставке",
+          save_actuals: "Цены закупки сохранены",
           resolve_issue: "Прораб уведомлен о повторной доставке",
           receive: "Приемка по заявке отправлена",
           update: "Заявка исправлена и отправлена снабжению",

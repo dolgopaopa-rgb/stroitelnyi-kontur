@@ -1881,13 +1881,31 @@
     ).join("") : '<p class="muted">'.concat(state.projectListMode === "archive" ? "В архиве пока пусто." : "Объектов пока нет.", "</p>");
     if (state.selectedProjectId) await renderProjectDetail(state.selectedProjectId);
   }
+  function projectFinancialSummaryHtml(project) {
+    const base = Number(project.main_estimate_amount || 0);
+    const approved = Number(project.approved_variations_amount || 0);
+    const unresolved = Number(project.unresolved_overbudget_amount || 0);
+    const acceptedTotal = base + approved;
+    const forecastTotal = acceptedTotal + unresolved;
+    const materialActual = buildMaterialBatches(project.materials || []).reduce((sum, batch) => sum + Number(batch.actual_purchase_amount || 0), 0);
+    const rows = [
+      ["Основная смета", base],
+      ["Принятые допработы / доп. соглашения", approved],
+      ["Итого по принятым основаниям", acceptedTotal],
+      ["Сверхбюджет без решения", unresolved],
+      ["Прогноз с нерешенным сверхбюджетом", forecastTotal]
+    ];
+    if (materialActual > 0) rows.push(["Факт закупок по заявкам", materialActual]);
+    rows.push(["Срок", project.planned_end_date || "не задан"]);
+    return '\n    <div class="detail-grid financial-summary-grid">\n      '.concat(rows.map(([title, value]) => '<div class="info"><span>'.concat(title, "</span><strong>").concat(typeof value === "number" ? money(value) : value, "</strong></div>")).join(""), "\n    </div>");
+  }
   async function renderProjectDetail(projectId) {
     const project = await api("/api/projects/".concat(projectId));
     state.selectedProjectId = project.id;
     const docs = visibleDocuments(project.documents || []);
     const tabs = projectTabs();
     if (!tabs.includes(state.selectedProjectTab)) state.selectedProjectTab = tabs[0] || "overview";
-    const overviewHtml = canViewFinancials() ? '\n      <div class="detail-grid">\n        <div class="info"><span>Основная смета</span><strong>'.concat(money(project.main_estimate_amount), '</strong></div>\n        <div class="info"><span>Сверхбюджет без решения</span><strong>').concat(money(project.unresolved_overbudget_amount), '</strong></div>\n        <div class="info"><span>Срок</span><strong>').concat(project.planned_end_date || "не задан", '</strong></div>\n        <div class="info"><span>Допработы</span><strong>').concat(money(project.approved_variations_amount), "</strong></div>\n      </div>") : '\n      <div class="detail-grid">\n        <div class="info"><span>Статус</span><strong>'.concat(label(project.status), '</strong></div>\n        <div class="info"><span>Срок</span><strong>').concat(project.planned_end_date || "не задан", '</strong></div>\n        <div class="info"><span>Прораб</span><strong>').concat(project.foreman_name || "не назначен", '</strong></div>\n        <div class="info"><span>Технадзор</span><strong>').concat(project.tech_supervisor_name || "не назначен", "</strong></div>\n      </div>");
+    const overviewHtml = canViewFinancials() ? projectFinancialSummaryHtml(project) : '\n      <div class="detail-grid">\n        <div class="info"><span>Статус</span><strong>'.concat(label(project.status), '</strong></div>\n        <div class="info"><span>Срок</span><strong>').concat(project.planned_end_date || "не задан", '</strong></div>\n        <div class="info"><span>Прораб</span><strong>').concat(project.foreman_name || "не назначен", '</strong></div>\n        <div class="info"><span>Технадзор</span><strong>').concat(project.tech_supervisor_name || "не назначен", "</strong></div>\n      </div>");
     const tabData = {
       overview: overviewHtml,
       tasks: renderSmallList(project.tasks, (task) => "".concat(task.title, " · ").concat(label(task.status), " · ").concat(task.due_date || "без срока")),
@@ -2335,7 +2353,15 @@
     if (!state.materialRequests.length) {
       state.materialRequests = await api("/api/material-requests?archive=".concat(state.materialListMode === "archive" ? "1" : "0"));
     }
-    const batch = findMaterialBatch(batchKey);
+    let batch = findMaterialBatch(batchKey);
+    if (!batch) {
+      const [activeItems, archivedItems] = await Promise.all([
+        api("/api/material-requests?archive=0"),
+        api("/api/material-requests?archive=1")
+      ]);
+      state.materialRequests = [...activeItems, ...archivedItems];
+      batch = findMaterialBatch(batchKey);
+    }
     if (!batch) {
       showToast("Заявка не найдена");
       return;
@@ -2351,7 +2377,7 @@
       (item) => '\n          <div class="row estimate-material-row">\n            <div class="material-main">\n              <strong>'.concat(item.title, '</strong>\n              <div class="muted">').concat(item.estimate_section || "без раздела", "</div>\n              ").concat(item.comment ? '<div class="muted">'.concat(item.comment, "</div>") : "", '\n            </div>\n            <div class="stack-line">\n              ').concat(pill("".concat(item.requested_quantity || item.estimated_quantity || 0, " ").concat(item.requested_unit || item.estimate_material_unit || ""), "blue"), "\n              ").concat(pill(materialBasisLabel(item.basis_type), materialBasisLevel(item.basis_type)), "\n              ").concat(pill(money(item.total_amount), "success"), "\n              ").concat(materialActualTotal(item) ? pill("Закупка: ".concat(money(materialActualTotal(item))), materialActualOverrun(item) ? "danger" : "blue") : "", "\n            </div>\n          </div>")
     ).join(""), "\n    </div>\n    ").concat(canCreateVariation ? '<section class="workflow-panel">\n            <h3>Допработа / отклонение</h3>\n            <p class="muted">В заявке есть позиции сверх основной сметы. Можно создать связанную запись в разделе “Допработы”, чтобы решить, кто оплачивает и как оформляем.</p>\n            <div class="form-actions">\n              <button class="primary" type="button" data-material-batch-action="create_variation" data-material-batch-id="'.concat(batch.id, '">Создать допработу</button>\n            </div>\n          </section>') : "", "\n    ").concat(canReview ? '<section class="workflow-panel">\n            <h3>Решение снабжения</h3>\n            <label>Комментарий при возврате <textarea id="materialBatchReturnComment" rows="3" placeholder="Например: не понятно количество, уточните позицию"></textarea></label>\n            <div class="form-actions">\n              <button class="primary" type="button" data-material-batch-action="accept" data-material-batch-id="'.concat(batch.id, '">Принять в работу</button>\n              <button class="secondary" type="button" data-material-batch-action="return" data-material-batch-id="').concat(batch.id, '">Вернуть на доработку</button>\n            </div>\n          </section>') : "", "\n    ").concat(canSchedule ? '<section class="workflow-panel">\n            <h3>Доставка</h3>\n            <label>Дата доставки <input id="materialBatchDeliveryDate" type="date" value="'.concat(batch.scheduled_delivery_date || batch.needed_at || "", '" /></label>\n            <div class="table material-review-items">\n              ').concat(batch.items.map(
       (item) => '\n                  <div class="row estimate-material-row">\n                    <div class="material-main">\n                      <strong>'.concat(item.title, '</strong>\n                      <div class="muted">Смета: ').concat(money(item.total_amount), " · ").concat(item.requested_quantity || item.estimated_quantity || 0, " ").concat(item.requested_unit || item.estimate_material_unit || "", '</div>\n                    </div>\n                    <label>Цена закупки за ед., ₽ <input type="text" inputmode="decimal" data-material-actual-unit="').concat(item.id, '" value="').concat(item.actual_unit_price || "", '" placeholder="0" /></label>\n                    <label>Сумма закупки, ₽ <input type="text" inputmode="decimal" data-material-actual-total="').concat(item.id, '" value="').concat(item.actual_total_amount || "", '" placeholder="0" /></label>\n                  </div>')
-    ).join(""), '\n            </div>\n            <label>Комментарий снабжения <textarea id="materialBatchScheduleComment" rows="3" placeholder="Например: нужна доверенность или кран">').concat(batch.procurement_comment || "", '</textarea></label>\n            <div class="form-actions">\n              <button class="primary" type="button" data-material-batch-action="schedule" data-material-batch-id="').concat(batch.id, '">Уведомить о доставке</button>\n            </div>\n          </section>') : "", "\n    ").concat(canResolveIssue ? '<section class="workflow-panel">\n            <h3>Исправление проблемы</h3>\n            <p class="muted">Укажите, когда будет повторная доставка, замена или довоз материала. Прораб и руководители получат уведомление.</p>\n            <label>Дата повторной доставки <input id="materialBatchResolveDate" type="date" value="'.concat(batch.scheduled_delivery_date || "", '" /></label>\n            <label>Комментарий снабжения <textarea id="materialBatchResolveComment" rows="3" placeholder="Например: заменили позицию, довезем недостающий материал, поставщик подтвердил замену"></textarea></label>\n            <div class="form-actions">\n              <button class="primary" type="button" data-material-batch-action="resolve_issue" data-material-batch-id="').concat(batch.id, '">Уведомить о повторной доставке</button>\n            </div>\n          </section>') : "", "\n    ").concat(canEdit ? renderMaterialBatchEditSection(batch) : "", "\n    ").concat(canReceive ? '<section class="workflow-panel material-receipt-panel">\n            <h3>Приемка доставки</h3>\n            <p class="muted">Доставка назначена'.concat(batch.scheduled_delivery_date ? " на ".concat(formatDateRu(batch.scheduled_delivery_date)) : "", '. Если все по списку, подтвердите получение. Если что-то не так, опишите проблему и прикрепите фото или видео.</p>\n            <label>Комментарий при проблеме <textarea id="materialBatchReceiptComment" rows="3" placeholder="Что именно не так: не довезли, повреждено, не тот материал"></textarea></label>\n            <label>Фото или видео <input id="materialBatchReceiptFile" type="file" accept="image/*,video/*" /></label>\n            <div class="form-actions">\n              <button class="primary" type="button" data-material-batch-action="receive" data-receipt-status="received" data-material-batch-id="').concat(batch.id, '">Материалы получены</button>\n              <button class="secondary" type="button" data-material-batch-action="receive" data-receipt-status="issue" data-material-batch-id="').concat(batch.id, '">Есть проблема</button>\n            </div>\n          </section>') : "", "\n  ");
+    ).join(""), '\n            </div>\n            <label>Комментарий снабжения <textarea id="materialBatchScheduleComment" rows="3" placeholder="Например: нужна доверенность или кран">').concat(batch.procurement_comment || "", '</textarea></label>\n            <div class="form-actions">\n              <button class="primary" type="button" data-material-batch-action="schedule" data-material-batch-id="').concat(batch.id, '">Уведомить о доставке</button>\n              <button class="secondary" type="button" data-material-batch-action="save_actuals" data-material-batch-id="').concat(batch.id, '">Сохранить цены закупки</button>\n            </div>\n          </section>') : "", "\n    ").concat(canResolveIssue ? '<section class="workflow-panel">\n            <h3>Исправление проблемы</h3>\n            <p class="muted">Укажите, когда будет повторная доставка, замена или довоз материала. Прораб и руководители получат уведомление.</p>\n            <label>Дата повторной доставки <input id="materialBatchResolveDate" type="date" value="'.concat(batch.scheduled_delivery_date || "", '" /></label>\n            <label>Комментарий снабжения <textarea id="materialBatchResolveComment" rows="3" placeholder="Например: заменили позицию, довезем недостающий материал, поставщик подтвердил замену"></textarea></label>\n            <div class="form-actions">\n              <button class="primary" type="button" data-material-batch-action="resolve_issue" data-material-batch-id="').concat(batch.id, '">Уведомить о повторной доставке</button>\n            </div>\n          </section>') : "", "\n    ").concat(canEdit ? renderMaterialBatchEditSection(batch) : "", "\n    ").concat(canReceive ? '<section class="workflow-panel material-receipt-panel">\n            <h3>Приемка доставки</h3>\n            <p class="muted">Доставка назначена'.concat(batch.scheduled_delivery_date ? " на ".concat(formatDateRu(batch.scheduled_delivery_date)) : "", '. Если все по списку, подтвердите получение. Если что-то не так, опишите проблему и прикрепите фото или видео.</p>\n            <label>Комментарий при проблеме <textarea id="materialBatchReceiptComment" rows="3" placeholder="Что именно не так: не довезли, повреждено, не тот материал"></textarea></label>\n            <label>Фото или видео <input id="materialBatchReceiptFile" type="file" accept="image/*,video/*" /></label>\n            <div class="form-actions">\n              <button class="primary" type="button" data-material-batch-action="receive" data-receipt-status="received" data-material-batch-id="').concat(batch.id, '">Материалы получены</button>\n              <button class="secondary" type="button" data-material-batch-action="receive" data-receipt-status="issue" data-material-batch-id="').concat(batch.id, '">Есть проблема</button>\n            </div>\n          </section>') : "", "\n  ");
     qs("#materialReviewDialog").showModal();
   }
   function variationType(type) {
@@ -3400,7 +3426,7 @@
       true
     );
     document.addEventListener("click", async (event) => {
-      var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k2, _l2, _m2, _n2;
+      var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k2, _l2, _m2, _n2, _o;
       const viewTargetButton = event.target.closest("[data-view-target]");
       if (viewTargetButton) {
         switchView(viewTargetButton.dataset.viewTarget);
@@ -3739,17 +3765,23 @@
             comment: ((_g2 = qs("#materialBatchScheduleComment")) == null ? void 0 : _g2.value) || ""
           };
         }
+        if (action === "save_actuals") {
+          body = {
+            actual_items: currentBatch ? collectMaterialActualItems(currentBatch) : [],
+            comment: ((_h2 = qs("#materialBatchScheduleComment")) == null ? void 0 : _h2.value) || ""
+          };
+        }
         if (action === "resolve_issue") {
           body = {
-            scheduled_delivery_date: ((_h2 = qs("#materialBatchResolveDate")) == null ? void 0 : _h2.value) || "",
-            comment: ((_i2 = qs("#materialBatchResolveComment")) == null ? void 0 : _i2.value) || ""
+            scheduled_delivery_date: ((_i2 = qs("#materialBatchResolveDate")) == null ? void 0 : _i2.value) || "",
+            comment: ((_j2 = qs("#materialBatchResolveComment")) == null ? void 0 : _j2.value) || ""
           };
         }
         if (action === "receive") {
-          const file = (_k2 = (_j2 = qs("#materialBatchReceiptFile")) == null ? void 0 : _j2.files) == null ? void 0 : _k2[0];
+          const file = (_l2 = (_k2 = qs("#materialBatchReceiptFile")) == null ? void 0 : _k2.files) == null ? void 0 : _l2[0];
           body = {
             receipt_status: materialBatchAction.dataset.receiptStatus || "received",
-            comment: ((_l2 = qs("#materialBatchReceiptComment")) == null ? void 0 : _l2.value) || "",
+            comment: ((_m2 = qs("#materialBatchReceiptComment")) == null ? void 0 : _m2.value) || "",
             receipt_file: file ? {
               title: file.name,
               type: "other",
@@ -3778,6 +3810,7 @@
             return: "Заявка возвращена на доработку",
             resubmit: "Заявка повторно отправлена снабжению",
             schedule: "Прораб уведомлен о доставке",
+            save_actuals: "Цены закупки сохранены",
             resolve_issue: "Прораб уведомлен о повторной доставке",
             receive: "Приемка по заявке отправлена",
             update: "Заявка исправлена и отправлена снабжению",
@@ -3793,8 +3826,8 @@
         await api("/api/material-requests/".concat(id, "/deliver"), {
           method: "POST",
           body: JSON.stringify({
-            actual_delivery_date: ((_m2 = qs('[data-material-actual="'.concat(id, '"]'))) == null ? void 0 : _m2.value) || "",
-            procurement_comment: ((_n2 = qs('[data-material-comment="'.concat(id, '"]'))) == null ? void 0 : _n2.value) || ""
+            actual_delivery_date: ((_n2 = qs('[data-material-actual="'.concat(id, '"]'))) == null ? void 0 : _n2.value) || "",
+            procurement_comment: ((_o = qs('[data-material-comment="'.concat(id, '"]'))) == null ? void 0 : _o.value) || ""
           })
         });
         await loadAll();
