@@ -1684,6 +1684,39 @@ h2 {
   grid-column: 1 / -1;
 }
 
+.material-change-added,
+.extra-material-row.material-change-added {
+  border-color: #9bd8b3;
+  background: #f2fbf5;
+}
+
+.material-change-changed {
+  border-color: #e7c989;
+  background: #fff8e8;
+}
+
+.material-change-removed {
+  border-color: #df9b9b;
+  background: #fff3f3;
+}
+
+.material-change-removed .material-main strong {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.remove-change-badge {
+  display: none;
+}
+
+.material-batch-edit-row.material-change-removed .remove-change-badge {
+  display: inline-flex;
+}
+
+.change-badge {
+  align-self: start;
+}
+
 .check-line {
   display: flex;
   grid-template-columns: none;

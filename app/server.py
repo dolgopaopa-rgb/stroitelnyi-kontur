@@ -854,6 +854,7 @@ def create_material_request(
     requested_unit: str,
     total_amount: float,
     comment: str,
+    change_type: str = "",
 ) -> int:
     urgency = delivery_urgency(needed_at)
     smetter_status = "not_required" if basis_type == "main_estimate" else "waiting_to_enter"
@@ -862,9 +863,9 @@ def create_material_request(
         INSERT INTO material_requests (
             batch_id, project_id, creator_id, estimate_material_id, title, basis_type, estimate_section, needed_at,
             procurement_status, smetter_status, supplier, total_amount, comment,
-            requested_quantity, requested_unit, delivery_urgency
+            requested_quantity, requested_unit, delivery_urgency, change_type
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             batch_id,
@@ -882,6 +883,7 @@ def create_material_request(
             requested_quantity,
             requested_unit,
             urgency,
+            change_type,
         ),
     )
     return int(cursor.lastrowid)
@@ -972,6 +974,7 @@ def material_deviation_rows(db, batch_id: int):
         LEFT JOIN estimate_materials em ON em.id = m.estimate_material_id
         WHERE m.batch_id = ?
           AND m.basis_type != 'main_estimate'
+          AND COALESCE(m.change_type, '') != 'removed'
         ORDER BY m.estimate_section, m.title
         """,
         (batch_id,),
@@ -1031,6 +1034,7 @@ def notify_material_actual_cost_overrun(db, batch_id: int, project) -> None:
           AND m.actual_total_amount > 0
           AND m.total_amount > 0
           AND m.actual_total_amount > m.total_amount
+          AND COALESCE(m.change_type, '') != 'removed'
         ORDER BY m.estimate_section, m.title
         """,
         (batch_id,),
@@ -1088,7 +1092,7 @@ def save_material_actual_items(db, batch_id: int, actual_items: list[dict]) -> f
         if not request_id:
             continue
         material = db.execute(
-            "SELECT requested_quantity FROM material_requests WHERE id = ? AND batch_id = ?",
+            "SELECT requested_quantity FROM material_requests WHERE id = ? AND batch_id = ? AND COALESCE(change_type, '') != 'removed'",
             (request_id, batch_id),
         ).fetchone()
         if not material:
@@ -2542,6 +2546,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 JOIN projects p ON p.id = m.project_id
                 LEFT JOIN estimate_materials em ON em.id = m.estimate_material_id
                 WHERE {" AND ".join(where)}
+                  AND COALESCE(m.change_type, '') != 'removed'
                 ORDER BY p.title, m.estimate_section, m.title
                 """,
                 params,
@@ -2606,6 +2611,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 LEFT JOIN estimate_materials em ON em.id = m.estimate_material_id
                 WHERE m.batch_id = ?
                   AND m.basis_type != 'main_estimate'
+                  AND COALESCE(m.change_type, '') != 'removed'
                 ORDER BY m.estimate_section, m.title
                 """,
                 (variation["source_id"],),
@@ -4697,6 +4703,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         LEFT JOIN estimate_materials em ON em.id = m.estimate_material_id
                         WHERE m.batch_id = ?
                           AND m.basis_type != 'main_estimate'
+                          AND COALESCE(m.change_type, '') != 'removed'
                         ORDER BY m.estimate_section, m.title
                         """,
                         (batch_id,),
@@ -4813,7 +4820,23 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         if not existing:
                             continue
                         if item.get("remove"):
-                            db.execute("DELETE FROM material_requests WHERE id = ? AND batch_id = ?", (request_id, batch_id))
+                            remove_comment = "Удалено при исправлении заявки."
+                            if update_comment:
+                                remove_comment += f" {update_comment}"
+                            db.execute(
+                                """
+                                UPDATE material_requests
+                                SET needed_at = ?,
+                                    delivery_urgency = ?,
+                                    procurement_status = 'removed',
+                                    total_amount = 0,
+                                    change_type = 'removed',
+                                    comment = ?,
+                                    updated_at = CURRENT_TIMESTAMP
+                                WHERE id = ? AND batch_id = ?
+                                """,
+                                (new_needed_at, new_urgency, remove_comment, request_id, batch_id),
+                            )
                             continue
                         quantity = number_value(item.get("quantity"))
                         if quantity <= 0:
@@ -4824,6 +4847,19 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         requested_unit = str(item.get("unit") or existing["requested_unit"] or existing["estimate_material_unit"] or "").strip()
                         unit_price = number_value(existing["unit_price"])
                         total_amount = quantity * unit_price if unit_price else number_value(existing["total_amount"])
+                        previous_change_type = str(existing["change_type"] or "").strip()
+                        changed = (
+                            title != str(existing["title"] or "").strip()
+                            or basis_type != str(existing["basis_type"] or "").strip()
+                            or abs(quantity - number_value(existing["requested_quantity"])) > 0.000001
+                            or requested_unit != str(existing["requested_unit"] or existing["estimate_material_unit"] or "").strip()
+                            or comment != str(existing["comment"] or "").strip()
+                        )
+                        change_type = previous_change_type
+                        if previous_change_type == "removed":
+                            change_type = "changed"
+                        elif previous_change_type != "added" and changed:
+                            change_type = "changed"
                         db.execute(
                             """
                             UPDATE material_requests
@@ -4835,11 +4871,12 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                                 requested_unit = ?,
                                 total_amount = ?,
                                 comment = ?,
+                                change_type = ?,
                                 procurement_status = 'new',
                                 updated_at = CURRENT_TIMESTAMP
                             WHERE id = ? AND batch_id = ?
                             """,
-                            (title, basis_type, new_needed_at, new_urgency, quantity, requested_unit, total_amount, comment, request_id, batch_id),
+                            (title, basis_type, new_needed_at, new_urgency, quantity, requested_unit, total_amount, comment, change_type, request_id, batch_id),
                         )
                     extra_reason_labels = {
                         "additional_work": "Доп",
@@ -4872,8 +4909,9 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             requested_unit=item_unit,
                             total_amount=0,
                             comment=f"{extra_reason_labels[reason]}. {update_comment}".strip(),
+                            change_type="added",
                         )
-                    remaining = db.execute("SELECT COUNT(*) AS count FROM material_requests WHERE batch_id = ?", (batch_id,)).fetchone()["count"]
+                    remaining = db.execute("SELECT COUNT(*) AS count FROM material_requests WHERE batch_id = ? AND COALESCE(change_type, '') != 'removed'", (batch_id,)).fetchone()["count"]
                     if not remaining:
                         raise ValueError("Нельзя сохранить пустую заявку. Если позиции больше не нужны, удалите заявку целиком.")
                     db.execute(
@@ -4930,6 +4968,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         UPDATE material_requests
                         SET procurement_status = 'ordered', updated_at = CURRENT_TIMESTAMP
                         WHERE batch_id = ?
+                          AND COALESCE(change_type, '') != 'removed'
                         """,
                         (batch_id,),
                     )
@@ -4972,6 +5011,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         UPDATE material_requests
                         SET procurement_status = 'new', updated_at = CURRENT_TIMESTAMP
                         WHERE batch_id = ?
+                          AND COALESCE(change_type, '') != 'removed'
                         """,
                         (batch_id,),
                     )
@@ -5050,6 +5090,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         UPDATE material_requests
                         SET procurement_status = 'delivery', actual_delivery_date = ?, procurement_comment = ?, updated_at = CURRENT_TIMESTAMP
                         WHERE batch_id = ?
+                          AND COALESCE(change_type, '') != 'removed'
                         """,
                         (delivery_date, comment, batch_id),
                     )
@@ -5106,6 +5147,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             procurement_comment = ?,
                             updated_at = CURRENT_TIMESTAMP
                         WHERE batch_id = ?
+                          AND COALESCE(change_type, '') != 'removed'
                         """,
                         (delivery_date, procurement_comment, batch_id),
                     )
@@ -5175,6 +5217,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             processed_at = CURRENT_TIMESTAMP,
                             updated_at = CURRENT_TIMESTAMP
                         WHERE batch_id = ?
+                          AND COALESCE(change_type, '') != 'removed'
                         """,
                         (batch_id,),
                     )
@@ -5220,6 +5263,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     UPDATE material_requests
                     SET procurement_status = 'returned', updated_at = CURRENT_TIMESTAMP
                     WHERE batch_id = ?
+                      AND COALESCE(change_type, '') != 'removed'
                     """,
                     (batch_id,),
                 )

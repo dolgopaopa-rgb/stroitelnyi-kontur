@@ -1583,9 +1583,10 @@ function updateMaterialEstimateRow(row) {
   if (checkbox.checked) row.classList.add(materialRowTone(quantity, estimated));
 }
 
-function renderExtraMaterialRow() {
+function renderExtraMaterialRow(options = {}) {
+  const changeType = options.changeType || "";
   return `
-    <div class="row extra-material-row">
+    <div class="row extra-material-row${changeType ? ` material-change-${changeType}` : ""}" data-change-type="${escapeAttr(changeType)}">
       <label>Материал <input data-extra-material-field="material" placeholder="Например: плиточный клей" /></label>
       <label>Наименование <input data-extra-material-field="name" placeholder="Марка, размер, артикул" /></label>
       <label>Ед. изм. <input data-extra-material-field="unit" placeholder="шт, м, кг, упак." /></label>
@@ -1598,13 +1599,14 @@ function renderExtraMaterialRow() {
           <option value="main_estimate_overspend">Превышение</option>
         </select>
       </label>
+      ${changeType === "added" ? `<span class="pill success change-badge">Будет добавлено</span>` : ""}
       <button class="icon" type="button" data-remove-extra-material>×</button>
     </div>`;
 }
 
-function addExtraMaterialRow(containerSelector = "#extraMaterialRows") {
+function addExtraMaterialRow(containerSelector = "#extraMaterialRows", options = {}) {
   if (typeof containerSelector !== "string") containerSelector = "#extraMaterialRows";
-  qs(containerSelector)?.insertAdjacentHTML("beforeend", renderExtraMaterialRow());
+  qs(containerSelector)?.insertAdjacentHTML("beforeend", renderExtraMaterialRow(options));
 }
 
 function resetExtraMaterials() {
@@ -1710,7 +1712,7 @@ function buildMaterialBatches(items) {
     }
     const batch = map.get(key);
     batch.items.push(item);
-    batch.total_amount += Number(item.total_amount || 0);
+    if (!isRemovedMaterialItem(item)) batch.total_amount += Number(item.total_amount || 0);
   });
   return [...map.values()].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
 }
@@ -1746,7 +1748,46 @@ function materialReceiptAttachment(batch) {
 }
 
 function materialBatchHasDeviation(batch) {
-  return batch.items.some((item) => item.basis_type && item.basis_type !== "main_estimate");
+  return materialActiveItems(batch).some((item) => item.basis_type && item.basis_type !== "main_estimate");
+}
+
+function isRemovedMaterialItem(item) {
+  return item?.change_type === "removed" || item?.procurement_status === "removed";
+}
+
+function materialActiveItems(batch) {
+  return (batch.items || []).filter((item) => !isRemovedMaterialItem(item));
+}
+
+function materialRemovedItems(batch) {
+  return (batch.items || []).filter(isRemovedMaterialItem);
+}
+
+function materialChangeLabel(changeType) {
+  return {
+    added: "Добавлено при исправлении",
+    changed: "Изменено при исправлении",
+    removed: "Удалено при исправлении",
+  }[changeType || ""] || "";
+}
+
+function materialChangeLevel(changeType) {
+  return {
+    added: "success",
+    changed: "warning",
+    removed: "danger",
+  }[changeType || ""] || "blue";
+}
+
+function materialItemChangeClass(item) {
+  const changeType = isRemovedMaterialItem(item) ? "removed" : item?.change_type || "";
+  return changeType ? ` material-change-${changeType}` : "";
+}
+
+function materialChangePill(item) {
+  const changeType = isRemovedMaterialItem(item) ? "removed" : item?.change_type || "";
+  const text = materialChangeLabel(changeType);
+  return text ? pill(text, materialChangeLevel(changeType)) : "";
 }
 
 function materialActualTotal(item) {
@@ -1760,7 +1801,7 @@ function materialActualOverrun(item) {
 }
 
 function materialBatchBasisSummary(batch) {
-  const counts = (batch.items || []).reduce((acc, item) => {
+  const counts = materialActiveItems(batch).reduce((acc, item) => {
     const key = item.basis_type || "main_estimate";
     acc[key] = (acc[key] || 0) + 1;
     return acc;
@@ -1779,7 +1820,7 @@ function materialBatchDestination(batch) {
 }
 
 function collectMaterialActualItems(batch) {
-  return (batch.items || []).map((item) => ({
+  return materialActiveItems(batch).map((item) => ({
     id: item.id,
     actual_unit_price: qs(`[data-material-actual-unit="${item.id}"]`)?.value || "",
     actual_total_amount: qs(`[data-material-actual-total="${item.id}"]`)?.value || "",
@@ -1835,9 +1876,13 @@ function renderMaterialBatchEditSection(batch) {
         ${batch.items
           .map(
             (item) => `
-            <div class="row material-batch-edit-row" data-edit-item-id="${item.id}">
+            <div class="row material-batch-edit-row${materialItemChangeClass(item)}" data-edit-item-id="${item.id}">
               <div class="material-main">
-                <strong>${item.title}</strong>
+                <div class="stack-line">
+                  <strong>${item.title}</strong>
+                  ${materialChangePill(item)}
+                  <span class="pill danger remove-change-badge">Будет удалено</span>
+                </div>
                 <div class="muted">${item.estimate_section || "без раздела"}</div>
                 ${!item.estimate_material_id ? `<label>Наименование <input data-edit-item-title value="${escapeAttr(item.title)}" /></label>` : ""}
               </div>
@@ -1856,7 +1901,7 @@ function renderMaterialBatchEditSection(batch) {
                   : `<div>${pill(materialBasisLabel(item.basis_type), materialBasisLevel(item.basis_type))}</div>`
               }
               <label class="wide-field">Комментарий <textarea data-edit-item-comment rows="2">${item.comment || ""}</textarea></label>
-              <label class="check-line"><input data-edit-item-remove type="checkbox" /> Удалить позицию</label>
+              <label class="check-line"><input data-edit-item-remove type="checkbox" ${isRemovedMaterialItem(item) ? "checked" : ""} /> Удалить позицию</label>
             </div>`
           )
           .join("")}
@@ -3487,12 +3532,15 @@ async function renderMaterials() {
       ? items.filter((item) => Number(item.project_foreman_id) === Number(currentUserId()) || Number(item.creator_id) === Number(currentUserId()))
       : items;
   const batches = buildMaterialBatches(visibleItems);
-  const renderBatchCard = (batch) => `
+  const renderBatchCard = (batch) => {
+    const activeCount = materialActiveItems(batch).length;
+    const removedCount = materialRemovedItems(batch).length;
+    return `
       <button class="row clickable material-request-row material-batch-row" type="button" data-open-material-batch="${batch.key}">
         <div class="material-main">
           <strong>${materialBatchTitle(batch, currentRoleBase() === "procurement_manager")}</strong>
           <div class="muted">Объект: ${batch.project_title || "не указан"} · кто заказал: ${batch.creator_name || "не указано"}</div>
-          <div class="muted">Позиций: ${batch.items.length} · желаемая доставка: ${batch.needed_at || "не указана"} · сумма: ${money(batch.total_amount)}</div>
+          <div class="muted">Позиций: ${activeCount}${removedCount ? ` · удалено при исправлении: ${removedCount}` : ""} · желаемая доставка: ${batch.needed_at || "не указана"} · сумма: ${money(batch.total_amount)}</div>
           ${batch.actual_purchase_amount ? `<div class="muted">Фактическая стоимость закупки: ${money(batch.actual_purchase_amount)}</div>` : ""}
           <div class="muted">Основания: ${materialBatchBasisSummary(batch)}</div>
           <div class="muted">${materialBatchDestination(batch)}</div>
@@ -3505,6 +3553,7 @@ async function renderMaterials() {
           ${pill(label(batch.status), materialBatchLevel(batch.status))}
         </div>
       </button>`;
+  };
   if (!batches.length) {
     qs("#materialRows").innerHTML = `<p class="muted">${state.materialListMode === "archive" ? "В архиве заявок пока нет." : currentRoleBase() === "foreman" ? "По объектам этого прораба заявок пока нет. Нажмите “Добавить заявку”, чтобы заказать материалы." : "Заявок на материалы пока нет."}</p>`;
     return;
@@ -3559,6 +3608,8 @@ async function openMaterialBatchDialog(batchKey) {
   const canEdit = canEditMaterialBatch(batch);
   const canCreateVariation = canCreateVariationFromBatch(batch);
   const canReceive = canReceiveMaterialBatch(batch);
+  const activeItems = materialActiveItems(batch);
+  const removedItems = materialRemovedItems(batch);
   qs("#materialReviewContent").innerHTML = `
     <section class="workflow-panel compact-workflow">
       <div class="stack-line">
@@ -3566,7 +3617,7 @@ async function openMaterialBatchDialog(batchKey) {
         ${pill(urgencyLabel(batch.delivery_urgency), urgencyLevel(batch.delivery_urgency))}
         ${pill(label(batch.status), materialBatchLevel(batch.status))}
       </div>
-      <p class="muted">Кто заказал: ${batch.creator_name || "не указано"} · желаемая доставка: ${batch.needed_at || "не указана"} · позиций: ${batch.items.length}</p>
+      <p class="muted">Кто заказал: ${batch.creator_name || "не указано"} · желаемая доставка: ${batch.needed_at || "не указана"} · позиций: ${activeItems.length}${removedItems.length ? ` · удалено при исправлении: ${removedItems.length}` : ""}</p>
       ${batch.actual_purchase_amount ? `<p class="muted">Фактическая стоимость закупки: ${money(batch.actual_purchase_amount)} · сметная сумма заявки: ${money(batch.total_amount)}</p>` : ""}
       <p class="muted">Основания: ${materialBatchBasisSummary(batch)}</p>
       <p class="muted">${materialBatchDestination(batch)}</p>
@@ -3583,9 +3634,12 @@ async function openMaterialBatchDialog(batchKey) {
       ${batch.items
         .map(
           (item) => `
-          <div class="row estimate-material-row">
+          <div class="row estimate-material-row${materialItemChangeClass(item)}">
             <div class="material-main">
-              <strong>${item.title}</strong>
+              <div class="stack-line">
+                <strong>${item.title}</strong>
+                ${materialChangePill(item)}
+              </div>
               <div class="muted">${item.estimate_section || "без раздела"}</div>
               ${item.comment ? `<div class="muted">${item.comment}</div>` : ""}
             </div>
@@ -3628,7 +3682,7 @@ async function openMaterialBatchDialog(batchKey) {
             <h3>Доставка</h3>
             <label>Дата доставки <input id="materialBatchDeliveryDate" type="date" value="${batch.scheduled_delivery_date || batch.needed_at || ""}" /></label>
             <div class="table material-review-items">
-              ${batch.items
+              ${activeItems
                 .map(
                   (item) => `
                   <div class="row estimate-material-row">
@@ -3656,7 +3710,7 @@ async function openMaterialBatchDialog(batchKey) {
             <h3>Фактические цены закупки</h3>
             <p class="muted">Заявка уже в архиве или закрыта, но снабжение может допоставить фактические цены и суммы закупки.</p>
             <div class="table material-review-items">
-              ${batch.items
+              ${activeItems
                 .map(
                   (item) => `
                   <div class="row estimate-material-row">
@@ -5045,6 +5099,13 @@ function bindEvents() {
     true
   );
 
+  document.addEventListener("change", (event) => {
+    const removeToggle = event.target.closest?.("[data-edit-item-remove]");
+    if (removeToggle) {
+      removeToggle.closest(".material-batch-edit-row")?.classList.toggle("material-change-removed", removeToggle.checked);
+    }
+  });
+
   document.addEventListener("click", async (event) => {
     const viewTargetButton = event.target.closest("[data-view-target]");
     if (viewTargetButton) {
@@ -5167,7 +5228,7 @@ function bindEvents() {
 
     const addBatchExtraMaterial = event.target.closest("[data-add-batch-extra-material]");
     if (addBatchExtraMaterial) {
-      addExtraMaterialRow("#batchExtraMaterialRows");
+      addExtraMaterialRow("#batchExtraMaterialRows", { changeType: "added" });
       return;
     }
 

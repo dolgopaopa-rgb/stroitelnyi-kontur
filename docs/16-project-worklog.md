@@ -1351,6 +1351,32 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 - `tools/kontur_quality_agent.py`
 - `docs/16-project-worklog.md`
 
+### Материалы: подсветка изменений при исправлении заявки
+
+**Запрос.** Артём попросил, чтобы при исправлении заявки на материалы были подсвечены позиции, которые добавили или удалили.
+
+**Решение.**
+
+- В таблицу `material_requests` добавлен признак `change_type`.
+- При исправлении заявки новые дополнительные материалы сохраняются с признаком `added` и подсвечиваются зелёным.
+- Позиции, отмеченные к удалению, больше не стираются бесследно: они сохраняются как `removed`, подсвечиваются красным и видны в истории заявки.
+- Обычные изменённые строки получают признак `changed` и жёлтую подсветку.
+- Удалённые строки исключены из сумм заявки, экспорта выполненных заявок, фактических закупочных цен, допработ и уведомлений о перерасходе.
+- Версия фронтенда обновлена до `20260615-material-change-highlights`, чтобы телефоны и PWA-кэш забрали новую сборку.
+- QA-агент обновлён под новую версию кэша и прошёл проверку: `57 OK / 0 FAIL`.
+
+**Измененные файлы.**
+
+- `app/database.py`
+- `app/server.py`
+- `app/static/app.js`
+- `app/static/app.compat.js`
+- `app/static/index.html`
+- `app/static/styles.css`
+- `app/static/sw.js`
+- `tools/kontur_quality_agent.py`
+- `docs/16-project-worklog.md`
+
 ### Mobile app startup stability
 
 **Problem.** On 2026-06-14 the production server was healthy (`/health` returned 200 and containers were up), but mobile users reported that the app did not load. Caddy logs showed mobile clients aborting startup asset requests, including the large sidebar logo. Another likely contributor was stale PWA/service-worker cache after recent deploys.
