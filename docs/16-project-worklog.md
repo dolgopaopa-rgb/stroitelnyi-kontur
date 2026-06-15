@@ -1378,6 +1378,7 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 - Версия фронтенда и service worker обновлены до `20260615-project-history-max`, чтобы мобильные устройства забрали свежий интерфейс, а не старую PWA-версию из кеша.
 - Совместимый мобильный бандл `app.compat.js` пересобран через `tools/build-web-compat.ps1`.
 - QA-агент запущен локально: `57 OK, 0 WARN, 0 FAIL`. Отчёт сохранён в `docs/agent-reports/2026-06-15_08-42-57.md`.
+- После деплоя QA-агент запущен по боевому адресу `https://kontur.derevgroup.ru`: `42 OK, 0 WARN, 0 FAIL`. Отчёт сохранён в `docs/agent-reports/2026-06-15_08-46-32.md`.
 
 **Изменённые файлы.**
 
