@@ -302,6 +302,9 @@
   function canDeleteFeedback() {
     return ["owner", "construction_manager"].includes(currentRoleBase());
   }
+  function canManageFeedback() {
+    return ["owner", "construction_manager", "finance_director"].includes(currentRoleBase());
+  }
   function canManageSystemSettings() {
     return ["owner", "construction_manager", "finance_director"].includes(currentRoleBase());
   }
@@ -361,6 +364,7 @@
   var viewAccess = {
     owner: ["dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "locations", "documents", "feedback", "events"],
     construction_manager: ["dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "locations", "documents", "feedback", "events"],
+    ai_auditor: ["dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "locations", "documents", "feedback", "events"],
     finance_director: ["dashboard", "projects", "tasks", "works", "materials", "variations", "locations", "documents", "feedback", "events"],
     accountant: ["dashboard", "projects", "materials", "variations", "locations", "documents", "events"],
     sales_manager: ["dashboard", "projects", "estimates", "documents"],
@@ -441,16 +445,17 @@
     }
   }
   function canViewFinancials() {
-    return ["owner", "construction_manager", "finance_director", "accountant", "sales_manager", "estimator"].includes(currentRoleBase());
+    return ["owner", "construction_manager", "finance_director", "accountant", "sales_manager", "estimator", "ai_auditor"].includes(currentRoleBase());
   }
   function canViewExternalRefs() {
-    return ["owner", "construction_manager", "finance_director", "accountant", "sales_manager", "estimator"].includes(currentRoleBase());
+    return ["owner", "construction_manager", "finance_director", "accountant", "sales_manager", "estimator", "ai_auditor"].includes(currentRoleBase());
   }
   var documentAccess = {
     owner: null,
     construction_manager: null,
     finance_director: null,
     sales_manager: null,
+    ai_auditor: null,
     accountant: /* @__PURE__ */ new Set(["main_estimate", "smetter_materials", "smetter_work_task", "contract", "variation_estimate", "act", "ks_2", "ks_3", "other"]),
     estimator: /* @__PURE__ */ new Set(["main_estimate", "smetter_materials", "smetter_work_task", "project_documentation", "variation_estimate", "act", "ks_2", "ks_3", "other"]),
     foreman: /* @__PURE__ */ new Set(["project_documentation", "detail_node", "regulation", "standard", "instruction"]),
@@ -480,6 +485,7 @@
       owner: ["overview", "tasks", "works", "materials", "variations", "documents", "events"],
       construction_manager: ["overview", "tasks", "works", "materials", "variations", "documents", "events"],
       finance_director: ["overview", "tasks", "works", "materials", "variations", "documents", "events"],
+      ai_auditor: ["overview", "tasks", "works", "materials", "variations", "documents", "events"],
       accountant: ["overview", "materials", "variations", "documents", "events"],
       sales_manager: ["overview", "documents"],
       foreman: ["overview", "tasks", "works", "materials", "variations", "documents"],
@@ -503,7 +509,8 @@
       foreman: "Прораб",
       procurement_manager: "Снабжение",
       estimator: "Сметчик",
-      technical_supervisor: "Технадзор"
+      technical_supervisor: "Технадзор",
+      ai_auditor: "ИИ-аудитор"
     }[role] || role;
   }
   function currentRoleBase() {
@@ -3090,6 +3097,7 @@
     }).join(""), "\n    </div>");
   }
   function feedbackStatusButton(item, status, title) {
+    if (!canManageFeedback()) return "";
     const isActive = item.status === status;
     const activeLabel = {
       in_work: "В работе",
@@ -3868,6 +3876,7 @@
       }
       const feedbackStatusButton2 = event.target.closest("[data-feedback-status]");
       if (feedbackStatusButton2) {
+        if (!canManageFeedback()) return;
         const nextStatus = feedbackStatusButton2.dataset.feedbackStatus;
         const originalText = feedbackStatusButton2.textContent;
         feedbackStatusButton2.disabled = true;

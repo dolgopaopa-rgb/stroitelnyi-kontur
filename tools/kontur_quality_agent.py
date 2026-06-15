@@ -270,7 +270,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         (
             "Mobile load stability scenario",
             "Mobile startup must stay light, recover from stale PWA cache after deploys, and serve a Huawei-compatible frontend bundle.",
-            ["g2-logo-192.png", "app.compat.js?v=20260615-personal-max-docs-scroll", "controllerchange", "registration.update", "SKIP_WAITING", "stroitelnyi-kontur-20260615-personal-max-docs-scroll"],
+            ["g2-logo-192.png", "app.compat.js?v=20260615-ai-auditor-readonly", "controllerchange", "registration.update", "SKIP_WAITING", "stroitelnyi-kontur-20260615-ai-auditor-readonly"],
             "Keep the startup logo lightweight, preserve service-worker auto-update handling, and serve the compatibility bundle so phones do not stay stuck on stale cached app shells.",
         ),
         (
@@ -308,6 +308,12 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
             "Меню ограничивается по ролям менеджера и прораба.",
             ['sales_manager: ["dashboard", "projects", "estimates", "documents"]', 'foreman: ["dashboard", "tasks", "works", "materials", "variations", "locations", "documents"]', "[hidden]", "data-requires-view", "syncNavigationAccess"],
             "Проверить матрицу ролей: менеджеру и прорабу нельзя показывать лишние разделы.",
+        ),
+        (
+            "AI auditor read-only scenario",
+            "Временная учетка для внешнего ИИ-агента видит все рабочие разделы, но сервер запрещает любые изменения.",
+            ["ai_auditor", "ИИ-аудитор", "READ_ONLY_ROLES", "is_read_only_account", "Режим ИИ-аудитора: изменения запрещены", 'ai_auditor: ["dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "locations", "documents", "feedback", "events"]'],
+            "Не давать ИИ-аудитору права на POST-действия: навигация и чтение разрешены, сохранение/удаление/статусы должны получать 403.",
         ),
         (
             "Estimate job CRM scenario",

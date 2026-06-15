@@ -1506,8 +1506,15 @@ def account_user_id(account: dict | None) -> int:
         return 0
 
 
+READ_ONLY_ROLES = {"ai_auditor"}
+
+
+def is_read_only_account(account: dict | None) -> bool:
+    return account_role(account) in READ_ONLY_ROLES
+
+
 def can_manage_feedback(account: dict | None) -> bool:
-    return account_role(account) in {"owner", "construction_manager", "finance_director"}
+    return account_role(account) in {"owner", "construction_manager", "finance_director", "ai_auditor"}
 
 
 def can_delete_feedback(account: dict | None) -> bool:
@@ -1515,7 +1522,7 @@ def can_delete_feedback(account: dict | None) -> bool:
 
 
 def can_view_estimate_jobs(account: dict | None) -> bool:
-    return account_role(account) in {"owner", "construction_manager", "sales_manager", "estimator"}
+    return account_role(account) in {"owner", "construction_manager", "sales_manager", "estimator", "ai_auditor"}
 
 
 def can_manage_estimate_jobs(account: dict | None) -> bool:
@@ -1600,18 +1607,18 @@ def can_manage_estimate_job_files(row, account: dict | None) -> bool:
 
 
 def can_view_variations(account: dict | None) -> bool:
-    return account_role(account) in {"owner", "construction_manager", "finance_director", "accountant", "sales_manager", "estimator", "foreman"}
+    return account_role(account) in {"owner", "construction_manager", "finance_director", "accountant", "sales_manager", "estimator", "foreman", "ai_auditor"}
 
 
 def can_view_knowledge_base(account: dict | None) -> bool:
-    return account_role(account) in {"owner", "construction_manager", "finance_director", "accountant", "sales_manager", "foreman", "procurement_manager", "estimator", "technical_supervisor"}
+    return account_role(account) in {"owner", "construction_manager", "finance_director", "accountant", "sales_manager", "foreman", "procurement_manager", "estimator", "technical_supervisor", "ai_auditor"}
 
 
 def variation_visible_for_account(variation: dict, account: dict | None) -> bool:
     role = account_role(account)
     if role == "foreman":
         return int(variation.get("project_foreman_id") or 0) == account_user_id(account)
-    return role in {"owner", "construction_manager", "finance_director", "accountant", "sales_manager", "estimator"}
+    return role in {"owner", "construction_manager", "finance_director", "accountant", "sales_manager", "estimator", "ai_auditor"}
 
 
 def sanitize_variation_for_account(variation: dict, account: dict | None) -> dict:
@@ -1629,7 +1636,7 @@ def project_visible_for_account(project: dict, account: dict | None) -> bool:
     role = account_role(account)
     if role == "foreman":
         return int(project.get("foreman_id") or 0) == account_user_id(account)
-    return role in {"owner", "construction_manager", "finance_director", "accountant", "sales_manager", "procurement_manager", "estimator", "technical_supervisor"}
+    return role in {"owner", "construction_manager", "finance_director", "accountant", "sales_manager", "procurement_manager", "estimator", "technical_supervisor", "ai_auditor"}
 
 
 DOCUMENT_TYPES_BY_ROLE = {
@@ -1646,7 +1653,7 @@ def document_visible_for_account(document: dict, account: dict | None) -> bool:
     if related_type == "knowledge_base":
         return can_view_knowledge_base(account)
     role = account_role(account)
-    if role in {"owner", "construction_manager", "finance_director", "sales_manager"}:
+    if role in {"owner", "construction_manager", "finance_director", "sales_manager", "ai_auditor"}:
         return True
     allowed = DOCUMENT_TYPES_BY_ROLE.get(role, set())
     return str(document.get("type") or "other") in allowed
@@ -1657,7 +1664,7 @@ def filter_documents_for_account(documents: list[dict], account: dict | None) ->
 
 
 def can_view_financials(account: dict | None) -> bool:
-    return account_role(account) in {"owner", "construction_manager", "finance_director", "accountant", "sales_manager", "estimator"}
+    return account_role(account) in {"owner", "construction_manager", "finance_director", "accountant", "sales_manager", "estimator", "ai_auditor"}
 
 
 def sanitize_project_for_account(project: dict, account: dict | None) -> dict:
@@ -1668,7 +1675,7 @@ def sanitize_project_for_account(project: dict, account: dict | None) -> dict:
                 project[key] = 0
         project["contracts"] = []
         project["variations"] = []
-    if role not in {"owner", "construction_manager", "finance_director", "accountant", "sales_manager", "estimator"}:
+    if role not in {"owner", "construction_manager", "finance_director", "accountant", "sales_manager", "estimator", "ai_auditor"}:
         project["bitrix_ref"] = ""
         project["smetter_ref"] = ""
     return project
@@ -2446,6 +2453,9 @@ class AppHandler(BaseHTTPRequestHandler):
         if not is_authorized(self):
             api_auth_required_response(self)
             return
+        if is_read_only_account(current_access_account(self)):
+            json_response(self, {"error": "Режим ИИ-аудитора: изменения запрещены."}, 403)
+            return
         try:
             self.handle_api_post(parsed.path, read_json(self))
         except PermissionError as exc:
@@ -2770,7 +2780,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
             if path == "/api/notifications":
                 notification_filter = ""
                 params: list[object] = []
-                if account_role(account) not in {"owner", "construction_manager", "finance_director"}:
+                if account_role(account) not in {"owner", "construction_manager", "finance_director", "ai_auditor"}:
                     notification_filter = "WHERE n.role = ? OR n.user_id = ?"
                     params = [account_role(account), account_user_id(account)]
                 rows = db.execute(
@@ -3140,10 +3150,10 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 "/api/events": "SELECT e.*, p.title AS project_title, u.name AS author_name FROM events e JOIN projects p ON p.id = e.project_id LEFT JOIN users u ON u.id = e.author_id ORDER BY e.created_at DESC",
             }
             if path in endpoints:
-                if path == "/api/contracts" and account_role(account) not in {"owner", "construction_manager", "finance_director", "accountant"}:
+                if path == "/api/contracts" and account_role(account) not in {"owner", "construction_manager", "finance_director", "accountant", "ai_auditor"}:
                     json_response(self, [])
                     return
-                if path == "/api/events" and account_role(account) not in {"owner", "construction_manager", "finance_director", "accountant"}:
+                if path == "/api/events" and account_role(account) not in {"owner", "construction_manager", "finance_director", "accountant", "ai_auditor"}:
                     json_response(self, [])
                     return
                 if path == "/api/variations" and not can_view_variations(account):
@@ -3172,7 +3182,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             or int(row.get("reviewer_id") or 0) == user_id
                             or int(row.get("creator_id") or 0) == user_id
                         ]
-                    elif role not in {"owner", "construction_manager", "finance_director", "technical_supervisor"}:
+                    elif role not in {"owner", "construction_manager", "finance_director", "technical_supervisor", "ai_auditor"}:
                         rows = []
                     rows = attach_task_events(db, rows)
                 json_response(self, rows)
