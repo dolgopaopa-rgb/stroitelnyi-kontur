@@ -668,6 +668,18 @@
     const text = String(value || "").trim();
     return Boolean(text) && /^[?\s.,:;!()[\]-]+$/.test(text);
   }
+  function isMostlyQuestionMarks(value) {
+    const text = String(value || "").trim();
+    if (!text) return false;
+    const questionCount = (text.match(/\?/g) || []).length;
+    const readableCount = (text.match(/[0-9A-Za-zА-Яа-яЁё]/g) || []).length;
+    return questionCount >= 8 && questionCount >= Math.max(8, readableCount * 2);
+  }
+  function feedbackDecisionComment(value) {
+    const text = String(value || "").trim();
+    if (!text || isBrokenText(text) || isMostlyQuestionMarks(text)) return "";
+    return text;
+  }
   function documentTitle(doc) {
     const title = String(doc.title || "").trim();
     if (title && !isBrokenText(title)) return title;
@@ -3047,7 +3059,8 @@
     const filtered = state.feedbackFilter === "all" ? items : items.filter((item) => item.status === state.feedbackFilter);
     rowsNode.innerHTML = filtered.length ? filtered.map((item) => {
       const attachments = Array.isArray(item.attachments) ? item.attachments : [];
-      return '\n          <article class="row feedback-row">\n            <div class="feedback-main">\n              <div class="feedback-head">\n                <label class="feedback-select" aria-label="Выбрать сообщение">\n                  <input type="checkbox" data-feedback-check="'.concat(item.id, '" ').concat(state.selectedFeedbackIds.has(Number(item.id)) ? "checked" : "", ' />\n                </label>\n                <div class="feedback-title">\n                  <strong>').concat(escapeHtml(item.sender_name || item.sender_id || "MAX"), "</strong>\n                  ").concat(pill(feedbackStatusLabel(item.status), feedbackStatusLevel(item.status)), '\n                </div>\n              </div>\n              <div class="muted">').concat(escapeHtml(item.chat_title || item.chat_id || "Чат MAX"), " · ").concat(formatDateRu(item.created_at), "</div>\n              <p>").concat(escapeHtml(item.text || "Без текста").replace(/\n/g, "<br>"), "</p>\n              ").concat(renderFeedbackAttachments(attachments), "\n              ").concat(item.decision_comment ? '<div class="muted">Комментарий: '.concat(escapeHtml(item.decision_comment), "</div>") : "", '\n            </div>\n            <div class="feedback-actions">\n              ').concat(feedbackStatusButton(item, "in_work", "В работу"), "\n              ").concat(feedbackStatusButton(item, "done", "Готово"), "\n              ").concat(canDeleteFeedback() ? '<button class="danger-button tiny" type="button" data-feedback-delete="'.concat(item.id, '">Удалить</button>') : "", "\n            </div>\n          </article>");
+      const decisionComment = feedbackDecisionComment(item.decision_comment);
+      return '\n          <article class="row feedback-row">\n            <div class="feedback-main">\n              <div class="feedback-head">\n                <label class="feedback-select" aria-label="Выбрать сообщение">\n                  <input type="checkbox" data-feedback-check="'.concat(item.id, '" ').concat(state.selectedFeedbackIds.has(Number(item.id)) ? "checked" : "", ' />\n                </label>\n                <div class="feedback-title">\n                  <strong>').concat(escapeHtml(item.sender_name || item.sender_id || "MAX"), "</strong>\n                  ").concat(pill(feedbackStatusLabel(item.status), feedbackStatusLevel(item.status)), '\n                </div>\n              </div>\n              <div class="muted">').concat(escapeHtml(item.chat_title || item.chat_id || "Чат MAX"), " · ").concat(formatDateRu(item.created_at), "</div>\n              <p>").concat(escapeHtml(item.text || "Без текста").replace(/\n/g, "<br>"), "</p>\n              ").concat(renderFeedbackAttachments(attachments), "\n              ").concat(decisionComment ? '<div class="muted">Комментарий: '.concat(escapeHtml(decisionComment), "</div>") : "", '\n            </div>\n            <div class="feedback-actions">\n              ').concat(feedbackStatusButton(item, "in_work", "В работу"), "\n              ").concat(feedbackStatusButton(item, "done", "Готово"), "\n              ").concat(canDeleteFeedback() ? '<button class="danger-button tiny" type="button" data-feedback-delete="'.concat(item.id, '">Удалить</button>') : "", "\n            </div>\n          </article>");
     }).join("") : '<p class="muted">Сообщений из MAX пока нет.</p>';
     updateFeedbackRefreshUi(false, feedbackRefreshMessage(items.length));
   }

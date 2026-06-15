@@ -743,6 +743,20 @@ function isBrokenText(value) {
   return Boolean(text) && /^[?\s.,:;!()[\]-]+$/.test(text);
 }
 
+function isMostlyQuestionMarks(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  const questionCount = (text.match(/\?/g) || []).length;
+  const readableCount = (text.match(/[0-9A-Za-zА-Яа-яЁё]/g) || []).length;
+  return questionCount >= 8 && questionCount >= Math.max(8, readableCount * 2);
+}
+
+function feedbackDecisionComment(value) {
+  const text = String(value || "").trim();
+  if (!text || isBrokenText(text) || isMostlyQuestionMarks(text)) return "";
+  return text;
+}
+
 function documentTitle(doc) {
   const title = String(doc.title || "").trim();
   if (title && !isBrokenText(title)) return title;
@@ -4368,6 +4382,7 @@ async function renderFeedback(options = {}) {
     ? filtered
         .map((item) => {
           const attachments = Array.isArray(item.attachments) ? item.attachments : [];
+          const decisionComment = feedbackDecisionComment(item.decision_comment);
           return `
           <article class="row feedback-row">
             <div class="feedback-main">
@@ -4383,7 +4398,7 @@ async function renderFeedback(options = {}) {
               <div class="muted">${escapeHtml(item.chat_title || item.chat_id || "Чат MAX")} · ${formatDateRu(item.created_at)}</div>
               <p>${escapeHtml(item.text || "Без текста").replace(/\n/g, "<br>")}</p>
               ${renderFeedbackAttachments(attachments)}
-              ${item.decision_comment ? `<div class="muted">Комментарий: ${escapeHtml(item.decision_comment)}</div>` : ""}
+              ${decisionComment ? `<div class="muted">Комментарий: ${escapeHtml(decisionComment)}</div>` : ""}
             </div>
             <div class="feedback-actions">
               ${feedbackStatusButton(item, "in_work", "В работу")}

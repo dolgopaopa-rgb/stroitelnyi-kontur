@@ -270,7 +270,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         (
             "Mobile load stability scenario",
             "Mobile startup must stay light, recover from stale PWA cache after deploys, and serve a Huawei-compatible frontend bundle.",
-            ["g2-logo-192.png", "app.compat.js?v=20260614-yandex-routes", "controllerchange", "registration.update", "SKIP_WAITING", "stroitelnyi-kontur-20260614-yandex-routes"],
+            ["g2-logo-192.png", "app.compat.js?v=20260615-feedback-encoding", "controllerchange", "registration.update", "SKIP_WAITING", "stroitelnyi-kontur-20260615-feedback-encoding"],
             "Keep the startup logo lightweight, preserve service-worker auto-update handling, and serve the compatibility bundle so phones do not stay stuck on stale cached app shells.",
         ),
         (
@@ -392,6 +392,12 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
             "Сообщения бота в MAX отправляются в безопасной для кириллицы кодировке, а ручные обновления проходят через base64.",
             ["def max_message_payload", "ensure_ascii=True", '.encode("ascii")', "def max_message_text_is_corrupted", "MAX message text looks corrupted", "message_base64", "base64.b64decode"],
             "Не отправлять русские сообщения в MAX через Windows/SSH-пайпы. Для ручных обновлений использовать app/send_max_message.py с base64.",
+        ),
+        (
+            "Feedback corrupted comment guard scenario",
+            "Обратная связь не показывает и не сохраняет служебные комментарии, которые превратились в набор вопросительных знаков.",
+            ["clean_feedback_decision_comment", "max_message_text_is_corrupted(text)", "feedbackDecisionComment", "isMostlyQuestionMarks", "decision_comment"],
+            "Если комментарий к обратной связи выглядит как битая кодировка, очищать его на сервере и дополнительно не выводить во фронтенде.",
         ),
         (
             "Knowledge base construction manager scenario",

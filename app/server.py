@@ -1180,6 +1180,13 @@ def max_message_text_is_corrupted(text: str) -> bool:
     return not has_cyrillic and ("?????" in compact or (question_count >= 12 and question_count / max(len(value), 1) > 0.12))
 
 
+def clean_feedback_decision_comment(value: object) -> str:
+    text = str(value or "").strip()
+    if not text or max_message_text_is_corrupted(text):
+        return ""
+    return text
+
+
 def max_message_payload(text: str) -> bytes:
     payload = json.dumps(
         {"text": str(text or ""), "format": "markdown", "notify": True},
@@ -2767,6 +2774,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         item["attachments"] = json.loads(item.get("attachments_json") or "[]")
                     except json.JSONDecodeError:
                         item["attachments"] = []
+                    item["decision_comment"] = clean_feedback_decision_comment(item.get("decision_comment"))
                     item.pop("attachments_json", None)
                 json_response(self, items)
                 return
@@ -3284,7 +3292,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     SET status = ?, decision_comment = ?, updated_at = CURRENT_TIMESTAMP
                     WHERE id = ?
                     """,
-                    (status, str(data.get("comment") or ""), int(feedback_action.group(1))),
+                    (status, clean_feedback_decision_comment(data.get("comment")), int(feedback_action.group(1))),
                 )
                 json_response(self, {"ok": True})
                 return
