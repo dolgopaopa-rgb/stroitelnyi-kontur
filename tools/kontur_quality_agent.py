@@ -129,6 +129,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
     server_text = repository_file("app/server.py")
     max_cli_text = repository_file("app/send_max_message.py")
     database_text = repository_file("app/database.py")
+    ai_audit_token_tool_text = repository_file("tools/create_ai_audit_token.py")
 
     if not html or not app_text:
         add(
@@ -270,7 +271,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         (
             "Mobile load stability scenario",
             "Mobile startup must stay light, recover from stale PWA cache after deploys, and serve a Huawei-compatible frontend bundle.",
-            ["g2-logo-192.png", "app.compat.js?v=20260615-ai-auditor-readonly", "controllerchange", "registration.update", "SKIP_WAITING", "stroitelnyi-kontur-20260615-ai-auditor-readonly"],
+            ["g2-logo-192.png", "app.compat.js?v=20260615-ai-audit-token-snapshot", "controllerchange", "registration.update", "SKIP_WAITING", "stroitelnyi-kontur-20260615-ai-audit-token-snapshot"],
             "Keep the startup logo lightweight, preserve service-worker auto-update handling, and serve the compatibility bundle so phones do not stay stuck on stale cached app shells.",
         ),
         (
@@ -312,8 +313,14 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         (
             "AI auditor read-only scenario",
             "Временная учетка для внешнего ИИ-агента видит все рабочие разделы, но сервер запрещает любые изменения.",
-            ["ai_auditor", "ИИ-аудитор", "READ_ONLY_ROLES", "is_read_only_account", "Режим ИИ-аудитора: изменения запрещены", 'ai_auditor: ["dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "locations", "documents", "feedback", "events"]'],
+            ["ai_auditor", "ИИ-аудитор", "READ_ONLY_ROLES", "is_read_only_account", "Режим ИИ-аудитора: изменения запрещены", "def do_PUT", "def do_PATCH", "def do_DELETE", 'ai_auditor: ["dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "locations", "documents", "feedback", "events"]'],
             "Не давать ИИ-аудитору права на POST-действия: навигация и чтение разрешены, сохранение/удаление/статусы должны получать 403.",
+        ),
+        (
+            "AI audit token routes scenario",
+            "Внешний UX-аудит открывается по временной ссылке с хэшированным токеном и отдельной snapshot-страницей.",
+            ["CREATE TABLE IF NOT EXISTS audit_tokens", "token_hash", "max_uses", "unlimited_until_expiry", "validate_audit_token", "/ai-audit-login/", "/ai-audit-snapshot/", "session_cookie_header(self, account, force_secure=True)", "audit_error=invalid", "create_ai_audit_token.py"],
+            "Не хранить сырой токен, не логировать его в ответах и не отдавать аудитору персональные данные или скачивание файлов.",
         ),
         (
             "Estimate job CRM scenario",
@@ -465,6 +472,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         server_text,
         max_cli_text,
         database_text,
+        ai_audit_token_tool_text,
     ])
     for name, details, needles, recommendation in scenario_contracts:
         ok = has_all(combined_text, needles)

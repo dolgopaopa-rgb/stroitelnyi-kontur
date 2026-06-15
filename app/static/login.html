@@ -322,6 +322,11 @@
         status.className = "status info";
       }
 
+      if (params.get("audit_error")) {
+        status.textContent = "Ссылка аудита недействительна или истекла. Запросите новую ссылку.";
+        status.className = "status error";
+      }
+
       passwordToggle.addEventListener("click", () => {
         const isHidden = passwordInput.type === "password";
         passwordInput.type = isHidden ? "text" : "password";

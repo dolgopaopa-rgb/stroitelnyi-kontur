@@ -472,11 +472,11 @@ async function installAndroidApp() {
 }
 
 function canViewFinancials() {
-  return ["owner", "construction_manager", "finance_director", "accountant", "sales_manager", "estimator", "ai_auditor"].includes(currentRoleBase());
+  return ["owner", "construction_manager", "finance_director", "accountant", "sales_manager", "estimator"].includes(currentRoleBase());
 }
 
 function canViewExternalRefs() {
-  return ["owner", "construction_manager", "finance_director", "accountant", "sales_manager", "estimator", "ai_auditor"].includes(currentRoleBase());
+  return ["owner", "construction_manager", "finance_director", "accountant", "sales_manager", "estimator"].includes(currentRoleBase());
 }
 
 const documentAccess = {
@@ -484,7 +484,7 @@ const documentAccess = {
   construction_manager: null,
   finance_director: null,
   sales_manager: null,
-  ai_auditor: null,
+  ai_auditor: new Set(["smetter_materials", "smetter_work_task", "project_documentation", "detail_node", "regulation", "standard", "instruction", "other"]),
   accountant: new Set(["main_estimate", "smetter_materials", "smetter_work_task", "contract", "variation_estimate", "act", "ks_2", "ks_3", "other"]),
   estimator: new Set(["main_estimate", "smetter_materials", "smetter_work_task", "project_documentation", "variation_estimate", "act", "ks_2", "ks_3", "other"]),
   foreman: new Set(["project_documentation", "detail_node", "regulation", "standard", "instruction"]),
@@ -2991,6 +2991,9 @@ async function renderProjectDetail(projectId) {
 
 function renderProjectEditPanel(project) {
   if (!canEditProject()) {
+    if (currentRoleBase() === "ai_auditor") {
+      return `<section class="workflow-panel subtle"><p class="muted">Режим аудита: изменения запрещены. Можно просматривать структуру карточки, вкладки и обезличенные данные.</p></section>`;
+    }
     return `<section class="workflow-panel subtle"><p class="muted">Текущая роль: ${roleLabel(state.currentRole)}. Редактирование карточки доступно ген.директору, менеджеру и руководителю строительства.</p></section>`;
   }
   return `

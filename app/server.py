@@ -4,6 +4,7 @@ import base64
 import csv
 import hashlib
 import hmac
+import html
 import io
 import json
 import mimetypes
@@ -18,7 +19,7 @@ from datetime import date, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.parse import parse_qs, quote, urlencode, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse
 from urllib.request import Request, urlopen
 
 from database import DATA_DIR, connect, init_db, row_to_dict, rows_to_dicts
@@ -45,6 +46,18 @@ def json_response(handler: BaseHTTPRequestHandler, payload: object, status: int 
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
     handler.wfile.write(body)
+
+
+def html_response(handler: BaseHTTPRequestHandler, body: str, status: int = 200) -> None:
+    raw = body.encode("utf-8")
+    handler.send_response(status)
+    handler.send_header("Content-Type", "text/html; charset=utf-8")
+    handler.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+    handler.send_header("Pragma", "no-cache")
+    maybe_send_session_cookie(handler)
+    handler.send_header("Content-Length", str(len(raw)))
+    handler.end_headers()
+    handler.wfile.write(raw)
 
 
 def redirect_response(handler: BaseHTTPRequestHandler, location: str, status: int = 303, cookie: str | None = None) -> None:
@@ -176,7 +189,7 @@ def session_cookie_secure(handler: BaseHTTPRequestHandler) -> bool:
     return forwarded_proto.lower() == "https"
 
 
-def session_cookie_header(handler: BaseHTTPRequestHandler, account: dict) -> str:
+def session_cookie_header(handler: BaseHTTPRequestHandler, account: dict, *, force_secure: bool = False) -> str:
     max_age = max(SESSION_TTL_SECONDS, 3600)
     payload = {
         "login": str(account.get("login") or ""),
@@ -187,7 +200,7 @@ def session_cookie_header(handler: BaseHTTPRequestHandler, account: dict) -> str
     }
     payload_b64 = b64url_encode(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
     cookie = f"{SESSION_COOKIE_NAME}={payload_b64}.{session_signature(payload_b64)}; Path=/; Max-Age={max_age}; HttpOnly; SameSite=Lax"
-    if session_cookie_secure(handler):
+    if force_secure or session_cookie_secure(handler):
         cookie += "; Secure"
     return cookie
 
@@ -1507,10 +1520,215 @@ def account_user_id(account: dict | None) -> int:
 
 
 READ_ONLY_ROLES = {"ai_auditor"}
+AI_AUDIT_LOGIN = os.environ.get("APP_AI_AUDIT_LOGIN", "ai_auditor_8c8c15").strip() or "ai_auditor_8c8c15"
+AUDIT_SAFE_DOCUMENT_TYPES = {"smetter_materials", "smetter_work_task", "project_documentation", "detail_node", "regulation", "standard", "instruction", "other"}
+SENSITIVE_DOCUMENT_TYPES = {"contract", "main_estimate", "variation_estimate", "act", "ks_2", "ks_3"}
+EMAIL_RE = re.compile(r"[\w.\-+]+@[\w.\-]+\.[A-Za-zА-Яа-я]{2,}")
+PHONE_RE = re.compile(r"(?:(?:\+?7|8)[\s\-()]*)?\d{3}[\s\-()]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2}")
+LONG_NUMBER_RE = re.compile(r"\b\d{12,24}\b")
 
 
 def is_read_only_account(account: dict | None) -> bool:
     return account_role(account) in READ_ONLY_ROLES
+
+
+def is_ai_auditor_account(account: dict | None) -> bool:
+    return account_role(account) == "ai_auditor"
+
+
+def audit_token_hash(token: str) -> str:
+    return hashlib.sha256(str(token or "").encode("utf-8")).hexdigest()
+
+
+def audit_project_title(value: object) -> str:
+    try:
+        return f"Объект #{int(value or 0)}"
+    except (TypeError, ValueError):
+        return "Объект"
+
+
+def audit_customer_name(value: object) -> str:
+    try:
+        return f"Клиент #{int(value or 0)}"
+    except (TypeError, ValueError):
+        return "Клиент"
+
+
+def redact_sensitive_text(value: object) -> str:
+    text = str(value or "")
+    if not text:
+        return ""
+    text = EMAIL_RE.sub("[email скрыт]", text)
+    text = PHONE_RE.sub("[телефон скрыт]", text)
+    text = LONG_NUMBER_RE.sub("[номер скрыт]", text)
+    return text
+
+
+def sanitize_user_for_audit(user: dict) -> dict:
+    safe = dict(user)
+    safe["email"] = ""
+    safe["max_user_id"] = ""
+    safe["max_chat_id"] = ""
+    safe["max_notifications_enabled"] = 0
+    return safe
+
+
+def sanitize_users_for_account(users: list[dict], account: dict | None) -> list[dict]:
+    if not is_ai_auditor_account(account):
+        return users
+    return [sanitize_user_for_audit(user) for user in users]
+
+
+def sanitize_task_row_for_audit(task: dict) -> dict:
+    safe = dict(task)
+    safe["project_title"] = audit_project_title(safe.get("project_id"))
+    safe["description"] = redact_sensitive_text(safe.get("description"))
+    safe["rejection_comment"] = redact_sensitive_text(safe.get("rejection_comment"))
+    safe["contract_title"] = ""
+    safe["contract_type"] = ""
+    for event in safe.get("events") or []:
+        event["comment"] = redact_sensitive_text(event.get("comment"))
+    return safe
+
+
+def sanitize_tasks_for_account(tasks: list[dict], account: dict | None) -> list[dict]:
+    if not is_ai_auditor_account(account):
+        return tasks
+    return [sanitize_task_row_for_audit(task) for task in tasks]
+
+
+def sanitize_material_row_for_audit(row: dict) -> dict:
+    safe = dict(row)
+    safe["project_title"] = audit_project_title(safe.get("project_id"))
+    safe["comment"] = redact_sensitive_text(safe.get("comment"))
+    safe["batch_comment"] = redact_sensitive_text(safe.get("batch_comment"))
+    safe["batch_revision_comment"] = redact_sensitive_text(safe.get("batch_revision_comment"))
+    safe["batch_foreman_response"] = redact_sensitive_text(safe.get("batch_foreman_response"))
+    safe["batch_procurement_comment"] = redact_sensitive_text(safe.get("batch_procurement_comment"))
+    safe["batch_receipt_comment"] = redact_sensitive_text(safe.get("batch_receipt_comment"))
+    for key in ("total_amount", "actual_unit_price", "actual_total_amount", "batch_actual_purchase_amount", "unit_price"):
+        if key in safe:
+            safe[key] = 0
+    return safe
+
+
+def sanitize_material_rows_for_account(rows: list[dict], account: dict | None) -> list[dict]:
+    if not is_ai_auditor_account(account):
+        return rows
+    return [sanitize_material_row_for_audit(row) for row in rows]
+
+
+def sanitize_feedback_items_for_account(items: list[dict], account: dict | None) -> list[dict]:
+    if not is_ai_auditor_account(account):
+        return items
+    safe_items = []
+    for item in items:
+        safe = dict(item)
+        safe["chat_id"] = ""
+        safe["chat_title"] = "Чат обратной связи"
+        safe["sender_id"] = ""
+        safe["sender_name"] = "Участник"
+        safe["text"] = redact_sensitive_text(safe.get("text"))
+        safe["decision_comment"] = redact_sensitive_text(safe.get("decision_comment"))
+        safe["attachments"] = []
+        safe.pop("attachments_json", None)
+        safe_items.append(safe)
+    return safe_items
+
+
+def sanitize_notifications_for_account(items: list[dict], account: dict | None) -> list[dict]:
+    if not is_ai_auditor_account(account):
+        return items
+    safe_items = []
+    for item in items:
+        safe = dict(item)
+        safe["project_title"] = audit_project_title(safe.get("project_id"))
+        safe["title"] = redact_sensitive_text(safe.get("title"))
+        safe["text"] = redact_sensitive_text(safe.get("text"))
+        safe["max_error"] = ""
+        safe_items.append(safe)
+    return safe_items
+
+
+def sanitize_documents_for_account(documents: list[dict], account: dict | None) -> list[dict]:
+    if not is_ai_auditor_account(account):
+        return documents
+    safe_docs = []
+    for document in documents:
+        if str(document.get("type") or "other") in SENSITIVE_DOCUMENT_TYPES:
+            continue
+        safe = dict(document)
+        safe["title"] = redact_sensitive_text(safe.get("title"))
+        safe["file_name"] = redact_sensitive_text(safe.get("file_name"))
+        safe["file_path"] = ""
+        safe_docs.append(safe)
+    return safe_docs
+
+
+def sanitize_estimate_jobs_for_account(jobs: list[dict], account: dict | None) -> list[dict]:
+    if not is_ai_auditor_account(account):
+        return jobs
+    safe_jobs = []
+    for job in jobs:
+        safe = dict(job)
+        safe["project_title"] = audit_project_title(safe.get("project_id"))
+        safe["customer_name"] = audit_customer_name(safe.get("id"))
+        safe["smetter_url"] = ""
+        safe["estimator_email"] = ""
+        for key in ("comment", "result_comment", "return_comment", "question_comment", "site_costs_comment"):
+            safe[key] = redact_sensitive_text(safe.get(key))
+        safe["files"] = []
+        safe_jobs.append(safe)
+    return safe_jobs
+
+
+def validate_audit_token(db, raw_token: str, *, consume: bool = False) -> dict | None:
+    token = str(raw_token or "").strip()
+    if len(token) < 24 or len(token) > 256:
+        return None
+    row = db.execute(
+        """
+        SELECT t.*, u.id AS user_id, u.name AS user_name, u.role AS user_role
+        FROM audit_tokens t
+        JOIN users u ON u.id = t.user_id
+        WHERE t.token_hash = ?
+          AND t.role = 'ai_auditor'
+          AND u.role = 'ai_auditor'
+          AND u.is_active = 1
+          AND t.revoked_at IS NULL
+          AND (t.expires_at IS NULL OR datetime(t.expires_at) > datetime('now'))
+          AND (
+                t.unlimited_until_expiry = 1
+                OR (t.max_uses IS NOT NULL AND COALESCE(t.used_count, 0) < t.max_uses)
+          )
+        LIMIT 1
+        """,
+        (audit_token_hash(token),),
+    ).fetchone()
+    if not row:
+        return None
+    payload = row_to_dict(row)
+    if consume:
+        db.execute(
+            """
+            UPDATE audit_tokens
+            SET used_at = CURRENT_TIMESTAMP,
+                used_count = COALESCE(used_count, 0) + 1
+            WHERE id = ?
+            """,
+            (int(payload["id"]),),
+        )
+        db.commit()
+    return payload
+
+
+def audit_account_from_token_row(row: dict) -> dict:
+    return {
+        "login": AI_AUDIT_LOGIN,
+        "user_id": int(row.get("user_id") or 0),
+        "role": "ai_auditor",
+        "can_switch_role": False,
+    }
 
 
 def can_manage_feedback(account: dict | None) -> bool:
@@ -1629,6 +1847,11 @@ def sanitize_variation_for_account(variation: dict, account: dict | None) -> dic
     for item in variation.get("materials") or []:
         item["total_amount"] = 0
         item["unit_price"] = 0
+        item["comment"] = redact_sensitive_text(item.get("comment"))
+    if is_ai_auditor_account(account):
+        variation["project_title"] = audit_project_title(variation.get("project_id"))
+        variation["description"] = redact_sensitive_text(variation.get("description"))
+        variation["attachments"] = sanitize_documents_for_account(variation.get("attachments") or [], account)
     return variation
 
 
@@ -1645,6 +1868,7 @@ DOCUMENT_TYPES_BY_ROLE = {
     "technical_supervisor": {"smetter_materials", "smetter_work_task", "project_documentation", "variation_attachment", "detail_node", "regulation", "standard", "instruction", "other"},
     "estimator": {"main_estimate", "smetter_materials", "smetter_work_task", "project_documentation", "variation_attachment", "variation_estimate", "act", "ks_2", "ks_3", "other"},
     "accountant": {"main_estimate", "smetter_materials", "smetter_work_task", "contract", "variation_attachment", "variation_estimate", "act", "ks_2", "ks_3", "other"},
+    "ai_auditor": AUDIT_SAFE_DOCUMENT_TYPES,
 }
 
 
@@ -1653,18 +1877,18 @@ def document_visible_for_account(document: dict, account: dict | None) -> bool:
     if related_type == "knowledge_base":
         return can_view_knowledge_base(account)
     role = account_role(account)
-    if role in {"owner", "construction_manager", "finance_director", "sales_manager", "ai_auditor"}:
+    if role in {"owner", "construction_manager", "finance_director", "sales_manager"}:
         return True
     allowed = DOCUMENT_TYPES_BY_ROLE.get(role, set())
     return str(document.get("type") or "other") in allowed
 
 
 def filter_documents_for_account(documents: list[dict], account: dict | None) -> list[dict]:
-    return [document for document in documents if document_visible_for_account(document, account)]
+    return sanitize_documents_for_account([document for document in documents if document_visible_for_account(document, account)], account)
 
 
 def can_view_financials(account: dict | None) -> bool:
-    return account_role(account) in {"owner", "construction_manager", "finance_director", "accountant", "sales_manager", "estimator", "ai_auditor"}
+    return account_role(account) in {"owner", "construction_manager", "finance_director", "accountant", "sales_manager", "estimator"}
 
 
 def sanitize_project_for_account(project: dict, account: dict | None) -> dict:
@@ -1678,6 +1902,32 @@ def sanitize_project_for_account(project: dict, account: dict | None) -> dict:
     if role not in {"owner", "construction_manager", "finance_director", "accountant", "sales_manager", "estimator", "ai_auditor"}:
         project["bitrix_ref"] = ""
         project["smetter_ref"] = ""
+    if role == "ai_auditor":
+        project["title"] = audit_project_title(project.get("id"))
+        project["customer_name"] = audit_customer_name(project.get("customer_id") or project.get("id"))
+        project["customer_phone"] = ""
+        project["customer_email"] = ""
+        project["customer_id"] = None
+        project["customer_projects_count"] = 0
+        project["address"] = "Адрес скрыт в режиме аудита"
+        project["navigator_url"] = ""
+        project["bitrix_ref"] = ""
+        project["smetter_ref"] = ""
+        project["manager_note"] = ""
+        project["workflow_comment"] = redact_sensitive_text(project.get("workflow_comment"))
+        project["archive_reason"] = ""
+        project["contracts"] = []
+        project["tasks"] = sanitize_tasks_for_account(project.get("tasks") or [], account)
+        project["materials"] = sanitize_material_rows_for_account(project.get("materials") or [], account)
+        project["documents"] = sanitize_documents_for_account(project.get("documents") or [], account)
+        for key in ("events", "notifications"):
+            rows = []
+            for row in project.get(key) or []:
+                safe_row = dict(row)
+                safe_row["text"] = redact_sensitive_text(safe_row.get("text"))
+                safe_row["project_title"] = audit_project_title(safe_row.get("project_id"))
+                rows.append(safe_row)
+            project[key] = rows
     return project
 
 
@@ -2388,6 +2638,14 @@ class AppHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
 
+        audit_login = re.match(r"^/ai-audit-login/([^/]+)$", path)
+        if audit_login:
+            self.handle_ai_audit_login(unquote(audit_login.group(1)))
+            return
+        audit_snapshot = re.match(r"^/ai-audit-snapshot/([^/]+)$", path)
+        if audit_snapshot:
+            self.handle_ai_audit_snapshot(unquote(audit_snapshot.group(1)))
+            return
         if path == "/logout":
             logout_response(self)
             return
@@ -2447,6 +2705,9 @@ class AppHandler(BaseHTTPRequestHandler):
             except Exception:
                 json_response(self, {"error": "Не удалось прочитать данные входа"}, 400)
             return
+        if is_authorized(self) and is_read_only_account(current_access_account(self)):
+            json_response(self, {"error": "Режим ИИ-аудитора: изменения запрещены."}, 403)
+            return
         if not parsed.path.startswith("/api/"):
             self.send_error(404)
             return
@@ -2462,6 +2723,24 @@ class AppHandler(BaseHTTPRequestHandler):
             json_response(self, {"error": str(exc)}, 403)
         except Exception as exc:
             json_response(self, {"error": str(exc)}, 400)
+
+    def reject_mutating_method(self) -> None:
+        if not is_authorized(self):
+            api_auth_required_response(self)
+            return
+        if is_read_only_account(current_access_account(self)):
+            json_response(self, {"error": "Режим ИИ-аудитора: изменения запрещены."}, 403)
+            return
+        self.send_error(405)
+
+    def do_PUT(self) -> None:
+        self.reject_mutating_method()
+
+    def do_PATCH(self) -> None:
+        self.reject_mutating_method()
+
+    def do_DELETE(self) -> None:
+        self.reject_mutating_method()
 
     def log_message(self, format: str, *args: object) -> None:
         return
@@ -2511,8 +2790,205 @@ class AppHandler(BaseHTTPRequestHandler):
         self._issue_session_cookie = True
         json_response(self, {"ok": True, "redirect": safe_next_path(str(data.get("next") or "/"))})
 
+    def audit_invalid_redirect(self) -> None:
+        redirect_response(self, "/login?audit_error=invalid", cookie=expired_session_cookie(self))
+
+    def handle_ai_audit_login(self, raw_token: str) -> None:
+        with connect() as db:
+            token_row = validate_audit_token(db, raw_token, consume=True)
+        if not token_row:
+            self.audit_invalid_redirect()
+            return
+        account = audit_account_from_token_row(token_row)
+        self._access_account_checked = True
+        self._access_account = account
+        self._issue_session_cookie = False
+        redirect_response(self, "/", cookie=session_cookie_header(self, account, force_secure=True))
+
+    def handle_ai_audit_snapshot(self, raw_token: str) -> None:
+        with connect() as db:
+            token_row = validate_audit_token(db, raw_token, consume=False)
+            if not token_row:
+                self.audit_invalid_redirect()
+                return
+            account = audit_account_from_token_row(token_row)
+            project_rows = rows_to_dicts(
+                db.execute(
+                    """
+                    SELECT p.*, foreman.name AS foreman_name, estimator.name AS estimator_name,
+                           procurement.name AS procurement_name, tech.name AS tech_supervisor_name,
+                           customer.phone AS customer_phone, customer.email AS customer_email
+                    FROM projects p
+                    LEFT JOIN customers customer ON customer.id = p.customer_id
+                    LEFT JOIN users foreman ON foreman.id = p.foreman_id
+                    LEFT JOIN users estimator ON estimator.id = p.estimator_id
+                    LEFT JOIN users procurement ON procurement.id = p.procurement_manager_id
+                    LEFT JOIN users tech ON tech.id = p.tech_supervisor_id
+                    WHERE p.status != 'archived'
+                      AND COALESCE(p.bitrix_ref, '') != '__knowledge_base__'
+                    ORDER BY p.updated_at DESC
+                    LIMIT 3
+                    """
+                ).fetchall()
+            )
+            project_rows = [sanitize_project_for_account(row, account) for row in project_rows]
+            task_rows = rows_to_dicts(
+                db.execute(
+                    """
+                    SELECT t.*, p.title AS project_title, assignee.name AS assignee_name,
+                           creator.name AS creator_name, reviewer.name AS reviewer_name
+                    FROM tasks t
+                    JOIN projects p ON p.id = t.project_id
+                    LEFT JOIN users assignee ON assignee.id = t.assignee_id
+                    LEFT JOIN users creator ON creator.id = t.creator_id
+                    LEFT JOIN users reviewer ON reviewer.id = t.reviewer_id
+                    WHERE p.status != 'archived'
+                    ORDER BY t.created_at DESC
+                    LIMIT 4
+                    """
+                ).fetchall()
+            )
+            task_rows = sanitize_tasks_for_account(task_rows, account)
+            material_rows = rows_to_dicts(
+                db.execute(
+                    """
+                    SELECT m.*, p.title AS project_title, b.status AS batch_status, b.delivery_urgency AS batch_delivery_urgency
+                    FROM material_requests m
+                    JOIN projects p ON p.id = m.project_id
+                    LEFT JOIN material_request_batches b ON b.id = m.batch_id
+                    ORDER BY COALESCE(b.created_at, m.created_at) DESC
+                    LIMIT 4
+                    """
+                ).fetchall()
+            )
+            material_rows = sanitize_material_rows_for_account(material_rows, account)
+            document_rows = sanitize_documents_for_account(
+                rows_to_dicts(
+                    db.execute(
+                        """
+                        SELECT d.*, p.title AS project_title
+                        FROM documents d
+                        LEFT JOIN projects p ON p.id = d.project_id
+                        WHERE COALESCE(d.related_type, 'project') != 'knowledge_base'
+                        ORDER BY d.created_at DESC
+                        LIMIT 4
+                        """
+                    ).fetchall()
+                ),
+                account,
+            )
+            feedback_rows = sanitize_feedback_items_for_account(
+                rows_to_dicts(
+                    db.execute(
+                        """
+                        SELECT *
+                        FROM feedback_items
+                        ORDER BY created_at DESC, id DESC
+                        LIMIT 3
+                        """
+                    ).fetchall()
+                ),
+                account,
+            )
+            user_rows = sanitize_users_for_account(rows_to_dicts(db.execute("SELECT * FROM users WHERE is_active = 1 ORDER BY id LIMIT 6").fetchall()), account)
+
+        def e(value: object) -> str:
+            return html.escape(str(value or ""), quote=True)
+
+        def chips(items: list[str]) -> str:
+            return "".join(f'<span class="chip">{e(item)}</span>' for item in items)
+
+        def rows(items: list[dict], fields: list[str], empty: str = "Примеров пока нет") -> str:
+            if not items:
+                return f'<p class="muted">{e(empty)}</p>'
+            rendered = []
+            for item in items:
+                values = [e(item.get(field)) for field in fields if item.get(field) not in (None, "")]
+                rendered.append(f'<div class="sample-row">{" · ".join(values) or e(empty)}</div>')
+            return "".join(rendered)
+
+        def block(title: str, actions: list[str], visible: list[str], body: str, mobile: bool = False) -> str:
+            device_class = " phone-frame" if mobile else ""
+            return f"""
+            <section class="snapshot-block{device_class}">
+              <header>
+                <h2>{e(title)}</h2>
+                <div class="chips">{chips(visible)}</div>
+              </header>
+              <div class="snapshot-render">{body}</div>
+              <footer>
+                <strong>Основные действия:</strong>
+                <div class="chips actions">{chips(actions)}</div>
+              </footer>
+            </section>
+            """
+
+        project_body = rows(project_rows, ["title", "status", "foreman_name"])
+        task_body = rows(task_rows, ["title", "project_title", "status", "due_date"])
+        material_body = rows(material_rows, ["title", "project_title", "basis_type", "procurement_status"])
+        document_body = rows(document_rows, ["title", "type", "status"])
+        feedback_body = rows(feedback_rows, ["sender_name", "text", "status"])
+        settings_body = rows(user_rows, ["name", "role"])
+        html_body = f"""<!doctype html>
+        <html lang="ru">
+        <head>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <meta name="robots" content="noindex" />
+          <title>AI UX-аудит - Строительный контур</title>
+          <style>
+            :root {{ --bg:#f4f6f8; --surface:#fff; --line:#d8e0e4; --text:#142127; --muted:#66737c; --brand:#226f68; --soft:#eef5f3; }}
+            * {{ box-sizing:border-box; }}
+            body {{ margin:0; background:var(--bg); color:var(--text); font-family:Segoe UI, Arial, sans-serif; }}
+            main {{ width:min(1180px, 100%); margin:0 auto; padding:24px; }}
+            h1 {{ margin:0 0 8px; font-size:28px; }}
+            .lead {{ color:var(--muted); margin:0 0 22px; max-width:820px; line-height:1.45; }}
+            .grid {{ display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:14px; }}
+            .snapshot-block {{ background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:16px; min-height:240px; }}
+            .snapshot-block header {{ display:grid; gap:8px; border-bottom:1px solid var(--line); padding-bottom:12px; margin-bottom:12px; }}
+            h2 {{ margin:0; font-size:18px; }}
+            .chips {{ display:flex; flex-wrap:wrap; gap:6px; }}
+            .chip {{ display:inline-flex; align-items:center; min-height:24px; padding:3px 8px; border-radius:999px; background:var(--soft); color:#15544e; font-size:12px; }}
+            .actions .chip {{ background:#f7f1df; color:#70510d; }}
+            .snapshot-render {{ display:grid; gap:8px; min-height:96px; }}
+            .sample-row {{ border:1px solid var(--line); border-radius:7px; padding:10px; background:#fbfcfc; line-height:1.35; }}
+            footer {{ margin-top:14px; display:grid; gap:8px; }}
+            .muted {{ color:var(--muted); }}
+            .phone-frame {{ max-width:360px; justify-self:center; border-color:#172026; box-shadow:0 10px 28px rgba(20,33,39,.16); }}
+            .banner {{ background:#132126; color:white; border-radius:8px; padding:14px 16px; margin-bottom:16px; }}
+            @media (max-width: 820px) {{ .grid {{ grid-template-columns:1fr; }} main {{ padding:14px; }} }}
+          </style>
+        </head>
+        <body>
+          <main>
+            <div class="banner">Режим UX-аудита: данные обезличены, скачивание файлов и любые изменения запрещены.</div>
+            <h1>Строительный контур - snapshot для UX-аудита</h1>
+            <p class="lead">Эта страница показывает основные экраны приложения в статичном виде. Примеры данных обезличены: телефоны, e-mail, адреса, договоры, файлы и финансовые суммы скрыты.</p>
+            <div class="grid">
+              {block("1. Главная", ["Открыть объекты", "Открыть задачи", "Посмотреть уведомления"], ["Рабочий стол", "Сигналы", "Задачи"], project_body)}
+              {block("2. Список объектов", ["Выбрать объект", "Открыть карточку", "Перейти к задачам"], ["Объекты", "Статусы", "Прораб"], project_body)}
+              {block("3. Карточка объекта", ["Переключать вкладки", "Смотреть документы", "Смотреть историю"], ["Обзор", "Работы", "Материалы", "История"], project_body)}
+              {block("4. Задачи", ["Развернуть задачу", "Посмотреть комментарии", "Открыть детали"], ["Статусы", "Ответственные", "Сроки"], task_body)}
+              {block("5. Материалы / заявки", ["Открыть заявку", "Посмотреть статус", "Посмотреть основание"], ["Заявки", "Снабжение", "Материалы"], material_body)}
+              {block("6. Фотоотчёты", ["Открыть карточку вложения", "Посмотреть тип файла"], ["Документы", "Фото", "История"], document_body)}
+              {block("7. Замечания", ["Фильтровать", "Открыть сообщение", "Смотреть статус"], ["Обратная связь", "MAX", "Статусы"], feedback_body)}
+              {block("8. Документы", ["Открыть папку", "Посмотреть список", "Проверить группировку"], ["База знаний", "Папки", "Файлы"], document_body)}
+              {block("9. Отчёты", ["Смотреть реестры", "Оценить навигацию"], ["Сметы", "Материалы", "Допработы"], material_body)}
+              {block("10. Настройки", ["Оценить структуру ролей", "Смотреть список участников"], ["Роли", "Уведомления", "MAX"], settings_body)}
+              {block("11. Мобильный вид главной", ["Прокрутить", "Потянуть для обновления", "Открыть нижнее меню"], ["Мобильная навигация", "Карточки", "Сигналы"], project_body, mobile=True)}
+              {block("12. Мобильный вид карточки объекта", ["Развернуть раздел", "Свернуть раздел", "Перейти к задачам"], ["Обзор", "Вкладки", "Документы"], project_body, mobile=True)}
+              {block("13. Мобильный вид задачи", ["Развернуть задачу", "Свернуть задачу", "Посмотреть комментарии"], ["Задачи", "Комментарии", "Статусы"], task_body, mobile=True)}
+            </div>
+          </main>
+        </body>
+        </html>"""
+        html_response(self, html_body)
+
     def serve_document_download(self, document_id: int) -> None:
         with connect() as db:
+            if is_ai_auditor_account(current_access_account(self)):
+                self.send_error(403)
+                return
             document = db.execute("SELECT * FROM documents WHERE id = ?", (document_id,)).fetchone()
             if not document or not document["file_path"]:
                 self.send_error(404)
@@ -2543,6 +3019,9 @@ class AppHandler(BaseHTTPRequestHandler):
 
     def serve_estimate_job_file_download(self, file_id: int) -> None:
         with connect() as db:
+            if is_ai_auditor_account(current_access_account(self)):
+                self.send_error(403)
+                return
             if not can_view_estimate_jobs(current_access_account(self)):
                 self.send_error(403)
                 return
@@ -2572,6 +3051,9 @@ class AppHandler(BaseHTTPRequestHandler):
             stream_local_file(self, file_path, file_name, content_type)
 
     def serve_material_requests_export(self, query: dict[str, list[str]]) -> None:
+        if is_ai_auditor_account(current_access_account(self)):
+            self.send_error(403)
+            return
         project_id = int(query.get("project_id", ["0"])[0] or 0)
         with connect() as db:
             archive_completed_material_batches(db)
@@ -2718,6 +3200,9 @@ class AppHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def serve_work_items_print(self, query: dict[str, list[str]]) -> None:
+        if is_ai_auditor_account(current_access_account(self)):
+            self.send_error(403)
+            return
         project_id = int(query.get("project_id", ["0"])[0] or 0)
         with connect() as db:
             project = db.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
@@ -2760,6 +3245,9 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 user = None
                 if account.get("user_id"):
                     user = db.execute("SELECT id, name, role, email FROM users WHERE id = ?", (account["user_id"],)).fetchone()
+                user_payload = row_to_dict(user) if user else None
+                if user_payload and is_ai_auditor_account(account):
+                    user_payload = sanitize_user_for_audit(user_payload)
                 json_response(
                     self,
                     {
@@ -2767,14 +3255,14 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         "role": account.get("role") or (user["role"] if user else "owner"),
                         "user_id": account.get("user_id") or (user["id"] if user else 1),
                         "can_switch_role": bool(account.get("can_switch_role")),
-                        "user": row_to_dict(user) if user else None,
+                        "user": user_payload,
                     },
                 )
                 return
 
             if path == "/api/users":
                 rows = db.execute("SELECT * FROM users WHERE is_active = 1 ORDER BY id").fetchall()
-                json_response(self, rows_to_dicts(rows))
+                json_response(self, sanitize_users_for_account(rows_to_dicts(rows), account))
                 return
 
             if path == "/api/notifications":
@@ -2795,7 +3283,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     """,
                     params,
                 ).fetchall()
-                json_response(self, rows_to_dicts(rows))
+                json_response(self, sanitize_notifications_for_account(rows_to_dicts(rows), account))
                 return
 
             if path == "/api/feedback":
@@ -2826,6 +3314,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         item["attachments"] = []
                     item["decision_comment"] = clean_feedback_decision_comment(item.get("decision_comment"))
                     item.pop("attachments_json", None)
+                items = sanitize_feedback_items_for_account(items, account)
                 json_response(self, items)
                 return
 
@@ -2898,6 +3387,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         files_by_job.setdefault(int(file_item["estimate_job_id"]), []).append(file_item)
                     for job in jobs:
                         job["files"] = files_by_job.get(int(job["id"]), [])
+                jobs = sanitize_estimate_jobs_for_account(jobs, account)
                 json_response(self, jobs)
                 return
 
@@ -2968,7 +3458,12 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     """,
                     (int(project_id),),
                 ).fetchall()
-                json_response(self, rows_to_dicts(rows))
+                estimate_material_rows = rows_to_dicts(rows)
+                if is_ai_auditor_account(account):
+                    for row in estimate_material_rows:
+                        row["unit_price"] = 0
+                        row["total_price"] = 0
+                json_response(self, estimate_material_rows)
                 return
 
             if path == "/api/work-items":
@@ -2984,7 +3479,12 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     "SELECT * FROM work_items WHERE project_id = ? ORDER BY section, title",
                     (int(project_id),),
                 ).fetchall()
-                json_response(self, rows_to_dicts(rows))
+                work_rows = rows_to_dicts(rows)
+                if is_ai_auditor_account(account):
+                    for row in work_rows:
+                        row["unit_price"] = 0
+                        row["total_price"] = 0
+                json_response(self, work_rows)
                 return
 
             if path == "/api/work-extra-items":
@@ -3027,6 +3527,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 ).fetchall()
                 project_rows = rows_to_dicts(projects)
                 project_rows = [project for project in project_rows if project_visible_for_account(project, account)]
+                project_rows = [sanitize_project_for_account(project, account) for project in project_rows]
                 json_response(self, {"projects": project_rows, "suppliers": rows_to_dicts(suppliers)})
                 return
 
@@ -3088,6 +3589,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         if int(item.get("project_foreman_id") or 0) == account_user_id(account)
                         or int(item.get("creator_id") or 0) == account_user_id(account)
                     ]
+                material_rows = sanitize_material_rows_for_account(material_rows, account)
                 json_response(self, material_rows)
                 return
 
@@ -3150,6 +3652,9 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 "/api/events": "SELECT e.*, p.title AS project_title, u.name AS author_name FROM events e JOIN projects p ON p.id = e.project_id LEFT JOIN users u ON u.id = e.author_id ORDER BY e.created_at DESC",
             }
             if path in endpoints:
+                if path == "/api/contracts" and is_ai_auditor_account(account):
+                    json_response(self, [])
+                    return
                 if path == "/api/contracts" and account_role(account) not in {"owner", "construction_manager", "finance_director", "accountant", "ai_auditor"}:
                     json_response(self, [])
                     return
@@ -3185,6 +3690,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     elif role not in {"owner", "construction_manager", "finance_director", "technical_supervisor", "ai_auditor"}:
                         rows = []
                     rows = attach_task_events(db, rows)
+                    rows = sanitize_tasks_for_account(rows, account)
                 json_response(self, rows)
                 return
 
@@ -3230,6 +3736,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     documents = filter_documents_for_account(documents, account)
                 else:
                     documents = attach_knowledge_folder_paths(db, documents)
+                    documents = sanitize_documents_for_account(documents, account)
                 json_response(self, documents)
                 return
 

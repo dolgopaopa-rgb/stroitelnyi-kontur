@@ -445,17 +445,17 @@
     }
   }
   function canViewFinancials() {
-    return ["owner", "construction_manager", "finance_director", "accountant", "sales_manager", "estimator", "ai_auditor"].includes(currentRoleBase());
+    return ["owner", "construction_manager", "finance_director", "accountant", "sales_manager", "estimator"].includes(currentRoleBase());
   }
   function canViewExternalRefs() {
-    return ["owner", "construction_manager", "finance_director", "accountant", "sales_manager", "estimator", "ai_auditor"].includes(currentRoleBase());
+    return ["owner", "construction_manager", "finance_director", "accountant", "sales_manager", "estimator"].includes(currentRoleBase());
   }
   var documentAccess = {
     owner: null,
     construction_manager: null,
     finance_director: null,
     sales_manager: null,
-    ai_auditor: null,
+    ai_auditor: /* @__PURE__ */ new Set(["smetter_materials", "smetter_work_task", "project_documentation", "detail_node", "regulation", "standard", "instruction", "other"]),
     accountant: /* @__PURE__ */ new Set(["main_estimate", "smetter_materials", "smetter_work_task", "contract", "variation_estimate", "act", "ks_2", "ks_3", "other"]),
     estimator: /* @__PURE__ */ new Set(["main_estimate", "smetter_materials", "smetter_work_task", "project_documentation", "variation_estimate", "act", "ks_2", "ks_3", "other"]),
     foreman: /* @__PURE__ */ new Set(["project_documentation", "detail_node", "regulation", "standard", "instruction"]),
@@ -2255,6 +2255,9 @@
   }
   function renderProjectEditPanel(project) {
     if (!canEditProject()) {
+      if (currentRoleBase() === "ai_auditor") {
+        return '<section class="workflow-panel subtle"><p class="muted">Режим аудита: изменения запрещены. Можно просматривать структуру карточки, вкладки и обезличенные данные.</p></section>';
+      }
       return '<section class="workflow-panel subtle"><p class="muted">Текущая роль: '.concat(roleLabel(state.currentRole), ". Редактирование карточки доступно ген.директору, менеджеру и руководителю строительства.</p></section>");
     }
     return '\n    <section class="workflow-panel compact-workflow">\n      <div class="stack-line">\n        <h3>Карточка объекта</h3>\n        '.concat(pill("Доступ: ".concat(roleLabel(state.currentRole)), "success"), '\n      </div>\n      <div class="form-actions">\n        <span class="muted">Основные данные и файлы меняются в отдельном окне.</span>\n        <button class="secondary" data-edit-project="').concat(project.id, '">Редактировать</button>\n      </div>\n    </section>');

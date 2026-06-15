@@ -415,6 +415,21 @@ def init_db() -> None:
                 UNIQUE(source, external_id)
             );
 
+            CREATE TABLE IF NOT EXISTS audit_tokens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                token_hash TEXT NOT NULL UNIQUE,
+                user_id INTEGER NOT NULL,
+                role TEXT NOT NULL DEFAULT 'ai_auditor',
+                expires_at TEXT,
+                revoked_at TEXT,
+                used_at TEXT,
+                max_uses INTEGER,
+                used_count INTEGER NOT NULL DEFAULT 0,
+                unlimited_until_expiry INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            );
+
             CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
             CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
             CREATE INDEX IF NOT EXISTS idx_task_events_task ON task_events(task_id, created_at);
@@ -435,6 +450,8 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read);
             CREATE INDEX IF NOT EXISTS idx_notifications_role ON notifications(role, is_read);
             CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback_items(status, created_at);
+            CREATE INDEX IF NOT EXISTS idx_audit_tokens_hash ON audit_tokens(token_hash);
+            CREATE INDEX IF NOT EXISTS idx_audit_tokens_expires ON audit_tokens(expires_at);
             """
         )
         ensure_column(db, "material_requests", "batch_id", "INTEGER")
@@ -513,6 +530,9 @@ def init_db() -> None:
         ensure_column(db, "variations", "requester_id", "INTEGER")
         ensure_column(db, "variations", "approver_id", "INTEGER")
         ensure_column(db, "variations", "decided_at", "TEXT")
+        ensure_column(db, "audit_tokens", "used_count", "INTEGER NOT NULL DEFAULT 0")
+        ensure_column(db, "audit_tokens", "unlimited_until_expiry", "INTEGER NOT NULL DEFAULT 0")
+        ensure_column(db, "audit_tokens", "role", "TEXT NOT NULL DEFAULT 'ai_auditor'")
         db.execute("CREATE INDEX IF NOT EXISTS idx_materials_batch ON material_requests(batch_id)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_material_batches_project ON material_request_batches(project_id)")
         seed(db)
@@ -618,6 +638,7 @@ def ensure_core_users(db: sqlite3.Connection) -> None:
         ("Технадзор", "technical_supervisor", "technadzor@example.local"),
         ("Фин.директор", "finance_director", "finance@example.local"),
         ("Бухгалтер", "accountant", "accountant@example.local"),
+        ("ИИ-аудитор", "ai_auditor", "ai-auditor@example.local"),
     ]
     for name, role, email in required_users:
         exists = db.execute("SELECT id FROM users WHERE role = ? LIMIT 1", (role,)).fetchone()
