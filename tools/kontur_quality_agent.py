@@ -271,7 +271,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         (
             "Mobile load stability scenario",
             "Mobile startup must stay light, recover from stale PWA cache after deploys, and serve a Huawei-compatible frontend bundle.",
-            ["g2-logo-192.png", "app.compat.js?v=20260615-ai-audit-token-snapshot", "controllerchange", "registration.update", "SKIP_WAITING", "stroitelnyi-kontur-20260615-ai-audit-token-snapshot"],
+            ["g2-logo-192.png", "app.compat.js?v=20260615-ux-today-status", "controllerchange", "registration.update", "SKIP_WAITING", "stroitelnyi-kontur-20260615-ux-today-status"],
             "Keep the startup logo lightweight, preserve service-worker auto-update handling, and serve the compatibility bundle so phones do not stay stuck on stale cached app shells.",
         ),
         (
@@ -307,13 +307,13 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         (
             "Navigation access scenario",
             "Меню ограничивается по ролям менеджера и прораба.",
-            ['sales_manager: ["dashboard", "projects", "estimates", "documents"]', 'foreman: ["dashboard", "tasks", "works", "materials", "variations", "locations", "documents"]', "[hidden]", "data-requires-view", "syncNavigationAccess"],
+            ['sales_manager: ["today", "dashboard", "projects", "estimates", "documents"]', 'foreman: ["today", "dashboard", "tasks", "works", "materials", "variations", "object_remarks", "photos", "locations", "documents"]', "[hidden]", "data-requires-view", "syncNavigationAccess"],
             "Проверить матрицу ролей: менеджеру и прорабу нельзя показывать лишние разделы.",
         ),
         (
             "AI auditor read-only scenario",
             "Временная учетка для внешнего ИИ-агента видит все рабочие разделы, но сервер запрещает любые изменения.",
-            ["ai_auditor", "ИИ-аудитор", "READ_ONLY_ROLES", "is_read_only_account", "Режим ИИ-аудитора: изменения запрещены", "def do_PUT", "def do_PATCH", "def do_DELETE", 'ai_auditor: ["dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "locations", "documents", "feedback", "events"]'],
+            ["ai_auditor", "ИИ-аудитор", "READ_ONLY_ROLES", "is_read_only_account", "Режим аудита: изменения запрещены", "def do_PUT", "def do_PATCH", "def do_DELETE", 'ai_auditor: ["today", "dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "object_remarks", "photos", "locations", "documents", "feedback", "events"]'],
             "Не давать ИИ-аудитору права на POST-действия: навигация и чтение разрешены, сохранение/удаление/статусы должны получать 403.",
         ),
         (
@@ -325,7 +325,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         (
             "Estimate job CRM scenario",
             "Менеджер, сметчик, гендиректор и руководитель строительства видят отдельный реестр сметных заданий со сроками и статусами.",
-            ["CREATE TABLE IF NOT EXISTS estimate_jobs", "CREATE TABLE IF NOT EXISTS estimate_job_files", "can_view_estimate_jobs", 'data-view="estimates"', "renderEstimateJobs", "/api/estimate-jobs", 'name="attachments" type="file" multiple', "serve_estimate_job_file_download", 'estimator: ["dashboard", "projects", "estimates"', "estimateJobSchedule", "estimate-partner@example.local", "managerControlsPartnerEstimateJob", "site_costs_policy", "site_costs_comment", "estimateSiteCostsLabel", "defaultSiteCostsPolicyForEstimateType", "syncEstimateSiteCostsByType", "estimateSiteCostsHint"],
+            ["CREATE TABLE IF NOT EXISTS estimate_jobs", "CREATE TABLE IF NOT EXISTS estimate_job_files", "can_view_estimate_jobs", 'data-view="estimates"', "renderEstimateJobs", "/api/estimate-jobs", 'name="attachments" type="file" multiple', "serve_estimate_job_file_download", 'estimator: ["today", "dashboard", "projects", "estimates"', "estimateJobSchedule", "estimate-partner@example.local", "managerControlsPartnerEstimateJob", "site_costs_policy", "site_costs_comment", "estimateSiteCostsLabel", "defaultSiteCostsPolicyForEstimateType", "syncEstimateSiteCostsByType", "estimateSiteCostsHint"],
             "Не держать сметы в голове и чатах: у задания должны быть дата получения, срок, сметчик, менеджер и статус.",
         ),
         (

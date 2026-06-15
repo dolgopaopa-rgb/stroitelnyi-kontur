@@ -108,6 +108,7 @@ def init_db() -> None:
                 due_date TEXT,
                 status TEXT NOT NULL DEFAULT 'new',
                 priority TEXT NOT NULL DEFAULT 'normal',
+                task_type TEXT NOT NULL DEFAULT 'task',
                 related_type TEXT,
                 description TEXT,
                 completed_at TEXT,
@@ -135,6 +136,53 @@ def init_db() -> None:
                 FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
                 FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
                 FOREIGN KEY (actor_id) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS object_remarks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER NOT NULL,
+                zone TEXT,
+                description TEXT NOT NULL,
+                responsible_id INTEGER,
+                due_date TEXT,
+                status TEXT NOT NULL DEFAULT 'new',
+                photo_before_document_id INTEGER,
+                photo_after_document_id INTEGER,
+                checked_by_id INTEGER,
+                created_by INTEGER,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+                FOREIGN KEY (responsible_id) REFERENCES users(id),
+                FOREIGN KEY (checked_by_id) REFERENCES users(id),
+                FOREIGN KEY (created_by) REFERENCES users(id),
+                FOREIGN KEY (photo_before_document_id) REFERENCES documents(id),
+                FOREIGN KEY (photo_after_document_id) REFERENCES documents(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS photo_reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER NOT NULL,
+                report_date TEXT NOT NULL,
+                author_id INTEGER,
+                stage TEXT,
+                zones TEXT,
+                comment TEXT,
+                related_task_ids TEXT,
+                status TEXT NOT NULL DEFAULT 'review',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+                FOREIGN KEY (author_id) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS photo_report_documents (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                photo_report_id INTEGER NOT NULL,
+                document_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (photo_report_id) REFERENCES photo_reports(id) ON DELETE CASCADE,
+                FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
             );
 
             CREATE TABLE IF NOT EXISTS material_requests (
@@ -434,6 +482,8 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
             CREATE INDEX IF NOT EXISTS idx_task_events_task ON task_events(task_id, created_at);
             CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(due_date);
+            CREATE INDEX IF NOT EXISTS idx_object_remarks_project ON object_remarks(project_id, status);
+            CREATE INDEX IF NOT EXISTS idx_photo_reports_project ON photo_reports(project_id, report_date);
             CREATE INDEX IF NOT EXISTS idx_materials_project ON material_requests(project_id);
             CREATE INDEX IF NOT EXISTS idx_estimate_materials_project ON estimate_materials(project_id);
             CREATE INDEX IF NOT EXISTS idx_estimate_jobs_status ON estimate_jobs(status, due_date);
@@ -497,6 +547,7 @@ def init_db() -> None:
         ensure_column(db, "estimate_job_files", "replacement_note", "TEXT")
         ensure_column(db, "tasks", "start_date", "TEXT")
         ensure_column(db, "tasks", "contract_id", "INTEGER")
+        ensure_column(db, "tasks", "task_type", "TEXT NOT NULL DEFAULT 'task'")
         ensure_column(db, "work_extra_items", "estimate_section", "TEXT")
         ensure_column(db, "documents", "file_name", "TEXT")
         ensure_column(db, "documents", "file_path", "TEXT")

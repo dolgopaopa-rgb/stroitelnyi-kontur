@@ -1832,6 +1832,10 @@ def can_view_knowledge_base(account: dict | None) -> bool:
     return account_role(account) in {"owner", "construction_manager", "finance_director", "accountant", "sales_manager", "foreman", "procurement_manager", "estimator", "technical_supervisor", "ai_auditor"}
 
 
+def can_manage_object_workflow(account: dict | None) -> bool:
+    return account_role(account) in {"owner", "construction_manager", "foreman", "technical_supervisor"}
+
+
 def variation_visible_for_account(variation: dict, account: dict | None) -> bool:
     role = account_role(account)
     if role == "foreman":
@@ -2404,6 +2408,153 @@ def save_task_event_attachments(db, *, project_id: int, event_id: int, attachmen
     return document_ids
 
 
+def save_process_attachments(
+    db,
+    *,
+    project_id: int,
+    attachments: list[dict],
+    related_type: str,
+    doc_type: str,
+    process_type: str,
+    owner_id: int | None = None,
+) -> list[int]:
+    document_ids: list[int] = []
+    for attachment in attachments or []:
+        if not isinstance(attachment, dict) or not attachment.get("file_base64"):
+            continue
+        payload = dict(attachment)
+        payload["process_type"] = process_type
+        document_id = save_document_file(
+            db,
+            project_id,
+            payload,
+            payload.get("title") or payload.get("file_name") or "Вложение",
+            doc_type,
+            related_type,
+            owner_id=owner_id,
+        )
+        if document_id:
+            document_ids.append(document_id)
+    return document_ids
+
+
+def photo_reports_payload(db, account: dict | None, project_id: int | None = None) -> list[dict]:
+    params: list[object] = []
+    where = "WHERE p.status != 'archived'"
+    if project_id:
+        where += " AND r.project_id = ?"
+        params.append(project_id)
+    rows = rows_to_dicts(
+        db.execute(
+            f"""
+            SELECT r.*, p.title AS project_title, p.foreman_id, p.foreman_id AS project_foreman_id,
+                   author.name AS author_name, author.role AS author_role
+            FROM photo_reports r
+            JOIN projects p ON p.id = r.project_id
+            LEFT JOIN users author ON author.id = r.author_id
+            {where}
+            ORDER BY r.report_date DESC, r.created_at DESC, r.id DESC
+            """,
+            params,
+        ).fetchall()
+    )
+    rows = [row for row in rows if project_visible_for_account(row, account)]
+    if not rows:
+        return []
+    ids = [int(row["id"]) for row in rows]
+    placeholders = ",".join("?" for _ in ids)
+    document_rows = rows_to_dicts(
+        db.execute(
+            f"""
+            SELECT prd.photo_report_id, d.*
+            FROM photo_report_documents prd
+            JOIN documents d ON d.id = prd.document_id
+            WHERE prd.photo_report_id IN ({placeholders})
+            ORDER BY d.created_at, d.id
+            """,
+            ids,
+        ).fetchall()
+    )
+    docs_by_report: dict[int, list[dict]] = {}
+    for doc in document_rows:
+        docs_by_report.setdefault(int(doc["photo_report_id"]), []).append(doc)
+    for row in rows:
+        row["attachments"] = filter_documents_for_account(docs_by_report.get(int(row["id"]), []), account)
+    return rows
+
+
+def object_remarks_payload(db, account: dict | None, project_id: int | None = None) -> list[dict]:
+    params: list[object] = []
+    where = "WHERE p.status != 'archived'"
+    if project_id:
+        where += " AND r.project_id = ?"
+        params.append(project_id)
+    rows = rows_to_dicts(
+        db.execute(
+            f"""
+            SELECT r.*, p.title AS project_title, p.foreman_id, p.foreman_id AS project_foreman_id,
+                   responsible.name AS responsible_name,
+                   checker.name AS checked_by_name,
+                   creator.name AS created_by_name,
+                   before_doc.title AS photo_before_title,
+                   before_doc.file_name AS photo_before_file_name,
+                   before_doc.mime_type AS photo_before_mime_type,
+                   after_doc.title AS photo_after_title,
+                   after_doc.file_name AS photo_after_file_name,
+                   after_doc.mime_type AS photo_after_mime_type
+            FROM object_remarks r
+            JOIN projects p ON p.id = r.project_id
+            LEFT JOIN users responsible ON responsible.id = r.responsible_id
+            LEFT JOIN users checker ON checker.id = r.checked_by_id
+            LEFT JOIN users creator ON creator.id = r.created_by
+            LEFT JOIN documents before_doc ON before_doc.id = r.photo_before_document_id
+            LEFT JOIN documents after_doc ON after_doc.id = r.photo_after_document_id
+            {where}
+            ORDER BY
+                CASE r.status
+                    WHEN 'returned' THEN 1
+                    WHEN 'new' THEN 2
+                    WHEN 'in_progress_task' THEN 3
+                    WHEN 'completed_pending_acceptance' THEN 4
+                    WHEN 'accepted' THEN 5
+                    ELSE 6
+                END,
+                r.due_date,
+                r.created_at DESC
+            """,
+            params,
+        ).fetchall()
+    )
+    visible_rows = []
+    for row in rows:
+        if not project_visible_for_account(row, account):
+            continue
+        before_id = row.get("photo_before_document_id")
+        after_id = row.get("photo_after_document_id")
+        row["photo_before"] = (
+            {
+                "id": before_id,
+                "title": row.get("photo_before_title"),
+                "file_name": row.get("photo_before_file_name"),
+                "mime_type": row.get("photo_before_mime_type"),
+            }
+            if before_id
+            else None
+        )
+        row["photo_after"] = (
+            {
+                "id": after_id,
+                "title": row.get("photo_after_title"),
+                "file_name": row.get("photo_after_file_name"),
+                "mime_type": row.get("photo_after_mime_type"),
+            }
+            if after_id
+            else None
+        )
+        visible_rows.append(row)
+    return visible_rows
+
+
 def save_estimate_job_file(
     db,
     estimate_job_id: int,
@@ -2584,6 +2735,8 @@ def get_project_detail(project_id: int, account: dict | None = None) -> dict | N
         detail["works"] = rows_to_dicts(db.execute("SELECT * FROM work_items WHERE project_id = ? ORDER BY section, title", (project_id,)).fetchall())
         detail["extra_works"] = rows_to_dicts(db.execute("SELECT * FROM work_extra_items WHERE project_id = ? ORDER BY created_at DESC", (project_id,)).fetchall())
         detail["contracts"] = rows_to_dicts(db.execute("SELECT * FROM contracts WHERE project_id = ? ORDER BY ends_at", (project_id,)).fetchall())
+        detail["photo_reports"] = photo_reports_payload(db, account, project_id)
+        detail["object_remarks"] = object_remarks_payload(db, account, project_id)
         detail["documents"] = filter_documents_for_account(
             rows_to_dicts(db.execute("SELECT * FROM documents WHERE project_id = ? ORDER BY created_at DESC", (project_id,)).fetchall()),
             account,
@@ -2668,7 +2821,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 next_path = path + (f"?{parsed.query}" if parsed.query else "")
                 redirect_response(self, login_location(next_path))
             return
-        if path == "/":
+        if path in {"/", "/today"}:
             self.serve_static("index.html")
             return
         if path == "/health":
@@ -3593,6 +3746,16 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 json_response(self, material_rows)
                 return
 
+            if path == "/api/photo-reports":
+                project_id = int((query.get("project_id") or ["0"])[0] or 0) or None
+                json_response(self, photo_reports_payload(db, account, project_id))
+                return
+
+            if path == "/api/object-remarks":
+                project_id = int((query.get("project_id") or ["0"])[0] or 0) or None
+                json_response(self, object_remarks_payload(db, account, project_id))
+                return
+
             if path.startswith("/api/projects/"):
                 project_id = int(path.rsplit("/", 1)[-1])
                 detail = get_project_detail(project_id, account)
@@ -3779,6 +3942,155 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     ),
                 )
                 json_response(self, {"id": cursor.lastrowid}, 201)
+                return
+
+            if path == "/api/photo-reports":
+                if not can_manage_object_workflow(account):
+                    json_response(self, {"error": "Forbidden"}, 403)
+                    return
+                force_max = force_personal_max(data)
+                project_id = int(data.get("project_id") or 0)
+                project = db.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+                if not project or not project_visible_for_account(row_to_dict(project), account):
+                    json_response(self, {"error": "Project not found"}, 404)
+                    return
+                actor_id = int(data.get("author_id") or 0) or account_user_id(account) or user_id_by_role(db, "construction_manager")
+                cursor = db.execute(
+                    """
+                    INSERT INTO photo_reports (
+                        project_id, report_date, author_id, stage, zones, comment, related_task_ids, status
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        project_id,
+                        data.get("report_date") or datetime.utcnow().date().isoformat(),
+                        actor_id,
+                        str(data.get("stage") or ""),
+                        str(data.get("zones") or ""),
+                        str(data.get("comment") or ""),
+                        json.dumps(data.get("related_task_ids") or [], ensure_ascii=False),
+                        data.get("status") or "review",
+                    ),
+                )
+                report_id = int(cursor.lastrowid)
+                document_ids = save_process_attachments(
+                    db,
+                    project_id=project_id,
+                    attachments=data.get("attachments") or [],
+                    related_type="photo_report",
+                    doc_type="photo_report",
+                    process_type=f"photo_report:{report_id}",
+                    owner_id=actor_id,
+                )
+                for document_id in document_ids:
+                    db.execute(
+                        "INSERT INTO photo_report_documents (photo_report_id, document_id) VALUES (?, ?)",
+                        (report_id, document_id),
+                    )
+                db.execute(
+                    """
+                    INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
+                    VALUES (?, 'photo_report', ?, ?, 'internal', 'photo_report')
+                    """,
+                    (
+                        project_id,
+                        f"Добавлен фотоотчёт за {data.get('report_date') or datetime.utcnow().date().isoformat()}: {len(document_ids)} файл(ов)",
+                        actor_id,
+                    ),
+                )
+                for watcher_id in {project["foreman_id"], user_id_by_role(db, "construction_manager"), user_id_by_role(db, "owner")}:
+                    if watcher_id and int(watcher_id) != int(actor_id or 0):
+                        create_notification(
+                            db,
+                            project_id,
+                            int(watcher_id),
+                            role_by_user_id(db, int(watcher_id)),
+                            "Новый фотоотчёт по объекту",
+                            f"{project['title']}: фотоотчёт за {data.get('report_date') or datetime.utcnow().date().isoformat()}",
+                            "photo_report",
+                            report_id,
+                            force_max=force_max,
+                        )
+                json_response(self, {"id": report_id, "documents": document_ids}, 201)
+                return
+
+            if path == "/api/object-remarks":
+                if not can_manage_object_workflow(account):
+                    json_response(self, {"error": "Forbidden"}, 403)
+                    return
+                force_max = force_personal_max(data)
+                project_id = int(data.get("project_id") or 0)
+                project = db.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+                if not project or not project_visible_for_account(row_to_dict(project), account):
+                    json_response(self, {"error": "Project not found"}, 404)
+                    return
+                actor_id = account_user_id(account) or user_id_by_role(db, "construction_manager")
+                responsible_id = int(data.get("responsible_id") or 0) or None
+                before_doc = save_process_attachments(
+                    db,
+                    project_id=project_id,
+                    attachments=[data.get("photo_before") or {}],
+                    related_type="object_remark",
+                    doc_type="object_remark_photo",
+                    process_type="object_remark:before",
+                    owner_id=actor_id,
+                )
+                after_doc = save_process_attachments(
+                    db,
+                    project_id=project_id,
+                    attachments=[data.get("photo_after") or {}],
+                    related_type="object_remark",
+                    doc_type="object_remark_photo",
+                    process_type="object_remark:after",
+                    owner_id=actor_id,
+                )
+                cursor = db.execute(
+                    """
+                    INSERT INTO object_remarks (
+                        project_id, zone, description, responsible_id, due_date, status,
+                        photo_before_document_id, photo_after_document_id, checked_by_id, created_by
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        project_id,
+                        str(data.get("zone") or ""),
+                        str(data.get("description") or ""),
+                        responsible_id,
+                        data.get("due_date") or None,
+                        data.get("status") or "new",
+                        before_doc[0] if before_doc else None,
+                        after_doc[0] if after_doc else None,
+                        int(data.get("checked_by_id") or 0) or None,
+                        actor_id,
+                    ),
+                )
+                remark_id = int(cursor.lastrowid)
+                db.execute(
+                    """
+                    INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
+                    VALUES (?, 'object_remark', ?, ?, 'internal', 'object_remark')
+                    """,
+                    (
+                        project_id,
+                        f"Добавлено замечание: {data.get('description') or 'без описания'}",
+                        actor_id,
+                    ),
+                )
+                if responsible_id:
+                    create_notification(
+                        db,
+                        project_id,
+                        responsible_id,
+                        role_by_user_id(db, responsible_id),
+                        "Новое замечание по объекту",
+                        f"{project['title']}: {data.get('description') or 'замечание'}",
+                        "object_remark",
+                        remark_id,
+                        force_max=force_max,
+                    )
+                json_response(self, {"id": remark_id}, 201)
                 return
 
             user_max_chat = re.match(r"^/api/users/(\d+)/max-chat$", path)
@@ -5952,9 +6264,9 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     """
                     INSERT INTO tasks (
                         project_id, title, assignee_id, creator_id, reviewer_id, due_date,
-                        status, priority, related_type, description, start_date, contract_id
+                        status, priority, task_type, related_type, description, start_date, contract_id
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         project_id,
@@ -5964,6 +6276,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         reviewer_id,
                         data.get("due_date") or None,
                         data.get("priority") or "normal",
+                        data.get("task_type") or data.get("related_type") or "task",
                         data.get("related_type") or "project",
                         data.get("description") or "",
                         data.get("start_date") or None,

@@ -12,7 +12,7 @@
     <link rel="manifest" href="/static/manifest.webmanifest?v=20260611-android-pwa" />
     <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260615-ai-audit-token-snapshot" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260615-ux-today-status" />
   </head>
   <body>
     <div class="app">
@@ -24,16 +24,19 @@
           </div>
         </div>
         <nav class="nav">
-          <button class="nav-button active" data-view="dashboard"><span class="nav-icon">⌂</span><span>Рабочий стол</span></button>
+          <button class="nav-button active" data-view="today"><span class="nav-icon">◉</span><span>Сегодня</span></button>
+          <button class="nav-button" data-view="dashboard"><span class="nav-icon">⌂</span><span>Рабочий стол</span></button>
           <button class="nav-button" data-view="projects"><span class="nav-icon">▦</span><span>Объекты</span></button>
           <button class="nav-button" data-view="estimates"><span class="nav-icon">≋</span><span>Сметы</span></button>
           <button class="nav-button" data-view="tasks"><span class="nav-icon">✓</span><span>Задачи</span></button>
           <button class="nav-button" data-view="works"><span class="nav-icon">▤</span><span>Работы</span></button>
           <button class="nav-button" data-view="materials"><span class="nav-icon">◫</span><span>Материалы</span></button>
           <button class="nav-button" data-view="variations"><span class="nav-icon">＋</span><span>Допработы</span></button>
+          <button class="nav-button" data-view="object_remarks"><span class="nav-icon">!</span><span>Замечания</span></button>
+          <button class="nav-button" data-view="photos"><span class="nav-icon">▣</span><span>Фотоотчёты</span></button>
           <button class="nav-button" data-view="locations"><span class="nav-icon">⌖</span><span>Локации</span></button>
           <button class="nav-button" data-view="documents"><span class="nav-icon">◧</span><span>База знаний</span></button>
-          <button class="nav-button" data-view="feedback"><span class="nav-icon">✉</span><span>Обратная связь</span></button>
+          <button class="nav-button" data-view="feedback"><span class="nav-icon">✉</span><span>Обратная связь по программе</span></button>
           <button class="nav-button" data-view="events"><span class="nav-icon">◷</span><span>Журнал</span></button>
         </nav>
       </aside>
@@ -66,7 +69,52 @@
           </div>
         </header>
 
-        <section class="view active" id="dashboardView">
+        <section class="view active" id="todayView">
+          <div class="today-grid">
+            <section class="panel today-focus-panel">
+              <div class="panel-head">
+                <h2>Мои задачи на сегодня</h2>
+                <button class="link-button" data-view-target="tasks">Открыть задачи</button>
+              </div>
+              <div class="list" id="todayTasks"></div>
+            </section>
+            <section class="panel today-focus-panel">
+              <div class="panel-head">
+                <h2>Требует решения</h2>
+              </div>
+              <div class="list" id="todayAttention"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Материалы под риском</h2>
+                <button class="link-button" data-view-target="materials">Открыть материалы</button>
+              </div>
+              <div class="list" id="todayMaterials"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Новые комментарии за 24 часа</h2>
+              </div>
+              <div class="list" id="todayComments"></div>
+            </section>
+            <section class="panel today-wide">
+              <div class="panel-head">
+                <h2>Активные объекты</h2>
+                <button class="link-button" data-view-target="projects">Открыть объекты</button>
+              </div>
+              <div class="today-object-grid" id="todayObjects"></div>
+            </section>
+            <section class="panel today-wide">
+              <div class="panel-head">
+                <h2>Объекты без фотоотчёта сегодня</h2>
+                <button class="link-button" data-view-target="photos">Фотоотчёты</button>
+              </div>
+              <div class="list" id="todayNoPhoto"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="dashboardView">
           <div class="dashboard-sortable sortable-zone" data-sortable-zone="dashboard">
             <div class="metrics" id="summaryCards" data-sortable-block="summary"></div>
             <section class="panel attention-panel" data-sortable-block="dashboard-attention">
@@ -314,6 +362,49 @@
           </div>
         </section>
 
+        <section class="view" id="object_remarksView">
+          <div class="layout-two object-remarks-layout">
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Замечания по объектам</h2>
+                <button class="primary" id="newObjectRemarkButton" type="button">Добавить замечание</button>
+              </div>
+              <div class="compact-stats" id="objectRemarkStats"></div>
+              <div class="table" id="objectRemarkRows"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Как работать</h2>
+              </div>
+              <div class="hint-box neutral">
+                <strong>Здесь только замечания по объектам</strong>
+                <p>Ошибки интерфейса и пожелания коллег остаются в разделе “Обратная связь по программе”. Здесь фиксируем строительные замечания: зона, фото до, ответственный, срок, фото после и кто проверил.</p>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="photosView">
+          <div class="layout-two photo-reports-layout">
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Фотоотчёты</h2>
+                <button class="primary" id="newPhotoReportButton" type="button">Добавить фотоотчёт</button>
+              </div>
+              <div class="table" id="photoReportRows"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Правило раздела</h2>
+              </div>
+              <div class="hint-box neutral">
+                <strong>Фото и видео с объекта</strong>
+                <p>Проектные PDF, договоры, скриншоты интерфейса и служебные файлы хранятся в документах. В фотоотчётах показываем только реальные фото/видео по объекту, этапу и зоне.</p>
+              </div>
+            </section>
+          </div>
+        </section>
+
         <section class="view" id="contractsView">
           <div class="layout-two">
             <section class="panel">
@@ -414,6 +505,17 @@
         </div>
         <label>Объект <select name="project_id" required></select></label>
         <label>Задача <input name="title" required placeholder="Что нужно сделать" /></label>
+        <label>
+          Тип
+          <select name="task_type">
+            <option value="task">Задача</option>
+            <option value="question">Вопрос</option>
+            <option value="remark">Замечание</option>
+            <option value="photo">Фотоотчёт</option>
+            <option value="material">Материал</option>
+            <option value="decision">Решение</option>
+          </select>
+        </label>
         <div class="grid-2">
           <label>Исполнитель <select name="assignee_id"></select></label>
           <label>Срок <input name="due_date" type="date" /></label>
@@ -455,6 +557,71 @@
           <button type="button" class="secondary" data-close="taskDetailDialog">Закрыть</button>
         </div>
       </div>
+    </dialog>
+
+    <dialog id="photoReportDialog">
+      <form method="dialog" class="form" id="photoReportForm">
+        <div class="modal-head">
+          <h2>Новый фотоотчёт</h2>
+          <button type="button" class="icon" data-close="photoReportDialog">×</button>
+        </div>
+        <label>Объект <select name="project_id" required></select></label>
+        <div class="grid-2">
+          <label>Дата <input name="report_date" type="date" required /></label>
+          <label>Этап <input name="stage" placeholder="Например: черновая отделка" /></label>
+        </div>
+        <label>Зоны <input name="zones" placeholder="Кухня, санузел, фасад" /></label>
+        <label>Фото / видео <input name="attachments" type="file" accept="image/*,video/*" multiple required /></label>
+        <label>Комментарий <textarea name="comment" rows="3" placeholder="Что сделано, что важно проверить"></textarea></label>
+        <label class="checkbox-line personal-notify">
+          <input name="notify_personal" type="checkbox" value="1" />
+          <span>Уведомить личным сообщением в MAX</span>
+        </label>
+        <div class="form-actions">
+          <button type="button" class="secondary" data-close="photoReportDialog">Отмена</button>
+          <button class="primary" type="submit">Сохранить</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="objectRemarkDialog">
+      <form method="dialog" class="form" id="objectRemarkForm">
+        <div class="modal-head">
+          <h2>Новое замечание по объекту</h2>
+          <button type="button" class="icon" data-close="objectRemarkDialog">×</button>
+        </div>
+        <label>Объект <select name="project_id" required></select></label>
+        <div class="grid-2">
+          <label>Зона / помещение <input name="zone" placeholder="Например: прихожая" /></label>
+          <label>Срок <input name="due_date" type="date" /></label>
+        </div>
+        <div class="grid-2">
+          <label>Ответственный <select name="responsible_id"></select></label>
+          <label>Кто проверил <select name="checked_by_id"></select></label>
+        </div>
+        <label>
+          Статус
+          <select name="status">
+            <option value="new">Новое</option>
+            <option value="in_progress_task">В работе</option>
+            <option value="returned">Возвращено</option>
+            <option value="completed_pending_acceptance">Ждёт проверки</option>
+            <option value="accepted">Принято</option>
+            <option value="closed">Закрыто</option>
+          </select>
+        </label>
+        <label>Фото до <input name="photo_before" type="file" accept="image/*,video/*" /></label>
+        <label>Описание <textarea name="description" rows="3" required placeholder="Что не так и что нужно исправить"></textarea></label>
+        <label>Фото после <input name="photo_after" type="file" accept="image/*,video/*" /></label>
+        <label class="checkbox-line personal-notify">
+          <input name="notify_personal" type="checkbox" value="1" />
+          <span>Уведомить личным сообщением в MAX</span>
+        </label>
+        <div class="form-actions">
+          <button type="button" class="secondary" data-close="objectRemarkDialog">Отмена</button>
+          <button class="primary" type="submit">Сохранить</button>
+        </div>
+      </form>
     </dialog>
 
     <dialog id="estimateJobDialog">
@@ -858,6 +1025,6 @@
       </div>
     </div>
     <div class="toast" id="toast"></div>
-    <script src="/static/app.compat.js?v=20260615-ai-audit-token-snapshot"></script>
+    <script src="/static/app.compat.js?v=20260615-ux-today-status"></script>
   </body>
 </html>

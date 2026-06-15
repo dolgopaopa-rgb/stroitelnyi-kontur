@@ -1,8 +1,9 @@
 const initialRoute = new URLSearchParams(window.location.search);
 const initialProjectId = Number(initialRoute.get("project") || 0) || null;
+const pathView = window.location.pathname === "/today" ? "today" : "";
 
 const state = {
-  view: initialRoute.get("view") || localStorage.getItem("currentView") || "dashboard",
+  view: initialRoute.get("view") || pathView || localStorage.getItem("currentView") || "today",
   currentRole: localStorage.getItem("currentRole") || "owner",
   session: null,
   canSwitchRole: true,
@@ -10,6 +11,8 @@ const state = {
   projects: [],
   archivedProjects: [],
   materialRequests: [],
+  photoReports: [],
+  objectRemarks: [],
   estimateJobs: [],
   estimateMaterials: [],
   estimatePreviewRows: [],
@@ -20,6 +23,7 @@ const state = {
   materialListMode: "active",
   taskFilter: "all",
   feedbackFilter: "all",
+  remarkFilter: "all",
   selectedFeedbackIds: new Set(),
   feedbackRefreshing: false,
   feedbackLastUpdatedAt: "",
@@ -30,6 +34,8 @@ const state = {
   notificationGroupsOpen: {},
   expandedLists: {},
   selectedWorkProjectId: initialProjectId,
+  selectedRemarkProjectId: initialProjectId,
+  selectedPhotoProjectId: initialProjectId,
   openWorkStages: {},
   estimateGallery: { jobId: null, files: [], index: 0 },
   knowledgeFolders: [],
@@ -75,6 +81,7 @@ const PROJECT_REQUIRED_FIELDS = [
 let sortableDragSource = null;
 
 const viewTitles = {
+  today: "Сегодня",
   dashboard: "Рабочий стол",
   projects: "Объекты",
   estimates: "Сметы",
@@ -82,13 +89,15 @@ const viewTitles = {
   works: "Работы",
   materials: "Материалы",
   variations: "Допработы и отклонения",
+  object_remarks: "Замечания по объектам",
+  photos: "Фотоотчёты",
   locations: "Локации",
   documents: "База знаний",
-  feedback: "Обратная связь",
+  feedback: "Обратная связь по программе",
   events: "Журнал событий",
 };
 
-const statusLabels = {
+const statusLabelMap = {
   draft: "Черновик менеджера",
   submitted_to_construction: "На проверке строительства",
   revision_requested: "Возвращена на доработку",
@@ -132,7 +141,70 @@ const statusLabels = {
   estimate_hold: "Пауза",
   estimate_returned: "Возвращено менеджеру",
   estimate_question: "Нужно уточнение",
+  owner: "Ген.директор",
+  construction_manager: "Рук. по строительству",
+  finance_director: "Фин.директор",
+  accountant: "Бухгалтер",
+  sales_manager: "Менеджер",
+  foreman: "Прораб",
+  procurement_manager: "Снабжение",
+  estimator: "Сметчик",
+  technical_supervisor: "Технадзор",
+  ai_auditor: "ИИ-аудитор",
+  main_estimate: "По смете",
+  main_estimate_overspend: "Сверх сметы",
+  additional_work: "Допработа",
+  additional_agreement: "Доп. соглашение",
+  material_replacement: "Замена материала",
+  over_budget_cost: "Сверх бюджета",
+  internal_error_or_loss: "Расход компании",
+  company_cost: "Расходы компании",
+  rework: "Переделка",
+  contract: "Договор",
+  variation_estimate: "Смета допработ",
+  act: "Акт",
+  ks_2: "КС-2",
+  ks_3: "КС-3",
+  smetter_materials: "Материалы из Сметтера",
+  smetter_work_task: "Задание на работы",
+  project_documentation: "Проектная документация",
+  detail_node: "Узел / решение",
+  regulation: "Регламент",
+  standard: "Стандарт",
+  instruction: "Инструкция",
+  other: "Документ",
+  photo_report: "Фотоотчёт",
+  object_remark: "Замечание по объекту",
+  object_remark_photo: "Фото замечания",
+  task: "Задача",
+  question: "Вопрос",
+  remark: "Замечание",
+  photo: "Фотоотчёт",
+  material: "Материал",
+  decision: "Решение",
+  need_approval: "Нужно согласовать",
+  agreed: "Согласовано",
+  in_transit: "В пути",
+  on_site: "На объекте",
+  problem: "Проблема",
+  closed: "Закрыто",
 };
+
+const statusLabels = statusLabelMap;
+
+function statusLabel(value) {
+  return statusLabelMap[value] || "Не задано";
+}
+
+function statusLevel(value, fallback = "") {
+  const key = String(value || "");
+  if (["overdue", "danger", "problem", "returned", "revision_requested", "rejected", "receipt_issue"].includes(key)) return "danger";
+  if (["warning", "review", "completed_pending_acceptance", "estimate_question", "estimate_returned", "submitted_to_construction", "decision_required", "need_approval", "estimate_hold", "new", "feedback_new"].includes(key)) return "warning";
+  if (["success", "accepted", "approved", "closed", "completed", "received", "on_site", "agreed", "done", "feedback_done", "estimate_done"].includes(key)) return "success";
+  if (["blue", "in_progress", "in_progress_task", "ordered", "in_transit", "delivery_scheduled", "delivery_confirmed", "estimate_in_work", "in_review", "active", "in_work", "feedback_in_work"].includes(key)) return "blue";
+  if (["draft", "archived", "estimate_new", "not_required"].includes(key)) return "";
+  return fallback;
+}
 
 function qs(selector) {
   return document.querySelector(selector);
@@ -212,24 +284,44 @@ function formatDateRu(value) {
   return `${parts[2]}.${parts[1]}.${parts[0]}`;
 }
 
+function todayIso() {
+  const now = new Date();
+  const offset = now.getTimezoneOffset() * 60000;
+  return new Date(now.getTime() - offset).toISOString().slice(0, 10);
+}
+
+function dateOnly(value) {
+  return value ? String(value).slice(0, 10) : "";
+}
+
+function isTodayDate(value) {
+  return dateOnly(value) === todayIso();
+}
+
+function isLast24Hours(value) {
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  return Date.now() - date.getTime() <= 24 * 60 * 60 * 1000;
+}
+
+function byId(items = []) {
+  return items.reduce((acc, item) => {
+    acc[Number(item.id)] = item;
+    return acc;
+  }, {});
+}
+
 function levelByMoney(value) {
   return Number(value || 0) > 0 ? "danger" : "success";
 }
 
 function label(value) {
-  return statusLabels[value] || value || "Не задано";
+  return statusLabel(value);
 }
 
 function materialBasisLabel(value) {
-  return {
-    main_estimate: "По смете",
-    main_estimate_overspend: "Перерасход по смете",
-    additional_work: "Допработа",
-    additional_agreement: "Доп. соглашение",
-    material_replacement: "Замена материала",
-    over_budget_cost: "Сверхбюджет",
-    internal_error_or_loss: "За счет компании",
-  }[value] || value || "Основание не указано";
+  return statusLabelMap[value] || "Основание не указано";
 }
 
 function materialBasisLevel(value) {
@@ -380,16 +472,16 @@ function canQuestionEstimateJob(job) {
 }
 
 const viewAccess = {
-  owner: ["dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "locations", "documents", "feedback", "events"],
-  construction_manager: ["dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "locations", "documents", "feedback", "events"],
-  ai_auditor: ["dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "locations", "documents", "feedback", "events"],
-  finance_director: ["dashboard", "projects", "tasks", "works", "materials", "variations", "locations", "documents", "feedback", "events"],
-  accountant: ["dashboard", "projects", "materials", "variations", "locations", "documents", "events"],
-  sales_manager: ["dashboard", "projects", "estimates", "documents"],
-  foreman: ["dashboard", "tasks", "works", "materials", "variations", "locations", "documents"],
-  procurement_manager: ["dashboard", "projects", "materials", "locations", "documents"],
-  estimator: ["dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "documents"],
-  technical_supervisor: ["dashboard", "projects", "tasks", "works", "materials", "locations", "documents"],
+  owner: ["today", "dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "object_remarks", "photos", "locations", "documents", "feedback", "events"],
+  construction_manager: ["today", "dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "object_remarks", "photos", "locations", "documents", "feedback", "events"],
+  ai_auditor: ["today", "dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "object_remarks", "photos", "locations", "documents", "feedback", "events"],
+  finance_director: ["today", "dashboard", "projects", "tasks", "works", "materials", "variations", "object_remarks", "photos", "locations", "documents", "feedback", "events"],
+  accountant: ["today", "dashboard", "projects", "materials", "variations", "locations", "documents", "events"],
+  sales_manager: ["today", "dashboard", "projects", "estimates", "documents"],
+  foreman: ["today", "dashboard", "tasks", "works", "materials", "variations", "object_remarks", "photos", "locations", "documents"],
+  procurement_manager: ["today", "dashboard", "projects", "materials", "object_remarks", "locations", "documents"],
+  estimator: ["today", "dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "object_remarks", "documents"],
+  technical_supervisor: ["today", "dashboard", "projects", "tasks", "works", "materials", "object_remarks", "photos", "locations", "documents"],
 };
 
 function allowedViews() {
@@ -517,18 +609,18 @@ function visibleDocuments(docs = []) {
 function projectTabs() {
   const base = currentRoleBase();
   const tabs = {
-    owner: ["overview", "tasks", "works", "materials", "variations", "documents", "events"],
-    construction_manager: ["overview", "tasks", "works", "materials", "variations", "documents", "events"],
-    finance_director: ["overview", "tasks", "works", "materials", "variations", "documents", "events"],
-    ai_auditor: ["overview", "tasks", "works", "materials", "variations", "documents", "events"],
-    accountant: ["overview", "materials", "variations", "documents", "events"],
+    owner: ["overview", "tasks", "materials", "photos", "remarks", "documents", "events", "finances"],
+    construction_manager: ["overview", "tasks", "materials", "photos", "remarks", "documents", "events", "finances"],
+    finance_director: ["overview", "tasks", "materials", "photos", "remarks", "documents", "events", "finances"],
+    ai_auditor: ["overview", "tasks", "materials", "photos", "remarks", "documents", "events", "finances"],
+    accountant: ["overview", "materials", "documents", "events", "finances"],
     sales_manager: ["overview", "documents"],
-    foreman: ["overview", "tasks", "works", "materials", "variations", "documents"],
-    procurement_manager: ["overview", "materials", "documents", "events"],
-    estimator: ["overview", "works", "materials", "variations", "documents", "events"],
-    technical_supervisor: ["overview", "tasks", "works", "materials", "documents", "events"],
+    foreman: ["overview", "tasks", "materials", "photos", "remarks", "documents"],
+    procurement_manager: ["overview", "materials", "remarks", "documents", "events"],
+    estimator: ["overview", "tasks", "materials", "remarks", "documents", "events"],
+    technical_supervisor: ["overview", "tasks", "materials", "photos", "remarks", "documents", "events"],
   }[base];
-  return tabs || ["overview"];
+  return (tabs || ["overview"]).filter((tab) => tab !== "finances" || canViewFinancials());
 }
 
 function roleLabel(role) {
@@ -536,18 +628,7 @@ function roleLabel(role) {
     const user = state.users.find((item) => item.id === Number(String(role).split(":")[1]));
     return `Прораб ${user?.name || ""}`.trim();
   }
-  return {
-    owner: "Ген.директор",
-    finance_director: "Фин.директор",
-    accountant: "Бухгалтер",
-    sales_manager: "Менеджер",
-    construction_manager: "Рук. строительства",
-    foreman: "Прораб",
-    procurement_manager: "Снабжение",
-    estimator: "Сметчик",
-    technical_supervisor: "Технадзор",
-    ai_auditor: "ИИ-аудитор",
-  }[role] || role;
+  return statusLabelMap[role] || "Роль не задана";
 }
 
 function currentRoleBase() {
@@ -736,24 +817,7 @@ function mapLink(address, mapsUrl, label = "Открыть в Яндекс.Ка�
 }
 
 function documentType(type) {
-  return {
-    contract: "Договор",
-    main_estimate: "Основная смета",
-    smetter_materials: "Файл материалов из Сметтера",
-    smetter_work_task: "Задание на работы из Сметтера",
-    project_documentation: "Проектная документация",
-    variation_attachment: "Вложение к допработе",
-    variation_estimate: "Смета допработ",
-    act: "Акт",
-    ks_2: "КС-2",
-    ks_3: "КС-3",
-    detail_node: "Узел",
-    regulation: "Регламент",
-    standard: "Стандарт компании",
-    instruction: "Инструкция",
-    invoice: "Счет",
-    other: "Документ",
-  }[type] || type || "Документ";
+  return statusLabelMap[type] || "Документ";
 }
 
 function isBrokenText(value) {
@@ -1298,7 +1362,14 @@ async function loadCoreData() {
 
 async function loadAll() {
   await loadCoreData();
+  const [photoReports, objectRemarks] = await Promise.all([
+    canView("photos") || canView("today") || canView("projects") ? api("/api/photo-reports") : Promise.resolve([]),
+    canView("object_remarks") || canView("today") || canView("projects") ? api("/api/object-remarks") : Promise.resolve([]),
+  ]);
+  state.photoReports = photoReports;
+  state.objectRemarks = objectRemarks;
   await Promise.all([
+    renderToday(),
     renderDashboard(),
     renderNotifications(),
     renderProjects(),
@@ -1309,6 +1380,8 @@ async function loadAll() {
     renderLocations(),
     renderEstimateMaterials(),
     renderVariations(),
+    renderObjectRemarks(),
+    renderPhotoReports(),
     renderDocuments(),
     renderFeedback(),
     renderEvents(),
@@ -1429,8 +1502,10 @@ function fillSelects() {
   qsa('#workProjectForm select[name="project_id"], #workExtraForm select[name="project_id"]').forEach((select) => {
     if (workProject) select.value = String(workProject);
   });
-  qsa('select[name="owner_id"], select[name="responsible_id"]').forEach((select) => (select.innerHTML = userOptions));
+  qsa('select[name="owner_id"], select[name="responsible_id"], select[name="checked_by_id"]').forEach((select) => (select.innerHTML = userOptions));
   qsa('#taskForm select[name="assignee_id"], #taskForm select[name="reviewer_id"]').forEach((select) => (select.innerHTML = taskUserOptions));
+  const photoDate = qs('#photoReportForm input[name="report_date"]');
+  if (photoDate && !photoDate.value) photoDate.value = todayIso();
   updateEstimateMaterialSelect();
   fillRoleSwitcher();
   fillMaterialProjectSelect();
@@ -1803,15 +1878,40 @@ function materialBatchTitle(batch, received = false) {
 }
 
 function materialBatchLevel(status) {
-  return {
-    new: "warning",
-    in_work: "blue",
-    revision_requested: "danger",
-    delivery_confirmed: "success",
-    delivery_scheduled: "blue",
-    received: "success",
-    receipt_issue: "danger",
-  }[status] || "";
+  return statusLevel(status);
+}
+
+function materialPipelineStatus(batchOrStatus) {
+  const batch = typeof batchOrStatus === "object" ? batchOrStatus : { status: batchOrStatus };
+  const status = String(batch.status || "");
+  if (status === "receipt_issue" || status === "returned" || status === "revision_requested" || batch.receipt_status === "problem") return "problem";
+  if (status === "archived" || status === "closed") return "closed";
+  if (status === "received" || batch.receipt_status === "ok") return "on_site";
+  if (status === "delivery_confirmed" || status === "delivery_scheduled") return "in_transit";
+  if (status === "ordered" || status === "delivery") return "ordered";
+  if (status === "in_work" || status === "approved" || status === "agreed") return "agreed";
+  return "need_approval";
+}
+
+function materialPipelineLevel(batchOrStatus) {
+  return statusLevel(materialPipelineStatus(batchOrStatus));
+}
+
+function renderMaterialPipeline(batch) {
+  const current = materialPipelineStatus(batch);
+  const steps = ["need_approval", "agreed", "ordered", "in_transit", "on_site", "problem", "closed"];
+  return `
+    <div class="material-pipeline">
+      ${steps
+        .map((step) => `<span class="pipeline-step ${step === current ? "active" : ""} ${statusLevel(step)}">${statusLabel(step)}</span>`)
+        .join("")}
+    </div>`;
+}
+
+function materialIsRisky(batch) {
+  const status = materialPipelineStatus(batch);
+  const actualOverrun = Number(batch.actual_purchase_amount || 0) > 0 && Number(batch.actual_purchase_amount || 0) > Number(batch.total_amount || 0);
+  return status === "problem" || ["returned", "revision_requested"].includes(batch.status) || (batch.delivery_urgency === "urgent" && !["on_site", "closed"].includes(status)) || actualOverrun;
 }
 
 function materialReceiptAttachment(batch) {
@@ -2087,14 +2187,22 @@ function taskProjectIndicatorPills(stats, openCount, newCount) {
 }
 
 function taskStatusLevel(status) {
+  return statusLevel(status);
+}
+
+function taskTypeLabel(type) {
+  return statusLabelMap[type || "task"] || "Задача";
+}
+
+function taskTypeLevel(type) {
   return {
-    completed_pending_acceptance: "blue",
-    accepted: "success",
-    returned: "danger",
-    new: "warning",
-    in_progress_task: "warning",
-    review: "blue",
-  }[status] || "";
+    task: "blue",
+    question: "warning",
+    remark: "danger",
+    photo: "success",
+    material: "blue",
+    decision: "warning",
+  }[type || "task"] || "";
 }
 
 function taskPriorityLabel(priority) {
@@ -2638,6 +2746,168 @@ async function renderDashboard() {
   initSortableZones(qs("#dashboardView"));
 }
 
+function projectTasks(projectId, tasks = state.lastTasks || []) {
+  return tasks.filter((task) => Number(task.project_id) === Number(projectId));
+}
+
+function projectMaterialBatches(projectId, materialRows = state.materialRequests || []) {
+  return buildMaterialBatches(materialRows.filter((item) => Number(item.project_id) === Number(projectId)));
+}
+
+function projectRemarks(projectId) {
+  return (state.objectRemarks || []).filter((remark) => Number(remark.project_id) === Number(projectId));
+}
+
+function projectPhotoReports(projectId) {
+  return (state.photoReports || []).filter((report) => Number(report.project_id) === Number(projectId));
+}
+
+function latestPhotoReportDate(projectId) {
+  return projectPhotoReports(projectId)
+    .map((report) => dateOnly(report.report_date || report.created_at))
+    .filter(Boolean)
+    .sort()
+    .pop() || "";
+}
+
+function projectBlockerCount(project, tasks = state.lastTasks || [], materialRows = state.materialRequests || []) {
+  const taskRows = projectTasks(project.id, tasks);
+  const materialRowsForProject = projectMaterialBatches(project.id, materialRows);
+  const remarks = projectRemarks(project.id);
+  return (
+    taskRows.filter((task) => task.status === "returned" || taskCountsAsOverdue(task)).length +
+    materialRowsForProject.filter(materialIsRisky).length +
+    remarks.filter((remark) => !["accepted", "closed"].includes(remark.status)).length
+  );
+}
+
+function renderTodayTaskCard(task) {
+  return `
+    <button class="row clickable today-task-card" type="button" data-open-task="${task.id}">
+      <div class="stack-line">
+        ${pill(taskTypeLabel(task.task_type), taskTypeLevel(task.task_type))}
+        ${pill(statusLabel(task.status), taskStatusLevel(task.status))}
+        ${pill(task.due_date || "без срока", levelByDate(task.due_date))}
+      </div>
+      <strong>${escapeHtml(task.title || "Задача")}</strong>
+      <div class="muted">${escapeHtml(task.project_title || "Объект не указан")} · ответственный: ${escapeHtml(task.assignee_name || "не назначен")}</div>
+    </button>`;
+}
+
+function renderTodayMaterialCard(batch) {
+  const overrun = Number(batch.actual_purchase_amount || 0) > Number(batch.total_amount || 0) && Number(batch.actual_purchase_amount || 0) > 0;
+  return `
+    <button class="row clickable today-material-card" type="button" data-open-material-batch="${batch.key}">
+      <div class="stack-line">
+        ${pill(statusLabel(materialPipelineStatus(batch)), materialPipelineLevel(batch))}
+        ${batch.delivery_urgency === "urgent" ? pill("Срочно", "danger") : ""}
+        ${overrun ? pill("Факт выше сметы", "danger") : ""}
+      </div>
+      <strong>${escapeHtml(batch.project_title || "Объект не указан")}</strong>
+      <div class="muted">позиций: ${materialActiveItems(batch).length} · смета: ${money(batch.total_amount)}${batch.actual_purchase_amount ? ` · факт: ${money(batch.actual_purchase_amount)}` : ""}</div>
+    </button>`;
+}
+
+function renderTodayObjectCard(project, tasks, materialRows) {
+  const taskRows = projectTasks(project.id, tasks);
+  const openTasks = taskRows.filter(isOpenTask);
+  const overdueTasks = taskRows.filter(taskCountsAsOverdue);
+  const blockers = projectBlockerCount(project, tasks, materialRows);
+  const riskyMaterials = projectMaterialBatches(project.id, materialRows).filter(materialIsRisky);
+  const latestPhoto = latestPhotoReportDate(project.id);
+  return `
+    <button class="today-object-card clickable" type="button" data-open-project="${project.id}">
+      <div class="today-object-head">
+        <strong>${escapeHtml(project.title || "Объект")}</strong>
+        ${pill(statusLabel(project.status), statusLevel(project.status))}
+      </div>
+      <div class="muted">ответственный: ${escapeHtml(project.foreman_name || "прораб не назначен")} · этап: ${statusLabel(project.stage || project.status)}</div>
+      <div class="today-object-metrics">
+        ${pill(`открыто: ${openTasks.length}`, openTasks.length ? "blue" : "")}
+        ${overdueTasks.length ? pill(`просрочено: ${overdueTasks.length}`, "danger") : ""}
+        ${blockers ? pill(`блокеры: ${blockers}`, "danger") : ""}
+        ${riskyMaterials.length ? pill(`материалы под риском: ${riskyMaterials.length}`, "warning") : ""}
+      </div>
+      <div class="muted">последний фотоотчёт: ${latestPhoto ? formatDateRu(latestPhoto) : "не найден"}</div>
+    </button>`;
+}
+
+function renderTodayAttentionCard(title, count, text, level, targetAttrs) {
+  if (!Number(count || 0)) return "";
+  return `
+    <button class="attention-item ${level}" type="button" ${targetAttrs || 'data-view-target="dashboard"'}>
+      <span class="attention-count">${escapeHtml(String(count))}</span>
+      <span class="attention-body">
+        <strong>${escapeHtml(title)}</strong>
+        <small>${escapeHtml(text)}</small>
+      </span>
+    </button>`;
+}
+
+async function renderToday() {
+  if (!qs("#todayView")) return;
+  const [tasks, materialRows, notifications] = await Promise.all([
+    canView("tasks") || canView("today") ? api("/api/tasks") : Promise.resolve([]),
+    canView("materials") || canView("today") ? api("/api/material-requests") : Promise.resolve([]),
+    api("/api/notifications").catch(() => []),
+  ]);
+  const roleTasks = visibleTasksForRole(tasks);
+  state.lastTasks = roleTasks;
+  state.materialRequests = materialRows;
+  const todayTasks = roleTasks.filter((task) => isOpenTask(task) && isTodayDate(task.due_date));
+  const overdueTasks = roleTasks.filter(taskCountsAsOverdue);
+  const returnedTasks = roleTasks.filter((task) => task.status === "returned");
+  const waitingTasks = roleTasks.filter((task) => task.status === "completed_pending_acceptance");
+  const materialBatches = buildMaterialBatches(materialRows);
+  const riskyMaterials = materialBatches.filter(materialIsRisky);
+  const activeProjects = state.projects.filter((project) => project.status !== "archived");
+  const noPhotoProjects = activeProjects.filter((project) => !isTodayDate(latestPhotoReportDate(project.id)));
+  const recentComments = notifications.filter((row) => isLast24Hours(row.created_at)).slice(0, 8);
+  qs("#todayTasks").innerHTML = todayTasks.length
+    ? todayTasks.slice(0, 6).map(renderTodayTaskCard).join("")
+    : `<p class="muted">На сегодня задач по выбранной роли нет.</p>`;
+  qs("#todayAttention").innerHTML =
+    [
+      renderTodayAttentionCard("Просроченные задачи", overdueTasks.length, "Нужно принять решение по срокам или результату.", "danger", 'data-task-filter="overdue"'),
+      renderTodayAttentionCard("Возвращённые задачи", returnedTasks.length, "Исполнитель ждёт комментарий или повторную работу.", "warning", 'data-task-filter="returned"'),
+      renderTodayAttentionCard("Ждут проверки", waitingTasks.length, "Исполнитель отметил выполнение, но результат ещё не принят.", "blue", 'data-task-filter="waiting"'),
+      renderTodayAttentionCard("Материалы с проблемами", riskyMaterials.length, "Есть возвраты, срочность, проблемы или факт выше сметы.", "danger", 'data-view-target="materials"'),
+      renderTodayAttentionCard("Объекты без фотоотчёта", noPhotoProjects.length, "За сегодня по объектам нет фото/видео отчёта.", "warning", 'data-view-target="photos"'),
+    ]
+      .filter(Boolean)
+      .join("") || `<div class="attention-empty"><strong>Критичных сигналов нет</strong><span>На сейчас ничего срочного не найдено.</span></div>`;
+  qs("#todayMaterials").innerHTML = riskyMaterials.length
+    ? riskyMaterials.slice(0, 8).map(renderTodayMaterialCard).join("")
+    : `<p class="muted">Материалов под риском нет.</p>`;
+  qs("#todayComments").innerHTML = recentComments.length
+    ? recentComments
+        .map(
+          (row) => `
+          <button class="row clickable" type="button" ${notificationTargetAttrs(row)}>
+            <strong>${escapeHtml(row.title || "Событие")}</strong>
+            <div class="muted">${escapeHtml(row.project_title || "без объекта")} · ${formatDateRu(row.created_at)}</div>
+            <p>${escapeHtml(row.text || "")}</p>
+          </button>`
+        )
+        .join("")
+    : `<p class="muted">Новых комментариев за 24 часа нет.</p>`;
+  qs("#todayObjects").innerHTML = activeProjects.length
+    ? activeProjects.map((project) => renderTodayObjectCard(project, roleTasks, materialRows)).join("")
+    : `<p class="muted">Активных объектов пока нет.</p>`;
+  qs("#todayNoPhoto").innerHTML = noPhotoProjects.length
+    ? noPhotoProjects
+        .slice(0, 8)
+        .map(
+          (project) => `
+          <button class="row clickable" type="button" data-open-project="${project.id}">
+            <strong>${escapeHtml(project.title)}</strong>
+            <div class="muted">последний фотоотчёт: ${latestPhotoReportDate(project.id) ? formatDateRu(latestPhotoReportDate(project.id)) : "не найден"}</div>
+          </button>`
+        )
+        .join("")
+    : `<p class="muted">По всем активным объектам есть фотоотчёт за сегодня.</p>`;
+}
+
 async function renderEstimateJobs() {
   const statsNode = qs("#estimateJobStats");
   const scheduleNode = qs("#estimateJobSchedule");
@@ -2730,6 +3000,110 @@ async function renderNotifications() {
   });
 }
 
+function mediaPreviewLink(doc) {
+  if (!doc) return "";
+  const href = `/api/documents/${doc.id}/download`;
+  const title = escapeHtml(doc.file_name || doc.title || "Файл");
+  const mime = String(doc.mime_type || "");
+  if (mime.startsWith("image/")) {
+    return `<a class="media-thumb" href="${href}" target="_blank" rel="noopener"><img src="${href}" alt="${title}" /><span>${title}</span></a>`;
+  }
+  if (mime.startsWith("video/")) {
+    return `<a class="media-thumb video" href="${href}" target="_blank" rel="noopener"><span>Видео</span><small>${title}</small></a>`;
+  }
+  return `<a class="media-thumb file" href="${href}" target="_blank" rel="noopener"><span>${title}</span></a>`;
+}
+
+function renderPhotoReportCard(report) {
+  const attachments = (report.attachments || []).filter((doc) => String(doc.mime_type || "").startsWith("image/") || String(doc.mime_type || "").startsWith("video/"));
+  return `
+    <article class="row photo-report-card">
+      <div class="photo-report-main">
+        <div class="stack-line">
+          <strong>${escapeHtml(report.project_title || "Объект не указан")}</strong>
+          ${pill(statusLabel(report.status || "review"), statusLevel(report.status || "review"))}
+          ${pill(formatDateRu(report.report_date), "blue")}
+        </div>
+        <div class="muted">автор: ${escapeHtml(report.author_name || "не указан")} · этап: ${escapeHtml(report.stage || "не указан")} · зоны: ${escapeHtml(report.zones || "не указаны")}</div>
+        ${report.comment ? `<p>${escapeHtml(report.comment)}</p>` : ""}
+      </div>
+      <div class="media-grid">${attachments.length ? attachments.map(mediaPreviewLink).join("") : `<span class="muted">Фото/видео не прикреплены.</span>`}</div>
+    </article>`;
+}
+
+async function renderPhotoReports() {
+  const rowsNode = qs("#photoReportRows");
+  if (!rowsNode) return;
+  if (!canView("photos")) {
+    rowsNode.innerHTML = "";
+    return;
+  }
+  const reports = state.photoReports || [];
+  rowsNode.innerHTML = reports.length
+    ? reports.map(renderPhotoReportCard).join("")
+    : `<p class="muted">Фотоотчётов пока нет.</p>`;
+}
+
+function remarkPhotoBlock(title, doc) {
+  if (!doc?.id) return "";
+  return `
+    <div class="remark-photo">
+      <span class="muted">${title}</span>
+      ${mediaPreviewLink(doc)}
+    </div>`;
+}
+
+function renderObjectRemarkCard(remark) {
+  return `
+    <article class="row object-remark-card">
+      <div class="object-remark-main">
+        <div class="stack-line">
+          <strong>${escapeHtml(remark.project_title || "Объект не указан")}</strong>
+          ${pill(statusLabel(remark.status), statusLevel(remark.status))}
+          ${remark.due_date ? pill(formatDateRu(remark.due_date), levelByDate(remark.due_date)) : pill("без срока", "")}
+        </div>
+        <div class="muted">зона: ${escapeHtml(remark.zone || "не указана")} · ответственный: ${escapeHtml(remark.responsible_name || "не назначен")} · проверил: ${escapeHtml(remark.checked_by_name || "не указан")}</div>
+        <p>${escapeHtml(remark.description || "Без описания")}</p>
+      </div>
+      <div class="remark-media-grid">
+        ${remarkPhotoBlock("Фото до", remark.photo_before)}
+        ${remarkPhotoBlock("Фото после", remark.photo_after)}
+      </div>
+    </article>`;
+}
+
+async function renderObjectRemarks() {
+  const rowsNode = qs("#objectRemarkRows");
+  const statsNode = qs("#objectRemarkStats");
+  if (!rowsNode || !statsNode) return;
+  if (!canView("object_remarks")) {
+    rowsNode.innerHTML = "";
+    statsNode.innerHTML = "";
+    return;
+  }
+  const remarks = state.objectRemarks || [];
+  const stats = [
+    ["all", "Все", remarks.length, ""],
+    ["new", "Новые", remarks.filter((item) => item.status === "new").length, "warning"],
+    ["in_progress_task", "В работе", remarks.filter((item) => item.status === "in_progress_task").length, "blue"],
+    ["returned", "Возвращены", remarks.filter((item) => item.status === "returned").length, "danger"],
+    ["accepted", "Приняты", remarks.filter((item) => item.status === "accepted" || item.status === "closed").length, "success"],
+  ].filter(([, , count], index) => index === 0 || count > 0);
+  statsNode.innerHTML = stats
+    .map(
+      ([key, title, count, level]) => `
+      <button class="task-stat ${level}" type="button" data-remark-filter="${key}">
+        <span>${title}</span>
+        <strong>${count}</strong>
+      </button>`
+    )
+    .join("");
+  const filtered = state.remarkFilter && state.remarkFilter !== "all" ? remarks.filter((item) => item.status === state.remarkFilter) : remarks;
+  rowsNode.innerHTML = filtered.length
+    ? filtered.map(renderObjectRemarkCard).join("")
+    : `<p class="muted">Замечаний по объектам пока нет.</p>`;
+}
+
 async function renderProjects() {
   const projects = state.projectListMode === "archive" ? state.archivedProjects : state.projects;
   qs("#projectListTitle").textContent = state.projectListMode === "archive" ? "Архив объектов" : "Список объектов";
@@ -2809,7 +3183,7 @@ function renderProjectMaterialHistory(project) {
                     <small>Заказал: ${escapeHtml(batch.creator_name || "не указано")} · позиций: ${activeItems.length}${removedItems.length ? ` · удалено при правке: ${removedItems.length}` : ""}</small>
                   </span>
                   <span class="stack-line">
-                    ${pill(label(batch.status), materialBatchLevel(batch.status))}
+                    ${pill(statusLabel(materialPipelineStatus(batch)), materialPipelineLevel(batch))}
                     ${pill(urgencyLabel(batch.delivery_urgency), urgencyLevel(batch.delivery_urgency))}
                   </span>
                 </summary>
@@ -2891,31 +3265,163 @@ function renderProjectHistory(project) {
     </div>`;
 }
 
+function projectDetailTasks(project) {
+  return project.tasks || [];
+}
+
+function projectDetailBatches(project) {
+  return buildMaterialBatches(project.materials || []);
+}
+
+function projectLatestPhoto(project) {
+  const reports = project.photo_reports || [];
+  return reports
+    .map((report) => dateOnly(report.report_date || report.created_at))
+    .filter(Boolean)
+    .sort()
+    .pop() || "";
+}
+
+function projectAttentionItems(project) {
+  const tasks = projectDetailTasks(project);
+  const batches = projectDetailBatches(project);
+  const remarks = project.object_remarks || [];
+  const items = [];
+  const overdueTasks = tasks.filter(taskCountsAsOverdue);
+  const returnedTasks = tasks.filter((task) => task.status === "returned");
+  const riskyMaterials = batches.filter(materialIsRisky);
+  const openRemarks = remarks.filter((remark) => !["accepted", "closed"].includes(remark.status));
+  if (overdueTasks.length) items.push({ title: "Просроченные задачи", count: overdueTasks.length, level: "danger", tab: "tasks" });
+  if (returnedTasks.length) items.push({ title: "Возвращённые задачи", count: returnedTasks.length, level: "warning", tab: "tasks" });
+  if (riskyMaterials.length) items.push({ title: "Материалы с проблемами", count: riskyMaterials.length, level: "danger", tab: "materials" });
+  if (openRemarks.length) items.push({ title: "Незакрытые замечания", count: openRemarks.length, level: "warning", tab: "remarks" });
+  return items;
+}
+
+function renderProjectHero(project) {
+  const tasks = projectDetailTasks(project);
+  const batches = projectDetailBatches(project);
+  const latestPhoto = projectLatestPhoto(project);
+  const openTasks = tasks.filter(isOpenTask);
+  const overdueTasks = tasks.filter(taskCountsAsOverdue);
+  const riskyMaterials = batches.filter(materialIsRisky);
+  const blockers = projectAttentionItems(project).reduce((sum, item) => sum + Number(item.count || 0), 0);
+  return `
+    <section class="project-hero">
+      <div class="project-hero-main">
+        <div class="stack-line">
+          <h2>${escapeHtml(project.title || "Объект")}</h2>
+          ${pill(statusLabel(project.status), statusLevel(project.status))}
+        </div>
+        <div class="project-hero-meta">
+          <span>Ответственный: <strong>${escapeHtml(project.foreman_name || "прораб не назначен")}</strong></span>
+          <span>Этап: <strong>${statusLabel(project.stage || project.status)}</strong></span>
+          <span>Ближайший дедлайн: <strong>${project.planned_end_date ? formatDateRu(project.planned_end_date) : "не задан"}</strong></span>
+          <span>Последний фотоотчёт: <strong>${latestPhoto ? formatDateRu(latestPhoto) : "не найден"}</strong></span>
+        </div>
+      </div>
+      <div class="project-hero-stats">
+        <div class="info"><span>Открытые задачи</span><strong>${openTasks.length}</strong></div>
+        <div class="info ${overdueTasks.length ? "danger" : ""}"><span>Просрочено</span><strong>${overdueTasks.length}</strong></div>
+        <div class="info ${blockers ? "danger" : ""}"><span>Блокеры</span><strong>${blockers}</strong></div>
+        <div class="info ${riskyMaterials.length ? "warning" : ""}"><span>Материалы под риском</span><strong>${riskyMaterials.length}</strong></div>
+      </div>
+    </section>`;
+}
+
+function renderProjectAttention(project) {
+  const items = projectAttentionItems(project);
+  if (!items.length) {
+    return `
+      <section class="project-attention">
+        <strong>Что требует внимания</strong>
+        <p class="muted">Просрочек, блокеров, возвращённых задач и проблемных материалов не найдено.</p>
+      </section>`;
+  }
+  return `
+    <section class="project-attention">
+      <strong>Что требует внимания</strong>
+      <div class="project-attention-list">
+        ${items
+          .map(
+            (item) => `
+            <button class="attention-chip ${item.level}" type="button" data-project-tab="${item.tab}">
+              <span>${escapeHtml(item.title)}</span>
+              <strong>${item.count}</strong>
+            </button>`
+          )
+          .join("")}
+      </div>
+    </section>`;
+}
+
+function renderProjectOverview(project) {
+  return `
+    <div class="detail-grid">
+      <div class="info"><span>Статус</span><strong>${statusLabel(project.status)}</strong></div>
+      <div class="info"><span>Ответственный</span><strong>${project.foreman_name || "не назначен"}</strong></div>
+      <div class="info"><span>Этап</span><strong>${statusLabel(project.stage || project.status)}</strong></div>
+      <div class="info"><span>Срок</span><strong>${project.planned_end_date ? formatDateRu(project.planned_end_date) : "не задан"}</strong></div>
+    </div>`;
+}
+
+function renderProjectTaskList(tasks = []) {
+  if (!tasks.length) return `<p class="muted">Задач по объекту пока нет.</p>`;
+  return `<div class="list">${tasks.map(renderCompactTaskRow).join("")}</div>`;
+}
+
+function renderCompactTaskRow(task) {
+  return `
+    <button class="row clickable compact-task-card" type="button" data-open-task="${task.id}">
+      <div class="compact-task-title">
+        ${pill(taskTypeLabel(task.task_type), taskTypeLevel(task.task_type))}
+        <strong>${escapeHtml(task.title || "Задача")}</strong>
+      </div>
+      <div class="compact-task-meta">
+        <span>${escapeHtml(task.project_title || "объект")}</span>
+        <span>ответственный: ${escapeHtml(task.assignee_name || "не назначен")}</span>
+        <span>срок: ${task.due_date ? formatDateRu(task.due_date) : "без срока"}</span>
+      </div>
+      <div class="stack-line">
+        ${pill(statusLabel(task.status), taskStatusLevel(task.status))}
+        ${pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority))}
+      </div>
+    </button>`;
+}
+
+function renderProjectMaterialList(project) {
+  const batches = projectDetailBatches(project);
+  if (!batches.length) return `<p class="muted">Материалов и заявок по объекту пока нет.</p>`;
+  return `
+    <div class="list">
+      ${batches
+        .map(
+          (batch) => `
+          <button class="row clickable project-material-card" type="button" data-open-material-batch="${batch.key}">
+            <div class="stack-line">
+              <strong>${escapeHtml(materialBatchTitle(batch))}</strong>
+              ${pill(statusLabel(materialPipelineStatus(batch)), materialPipelineLevel(batch))}
+            </div>
+            ${renderMaterialPipeline(batch)}
+            <div class="muted">позиций: ${materialActiveItems(batch).length} · кто запросил: ${escapeHtml(batch.creator_name || "не указан")} · срок: ${batch.needed_at ? formatDateRu(batch.needed_at) : "не указан"}</div>
+            <div class="muted">смета: ${money(batch.total_amount)}${batch.actual_purchase_amount ? ` · факт закупки: ${money(batch.actual_purchase_amount)}` : ""}</div>
+            ${batch.procurement_comment ? `<p>${escapeHtml(batch.procurement_comment)}</p>` : ""}
+          </button>`
+        )
+        .join("")}
+    </div>`;
+}
+
 async function renderProjectDetail(projectId) {
   const project = await api(`/api/projects/${projectId}`);
   state.selectedProjectId = project.id;
   const docs = visibleDocuments(project.documents || []);
   const tabs = projectTabs();
   if (!tabs.includes(state.selectedProjectTab)) state.selectedProjectTab = tabs[0] || "overview";
-  const overviewHtml = canViewFinancials()
-    ? projectFinancialSummaryHtml(project)
-    : `
-      <div class="detail-grid">
-        <div class="info"><span>Статус</span><strong>${label(project.status)}</strong></div>
-        <div class="info"><span>Срок</span><strong>${project.planned_end_date || "не задан"}</strong></div>
-        <div class="info"><span>Прораб</span><strong>${project.foreman_name || "не назначен"}</strong></div>
-        <div class="info"><span>Технадзор</span><strong>${project.tech_supervisor_name || "не назначен"}</strong></div>
-      </div>`;
   const tabData = {
-    overview: overviewHtml,
-    tasks: renderSmallList(project.tasks, (task) => `${task.title} · ${label(task.status)} · ${task.due_date || "без срока"}`),
-    materials: `<p class="muted compact-note">Материалы здесь берутся только из файла материалов Сметтера и заявок. Файл “Задание на работы” сюда не попадает.</p>` + renderSmallList(
-      project.materials,
-      (item) =>
-        `${item.title} · ${item.requested_quantity || item.estimated_quantity || 0} ${item.requested_unit || item.estimate_material_unit || ""} · ${label(item.procurement_status)} · желаемая доставка: ${item.needed_at || "не указана"}${
-          item.actual_delivery_date ? ` · фактическая: ${item.actual_delivery_date}` : ""
-        }${item.procurement_comment ? ` · комментарий снабжения: ${item.procurement_comment}` : ""}`
-    ),
+    overview: renderProjectOverview(project),
+    tasks: renderProjectTaskList(project.tasks || []),
+    materials: `<p class="muted compact-note">Материалы здесь берутся только из файла материалов Сметтера и заявок. Файл “Задание на работы” сюда не попадает.</p>` + renderProjectMaterialList(project),
     works: `<p class="muted compact-note">Работы здесь берутся только из файла “Задание на работы”. Материалы из нижней части этого файла игнорируются.</p>` + renderSmallList(
       [...(project.works || []).map((item) => ({ ...item, kind: "plan" })), ...(project.extra_works || []).map((item) => ({ ...item, kind: "extra" }))],
       (item) =>
@@ -2924,8 +3430,11 @@ async function renderProjectDetail(projectId) {
           : `${item.title} · ${item.estimated_quantity || 0} ${item.unit || ""} · ${money(item.total_price)}`
     ),
     variations: canViewFinancials() ? renderSmallList(project.variations, (item) => `${item.title} · ${variationType(item.type)} · ${money(item.amount)} · ${moneyDecision(item.financial_decision)}`) : `<p class="muted">Финансовые отклонения доступны руководителям и сметчикам.</p>`,
+    photos: (project.photo_reports || []).length ? (project.photo_reports || []).map(renderPhotoReportCard).join("") : `<p class="muted">Фотоотчётов по объекту пока нет.</p>`,
+    remarks: (project.object_remarks || []).length ? (project.object_remarks || []).map(renderObjectRemarkCard).join("") : `<p class="muted">Замечаний по объекту пока нет.</p>`,
     documents: renderGroupedProjectDocuments(docs, project.contracts || []),
     events: renderProjectHistory(project),
+    finances: canViewFinancials() ? projectFinancialSummaryHtml(project) : `<p class="muted">Финансы доступны руководителям и бухгалтерии.</p>`,
   };
   const detailBlocks = [
     [
@@ -2978,7 +3487,8 @@ async function renderProjectDetail(projectId) {
     : "";
   const projectDocsSpotlightHtml = renderProjectDocumentSpotlight(docs);
   qs("#projectDetail").innerHTML = `
-    <div class="stack-line"><h2>${project.title}</h2>${pill(label(project.status), "blue")}</div>
+    ${renderProjectHero(project)}
+    ${renderProjectAttention(project)}
     ${customerInfoHtml}
     ${managerNoteHtml}
     ${projectDocsSpotlightHtml}
@@ -3282,9 +3792,12 @@ function tabTitle(tab) {
     tasks: "Задачи",
     works: "Работы",
     materials: "Материалы",
+    photos: "Фото",
+    remarks: "Замечания",
     variations: "Допработы",
     documents: currentRoleBase() === "foreman" ? "Файлы проекта" : "Документы",
     events: "История",
+    finances: "Финансы",
   }[tab];
 }
 
@@ -3349,7 +3862,8 @@ async function renderTasks() {
             <details class="row task-row task-collapsible" data-collapsible-key="${escapeAttr(taskKey)}"${openAttrForKey(taskKey)}>
               <summary class="task-summary">
                 <span class="task-summary-main">
-                  <strong>${task.title}</strong>
+                  <span class="stack-line">${pill(taskTypeLabel(task.task_type), taskTypeLevel(task.task_type))}<strong>${escapeHtml(task.title || "Задача")}</strong></span>
+                  <span class="task-summary-meta">${escapeHtml(task.project_title || "объект не указан")} · ${escapeHtml(task.assignee_name || "ответственный не назначен")}</span>
                   <span class="stack-line">${pill(label(task.status), taskStatusLevel(task.status))}${pill(task.due_date || "без срока", levelByDate(task.due_date))}${pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority))}</span>
                 </span>
               </summary>
@@ -3751,7 +4265,7 @@ async function renderMaterials() {
         </div>
         <div class="stack-line">
           ${pill(urgencyLabel(batch.delivery_urgency), urgencyLevel(batch.delivery_urgency))}
-          ${pill(label(batch.status), materialBatchLevel(batch.status))}
+          ${pill(statusLabel(materialPipelineStatus(batch)), materialPipelineLevel(batch))}
         </div>
       </button>`;
   };
@@ -3816,7 +4330,7 @@ async function openMaterialBatchDialog(batchKey) {
       <div class="stack-line">
         <h3>${batch.project_title || "Объект не указан"}</h3>
         ${pill(urgencyLabel(batch.delivery_urgency), urgencyLevel(batch.delivery_urgency))}
-        ${pill(label(batch.status), materialBatchLevel(batch.status))}
+        ${pill(statusLabel(materialPipelineStatus(batch)), materialPipelineLevel(batch))}
       </div>
       <p class="muted">Кто заказал: ${batch.creator_name || "не указано"} · желаемая доставка: ${batch.needed_at || "не указана"} · позиций: ${activeItems.length}${removedItems.length ? ` · удалено при исправлении: ${removedItems.length}` : ""}</p>
       ${batch.actual_purchase_amount ? `<p class="muted">Фактическая стоимость закупки: ${money(batch.actual_purchase_amount)} · сметная сумма заявки: ${money(batch.total_amount)}</p>` : ""}
@@ -3983,7 +4497,7 @@ function variationType(type) {
     estimate_error: "Ошибка сметы",
     company_cost: "За счет компании",
     disputed_position: "Спорно",
-  }[type] || type;
+  }[type] || statusLabel(type);
 }
 
 function moneyDecision(value) {
@@ -4118,13 +4632,12 @@ async function handleVariationAction(button) {
 }
 
 function contractType(type) {
-  return {
+  return statusLabelMap[type] || {
     customer_contract: "Заказчик",
-    additional_agreement: "Доп. соглашение",
     supplier_contract: "Поставщик",
     contractor_contract: "Подрядчик",
     equipment_rent: "Аренда",
-  }[type] || type;
+  }[type] || "Договор";
 }
 
 async function renderContracts() {
@@ -4533,19 +5046,11 @@ async function renderDocuments() {
 }
 
 function feedbackStatusLabel(status) {
-  return {
-    new: "Новое",
-    in_work: "В работе",
-    done: "Обработано",
-  }[status] || status || "Новое";
+  return statusLabelMap[`feedback_${status}`] || statusLabel(status || "new");
 }
 
 function feedbackStatusLevel(status) {
-  return {
-    new: "warning",
-    in_work: "blue",
-    done: "success",
-  }[status] || "";
+  return statusLevel(`feedback_${status}`, statusLevel(status));
 }
 
 function renderFeedbackAttachments(attachments = []) {
@@ -4796,6 +5301,62 @@ async function submitForm(dialogId, formId, endpoint, successMessage) {
   form.reset();
   await loadAll();
   showToast(successMessage);
+}
+
+async function submitPhotoReportForm(event) {
+  event.preventDefault();
+  const form = qs("#photoReportForm");
+  const files = Array.from(form.elements.attachments?.files || []);
+  if (!files.length) {
+    showToast("Прикрепите фото или видео по объекту");
+    return;
+  }
+  const payload = {
+    project_id: form.elements.project_id.value,
+    report_date: form.elements.report_date.value || todayIso(),
+    stage: form.elements.stage.value,
+    zones: form.elements.zones.value,
+    comment: form.elements.comment.value,
+    notify_personal: form.elements.notify_personal?.checked || false,
+    attachments: await Promise.all(files.map((file) => fileDocumentPayload(file, file.name, "photo_report", "photo_report"))),
+  };
+  await api("/api/photo-reports", {
+    method: "POST",
+    loadingMessage: "Загружаем фотоотчёт",
+    body: JSON.stringify(payload),
+  });
+  qs("#photoReportDialog").close();
+  form.reset();
+  await loadAll();
+  showToast("Фотоотчёт сохранён");
+}
+
+async function submitObjectRemarkForm(event) {
+  event.preventDefault();
+  const form = qs("#objectRemarkForm");
+  const beforeFile = form.elements.photo_before?.files?.[0];
+  const afterFile = form.elements.photo_after?.files?.[0];
+  const payload = {
+    project_id: form.elements.project_id.value,
+    zone: form.elements.zone.value,
+    description: form.elements.description.value,
+    responsible_id: form.elements.responsible_id.value,
+    due_date: form.elements.due_date.value,
+    status: form.elements.status.value,
+    checked_by_id: form.elements.checked_by_id.value,
+    notify_personal: form.elements.notify_personal?.checked || false,
+    photo_before: beforeFile ? await fileDocumentPayload(beforeFile, `Фото до: ${beforeFile.name}`, "object_remark_photo", "object_remark") : null,
+    photo_after: afterFile ? await fileDocumentPayload(afterFile, `Фото после: ${afterFile.name}`, "object_remark_photo", "object_remark") : null,
+  };
+  await api("/api/object-remarks", {
+    method: "POST",
+    loadingMessage: "Сохраняем замечание",
+    body: JSON.stringify(payload),
+  });
+  qs("#objectRemarkDialog").close();
+  form.reset();
+  await loadAll();
+  showToast("Замечание сохранено");
 }
 
 function hasOpenDialog() {
@@ -5204,8 +5765,11 @@ function bindEvents() {
     state.selectedTaskProjectId = null;
     await renderTasks();
     await renderEstimateJobs();
+    await renderToday();
     await renderDashboard();
     await renderMaterials();
+    await renderObjectRemarks();
+    await renderPhotoReports();
     await renderDocuments();
     fillMaterialProjectSelect();
     updateMaterialActorHint();
@@ -5246,6 +5810,19 @@ function bindEvents() {
     qs("#materialDialog").showModal();
   });
   qs("#newVariationButton").addEventListener("click", () => qs("#variationDialog").showModal());
+  qs("#newObjectRemarkButton")?.addEventListener("click", () => {
+    const form = qs("#objectRemarkForm");
+    form.reset();
+    if (state.selectedProjectId && form.elements.project_id) form.elements.project_id.value = String(state.selectedProjectId);
+    qs("#objectRemarkDialog").showModal();
+  });
+  qs("#newPhotoReportButton")?.addEventListener("click", () => {
+    const form = qs("#photoReportForm");
+    form.reset();
+    if (state.selectedProjectId && form.elements.project_id) form.elements.project_id.value = String(state.selectedProjectId);
+    form.elements.report_date.value = todayIso();
+    qs("#photoReportDialog").showModal();
+  });
   qs("#newKnowledgeFolderButton")?.addEventListener("click", () => {
     const form = qs("#knowledgeFolderForm");
     form.reset();
@@ -5416,6 +5993,13 @@ function bindEvents() {
     if (feedbackFilterButton) {
       state.feedbackFilter = feedbackFilterButton.dataset.feedbackFilter;
       await renderFeedback();
+      return;
+    }
+
+    const remarkFilterButton = event.target.closest("[data-remark-filter]");
+    if (remarkFilterButton) {
+      state.remarkFilter = remarkFilterButton.dataset.remarkFilter;
+      await renderObjectRemarks();
       return;
     }
 
@@ -5997,6 +6581,8 @@ function bindEvents() {
     qs('#taskForm input[name="creator_id"]').value = currentUserId() || "";
     submitForm("taskDialog", "taskForm", "/api/tasks", "Задача создана");
   });
+  qs("#photoReportForm")?.addEventListener("submit", submitPhotoReportForm);
+  qs("#objectRemarkForm")?.addEventListener("submit", submitObjectRemarkForm);
   qs("#estimateJobForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = qs("#estimateJobForm");
