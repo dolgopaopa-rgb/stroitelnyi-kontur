@@ -923,7 +923,24 @@ def material_batch_watchers(db, batch) -> set[int]:
     }
 
 
-def notify_users(db, user_ids: set[int], project_id: int, title: str, text: str, related_type: str | None = None, related_id: int | None = None) -> None:
+def truthy_flag(value) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on", "да"}
+
+
+def force_personal_max(data: dict | None) -> bool:
+    return truthy_flag((data or {}).get("notify_personal"))
+
+
+def notify_users(
+    db,
+    user_ids: set[int],
+    project_id: int,
+    title: str,
+    text: str,
+    related_type: str | None = None,
+    related_id: int | None = None,
+    force_max: bool = False,
+) -> None:
     for user_id in user_ids:
         create_notification(
             db,
@@ -934,6 +951,7 @@ def notify_users(db, user_ids: set[int], project_id: int, title: str, text: str,
             text,
             related_type,
             related_id,
+            force_max=force_max,
         )
 
 
@@ -1267,6 +1285,7 @@ def create_notification(
     text: str,
     related_type: str | None = None,
     related_id: int | None = None,
+    force_max: bool = False,
 ) -> None:
     max_status = "disabled" if not os.environ.get("MAX_TOKEN", "").strip() else "not_bound"
     max_chat_id = ""
@@ -1275,7 +1294,7 @@ def create_notification(
             "SELECT max_chat_id, max_notifications_enabled FROM users WHERE id = ?",
             (user_id,),
         ).fetchone()
-        if user and int(user["max_notifications_enabled"] or 0) and str(user["max_chat_id"] or "").strip():
+        if user and (int(user["max_notifications_enabled"] or 0) or force_max) and str(user["max_chat_id"] or "").strip():
             max_status = "queued"
             max_chat_id = str(user["max_chat_id"]).strip()
     cursor = db.execute(
@@ -1614,7 +1633,7 @@ def project_visible_for_account(project: dict, account: dict | None) -> bool:
 
 
 DOCUMENT_TYPES_BY_ROLE = {
-    "foreman": {"smetter_materials", "smetter_work_task", "project_documentation", "variation_attachment", "detail_node", "regulation", "standard", "instruction", "other"},
+    "foreman": {"project_documentation", "detail_node", "regulation", "standard", "instruction"},
     "procurement_manager": {"smetter_materials", "project_documentation", "variation_attachment", "detail_node", "regulation", "standard", "instruction", "other"},
     "technical_supervisor": {"smetter_materials", "smetter_work_task", "project_documentation", "variation_attachment", "detail_node", "regulation", "standard", "instruction", "other"},
     "estimator": {"main_estimate", "smetter_materials", "smetter_work_task", "project_documentation", "variation_attachment", "variation_estimate", "act", "ks_2", "ks_3", "other"},
@@ -3825,6 +3844,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 if not project:
                     json_response(self, {"error": "Project not found"}, 404)
                     return
+                force_max = force_personal_max(data)
 
                 if action == "submit" and project["status"] not in {"draft", "revision_requested"}:
                     raise ValueError("Передать можно только черновик или объект, возвращенный на доработку.")
@@ -4012,6 +4032,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         "Новый объект передан в строительство",
                         f"{project['title']}: проверьте карточку, документацию и примите объект в работу или верните на доработку."
                         + (f" Комментарий менеджера: {correction_comment}" if correction_comment else ""),
+                        force_max=force_max,
                     )
                     db.execute(
                         """
@@ -4048,6 +4069,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         "sales_manager",
                         "Объект возвращен на доработку",
                         f"{project['title']}: {comment}",
+                        force_max=force_max,
                     )
                     db.execute(
                         """
@@ -4105,6 +4127,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             role,
                             "Объект принят в работу",
                             f"{project['title']}: руководитель строительства принял объект и назначил вас участником.",
+                            force_max=force_max,
                         )
                     db.execute(
                         """
@@ -4154,6 +4177,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             role,
                             "Назначение по объекту обновлено",
                             f"{project['title']}: руководитель строительства обновил состав ответственных.",
+                            force_max=force_max,
                         )
                     db.execute(
                         """
@@ -4416,6 +4440,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 request_role = account_role(account)
                 request_user_id = account_user_id(account)
                 privileged_task_role = request_role in {"owner", "construction_manager", "finance_director"}
+                force_max = force_personal_max(data)
                 if action in {"complete", "postpone"} and not privileged_task_role and (not request_user_id or request_user_id != task["assignee_id"]):
                     json_response(self, {"error": "Forbidden"}, 403)
                     return
@@ -4444,7 +4469,9 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     return
 
                 if action == "complete":
-                    comment = str(data.get("comment") or "").strip() or "Исполнитель отметил задачу выполненной."
+                    comment = str(data.get("comment") or "").strip()
+                    if not comment:
+                        raise ValueError("После выполнения задачи напишите, что именно сделано.")
                     db.execute(
                         """
                         UPDATE tasks
@@ -4475,6 +4502,9 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         role_by_user_id(db, reviewer_id),
                         "Задача выполнена, нужна приемка",
                         f"{task['project_title']}: {task['title']}",
+                        "task",
+                        task_id,
+                        force_max=force_max,
                     )
                     for watcher_id in (user_id_by_role(db, "construction_manager"), user_id_by_role(db, "owner")):
                         if watcher_id and watcher_id != reviewer_id:
@@ -4485,6 +4515,9 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                                 role_by_user_id(db, watcher_id),
                                 "Задача выполнена, нужна приемка",
                                 f"{task['project_title']}: {task['title']}",
+                                "task",
+                                task_id,
+                                force_max=force_max,
                             )
                     db.commit()
                     json_response(self, {"id": task_id, "status": "completed_pending_acceptance"})
@@ -4522,6 +4555,9 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         role_by_user_id(db, task["assignee_id"]),
                         "Выполнение задачи принято",
                         f"{task['project_title']}: {task['title']}",
+                        "task",
+                        task_id,
+                        force_max=force_max,
                     )
                     db.commit()
                     json_response(self, {"id": task_id, "status": "accepted"})
@@ -4560,6 +4596,9 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         role_by_user_id(db, task["assignee_id"]),
                         "Задача возвращена на доработку",
                         f"{task['project_title']}: {task['title']}. {comment}",
+                        "task",
+                        task_id,
+                        force_max=force_max,
                     )
                     db.commit()
                     json_response(self, {"id": task_id, "status": "returned"})
@@ -4605,6 +4644,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                                 f"{task['project_title']}: {task['title']}. {comment}",
                                 "task",
                                 task_id,
+                                force_max=force_max,
                             )
                     db.commit()
                     json_response(self, {"id": task_id, "status": "in_progress_task"})
@@ -4616,6 +4656,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 actor_id = int(data.get("actor_id") or 0) or account_user_id(account) or None
                 comment = str(data.get("comment") or "").strip()
                 attachments = data.get("attachments") or []
+                force_max = force_personal_max(data)
                 if not comment and not attachments:
                     raise ValueError("Напишите комментарий по задаче или прикрепите файл.")
                 task = db.execute(
@@ -4672,6 +4713,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             f"{task['project_title']}: {task['title']}. {comment[:180]}",
                             "task",
                             task_id,
+                            force_max=force_max,
                         )
                 db.commit()
                 json_response(self, {"id": task_id, "comment": comment})
@@ -4694,6 +4736,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     json_response(self, {"error": "Material request batch not found"}, 404)
                     return
                 watcher_ids = material_batch_watchers(db, batch)
+                force_max = force_personal_max(data)
                 if action == "create_variation":
                     actor_role = str(data.get("actor_role") or "").strip()
                     actor_id = int(data.get("actor_id") or 0) or None
@@ -4777,6 +4820,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         message,
                         "variation",
                         variation_id,
+                        force_max=force_max,
                     )
                     db.execute(
                         """
@@ -4803,6 +4847,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         message,
                         "material_request_batch",
                         batch_id,
+                        force_max=force_max,
                     )
                     db.execute(
                         """
@@ -4953,6 +4998,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         message,
                         "material_request_batch",
                         batch_id,
+                        force_max=force_max,
                     )
                     notify_material_deviation_for_estimators(
                         db,
@@ -4998,6 +5044,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             message,
                             "material_request_batch",
                             batch_id,
+                            force_max=force_max,
                         )
                     db.execute(
                         """
@@ -5042,6 +5089,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         message,
                         "material_request_batch",
                         batch_id,
+                        force_max=force_max,
                     )
                     notify_material_deviation_for_estimators(
                         db,
@@ -5057,9 +5105,10 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             role_by_user_id(db, watcher_id),
                             "Заявка на материалы повторно отправлена",
                             message,
-                        "material_request_batch",
-                        batch_id,
-                    )
+                            "material_request_batch",
+                            batch_id,
+                            force_max=force_max,
+                        )
                     json_response(self, {"id": batch_id, "status": "new"})
                     return
                 if action == "save_actuals":
@@ -5080,6 +5129,20 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         (actual_purchase_amount, comment or batch["procurement_comment"] or "", batch_id),
                     )
                     notify_material_actual_cost_overrun(db, batch_id, batch)
+                    if force_max:
+                        price_message = f"{batch['project_title']}: снабжение сохранило фактические цены закупки по заявке от {format_date_ru(batch['created_at'])}."
+                        if actual_purchase_amount:
+                            price_message += f" Сумма закупки: {actual_purchase_amount:g} ₽."
+                        notify_users(
+                            db,
+                            watcher_ids,
+                            batch["project_id"],
+                            "Фактические цены закупки сохранены",
+                            price_message,
+                            "material_request_batch",
+                            batch_id,
+                            force_max=True,
+                        )
                     json_response(self, {"id": batch_id, "status": batch["status"], "actual_purchase_amount": actual_purchase_amount})
                     return
                 if action == "schedule":
@@ -5122,6 +5185,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         message,
                         "material_request_batch",
                         batch_id,
+                        force_max=force_max,
                     )
                     notify_material_actual_cost_overrun(db, batch_id, batch)
                     db.execute(
@@ -5177,6 +5241,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         message,
                         "material_request_batch",
                         batch_id,
+                        force_max=force_max,
                     )
                     db.execute(
                         """
@@ -5252,6 +5317,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         message,
                         "material_request_batch",
                         batch_id,
+                        force_max=force_max,
                     )
                     db.execute(
                         """
@@ -5293,6 +5359,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         message,
                         "material_request_batch",
                         batch_id,
+                        force_max=force_max,
                     )
                 db.execute(
                     """
@@ -5357,6 +5424,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 return
 
             if path == "/api/tasks":
+                force_max = force_personal_max(data)
                 creator_role = data.get("creator_role") or "construction_manager"
                 creator_id = int(data.get("creator_id") or 0) or user_id_by_role(db, creator_role) or user_id_by_role(db, "construction_manager") or 2
                 reviewer_id = int(data.get("reviewer_id") or creator_id)
@@ -5404,6 +5472,9 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     role_by_user_id(db, assignee_id),
                     "Назначена новая задача",
                     f"{project['title'] if project else 'Объект'}: {data.get('title') or 'Новая задача'}",
+                    "task",
+                    int(cursor.lastrowid),
+                    force_max=force_max,
                 )
                 for watcher_id in (user_id_by_role(db, "construction_manager"), user_id_by_role(db, "owner")):
                     if watcher_id and watcher_id not in {assignee_id, creator_id}:
@@ -5414,11 +5485,15 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             role_by_user_id(db, watcher_id),
                             "Назначена новая задача",
                             f"{project['title'] if project else 'Объект'}: {data.get('title') or 'Новая задача'}",
+                            "task",
+                            int(cursor.lastrowid),
+                            force_max=force_max,
                         )
                 json_response(self, {"id": cursor.lastrowid}, 201)
                 return
 
             if path == "/api/material-requests/bulk":
+                force_max = force_personal_max(data)
                 project_id = int(data["project_id"])
                 needed_at = data.get("needed_at") or None
                 creator_role = data.get("creator_role") or ""
@@ -5550,6 +5625,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     text,
                     "material_request_batch",
                     batch_id,
+                    force_max=force_max,
                 )
                 if project and any(
                     row["basis_type"] != "main_estimate"

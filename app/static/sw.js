@@ -1,8 +1,8 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260615-project-history-max";
+const CACHE_NAME = "stroitelnyi-kontur-20260615-personal-max-docs-scroll";
 const CORE_ASSETS = [
   "/",
-  "/static/styles.css?v=20260615-project-history-max",
-  "/static/app.compat.js?v=20260615-project-history-max",
+  "/static/styles.css?v=20260615-personal-max-docs-scroll",
+  "/static/app.compat.js?v=20260615-personal-max-docs-scroll",
   "/static/manifest.webmanifest?v=20260611-android-pwa",
   "/static/assets/g2-logo-192.png",
   "/static/assets/g2-logo-512.png"

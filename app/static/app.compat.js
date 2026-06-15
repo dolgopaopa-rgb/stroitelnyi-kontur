@@ -453,10 +453,17 @@
     sales_manager: null,
     accountant: /* @__PURE__ */ new Set(["main_estimate", "smetter_materials", "smetter_work_task", "contract", "variation_estimate", "act", "ks_2", "ks_3", "other"]),
     estimator: /* @__PURE__ */ new Set(["main_estimate", "smetter_materials", "smetter_work_task", "project_documentation", "variation_estimate", "act", "ks_2", "ks_3", "other"]),
-    foreman: /* @__PURE__ */ new Set(["smetter_materials", "smetter_work_task", "project_documentation", "detail_node", "regulation", "standard", "instruction", "other"]),
+    foreman: /* @__PURE__ */ new Set(["project_documentation", "detail_node", "regulation", "standard", "instruction"]),
     procurement_manager: /* @__PURE__ */ new Set(["smetter_materials", "project_documentation", "detail_node", "regulation", "standard", "instruction", "other"]),
     technical_supervisor: /* @__PURE__ */ new Set(["smetter_materials", "smetter_work_task", "project_documentation", "detail_node", "regulation", "standard", "instruction", "other"])
   };
+  var projectFileDocumentTypes = /* @__PURE__ */ new Set(["project_documentation", "detail_node", "regulation", "standard", "instruction"]);
+  function isProjectFileDocument(doc) {
+    return projectFileDocumentTypes.has(doc.type || "other");
+  }
+  function isProcessDocument(doc) {
+    return !isProjectFileDocument(doc);
+  }
   function isProjectDocument(doc) {
     const relatedType = String(doc.related_type || "project");
     return !["task", "material_request", "material_request_batch", "variation"].includes(relatedType);
@@ -475,7 +482,7 @@
       finance_director: ["overview", "tasks", "works", "materials", "variations", "documents", "events"],
       accountant: ["overview", "materials", "variations", "documents", "events"],
       sales_manager: ["overview", "documents"],
-      foreman: ["overview", "tasks", "works", "materials", "documents", "events"],
+      foreman: ["overview", "tasks", "works", "materials", "variations", "documents"],
       procurement_manager: ["overview", "materials", "documents", "events"],
       estimator: ["overview", "works", "materials", "variations", "documents", "events"],
       technical_supervisor: ["overview", "tasks", "works", "materials", "documents", "events"]
@@ -701,24 +708,38 @@
       return acc;
     }, {});
   }
+  function renderDocumentRows(items) {
+    return '<div class="document-list">'.concat(items.map((doc) => '<div class="document-row">'.concat(documentFileLink(doc), "</div>")).join(""), "</div>");
+  }
+  function renderDocumentDetails(title, items, { open = false, tone = "blue" } = {}) {
+    if (!items.length) return "";
+    return '\n    <details class="document-contract-group" '.concat(open ? "open" : "", ">\n      <summary>").concat(title, " ").concat(pill("".concat(items.length, " шт."), tone), "</summary>\n      ").concat(renderDocumentRows(items), "\n    </details>");
+  }
   function renderGroupedProjectDocuments(docs, contracts = []) {
     const byContract = contractTitleById(contracts);
     const activeDocs = docs.filter((doc) => doc.status !== "archived");
     const archivedDocs = docs.filter((doc) => doc.status === "archived");
-    const groups = activeDocs.reduce((acc, doc) => {
+    const projectFiles = activeDocs.filter(isProjectFileDocument);
+    const processDocs = activeDocs.filter(isProcessDocument);
+    const archivedProjectFiles = archivedDocs.filter(isProjectFileDocument);
+    const archivedProcessDocs = archivedDocs.filter(isProcessDocument);
+    const processGroups = processDocs.reduce((acc, doc) => {
       const key = doc.contract_id ? byContract[Number(doc.contract_id)] || "Договор / доп. соглашение" : "Общие документы объекта";
       acc[key] = acc[key] || [];
       acc[key].push(doc);
       return acc;
     }, {});
-    const activeHtml = Object.entries(groups).map(
-      ([title, items]) => '\n        <details class="document-contract-group" open>\n          <summary>'.concat(title, " ").concat(pill("".concat(items.length, " шт."), "blue"), '</summary>\n          <div class="document-list">').concat(items.map((doc) => '<div class="document-row">'.concat(documentFileLink(doc), "</div>")).join(""), "</div>\n        </details>")
-    ).join("");
-    const archiveHtml = archivedDocs.length ? '\n      <details class="document-contract-group">\n        <summary>Архив замененных файлов '.concat(pill("".concat(archivedDocs.length, " шт."), "warning"), '</summary>\n        <div class="document-list">').concat(archivedDocs.map((doc) => '<div class="document-row">'.concat(documentFileLink(doc), "</div>")).join(""), "</div>\n      </details>") : "";
-    return activeHtml || archiveHtml ? "".concat(activeHtml).concat(archiveHtml) : '<p class="muted">Документы пока не загружены. Добавить договор, смету или проект можно через кнопку “Редактировать”.</p>';
+    const projectFilesHtml = renderDocumentDetails("Файлы проекта", projectFiles, { open: true, tone: "success" });
+    const processHtml = Object.entries(processGroups).map(([title, items]) => renderDocumentDetails(title, items, { open: currentRoleBase() === "sales_manager", tone: "blue" })).join("");
+    const archiveHtml = archivedDocs.length ? '\n      <details class="document-contract-group">\n        <summary>Архив замененных файлов '.concat(pill("".concat(archivedDocs.length, " шт."), "warning"), "</summary>\n        ").concat(archivedProjectFiles.length ? renderDocumentDetails("Архив файлов проекта", archivedProjectFiles, { tone: "warning" }) : "", "\n        ").concat(archivedProcessDocs.length ? renderDocumentDetails("Архив документов по проекту", archivedProcessDocs, { tone: "warning" }) : "", "\n      </details>") : "";
+    if (currentRoleBase() === "foreman") {
+      return projectFilesHtml || archiveHtml ? "".concat(projectFilesHtml).concat(archivedProjectFiles.length ? archiveHtml : "") : '<p class="muted">Файлы проекта пока не загружены.</p>';
+    }
+    return projectFilesHtml || processHtml || archiveHtml ? "".concat(projectFilesHtml).concat(processHtml ? '<h4 class="document-section-title">Документы по проекту</h4>'.concat(processHtml) : "").concat(archiveHtml) : '<p class="muted">Файлы и документы пока не загружены. Добавить договор, смету или проект можно через кнопку “Редактировать”.</p>';
   }
   function renderDocumentSummary(docs, contracts = []) {
-    return '\n    <section class="workflow-panel document-summary compact-collapsible">\n      <details>\n        <summary>\n          <span>Документы объекта</span>\n          '.concat(pill("".concat(docs.length, " шт."), docs.length ? "blue" : ""), "\n        </summary>\n        ").concat(renderGroupedProjectDocuments(docs, contracts), "\n      </details>\n    </section>");
+    const title = currentRoleBase() === "foreman" ? "Файлы проекта" : "Документы объекта";
+    return '\n    <section class="workflow-panel document-summary compact-collapsible">\n      <details>\n        <summary>\n          <span>'.concat(title, "</span>\n          ").concat(pill("".concat(docs.length, " шт."), docs.length ? "blue" : ""), "\n        </summary>\n        ").concat(renderGroupedProjectDocuments(docs, contracts), "\n      </details>\n    </section>");
   }
   function renderProjectDocumentSpotlight(docs = []) {
     const projectDocs = docs.filter((doc) => doc.status !== "archived" && doc.type === "project_documentation");
@@ -738,6 +759,14 @@
   }
   function renderDashboardTaskRow(task) {
     return '\n    <button class="row clickable dashboard-task-row" type="button" data-open-task="'.concat(task.id, '">\n      <div class="stack-line"><strong>').concat(task.title, "</strong>").concat(pill(label(task.status), taskStatusLevel(task.status))).concat(pill(task.due_date || "без срока", levelByDate(task.due_date)), '</div>\n      <div class="muted">').concat(task.project_title, " · ответственный: ").concat(task.assignee_name || "не назначен", " · принимает: ").concat(task.reviewer_name || task.creator_name || "не назначен", "</div>\n    </button>");
+  }
+  function personalNotifyControl({ name = false } = {}) {
+    const inputAttr = name ? 'name="notify_personal" value="1"' : "data-notify-personal";
+    return '\n    <label class="checkbox-line personal-notify">\n      <input type="checkbox" '.concat(inputAttr, " />\n      <span>Уведомить личным сообщением в MAX</span>\n    </label>");
+  }
+  function readPersonalNotify(root) {
+    var _a, _b;
+    return Boolean(((_a = root == null ? void 0 : root.querySelector("[data-notify-personal]")) == null ? void 0 : _a.checked) || ((_b = root == null ? void 0 : root.querySelector('[name="notify_personal"]')) == null ? void 0 : _b.checked));
   }
   function showToast(message) {
     const toast = qs("#toast");
@@ -1578,7 +1607,7 @@
   function renderMaterialBatchEditSection(batch) {
     return '\n    <section class="workflow-panel material-batch-edit-panel">\n      <h3>Исправление заявки</h3>\n      <p class="muted">Пока снабжение не взяло заявку в работу, ее можно изменить или удалить. После принятия в работу правки блокируются.</p>\n      <div class="table material-batch-edit-list" id="materialBatchEditRows">\n        '.concat(batch.items.map(
       (item) => '\n            <div class="row material-batch-edit-row'.concat(materialItemChangeClass(item), '" data-edit-item-id="').concat(item.id, '">\n              <div class="material-main">\n                <div class="stack-line">\n                  <strong>').concat(item.title, "</strong>\n                  ").concat(materialChangePill(item), '\n                  <span class="pill danger remove-change-badge">Будет удалено</span>\n                </div>\n                <div class="muted">').concat(item.estimate_section || "без раздела", "</div>\n                ").concat(!item.estimate_material_id ? '<label>Наименование <input data-edit-item-title value="'.concat(escapeAttr(item.title), '" /></label>') : "", "\n              </div>\n              ").concat(!item.estimate_material_id ? '<label>Ед. изм. <input data-edit-item-unit value="'.concat(escapeAttr(item.requested_unit || item.estimate_material_unit || ""), '" placeholder="шт, м, кг, упак." /></label>') : "", '\n              <label>Количество <input data-edit-item-quantity type="number" min="0" step="0.001" value="').concat(item.requested_quantity || item.estimated_quantity || 0, '" /></label>\n              ').concat(!item.estimate_material_id ? '<label>Причина\n                      <select data-edit-item-basis>\n                        <option value="additional_work" '.concat(item.basis_type === "additional_work" ? "selected" : "", '>Доп</option>\n                        <option value="material_replacement" ').concat(item.basis_type === "material_replacement" ? "selected" : "", '>Замена</option>\n                        <option value="main_estimate_overspend" ').concat(item.basis_type === "main_estimate_overspend" ? "selected" : "", '>Превышение</option>\n                        <option value="over_budget_cost" ').concat(item.basis_type === "over_budget_cost" ? "selected" : "", ">Сверх бюджета</option>\n                      </select>\n                    </label>") : "<div>".concat(pill(materialBasisLabel(item.basis_type), materialBasisLevel(item.basis_type)), "</div>"), '\n              <label class="wide-field">Комментарий <textarea data-edit-item-comment rows="2">').concat(item.comment || "", '</textarea></label>\n              <label class="check-line"><input data-edit-item-remove type="checkbox" ').concat(isRemovedMaterialItem(item) ? "checked" : "", " /> Удалить позицию</label>\n            </div>")
-    ).join(""), '\n      </div>\n      <div class="stack-line material-extra-head">\n        <h4>Добавить новые материалы</h4>\n        <button class="secondary" type="button" data-add-batch-extra-material>Добавить строку</button>\n      </div>\n      <div class="table" id="batchExtraMaterialRows"></div>\n      <label>Желаемая дата доставки <input id="materialBatchUpdateNeededAt" type="date" value="').concat(batch.needed_at || "", '" /></label>\n      <label>Комментарий к исправлению <textarea id="materialBatchUpdateComment" rows="3" placeholder="Например: уточнил длину арматуры, добавил замену"></textarea></label>\n      <div class="form-actions">\n        <button class="primary" type="button" data-material-batch-action="update" data-material-batch-id="').concat(batch.id, '">Сохранить и отправить снова</button>\n        <button class="danger-button" type="button" data-material-batch-action="delete" data-material-batch-id="').concat(batch.id, '">Удалить заявку</button>\n      </div>\n    </section>');
+    ).join(""), '\n      </div>\n      <div class="stack-line material-extra-head">\n        <h4>Добавить новые материалы</h4>\n        <button class="secondary" type="button" data-add-batch-extra-material>Добавить строку</button>\n      </div>\n      <div class="table" id="batchExtraMaterialRows"></div>\n      <label>Желаемая дата доставки <input id="materialBatchUpdateNeededAt" type="date" value="').concat(batch.needed_at || "", '" /></label>\n      <label>Комментарий к исправлению <textarea id="materialBatchUpdateComment" rows="3" placeholder="Например: уточнил длину арматуры, добавил замену"></textarea></label>\n      ').concat(personalNotifyControl(), '\n      <div class="form-actions">\n        <button class="primary" type="button" data-material-batch-action="update" data-material-batch-id="').concat(batch.id, '">Сохранить и отправить снова</button>\n        <button class="danger-button" type="button" data-material-batch-action="delete" data-material-batch-id="').concat(batch.id, '">Удалить заявку</button>\n      </div>\n    </section>');
   }
   function collectMaterialBatchEdits() {
     return qsa("#materialBatchEditRows .material-batch-edit-row").map((row) => {
@@ -1600,15 +1629,18 @@
       returned: tasks.filter((task) => task.status === "returned").length,
       waiting: tasks.filter((task) => task.status === "completed_pending_acceptance").length,
       accepted: tasks.filter((task) => task.status === "accepted").length,
-      overdue: tasks.filter((task) => task.status !== "accepted" && levelByDate(task.due_date) === "danger").length
+      overdue: tasks.filter(taskCountsAsOverdue).length
     };
+  }
+  function taskCountsAsOverdue(task) {
+    return ["new", "in_progress_task", "review"].includes(task.status) && levelByDate(task.due_date) === "danger";
   }
   function taskMatchesFilter(task, filter) {
     if (filter === "active") return ["new", "in_progress_task", "review"].includes(task.status);
     if (filter === "returned") return task.status === "returned";
     if (filter === "waiting") return task.status === "completed_pending_acceptance";
     if (filter === "accepted") return task.status === "accepted";
-    if (filter === "overdue") return task.status !== "accepted" && levelByDate(task.due_date) === "danger";
+    if (filter === "overdue") return taskCountsAsOverdue(task);
     return true;
   }
   function isOpenTask(task) {
@@ -2231,15 +2263,15 @@
       return '\n      <section class="workflow-panel">\n        <div class="stack-line"><h3>Архив</h3>'.concat(pill("Объект скрыт из работы", "blue"), '</div>\n        <p class="muted">Причина: ').concat(project.archive_reason || "не указана", '</p>\n        <div class="form-actions">\n          ').concat(restoreButton, "\n          ").concat(deleteButton, "\n        </div>\n        ").concat(canDeleteForever() ? '<p class="muted">Полное удаление доступно только роли “Ген.директор” и только из архива.</p>' : "", "\n      </section>");
     }
     if (project.status === "draft" || project.status === "revision_requested") {
-      return '\n      <section class="workflow-panel">\n        <div class="stack-line"><h3>Передача объекта</h3>'.concat(pill(project.status === "revision_requested" ? "Нужна доработка" : "Черновик", project.status === "revision_requested" ? "danger" : "warning"), "</div>\n        ").concat(project.workflow_comment ? '<p class="muted">Комментарий руководителя строительства: '.concat(project.workflow_comment, "</p>") : "", "\n        ").concat(project.status === "revision_requested" ? '<label>Что исправлено перед повторной передачей <textarea id="submitFixComment" rows="2" placeholder="Например: добавил договор и проектную документацию"></textarea></label>' : "", '\n        <div class="form-actions">\n          <span class="muted">После проверки заполнения менеджер передает объект руководителю строительства.</span>\n          ').concat(canSubmitProject() ? '<button class="primary" data-project-action="submit" data-project-id="'.concat(project.id, '">Передать в работу</button>') : '<span class="muted">Передать объект может менеджер или ген.директор.</span>', "\n        </div>\n      </section>");
+      return '\n      <section class="workflow-panel">\n        <div class="stack-line"><h3>Передача объекта</h3>'.concat(pill(project.status === "revision_requested" ? "Нужна доработка" : "Черновик", project.status === "revision_requested" ? "danger" : "warning"), "</div>\n        ").concat(project.workflow_comment ? '<p class="muted">Комментарий руководителя строительства: '.concat(project.workflow_comment, "</p>") : "", "\n        ").concat(project.status === "revision_requested" ? '<label>Что исправлено перед повторной передачей <textarea id="submitFixComment" rows="2" placeholder="Например: добавил договор и проектную документацию"></textarea></label>' : "", "\n        ").concat(canSubmitProject() ? personalNotifyControl() : "", '\n        <div class="form-actions">\n          <span class="muted">После проверки заполнения менеджер передает объект руководителю строительства.</span>\n          ').concat(canSubmitProject() ? '<button class="primary" data-project-action="submit" data-project-id="'.concat(project.id, '">Передать в работу</button>') : '<span class="muted">Передать объект может менеджер или ген.директор.</span>', "\n        </div>\n      </section>");
     }
     if (project.status === "submitted_to_construction") {
       if (!canAcceptProject()) {
         return '\n        <section class="workflow-panel">\n          <div class="stack-line"><h3>Проверка руководителем строительства</h3>'.concat(pill("Ожидает решения", "warning"), '</div>\n          <p class="muted">Принять объект в работу или вернуть менеджеру может только руководитель строительства или ген.директор.</p>\n        </section>');
       }
-      return '\n      <section class="workflow-panel">\n        <div class="stack-line"><h3>Проверка руководителем строительства</h3>'.concat(pill("Ожидает решения", "warning"), '</div>\n        <div class="grid-2">\n          <label>Прораб <select id="acceptForeman">').concat(userOptionsByRole("foreman"), '</select></label>\n          <label>Сметчик <select id="acceptEstimator">').concat(userOptionsByRole("estimator"), '</select></label>\n        </div>\n        <div class="grid-2">\n          <label>Снабжение <select id="acceptProcurement">').concat(userOptionsByRole("procurement_manager"), '</select></label>\n          <label>Технадзор <select id="acceptTech">').concat(userOptionsByRole("technical_supervisor"), '</select></label>\n        </div>\n        <label>Комментарий при возврате <textarea id="returnComment" rows="2" placeholder="Что менеджеру нужно исправить"></textarea></label>\n        <div class="form-actions">\n          <button class="secondary" data-project-action="return" data-project-id="').concat(project.id, '">Вернуть на доработку</button>\n          <button class="primary" data-project-action="accept" data-project-id="').concat(project.id, '">Принять в работу</button>\n        </div>\n      </section>');
+      return '\n      <section class="workflow-panel">\n        <div class="stack-line"><h3>Проверка руководителем строительства</h3>'.concat(pill("Ожидает решения", "warning"), '</div>\n        <div class="grid-2">\n          <label>Прораб <select id="acceptForeman">').concat(userOptionsByRole("foreman"), '</select></label>\n          <label>Сметчик <select id="acceptEstimator">').concat(userOptionsByRole("estimator"), '</select></label>\n        </div>\n        <div class="grid-2">\n          <label>Снабжение <select id="acceptProcurement">').concat(userOptionsByRole("procurement_manager"), '</select></label>\n          <label>Технадзор <select id="acceptTech">').concat(userOptionsByRole("technical_supervisor"), '</select></label>\n        </div>\n        <label>Комментарий при возврате <textarea id="returnComment" rows="2" placeholder="Что менеджеру нужно исправить"></textarea></label>\n        ').concat(personalNotifyControl(), '\n        <div class="form-actions">\n          <button class="secondary" data-project-action="return" data-project-id="').concat(project.id, '">Вернуть на доработку</button>\n          <button class="primary" data-project-action="accept" data-project-id="').concat(project.id, '">Принять в работу</button>\n        </div>\n      </section>');
     }
-    return '\n    <section class="workflow-panel">\n      <div class="stack-line"><h3>Объект в работе</h3>'.concat(pill("Ответственные назначены", "success"), '</div>\n      <p class="muted">После принятия уведомления получают прораб, снабжение, сметчик и технадзор.</p>\n      ').concat(canAcceptProject() ? '<div class="grid-2">\n              <label>Прораб <select id="assignForeman">'.concat(userOptionsByRole("foreman", { includeEmpty: true, selectedId: project.foreman_id }), '</select></label>\n              <label>Сметчик <select id="assignEstimator">').concat(userOptionsByRole("estimator", { includeEmpty: true, selectedId: project.estimator_id }), '</select></label>\n            </div>\n            <div class="grid-2">\n              <label>Снабжение <select id="assignProcurement">').concat(userOptionsByRole("procurement_manager", { includeEmpty: true, selectedId: project.procurement_manager_id }), '</select></label>\n              <label>Технадзор <select id="assignTech">').concat(userOptionsByRole("technical_supervisor", { includeEmpty: true, selectedId: project.tech_supervisor_id }), '</select></label>\n            </div>\n            <button class="secondary" data-project-action="assign" data-project-id="').concat(project.id, '">Сохранить ответственных</button>') : "", "\n      ").concat(canArchiveProject() ? '<button class="secondary" data-project-action="archive" data-project-id="'.concat(project.id, '">Отправить в архив</button>') : "", "\n    </section>");
+    return '\n    <section class="workflow-panel">\n      <div class="stack-line"><h3>Объект в работе</h3>'.concat(pill("Ответственные назначены", "success"), '</div>\n      <p class="muted">После принятия уведомления получают прораб, снабжение, сметчик и технадзор.</p>\n      ').concat(canAcceptProject() ? '<div class="grid-2">\n              <label>Прораб <select id="assignForeman">'.concat(userOptionsByRole("foreman", { includeEmpty: true, selectedId: project.foreman_id }), '</select></label>\n              <label>Сметчик <select id="assignEstimator">').concat(userOptionsByRole("estimator", { includeEmpty: true, selectedId: project.estimator_id }), '</select></label>\n            </div>\n            <div class="grid-2">\n               <label>Снабжение <select id="assignProcurement">').concat(userOptionsByRole("procurement_manager", { includeEmpty: true, selectedId: project.procurement_manager_id }), '</select></label>\n               <label>Технадзор <select id="assignTech">').concat(userOptionsByRole("technical_supervisor", { includeEmpty: true, selectedId: project.tech_supervisor_id }), "</select></label>\n             </div>\n            ").concat(personalNotifyControl(), '\n             <button class="secondary" data-project-action="assign" data-project-id="').concat(project.id, '">Сохранить ответственных</button>') : "", "\n      ").concat(canArchiveProject() ? '<button class="secondary" data-project-action="archive" data-project-id="'.concat(project.id, '">Отправить в архив</button>') : "", "\n    </section>");
   }
   function renderSmallList(items, getText) {
     if (!items.length) return '<p class="muted">Пока пусто.</p>';
@@ -2383,7 +2415,7 @@
       works: "Работы",
       materials: "Материалы",
       variations: "Допработы",
-      documents: "Документы",
+      documents: currentRoleBase() === "foreman" ? "Файлы проекта" : "Документы",
       events: "История"
     }[tab];
   }
@@ -2510,13 +2542,13 @@
       const own = Number(event.actor_id || 0) === Number(currentUserId() || 0);
       return '\n            <div class="task-comment '.concat(own ? "own" : "", '">\n              <div class="stack-line">\n                <strong>').concat(escapeHtml(event.actor_name || "Участник"), "</strong>\n                ").concat(pill(event.action === "comment" ? "Комментарий" : label(event.status_to || event.action), event.action === "comment" ? "" : taskStatusLevel(event.status_to)), '\n                <span class="muted">').concat(formatDateRu(event.created_at), "</span>\n              </div>\n              ").concat(event.comment ? "<p>".concat(escapeHtml(event.comment), "</p>") : "", "\n              ").concat(renderTaskEventAttachments(event), "\n            </div>");
     }).join("") : '<p class="muted">Комментариев по задаче пока нет.</p>';
-    return '\n    <section class="workflow-panel task-discussion">\n      <div class="panel-head">\n        <h3>Обсуждение</h3>\n        <span class="muted">Комментарии остаются внутри задачи</span>\n      </div>\n      <div class="task-comment-list">'.concat(commentRows, '</div>\n      <div class="task-comment-form" data-task-comment-form data-task-id="').concat(task.id, '">\n        <textarea rows="2" placeholder="Написать комментарий по задаче"></textarea>\n        <input type="file" multiple />\n        <button class="primary" type="button" data-task-comment-send="').concat(task.id, '">Отправить</button>\n      </div>\n    </section>');
+    return '\n    <section class="workflow-panel task-discussion">\n      <div class="panel-head">\n        <h3>Обсуждение</h3>\n        <span class="muted">Комментарии остаются внутри задачи</span>\n      </div>\n      <div class="task-comment-list">'.concat(commentRows, '</div>\n      <div class="task-comment-form" data-task-comment-form data-task-id="').concat(task.id, '">\n        <textarea rows="2" placeholder="Написать комментарий по задаче"></textarea>\n        <input type="file" multiple />\n        <div class="form-actions compact-actions">\n          ').concat(personalNotifyControl(), '\n          <button class="primary" type="button" data-task-comment-send="').concat(task.id, '">Отправить</button>\n        </div>\n      </div>\n    </section>');
   }
   function renderTaskActionPanel(task) {
     const canComplete = task.status !== "accepted" && task.status !== "completed_pending_acceptance" && (canActAsTaskUser(task, "assignee") || ["owner", "construction_manager", "finance_director"].includes(currentRoleBase()));
     const canReview = task.status === "completed_pending_acceptance" && (["owner", "construction_manager", "finance_director"].includes(currentRoleBase()) || canActAsTaskUser(task, "reviewer"));
     if (!canComplete && !canReview) return "";
-    return '\n    <section class="workflow-panel task-action-panel" data-task-action-panel data-task-id="'.concat(task.id, '">\n      <div class="panel-head">\n        <h3>Действия по задаче</h3>\n        <span class="muted">Результат, перенос срока и файлы фиксируются в истории</span>\n      </div>\n      <label>Комментарий <textarea rows="3" data-task-action-comment placeholder="Что сделано, что осталось, почему нужен перенос или что принять/вернуть"></textarea></label>\n      <div class="grid-2">\n        <label>Новый срок при переносе/возврате <input type="date" data-task-action-due-date value="').concat(task.due_date || "", '" /></label>\n        <label>Фото / видео / документ <input type="file" data-task-action-files multiple /></label>\n      </div>\n      <div class="form-actions">\n        ').concat(canComplete ? '<button class="primary" type="button" data-task-action="complete" data-task-id="'.concat(task.id, '">Выполнено</button><button class="secondary" type="button" data-task-action="postpone" data-task-id="').concat(task.id, '">Частично / перенести срок</button>') : "", "\n        ").concat(canReview ? '<button class="primary" type="button" data-task-action="accept" data-task-id="'.concat(task.id, '">Принять выполнение</button><button class="secondary" type="button" data-task-action="return" data-task-id="').concat(task.id, '">Вернуть на доработку</button>') : "", "\n      </div>\n    </section>");
+    return '\n    <section class="workflow-panel task-action-panel" data-task-action-panel data-task-id="'.concat(task.id, '">\n      <div class="panel-head">\n        <h3>Действия по задаче</h3>\n        <span class="muted">Результат, перенос срока и файлы фиксируются в истории</span>\n      </div>\n      <label>Комментарий <textarea rows="3" data-task-action-comment placeholder="При выполнении обязательно напишите, что сделано. При возврате - что исправить."></textarea></label>\n      <div class="grid-2">\n        <label>Новый срок при переносе/возврате <input type="date" data-task-action-due-date value="').concat(task.due_date || "", '" /></label>\n        <label>Фото / видео / документ <input type="file" data-task-action-files multiple /></label>\n      </div>\n      ').concat(personalNotifyControl(), '\n      <div class="form-actions">\n        ').concat(canComplete ? '<button class="primary" type="button" data-task-action="complete" data-task-id="'.concat(task.id, '">Выполнено</button><button class="secondary" type="button" data-task-action="postpone" data-task-id="').concat(task.id, '">Частично / перенести срок</button>') : "", "\n        ").concat(canReview ? '<button class="primary" type="button" data-task-action="accept" data-task-id="'.concat(task.id, '">Принять выполнение</button><button class="secondary" type="button" data-task-action="return" data-task-id="').concat(task.id, '">Вернуть на доработку</button>') : "", "\n      </div>\n    </section>");
   }
   function openTaskDetail(taskId) {
     const task = state.lastTasks.find((item) => Number(item.id) === Number(taskId));
@@ -2649,11 +2681,11 @@
     const removedItems = materialRemovedItems(batch);
     qs("#materialReviewContent").innerHTML = '\n    <section class="workflow-panel compact-workflow">\n      <div class="stack-line">\n        <h3>'.concat(batch.project_title || "Объект не указан", "</h3>\n        ").concat(pill(urgencyLabel(batch.delivery_urgency), urgencyLevel(batch.delivery_urgency)), "\n        ").concat(pill(label(batch.status), materialBatchLevel(batch.status)), '\n      </div>\n      <p class="muted">Кто заказал: ').concat(batch.creator_name || "не указано", " · желаемая доставка: ").concat(batch.needed_at || "не указана", " · позиций: ").concat(activeItems.length).concat(removedItems.length ? " · удалено при исправлении: ".concat(removedItems.length) : "", "</p>\n      ").concat(batch.actual_purchase_amount ? '<p class="muted">Фактическая стоимость закупки: '.concat(money(batch.actual_purchase_amount), " · сметная сумма заявки: ").concat(money(batch.total_amount), "</p>") : "", '\n      <p class="muted">Основания: ').concat(materialBatchBasisSummary(batch), '</p>\n      <p class="muted">').concat(materialBatchDestination(batch), "</p>\n      ").concat(batch.comment ? "<p>".concat(batch.comment, "</p>") : "", "\n      ").concat(batch.revision_comment ? '<p class="muted">Комментарий по доработке: '.concat(batch.revision_comment, "</p>") : "", "\n      ").concat(batch.foreman_response ? '<p class="muted">Ответ прораба: '.concat(batch.foreman_response, "</p>") : "", "\n      ").concat(batch.scheduled_delivery_date ? '<p class="muted">Назначенная доставка: '.concat(formatDateRu(batch.scheduled_delivery_date), "</p>") : "", "\n      ").concat(batch.procurement_comment ? '<p class="muted">Комментарий снабжения: '.concat(batch.procurement_comment, "</p>") : "", "\n      ").concat(batch.receipt_comment ? '<p class="muted">Приемка: '.concat(batch.receipt_comment, "</p>") : "", "\n      ").concat(batch.variation_id ? '<p class="muted">Связана с допработой: '.concat(batch.variation_title || "#".concat(batch.variation_id), " · ").concat(label(batch.variation_status), "</p>") : "", "\n      ").concat(materialReceiptAttachment(batch), '\n    </section>\n    <div class="table material-review-items">\n      ').concat(batch.items.map(
       (item) => '\n          <div class="row estimate-material-row'.concat(materialItemChangeClass(item), '">\n            <div class="material-main">\n              <div class="stack-line">\n                <strong>').concat(item.title, "</strong>\n                ").concat(materialChangePill(item), '\n              </div>\n              <div class="muted">').concat(item.estimate_section || "без раздела", "</div>\n              ").concat(item.comment ? '<div class="muted">'.concat(item.comment, "</div>") : "", '\n            </div>\n            <div class="stack-line">\n              ').concat(pill("".concat(item.requested_quantity || item.estimated_quantity || 0, " ").concat(item.requested_unit || item.estimate_material_unit || ""), "blue"), "\n              ").concat(pill(materialBasisLabel(item.basis_type), materialBasisLevel(item.basis_type)), "\n              ").concat(pill(money(item.total_amount), "success"), "\n              ").concat(materialActualTotal(item) ? pill("Закупка: ".concat(money(materialActualTotal(item))), materialActualOverrun(item) ? "danger" : "blue") : "", "\n            </div>\n          </div>")
-    ).join(""), "\n    </div>\n    ").concat(canCreateVariation ? '<section class="workflow-panel">\n            <h3>Допработа / отклонение</h3>\n            <p class="muted">В заявке есть позиции сверх основной сметы. Можно создать связанную запись в разделе “Допработы”, чтобы решить, кто оплачивает и как оформляем.</p>\n            <div class="form-actions">\n              <button class="primary" type="button" data-material-batch-action="create_variation" data-material-batch-id="'.concat(batch.id, '">Создать допработу</button>\n            </div>\n          </section>') : "", "\n    ").concat(canReview ? '<section class="workflow-panel">\n            <h3>Решение снабжения</h3>\n            <label>Комментарий при возврате <textarea id="materialBatchReturnComment" rows="3" placeholder="Например: не понятно количество, уточните позицию"></textarea></label>\n            <div class="form-actions">\n              <button class="primary" type="button" data-material-batch-action="accept" data-material-batch-id="'.concat(batch.id, '">Принять в работу</button>\n              <button class="secondary" type="button" data-material-batch-action="return" data-material-batch-id="').concat(batch.id, '">Вернуть на доработку</button>\n            </div>\n          </section>') : "", "\n    ").concat(canSchedule ? '<section class="workflow-panel">\n            <h3>Доставка</h3>\n            <label>Дата доставки <input id="materialBatchDeliveryDate" type="date" value="'.concat(batch.scheduled_delivery_date || batch.needed_at || "", '" /></label>\n            <div class="table material-review-items">\n              ').concat(activeItems.map(
+    ).join(""), "\n    </div>\n    ").concat(canCreateVariation ? '<section class="workflow-panel">\n            <h3>Допработа / отклонение</h3>\n            <p class="muted">В заявке есть позиции сверх основной сметы. Можно создать связанную запись в разделе “Допработы”, чтобы решить, кто оплачивает и как оформляем.</p>\n            '.concat(personalNotifyControl(), '\n            <div class="form-actions">\n              <button class="primary" type="button" data-material-batch-action="create_variation" data-material-batch-id="').concat(batch.id, '">Создать допработу</button>\n            </div>\n          </section>') : "", "\n    ").concat(canReview ? '<section class="workflow-panel">\n            <h3>Решение снабжения</h3>\n            <label>Комментарий при возврате <textarea id="materialBatchReturnComment" rows="3" placeholder="Например: не понятно количество, уточните позицию"></textarea></label>\n            '.concat(personalNotifyControl(), '\n            <div class="form-actions">\n              <button class="primary" type="button" data-material-batch-action="accept" data-material-batch-id="').concat(batch.id, '">Принять в работу</button>\n              <button class="secondary" type="button" data-material-batch-action="return" data-material-batch-id="').concat(batch.id, '">Вернуть на доработку</button>\n            </div>\n          </section>') : "", "\n    ").concat(canSchedule ? '<section class="workflow-panel">\n            <h3>Доставка</h3>\n            <label>Дата доставки <input id="materialBatchDeliveryDate" type="date" value="'.concat(batch.scheduled_delivery_date || batch.needed_at || "", '" /></label>\n            <div class="table material-review-items">\n              ').concat(activeItems.map(
       (item) => '\n                  <div class="row estimate-material-row">\n                    <div class="material-main">\n                      <strong>'.concat(item.title, '</strong>\n                      <div class="muted">Смета: ').concat(money(item.total_amount), " · ").concat(item.requested_quantity || item.estimated_quantity || 0, " ").concat(item.requested_unit || item.estimate_material_unit || "", '</div>\n                    </div>\n                    <label>Цена закупки за ед., ₽ <input type="text" inputmode="decimal" data-material-actual-unit="').concat(item.id, '" value="').concat(item.actual_unit_price || "", '" placeholder="0" /></label>\n                    <label>Сумма закупки, ₽ <input type="text" inputmode="decimal" data-material-actual-total="').concat(item.id, '" value="').concat(item.actual_total_amount || "", '" placeholder="0" /></label>\n                  </div>')
-    ).join(""), '\n            </div>\n            <label>Комментарий снабжения <textarea id="materialBatchScheduleComment" rows="3" placeholder="Например: нужна доверенность или кран">').concat(batch.procurement_comment || "", '</textarea></label>\n            <div class="form-actions">\n              <button class="primary" type="button" data-material-batch-action="schedule" data-material-batch-id="').concat(batch.id, '">Уведомить о доставке</button>\n              <button class="secondary" type="button" data-material-batch-action="save_actuals" data-material-batch-id="').concat(batch.id, '">Сохранить цены закупки</button>\n            </div>\n          </section>') : "", "\n    ").concat(canSaveActualsOnly ? '<section class="workflow-panel">\n            <h3>Фактические цены закупки</h3>\n            <p class="muted">Заявка уже в архиве или закрыта, но снабжение может допоставить фактические цены и суммы закупки.</p>\n            <div class="table material-review-items">\n              '.concat(activeItems.map(
+    ).join(""), '\n            </div>\n            <label>Комментарий снабжения <textarea id="materialBatchScheduleComment" rows="3" placeholder="Например: нужна доверенность или кран">').concat(batch.procurement_comment || "", "</textarea></label>\n            ").concat(personalNotifyControl(), '\n            <div class="form-actions">\n              <button class="primary" type="button" data-material-batch-action="schedule" data-material-batch-id="').concat(batch.id, '">Уведомить о доставке</button>\n              <button class="secondary" type="button" data-material-batch-action="save_actuals" data-material-batch-id="').concat(batch.id, '">Сохранить цены закупки</button>\n            </div>\n          </section>') : "", "\n    ").concat(canSaveActualsOnly ? '<section class="workflow-panel">\n            <h3>Фактические цены закупки</h3>\n            <p class="muted">Заявка уже в архиве или закрыта, но снабжение может допоставить фактические цены и суммы закупки.</p>\n            <div class="table material-review-items">\n              '.concat(activeItems.map(
       (item) => '\n                  <div class="row estimate-material-row">\n                    <div class="material-main">\n                      <strong>'.concat(item.title, '</strong>\n                      <div class="muted">Смета: ').concat(money(item.total_amount), " · ").concat(item.requested_quantity || item.estimated_quantity || 0, " ").concat(item.requested_unit || item.estimate_material_unit || "", '</div>\n                    </div>\n                    <label>Цена закупки за ед., ₽ <input type="text" inputmode="decimal" data-material-actual-unit="').concat(item.id, '" value="').concat(item.actual_unit_price || "", '" placeholder="0" /></label>\n                    <label>Сумма закупки, ₽ <input type="text" inputmode="decimal" data-material-actual-total="').concat(item.id, '" value="').concat(item.actual_total_amount || "", '" placeholder="0" /></label>\n                  </div>')
-    ).join(""), '\n            </div>\n            <label>Комментарий снабжения <textarea id="materialBatchScheduleComment" rows="3" placeholder="Например: цены внесены после закрытия заявки">').concat(batch.procurement_comment || "", '</textarea></label>\n            <div class="form-actions">\n              <button class="secondary" type="button" data-material-batch-action="save_actuals" data-material-batch-id="').concat(batch.id, '">Сохранить цены закупки</button>\n            </div>\n          </section>') : "", "\n    ").concat(canResolveIssue ? '<section class="workflow-panel">\n            <h3>Исправление проблемы</h3>\n            <p class="muted">Укажите, когда будет повторная доставка, замена или довоз материала. Прораб и руководители получат уведомление.</p>\n            <label>Дата повторной доставки <input id="materialBatchResolveDate" type="date" value="'.concat(batch.scheduled_delivery_date || "", '" /></label>\n            <label>Комментарий снабжения <textarea id="materialBatchResolveComment" rows="3" placeholder="Например: заменили позицию, довезем недостающий материал, поставщик подтвердил замену"></textarea></label>\n            <div class="form-actions">\n              <button class="primary" type="button" data-material-batch-action="resolve_issue" data-material-batch-id="').concat(batch.id, '">Уведомить о повторной доставке</button>\n            </div>\n          </section>') : "", "\n    ").concat(canEdit ? renderMaterialBatchEditSection(batch) : "", "\n    ").concat(canReceive ? '<section class="workflow-panel material-receipt-panel">\n            <h3>Приемка доставки</h3>\n            <p class="muted">Доставка назначена'.concat(batch.scheduled_delivery_date ? " на ".concat(formatDateRu(batch.scheduled_delivery_date)) : "", '. Если все по списку, подтвердите получение. Если что-то не так, опишите проблему и прикрепите фото или видео.</p>\n            <label>Комментарий при проблеме <textarea id="materialBatchReceiptComment" rows="3" placeholder="Что именно не так: не довезли, повреждено, не тот материал"></textarea></label>\n            <label>Фото или видео <input id="materialBatchReceiptFile" type="file" accept="image/*,video/*" /></label>\n            <div class="form-actions">\n              <button class="primary" type="button" data-material-batch-action="receive" data-receipt-status="received" data-material-batch-id="').concat(batch.id, '">Материалы получены</button>\n              <button class="secondary" type="button" data-material-batch-action="receive" data-receipt-status="issue" data-material-batch-id="').concat(batch.id, '">Есть проблема</button>\n            </div>\n          </section>') : "", "\n  ");
+    ).join(""), '\n            </div>\n            <label>Комментарий снабжения <textarea id="materialBatchScheduleComment" rows="3" placeholder="Например: цены внесены после закрытия заявки">').concat(batch.procurement_comment || "", "</textarea></label>\n            ").concat(personalNotifyControl(), '\n            <div class="form-actions">\n              <button class="secondary" type="button" data-material-batch-action="save_actuals" data-material-batch-id="').concat(batch.id, '">Сохранить цены закупки</button>\n            </div>\n          </section>') : "", "\n    ").concat(canResolveIssue ? '<section class="workflow-panel">\n            <h3>Исправление проблемы</h3>\n            <p class="muted">Укажите, когда будет повторная доставка, замена или довоз материала. Прораб и руководители получат уведомление.</p>\n            <label>Дата повторной доставки <input id="materialBatchResolveDate" type="date" value="'.concat(batch.scheduled_delivery_date || "", '" /></label>\n            <label>Комментарий снабжения <textarea id="materialBatchResolveComment" rows="3" placeholder="Например: заменили позицию, довезем недостающий материал, поставщик подтвердил замену"></textarea></label>\n            ').concat(personalNotifyControl(), '\n            <div class="form-actions">\n              <button class="primary" type="button" data-material-batch-action="resolve_issue" data-material-batch-id="').concat(batch.id, '">Уведомить о повторной доставке</button>\n            </div>\n          </section>') : "", "\n    ").concat(canEdit ? renderMaterialBatchEditSection(batch) : "", "\n    ").concat(canReceive ? '<section class="workflow-panel material-receipt-panel">\n            <h3>Приемка доставки</h3>\n            <p class="muted">Доставка назначена'.concat(batch.scheduled_delivery_date ? " на ".concat(formatDateRu(batch.scheduled_delivery_date)) : "", '. Если все по списку, подтвердите получение. Если что-то не так, опишите проблему и прикрепите фото или видео.</p>\n            <label>Комментарий при проблеме <textarea id="materialBatchReceiptComment" rows="3" placeholder="Что именно не так: не довезли, повреждено, не тот материал"></textarea></label>\n            <label>Фото или видео <input id="materialBatchReceiptFile" type="file" accept="image/*,video/*" /></label>\n            ').concat(personalNotifyControl(), '\n            <div class="form-actions">\n              <button class="primary" type="button" data-material-batch-action="receive" data-receipt-status="received" data-material-batch-id="').concat(batch.id, '">Материалы получены</button>\n              <button class="secondary" type="button" data-material-batch-action="receive" data-receipt-status="issue" data-material-batch-id="').concat(batch.id, '">Есть проблема</button>\n            </div>\n          </section>') : "", "\n  ");
     qs("#materialReviewDialog").showModal();
   }
   function variationType(type) {
@@ -3209,6 +3241,51 @@
   function hasOpenDialog() {
     return Boolean(document.querySelector("dialog[open]"));
   }
+  function canScrollElementVertically(element, deltaY) {
+    let current = element instanceof Element ? element : element == null ? void 0 : element.parentElement;
+    while (current && current !== document.body && current !== document.documentElement) {
+      const style = window.getComputedStyle(current);
+      const overflowY = style.overflowY;
+      const canScroll = /auto|scroll|overlay/.test(overflowY) && current.scrollHeight > current.clientHeight + 1;
+      if (canScroll) {
+        const atTop = current.scrollTop <= 0;
+        const atBottom = current.scrollTop + current.clientHeight >= current.scrollHeight - 1;
+        if (deltaY < 0 && !atTop || deltaY > 0 && !atBottom) return true;
+      }
+      current = current.parentElement;
+    }
+    return false;
+  }
+  function canScrollPageVertically(deltaY) {
+    const root = document.scrollingElement || document.documentElement;
+    if (!root || root.scrollHeight <= root.clientHeight + 1) return false;
+    const atTop = root.scrollTop <= 0;
+    const atBottom = root.scrollTop + root.clientHeight >= root.scrollHeight - 1;
+    return deltaY < 0 && !atTop || deltaY > 0 && !atBottom;
+  }
+  function normalizedWheelDeltaY(event) {
+    if (event.deltaMode === 1) return event.deltaY * 16;
+    if (event.deltaMode === 2) return event.deltaY * window.innerHeight;
+    return event.deltaY;
+  }
+  function bindWheelPageScroll() {
+    if (bindWheelPageScroll.bound) return;
+    bindWheelPageScroll.bound = true;
+    document.addEventListener(
+      "wheel",
+      (event) => {
+        var _a, _b;
+        if (event.defaultPrevented || hasOpenDialog()) return;
+        if ((_b = (_a = event.target).closest) == null ? void 0 : _b.call(_a, "input, textarea, select, button, a, dialog")) return;
+        if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+        const deltaY = normalizedWheelDeltaY(event);
+        if (!deltaY || canScrollElementVertically(event.target, deltaY) || !canScrollPageVertically(deltaY)) return;
+        event.preventDefault();
+        window.scrollBy({ top: deltaY, behavior: "auto" });
+      },
+      { passive: false }
+    );
+  }
   function bindStableDetailsTouchGuard() {
     document.addEventListener(
       "touchstart",
@@ -3331,6 +3408,8 @@
     var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r;
     const projectId = button.dataset.projectId;
     const action = button.dataset.projectAction;
+    const panel = button.closest(".workflow-panel");
+    const notifyPersonal = readPersonalNotify(panel);
     let payload = { actor_id: currentUserId(), actor_role: currentRoleBase() };
     let message = "Объект обновлен";
     if (action === "return") {
@@ -3387,6 +3466,9 @@
       payload.comment = ((_r = qs("#submitFixComment")) == null ? void 0 : _r.value) || "";
       message = "Объект передан руководителю строительства";
     }
+    payload.actor_id = payload.actor_id || currentUserId();
+    payload.actor_role = payload.actor_role || currentRoleBase();
+    if (notifyPersonal) payload.notify_personal = true;
     await api("/api/projects/".concat(projectId, "/").concat(action), {
       method: "POST",
       body: JSON.stringify(payload)
@@ -3420,12 +3502,17 @@
     const panelComment = ((_a = panel == null ? void 0 : panel.querySelector("[data-task-action-comment]")) == null ? void 0 : _a.value.trim()) || "";
     const panelDueDate = ((_b = panel == null ? void 0 : panel.querySelector("[data-task-action-due-date]")) == null ? void 0 : _b.value) || "";
     const panelFiles = [...((_c = panel == null ? void 0 : panel.querySelector("[data-task-action-files]")) == null ? void 0 : _c.files) || []];
+    const notifyPersonal = readPersonalNotify(panel);
     let payload = {};
     let message = "Задача обновлена";
     if (action === "complete") {
-      const answer = panel ? panelComment : window.prompt("Что сделано по задаче? Можно оставить пустым.", "");
+      const answer = panel ? panelComment : window.prompt("Что сделано по задаче? Комментарий обязателен.", "");
       if (answer === null) return;
-      const comment = answer || "";
+      const comment = String(answer || "").trim();
+      if (!comment) {
+        showToast("После выполнения задачи напишите, что именно сделано");
+        return;
+      }
       payload = __spreadProps(__spreadValues({}, payload), { comment });
       message = "Задача отмечена выполненной";
     }
@@ -3467,6 +3554,7 @@
     if (panelFiles.length) {
       payload.attachments = await Promise.all(panelFiles.map((file) => fileDocumentPayload(file, file.name, "other", "task")));
     }
+    if (notifyPersonal) payload.notify_personal = true;
     payload.actor_id = currentUserId() || null;
     payload.actor_role = currentRoleBase();
     await api("/api/tasks/".concat(taskId, "/").concat(action), {
@@ -3493,6 +3581,7 @@
     const textarea = form == null ? void 0 : form.querySelector("textarea");
     const files = [...((_a = form == null ? void 0 : form.querySelector('input[type="file"]')) == null ? void 0 : _a.files) || []];
     const comment = (textarea == null ? void 0 : textarea.value.trim()) || "";
+    const notifyPersonal = readPersonalNotify(form);
     if (!comment && !files.length) {
       showToast("Напишите комментарий по задаче или прикрепите файл");
       return;
@@ -3504,6 +3593,7 @@
         body: JSON.stringify({
           actor_id: currentUserId() || null,
           comment,
+          notify_personal: notifyPersonal,
           attachments: await Promise.all(files.map((file) => fileDocumentPayload(file, file.name, "other", "task")))
         })
       });
@@ -3522,6 +3612,7 @@
   function bindEvents() {
     var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n;
     bindStableDetailsTouchGuard();
+    bindWheelPageScroll();
     initPullToRefresh();
     qsa("[data-view]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
     qsa("[data-view-target]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.viewTarget)));
@@ -4027,6 +4118,7 @@
       if (materialBatchAction) {
         const id = materialBatchAction.dataset.materialBatchId;
         const action = materialBatchAction.dataset.materialBatchAction;
+        const actionPanel = materialBatchAction.closest(".workflow-panel");
         const currentBatch = buildMaterialBatches(state.materialRequests || []).find((batch) => String(batch.id) === String(id));
         let body = {};
         if (action === "delete" && !confirm("Удалить заявку на материалы? Это можно сделать только до принятия снабжением в работу.")) return;
@@ -4085,6 +4177,7 @@
         }
         body.actor_role = currentRoleBase();
         body.actor_id = currentUserId();
+        body.notify_personal = readPersonalNotify(actionPanel);
         try {
           await api("/api/material-request-batches/".concat(id, "/").concat(action), {
             method: "POST",

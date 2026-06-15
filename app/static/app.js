@@ -481,10 +481,20 @@ const documentAccess = {
   sales_manager: null,
   accountant: new Set(["main_estimate", "smetter_materials", "smetter_work_task", "contract", "variation_estimate", "act", "ks_2", "ks_3", "other"]),
   estimator: new Set(["main_estimate", "smetter_materials", "smetter_work_task", "project_documentation", "variation_estimate", "act", "ks_2", "ks_3", "other"]),
-  foreman: new Set(["smetter_materials", "smetter_work_task", "project_documentation", "detail_node", "regulation", "standard", "instruction", "other"]),
+  foreman: new Set(["project_documentation", "detail_node", "regulation", "standard", "instruction"]),
   procurement_manager: new Set(["smetter_materials", "project_documentation", "detail_node", "regulation", "standard", "instruction", "other"]),
   technical_supervisor: new Set(["smetter_materials", "smetter_work_task", "project_documentation", "detail_node", "regulation", "standard", "instruction", "other"]),
 };
+
+const projectFileDocumentTypes = new Set(["project_documentation", "detail_node", "regulation", "standard", "instruction"]);
+
+function isProjectFileDocument(doc) {
+  return projectFileDocumentTypes.has(doc.type || "other");
+}
+
+function isProcessDocument(doc) {
+  return !isProjectFileDocument(doc);
+}
 
 function isProjectDocument(doc) {
   const relatedType = String(doc.related_type || "project");
@@ -506,7 +516,7 @@ function projectTabs() {
     finance_director: ["overview", "tasks", "works", "materials", "variations", "documents", "events"],
     accountant: ["overview", "materials", "variations", "documents", "events"],
     sales_manager: ["overview", "documents"],
-    foreman: ["overview", "tasks", "works", "materials", "documents", "events"],
+    foreman: ["overview", "tasks", "works", "materials", "variations", "documents"],
     procurement_manager: ["overview", "materials", "documents", "events"],
     estimator: ["overview", "works", "materials", "variations", "documents", "events"],
     technical_supervisor: ["overview", "tasks", "works", "materials", "documents", "events"],
@@ -789,43 +799,62 @@ function contractTitleById(contracts = []) {
   }, {});
 }
 
+function renderDocumentRows(items) {
+  return `<div class="document-list">${items.map((doc) => `<div class="document-row">${documentFileLink(doc)}</div>`).join("")}</div>`;
+}
+
+function renderDocumentDetails(title, items, { open = false, tone = "blue" } = {}) {
+  if (!items.length) return "";
+  return `
+    <details class="document-contract-group" ${open ? "open" : ""}>
+      <summary>${title} ${pill(`${items.length} шт.`, tone)}</summary>
+      ${renderDocumentRows(items)}
+    </details>`;
+}
+
 function renderGroupedProjectDocuments(docs, contracts = []) {
   const byContract = contractTitleById(contracts);
   const activeDocs = docs.filter((doc) => doc.status !== "archived");
   const archivedDocs = docs.filter((doc) => doc.status === "archived");
-  const groups = activeDocs.reduce((acc, doc) => {
+  const projectFiles = activeDocs.filter(isProjectFileDocument);
+  const processDocs = activeDocs.filter(isProcessDocument);
+  const archivedProjectFiles = archivedDocs.filter(isProjectFileDocument);
+  const archivedProcessDocs = archivedDocs.filter(isProcessDocument);
+  const processGroups = processDocs.reduce((acc, doc) => {
     const key = doc.contract_id ? byContract[Number(doc.contract_id)] || "Договор / доп. соглашение" : "Общие документы объекта";
     acc[key] = acc[key] || [];
     acc[key].push(doc);
     return acc;
   }, {});
-  const activeHtml = Object.entries(groups)
-    .map(
-      ([title, items]) => `
-        <details class="document-contract-group" open>
-          <summary>${title} ${pill(`${items.length} шт.`, "blue")}</summary>
-          <div class="document-list">${items.map((doc) => `<div class="document-row">${documentFileLink(doc)}</div>`).join("")}</div>
-        </details>`
-    )
+  const projectFilesHtml = renderDocumentDetails("Файлы проекта", projectFiles, { open: true, tone: "success" });
+  const processHtml = Object.entries(processGroups)
+    .map(([title, items]) => renderDocumentDetails(title, items, { open: currentRoleBase() === "sales_manager", tone: "blue" }))
     .join("");
   const archiveHtml = archivedDocs.length
     ? `
       <details class="document-contract-group">
         <summary>Архив замененных файлов ${pill(`${archivedDocs.length} шт.`, "warning")}</summary>
-        <div class="document-list">${archivedDocs.map((doc) => `<div class="document-row">${documentFileLink(doc)}</div>`).join("")}</div>
+        ${archivedProjectFiles.length ? renderDocumentDetails("Архив файлов проекта", archivedProjectFiles, { tone: "warning" }) : ""}
+        ${archivedProcessDocs.length ? renderDocumentDetails("Архив документов по проекту", archivedProcessDocs, { tone: "warning" }) : ""}
       </details>`
     : "";
-  return (activeHtml || archiveHtml)
-    ? `${activeHtml}${archiveHtml}`
-    : `<p class="muted">Документы пока не загружены. Добавить договор, смету или проект можно через кнопку “Редактировать”.</p>`;
+  if (currentRoleBase() === "foreman") {
+    return (projectFilesHtml || archiveHtml)
+      ? `${projectFilesHtml}${archivedProjectFiles.length ? archiveHtml : ""}`
+      : `<p class="muted">Файлы проекта пока не загружены.</p>`;
+  }
+  return (projectFilesHtml || processHtml || archiveHtml)
+    ? `${projectFilesHtml}${processHtml ? `<h4 class="document-section-title">Документы по проекту</h4>${processHtml}` : ""}${archiveHtml}`
+    : `<p class="muted">Файлы и документы пока не загружены. Добавить договор, смету или проект можно через кнопку “Редактировать”.</p>`;
 }
 
 function renderDocumentSummary(docs, contracts = []) {
+  const title = currentRoleBase() === "foreman" ? "Файлы проекта" : "Документы объекта";
   return `
     <section class="workflow-panel document-summary compact-collapsible">
       <details>
         <summary>
-          <span>Документы объекта</span>
+          <span>${title}</span>
           ${pill(`${docs.length} шт.`, docs.length ? "blue" : "")}
         </summary>
         ${renderGroupedProjectDocuments(docs, contracts)}
@@ -883,6 +912,19 @@ function renderDashboardTaskRow(task) {
       <div class="stack-line"><strong>${task.title}</strong>${pill(label(task.status), taskStatusLevel(task.status))}${pill(task.due_date || "без срока", levelByDate(task.due_date))}</div>
       <div class="muted">${task.project_title} · ответственный: ${task.assignee_name || "не назначен"} · принимает: ${task.reviewer_name || task.creator_name || "не назначен"}</div>
     </button>`;
+}
+
+function personalNotifyControl({ name = false } = {}) {
+  const inputAttr = name ? 'name="notify_personal" value="1"' : "data-notify-personal";
+  return `
+    <label class="checkbox-line personal-notify">
+      <input type="checkbox" ${inputAttr} />
+      <span>Уведомить личным сообщением в MAX</span>
+    </label>`;
+}
+
+function readPersonalNotify(root) {
+  return Boolean(root?.querySelector("[data-notify-personal]")?.checked || root?.querySelector('[name="notify_personal"]')?.checked);
 }
 
 function showToast(message) {
@@ -1942,6 +1984,7 @@ function renderMaterialBatchEditSection(batch) {
       <div class="table" id="batchExtraMaterialRows"></div>
       <label>Желаемая дата доставки <input id="materialBatchUpdateNeededAt" type="date" value="${batch.needed_at || ""}" /></label>
       <label>Комментарий к исправлению <textarea id="materialBatchUpdateComment" rows="3" placeholder="Например: уточнил длину арматуры, добавил замену"></textarea></label>
+      ${personalNotifyControl()}
       <div class="form-actions">
         <button class="primary" type="button" data-material-batch-action="update" data-material-batch-id="${batch.id}">Сохранить и отправить снова</button>
         <button class="danger-button" type="button" data-material-batch-action="delete" data-material-batch-id="${batch.id}">Удалить заявку</button>
@@ -1967,8 +2010,12 @@ function taskStats(tasks) {
     returned: tasks.filter((task) => task.status === "returned").length,
     waiting: tasks.filter((task) => task.status === "completed_pending_acceptance").length,
     accepted: tasks.filter((task) => task.status === "accepted").length,
-    overdue: tasks.filter((task) => task.status !== "accepted" && levelByDate(task.due_date) === "danger").length,
+    overdue: tasks.filter(taskCountsAsOverdue).length,
   };
+}
+
+function taskCountsAsOverdue(task) {
+  return ["new", "in_progress_task", "review"].includes(task.status) && levelByDate(task.due_date) === "danger";
 }
 
 function taskMatchesFilter(task, filter) {
@@ -1976,7 +2023,7 @@ function taskMatchesFilter(task, filter) {
   if (filter === "returned") return task.status === "returned";
   if (filter === "waiting") return task.status === "completed_pending_acceptance";
   if (filter === "accepted") return task.status === "accepted";
-  if (filter === "overdue") return task.status !== "accepted" && levelByDate(task.due_date) === "danger";
+  if (filter === "overdue") return taskCountsAsOverdue(task);
   return true;
 }
 
@@ -2992,6 +3039,7 @@ function renderProjectWorkflow(project) {
         <div class="stack-line"><h3>Передача объекта</h3>${pill(project.status === "revision_requested" ? "Нужна доработка" : "Черновик", project.status === "revision_requested" ? "danger" : "warning")}</div>
         ${project.workflow_comment ? `<p class="muted">Комментарий руководителя строительства: ${project.workflow_comment}</p>` : ""}
         ${project.status === "revision_requested" ? `<label>Что исправлено перед повторной передачей <textarea id="submitFixComment" rows="2" placeholder="Например: добавил договор и проектную документацию"></textarea></label>` : ""}
+        ${canSubmitProject() ? personalNotifyControl() : ""}
         <div class="form-actions">
           <span class="muted">После проверки заполнения менеджер передает объект руководителю строительства.</span>
           ${canSubmitProject() ? `<button class="primary" data-project-action="submit" data-project-id="${project.id}">Передать в работу</button>` : `<span class="muted">Передать объект может менеджер или ген.директор.</span>`}
@@ -3019,6 +3067,7 @@ function renderProjectWorkflow(project) {
           <label>Технадзор <select id="acceptTech">${userOptionsByRole("technical_supervisor")}</select></label>
         </div>
         <label>Комментарий при возврате <textarea id="returnComment" rows="2" placeholder="Что менеджеру нужно исправить"></textarea></label>
+        ${personalNotifyControl()}
         <div class="form-actions">
           <button class="secondary" data-project-action="return" data-project-id="${project.id}">Вернуть на доработку</button>
           <button class="primary" data-project-action="accept" data-project-id="${project.id}">Принять в работу</button>
@@ -3037,10 +3086,11 @@ function renderProjectWorkflow(project) {
               <label>Сметчик <select id="assignEstimator">${userOptionsByRole("estimator", { includeEmpty: true, selectedId: project.estimator_id })}</select></label>
             </div>
             <div class="grid-2">
-              <label>Снабжение <select id="assignProcurement">${userOptionsByRole("procurement_manager", { includeEmpty: true, selectedId: project.procurement_manager_id })}</select></label>
-              <label>Технадзор <select id="assignTech">${userOptionsByRole("technical_supervisor", { includeEmpty: true, selectedId: project.tech_supervisor_id })}</select></label>
-            </div>
-            <button class="secondary" data-project-action="assign" data-project-id="${project.id}">Сохранить ответственных</button>`
+               <label>Снабжение <select id="assignProcurement">${userOptionsByRole("procurement_manager", { includeEmpty: true, selectedId: project.procurement_manager_id })}</select></label>
+               <label>Технадзор <select id="assignTech">${userOptionsByRole("technical_supervisor", { includeEmpty: true, selectedId: project.tech_supervisor_id })}</select></label>
+             </div>
+            ${personalNotifyControl()}
+             <button class="secondary" data-project-action="assign" data-project-id="${project.id}">Сохранить ответственных</button>`
           : ""
       }
       ${canArchiveProject() ? `<button class="secondary" data-project-action="archive" data-project-id="${project.id}">Отправить в архив</button>` : ""}
@@ -3222,7 +3272,7 @@ function tabTitle(tab) {
     works: "Работы",
     materials: "Материалы",
     variations: "Допработы",
-    documents: "Документы",
+    documents: currentRoleBase() === "foreman" ? "Файлы проекта" : "Документы",
     events: "История",
   }[tab];
 }
@@ -3448,7 +3498,10 @@ function renderTaskDiscussion(task) {
       <div class="task-comment-form" data-task-comment-form data-task-id="${task.id}">
         <textarea rows="2" placeholder="Написать комментарий по задаче"></textarea>
         <input type="file" multiple />
-        <button class="primary" type="button" data-task-comment-send="${task.id}">Отправить</button>
+        <div class="form-actions compact-actions">
+          ${personalNotifyControl()}
+          <button class="primary" type="button" data-task-comment-send="${task.id}">Отправить</button>
+        </div>
       </div>
     </section>`;
 }
@@ -3463,11 +3516,12 @@ function renderTaskActionPanel(task) {
         <h3>Действия по задаче</h3>
         <span class="muted">Результат, перенос срока и файлы фиксируются в истории</span>
       </div>
-      <label>Комментарий <textarea rows="3" data-task-action-comment placeholder="Что сделано, что осталось, почему нужен перенос или что принять/вернуть"></textarea></label>
+      <label>Комментарий <textarea rows="3" data-task-action-comment placeholder="При выполнении обязательно напишите, что сделано. При возврате - что исправить."></textarea></label>
       <div class="grid-2">
         <label>Новый срок при переносе/возврате <input type="date" data-task-action-due-date value="${task.due_date || ""}" /></label>
         <label>Фото / видео / документ <input type="file" data-task-action-files multiple /></label>
       </div>
+      ${personalNotifyControl()}
       <div class="form-actions">
         ${canComplete ? `<button class="primary" type="button" data-task-action="complete" data-task-id="${task.id}">Выполнено</button><button class="secondary" type="button" data-task-action="postpone" data-task-id="${task.id}">Частично / перенести срок</button>` : ""}
         ${canReview ? `<button class="primary" type="button" data-task-action="accept" data-task-id="${task.id}">Принять выполнение</button><button class="secondary" type="button" data-task-action="return" data-task-id="${task.id}">Вернуть на доработку</button>` : ""}
@@ -3794,6 +3848,7 @@ async function openMaterialBatchDialog(batchKey) {
         ? `<section class="workflow-panel">
             <h3>Допработа / отклонение</h3>
             <p class="muted">В заявке есть позиции сверх основной сметы. Можно создать связанную запись в разделе “Допработы”, чтобы решить, кто оплачивает и как оформляем.</p>
+            ${personalNotifyControl()}
             <div class="form-actions">
               <button class="primary" type="button" data-material-batch-action="create_variation" data-material-batch-id="${batch.id}">Создать допработу</button>
             </div>
@@ -3805,6 +3860,7 @@ async function openMaterialBatchDialog(batchKey) {
         ? `<section class="workflow-panel">
             <h3>Решение снабжения</h3>
             <label>Комментарий при возврате <textarea id="materialBatchReturnComment" rows="3" placeholder="Например: не понятно количество, уточните позицию"></textarea></label>
+            ${personalNotifyControl()}
             <div class="form-actions">
               <button class="primary" type="button" data-material-batch-action="accept" data-material-batch-id="${batch.id}">Принять в работу</button>
               <button class="secondary" type="button" data-material-batch-action="return" data-material-batch-id="${batch.id}">Вернуть на доработку</button>
@@ -3833,6 +3889,7 @@ async function openMaterialBatchDialog(batchKey) {
                 .join("")}
             </div>
             <label>Комментарий снабжения <textarea id="materialBatchScheduleComment" rows="3" placeholder="Например: нужна доверенность или кран">${batch.procurement_comment || ""}</textarea></label>
+            ${personalNotifyControl()}
             <div class="form-actions">
               <button class="primary" type="button" data-material-batch-action="schedule" data-material-batch-id="${batch.id}">Уведомить о доставке</button>
               <button class="secondary" type="button" data-material-batch-action="save_actuals" data-material-batch-id="${batch.id}">Сохранить цены закупки</button>
@@ -3861,6 +3918,7 @@ async function openMaterialBatchDialog(batchKey) {
                 .join("")}
             </div>
             <label>Комментарий снабжения <textarea id="materialBatchScheduleComment" rows="3" placeholder="Например: цены внесены после закрытия заявки">${batch.procurement_comment || ""}</textarea></label>
+            ${personalNotifyControl()}
             <div class="form-actions">
               <button class="secondary" type="button" data-material-batch-action="save_actuals" data-material-batch-id="${batch.id}">Сохранить цены закупки</button>
             </div>
@@ -3874,6 +3932,7 @@ async function openMaterialBatchDialog(batchKey) {
             <p class="muted">Укажите, когда будет повторная доставка, замена или довоз материала. Прораб и руководители получат уведомление.</p>
             <label>Дата повторной доставки <input id="materialBatchResolveDate" type="date" value="${batch.scheduled_delivery_date || ""}" /></label>
             <label>Комментарий снабжения <textarea id="materialBatchResolveComment" rows="3" placeholder="Например: заменили позицию, довезем недостающий материал, поставщик подтвердил замену"></textarea></label>
+            ${personalNotifyControl()}
             <div class="form-actions">
               <button class="primary" type="button" data-material-batch-action="resolve_issue" data-material-batch-id="${batch.id}">Уведомить о повторной доставке</button>
             </div>
@@ -3892,6 +3951,7 @@ async function openMaterialBatchDialog(batchKey) {
             <p class="muted">Доставка назначена${batch.scheduled_delivery_date ? ` на ${formatDateRu(batch.scheduled_delivery_date)}` : ""}. Если все по списку, подтвердите получение. Если что-то не так, опишите проблему и прикрепите фото или видео.</p>
             <label>Комментарий при проблеме <textarea id="materialBatchReceiptComment" rows="3" placeholder="Что именно не так: не довезли, повреждено, не тот материал"></textarea></label>
             <label>Фото или видео <input id="materialBatchReceiptFile" type="file" accept="image/*,video/*" /></label>
+            ${personalNotifyControl()}
             <div class="form-actions">
               <button class="primary" type="button" data-material-batch-action="receive" data-receipt-status="received" data-material-batch-id="${batch.id}">Материалы получены</button>
               <button class="secondary" type="button" data-material-batch-action="receive" data-receipt-status="issue" data-material-batch-id="${batch.id}">Есть проблема</button>
@@ -4730,6 +4790,54 @@ function hasOpenDialog() {
   return Boolean(document.querySelector("dialog[open]"));
 }
 
+function canScrollElementVertically(element, deltaY) {
+  let current = element instanceof Element ? element : element?.parentElement;
+  while (current && current !== document.body && current !== document.documentElement) {
+    const style = window.getComputedStyle(current);
+    const overflowY = style.overflowY;
+    const canScroll = /auto|scroll|overlay/.test(overflowY) && current.scrollHeight > current.clientHeight + 1;
+    if (canScroll) {
+      const atTop = current.scrollTop <= 0;
+      const atBottom = current.scrollTop + current.clientHeight >= current.scrollHeight - 1;
+      if ((deltaY < 0 && !atTop) || (deltaY > 0 && !atBottom)) return true;
+    }
+    current = current.parentElement;
+  }
+  return false;
+}
+
+function canScrollPageVertically(deltaY) {
+  const root = document.scrollingElement || document.documentElement;
+  if (!root || root.scrollHeight <= root.clientHeight + 1) return false;
+  const atTop = root.scrollTop <= 0;
+  const atBottom = root.scrollTop + root.clientHeight >= root.scrollHeight - 1;
+  return (deltaY < 0 && !atTop) || (deltaY > 0 && !atBottom);
+}
+
+function normalizedWheelDeltaY(event) {
+  if (event.deltaMode === 1) return event.deltaY * 16;
+  if (event.deltaMode === 2) return event.deltaY * window.innerHeight;
+  return event.deltaY;
+}
+
+function bindWheelPageScroll() {
+  if (bindWheelPageScroll.bound) return;
+  bindWheelPageScroll.bound = true;
+  document.addEventListener(
+    "wheel",
+    (event) => {
+      if (event.defaultPrevented || hasOpenDialog()) return;
+      if (event.target.closest?.("input, textarea, select, button, a, dialog")) return;
+      if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+      const deltaY = normalizedWheelDeltaY(event);
+      if (!deltaY || canScrollElementVertically(event.target, deltaY) || !canScrollPageVertically(deltaY)) return;
+      event.preventDefault();
+      window.scrollBy({ top: deltaY, behavior: "auto" });
+    },
+    { passive: false }
+  );
+}
+
 function bindStableDetailsTouchGuard() {
   document.addEventListener(
     "touchstart",
@@ -4853,6 +4961,8 @@ function openContractDialog(projectId = "") {
 async function handleProjectAction(button) {
   const projectId = button.dataset.projectId;
   const action = button.dataset.projectAction;
+  const panel = button.closest(".workflow-panel");
+  const notifyPersonal = readPersonalNotify(panel);
   let payload = { actor_id: currentUserId(), actor_role: currentRoleBase() };
   let message = "Объект обновлен";
 
@@ -4918,6 +5028,10 @@ async function handleProjectAction(button) {
     message = "Объект передан руководителю строительства";
   }
 
+  payload.actor_id = payload.actor_id || currentUserId();
+  payload.actor_role = payload.actor_role || currentRoleBase();
+  if (notifyPersonal) payload.notify_personal = true;
+
   await api(`/api/projects/${projectId}/${action}`, {
     method: "POST",
     body: JSON.stringify(payload),
@@ -4951,12 +5065,17 @@ async function handleTaskAction(button) {
   const panelComment = panel?.querySelector("[data-task-action-comment]")?.value.trim() || "";
   const panelDueDate = panel?.querySelector("[data-task-action-due-date]")?.value || "";
   const panelFiles = [...(panel?.querySelector("[data-task-action-files]")?.files || [])];
+  const notifyPersonal = readPersonalNotify(panel);
   let payload = {};
   let message = "Задача обновлена";
   if (action === "complete") {
-    const answer = panel ? panelComment : window.prompt("Что сделано по задаче? Можно оставить пустым.", "");
+    const answer = panel ? panelComment : window.prompt("Что сделано по задаче? Комментарий обязателен.", "");
     if (answer === null) return;
-    const comment = answer || "";
+    const comment = String(answer || "").trim();
+    if (!comment) {
+      showToast("После выполнения задачи напишите, что именно сделано");
+      return;
+    }
     payload = { ...payload, comment };
     message = "Задача отмечена выполненной";
   }
@@ -4998,6 +5117,7 @@ async function handleTaskAction(button) {
   if (panelFiles.length) {
     payload.attachments = await Promise.all(panelFiles.map((file) => fileDocumentPayload(file, file.name, "other", "task")));
   }
+  if (notifyPersonal) payload.notify_personal = true;
   payload.actor_id = currentUserId() || null;
   payload.actor_role = currentRoleBase();
   await api(`/api/tasks/${taskId}/${action}`, {
@@ -5024,6 +5144,7 @@ async function handleTaskComment(button) {
   const textarea = form?.querySelector("textarea");
   const files = [...(form?.querySelector('input[type="file"]')?.files || [])];
   const comment = textarea?.value.trim() || "";
+  const notifyPersonal = readPersonalNotify(form);
   if (!comment && !files.length) {
     showToast("Напишите комментарий по задаче или прикрепите файл");
     return;
@@ -5035,6 +5156,7 @@ async function handleTaskComment(button) {
       body: JSON.stringify({
         actor_id: currentUserId() || null,
         comment,
+        notify_personal: notifyPersonal,
         attachments: await Promise.all(files.map((file) => fileDocumentPayload(file, file.name, "other", "task"))),
       }),
     });
@@ -5053,6 +5175,7 @@ async function handleTaskComment(button) {
 
 function bindEvents() {
   bindStableDetailsTouchGuard();
+  bindWheelPageScroll();
   initPullToRefresh();
   qsa("[data-view]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
   qsa("[data-view-target]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.viewTarget)));
@@ -5588,6 +5711,7 @@ function bindEvents() {
     if (materialBatchAction) {
       const id = materialBatchAction.dataset.materialBatchId;
       const action = materialBatchAction.dataset.materialBatchAction;
+      const actionPanel = materialBatchAction.closest(".workflow-panel");
       const currentBatch = buildMaterialBatches(state.materialRequests || []).find((batch) => String(batch.id) === String(id));
       let body = {};
       if (action === "delete" && !confirm("Удалить заявку на материалы? Это можно сделать только до принятия снабжением в работу.")) return;
@@ -5648,6 +5772,7 @@ function bindEvents() {
       }
       body.actor_role = currentRoleBase();
       body.actor_id = currentUserId();
+      body.notify_personal = readPersonalNotify(actionPanel);
       try {
         await api(`/api/material-request-batches/${id}/${action}`, {
           method: "POST",

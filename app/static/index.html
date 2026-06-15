@@ -12,7 +12,7 @@
     <link rel="manifest" href="/static/manifest.webmanifest?v=20260611-android-pwa" />
     <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260615-project-history-max" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260615-personal-max-docs-scroll" />
   </head>
   <body>
     <div class="app">
@@ -433,6 +433,10 @@
         <input name="creator_role" type="hidden" />
         <input name="creator_id" type="hidden" />
         <label>Комментарий <textarea name="description" rows="3"></textarea></label>
+        <label class="checkbox-line personal-notify">
+          <input name="notify_personal" type="checkbox" value="1" />
+          <span>Уведомить личным сообщением в MAX</span>
+        </label>
         <div class="form-actions">
           <button type="button" class="secondary" data-close="taskDialog">Отмена</button>
           <button class="primary" type="submit">Создать</button>
@@ -854,6 +858,6 @@
       </div>
     </div>
     <div class="toast" id="toast"></div>
-    <script src="/static/app.compat.js?v=20260615-project-history-max"></script>
+    <script src="/static/app.compat.js?v=20260615-personal-max-docs-scroll"></script>
   </body>
 </html>

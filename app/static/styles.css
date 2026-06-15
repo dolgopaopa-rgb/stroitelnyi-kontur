@@ -998,6 +998,12 @@ h2 {
   color: var(--muted);
 }
 
+.document-section-title {
+  margin: 10px 0 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .compact-collapsible details {
   display: grid;
   gap: 8px;
@@ -2519,6 +2525,14 @@ h2 {
   height: 15px;
   margin: 0;
   accent-color: var(--teal);
+}
+
+.personal-notify {
+  width: fit-content;
+  max-width: 100%;
+  white-space: normal;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .feedback-attachments {
