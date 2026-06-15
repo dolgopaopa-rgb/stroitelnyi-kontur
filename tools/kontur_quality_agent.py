@@ -270,7 +270,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         (
             "Mobile load stability scenario",
             "Mobile startup must stay light, recover from stale PWA cache after deploys, and serve a Huawei-compatible frontend bundle.",
-            ["g2-logo-192.png", "app.compat.js?v=20260615-material-change-highlights", "controllerchange", "registration.update", "SKIP_WAITING", "stroitelnyi-kontur-20260615-material-change-highlights"],
+            ["g2-logo-192.png", "app.compat.js?v=20260615-project-history-max", "controllerchange", "registration.update", "SKIP_WAITING", "stroitelnyi-kontur-20260615-project-history-max"],
             "Keep the startup logo lightweight, preserve service-worker auto-update handling, and serve the compatibility bundle so phones do not stay stuck on stale cached app shells.",
         ),
         (
@@ -389,9 +389,9 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         ),
         (
             "MAX outgoing encoding scenario",
-            "Сообщения бота в MAX отправляются в безопасной для кириллицы кодировке, а ручные обновления проходят через base64.",
-            ["def max_message_payload", "ensure_ascii=True", '.encode("ascii")', "def max_message_text_is_corrupted", "MAX message text looks corrupted", "message_base64", "base64.b64decode"],
-            "Не отправлять русские сообщения в MAX через Windows/SSH-пайпы. Для ручных обновлений использовать app/send_max_message.py с base64.",
+            "Сообщения бота в MAX отправляются в безопасной для кириллицы кодировке и остаются читаемыми: жирный заголовок, абзацы и отдельная строка ссылки.",
+            ["def max_message_payload", "ensure_ascii=True", '.encode("ascii")', "def max_message_text_is_corrupted", "MAX message text looks corrupted", "message_base64", "base64.b64decode", "🔔 **Контур:", "Открыть в Контуре"],
+            "Не отправлять русские сообщения в MAX через Windows/SSH-пайпы. Для ручных обновлений использовать app/send_max_message.py с base64 и сохранять markdown-разметку.",
         ),
         (
             "Feedback corrupted comment guard scenario",

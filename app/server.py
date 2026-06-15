@@ -1245,9 +1245,9 @@ def enqueue_max_notification(
         return
 
     url = notification_url(project_id, related_type, related_id)
-    message_lines = [f"Контур: {title}", "", text]
+    message_lines = [f"🔔 **Контур: {title}**", "", text]
     if url:
-        message_lines.extend(["", f"Открыть: {url}"])
+        message_lines.extend(["", f"Открыть в Контуре: {url}"])
     message = "\n".join(line for line in message_lines if line is not None).strip()
 
     def worker() -> None:
@@ -2270,6 +2270,8 @@ def get_project_detail(project_id: int, account: dict | None = None) -> dict | N
                 """
                 SELECT m.*, em.name AS estimate_material_name, em.unit AS estimate_material_unit,
                        em.estimated_quantity, em.unit_price,
+                       creator.name AS creator_name, creator.role AS creator_role,
+                       p.foreman_id AS project_foreman_id, p.title AS project_title,
                        b.status AS batch_status, b.comment AS batch_comment,
                        b.revision_comment AS batch_revision_comment,
                        b.foreman_response AS batch_foreman_response,
@@ -2288,8 +2290,10 @@ def get_project_detail(project_id: int, account: dict | None = None) -> dict | N
                       source_variation.status AS batch_variation_status,
                       b.created_at AS batch_created_at
                 FROM material_requests m
+                LEFT JOIN projects p ON p.id = m.project_id
                 LEFT JOIN material_request_batches b ON b.id = m.batch_id
                 LEFT JOIN estimate_materials em ON em.id = m.estimate_material_id
+                LEFT JOIN users creator ON creator.id = m.creator_id
                 LEFT JOIN documents receipt_doc ON receipt_doc.id = b.receipt_document_id
                 LEFT JOIN variations source_variation
                   ON source_variation.source_type = 'material_request_batch'
@@ -2308,7 +2312,18 @@ def get_project_detail(project_id: int, account: dict | None = None) -> dict | N
             rows_to_dicts(db.execute("SELECT * FROM documents WHERE project_id = ? ORDER BY created_at DESC", (project_id,)).fetchall()),
             account,
         )
-        detail["events"] = rows_to_dicts(db.execute("SELECT * FROM events WHERE project_id = ? ORDER BY created_at DESC", (project_id,)).fetchall())
+        detail["events"] = rows_to_dicts(
+            db.execute(
+                """
+                SELECT e.*, u.name AS author_name, u.role AS author_role
+                FROM events e
+                LEFT JOIN users u ON u.id = e.author_id
+                WHERE e.project_id = ?
+                ORDER BY e.created_at DESC
+                """,
+                (project_id,),
+            ).fetchall()
+        )
         detail["notifications"] = rows_to_dicts(db.execute("SELECT * FROM notifications WHERE project_id = ? ORDER BY created_at DESC", (project_id,)).fetchall())
         detail = sanitize_project_for_account(detail, account)
         return detail

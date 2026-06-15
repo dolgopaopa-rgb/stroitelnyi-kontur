@@ -475,10 +475,10 @@
       finance_director: ["overview", "tasks", "works", "materials", "variations", "documents", "events"],
       accountant: ["overview", "materials", "variations", "documents", "events"],
       sales_manager: ["overview", "documents"],
-      foreman: ["overview", "tasks", "works", "materials", "documents"],
-      procurement_manager: ["overview", "materials", "documents"],
-      estimator: ["overview", "works", "materials", "variations", "documents"],
-      technical_supervisor: ["overview", "tasks", "works", "materials", "documents"]
+      foreman: ["overview", "tasks", "works", "materials", "documents", "events"],
+      procurement_manager: ["overview", "materials", "documents", "events"],
+      estimator: ["overview", "works", "materials", "variations", "documents", "events"],
+      technical_supervisor: ["overview", "tasks", "works", "materials", "documents", "events"]
     }[base];
     return tabs || ["overview"];
   }
@@ -719,6 +719,15 @@
   }
   function renderDocumentSummary(docs, contracts = []) {
     return '\n    <section class="workflow-panel document-summary compact-collapsible">\n      <details>\n        <summary>\n          <span>Документы объекта</span>\n          '.concat(pill("".concat(docs.length, " шт."), docs.length ? "blue" : ""), "\n        </summary>\n        ").concat(renderGroupedProjectDocuments(docs, contracts), "\n      </details>\n    </section>");
+  }
+  function renderProjectDocumentSpotlight(docs = []) {
+    const projectDocs = docs.filter((doc) => doc.status !== "archived" && doc.type === "project_documentation");
+    const canUseProjectDocs = ["foreman", "technical_supervisor", "procurement_manager", "estimator", "construction_manager", "owner"].includes(currentRoleBase());
+    if (!canUseProjectDocs) return "";
+    if (!projectDocs.length) {
+      return '\n      <section class="project-doc-spotlight empty">\n        <div>\n          <strong>Проектная документация</strong>\n          <span>Файлы проекта пока не загружены в карточку объекта.</span>\n        </div>\n      </section>';
+    }
+    return '\n    <section class="project-doc-spotlight">\n      <div class="project-doc-spotlight-head">\n        <strong>Проектная документация</strong>\n        '.concat(pill("".concat(projectDocs.length, " файл(ов)"), "blue"), '\n      </div>\n      <div class="project-doc-spotlight-list">\n        ').concat(projectDocs.slice(0, 4).map((doc) => '<div class="document-row">'.concat(documentFileLink(doc), "</div>")).join(""), "\n      </div>\n      ").concat(projectDocs.length > 4 ? '<p class="muted">Остальные файлы доступны во вкладке “Документы”.</p>' : "", "\n    </section>");
   }
   function renderCollapsibleList({ items, visibleCount = 3, emptyText = "Пока пусто.", renderItem, moreLabel = "Показать еще", key = "" }) {
     if (!items.length) return '<p class="muted">'.concat(emptyText, "</p>");
@@ -2135,6 +2144,27 @@
     rows.push(["Срок", project.planned_end_date || "не задан"]);
     return '\n    <div class="detail-grid financial-summary-grid">\n      '.concat(rows.map(([title, value]) => '<div class="info"><span>'.concat(title, "</span><strong>").concat(typeof value === "number" ? money(value) : value, "</strong></div>")).join(""), "\n    </div>");
   }
+  function renderProjectMaterialHistory(project) {
+    const batches = buildMaterialBatches(project.materials || []);
+    if (!batches.length) return "";
+    return '\n    <section class="project-history-section">\n      <div class="stack-line project-history-head">\n        <h3>Заявки на материалы</h3>\n        '.concat(pill("".concat(batches.length, " шт."), "blue"), '\n      </div>\n      <div class="project-history-batches">\n        ').concat(batches.map((batch) => {
+      const activeItems = materialActiveItems(batch);
+      const removedItems = materialRemovedItems(batch);
+      const totalActual = activeItems.reduce((sum, item) => sum + Number(item.actual_total_amount || 0), 0);
+      return '\n              <details class="history-batch-card">\n                <summary>\n                  <span>\n                    <strong>'.concat(escapeHtml(materialBatchTitle(batch)), "</strong>\n                    <small>Заказал: ").concat(escapeHtml(batch.creator_name || "не указано"), " · позиций: ").concat(activeItems.length).concat(removedItems.length ? " · удалено при правке: ".concat(removedItems.length) : "", '</small>\n                  </span>\n                  <span class="stack-line">\n                    ').concat(pill(label(batch.status), materialBatchLevel(batch.status)), "\n                    ").concat(pill(urgencyLabel(batch.delivery_urgency), urgencyLevel(batch.delivery_urgency)), '\n                  </span>\n                </summary>\n                <div class="history-batch-body">\n                  <div class="history-batch-meta">\n                    <span>Желаемая доставка: <strong>').concat(escapeHtml(batch.needed_at || "не указана"), "</strong></span>\n                    <span>Сметная сумма: <strong>").concat(money(batch.total_amount), "</strong></span>\n                    ").concat(totalActual ? "<span>Факт закупки: <strong>".concat(money(totalActual), "</strong></span>") : "", "\n                  </div>\n                  ").concat(batch.comment ? "<p><strong>Комментарий прораба:</strong> ".concat(escapeHtml(batch.comment), "</p>") : "", "\n                  ").concat(batch.revision_comment ? '<p class="history-warning"><strong>Возврат снабжения:</strong> '.concat(escapeHtml(batch.revision_comment), "</p>") : "", "\n                  ").concat(batch.foreman_response ? "<p><strong>Ответ прораба:</strong> ".concat(escapeHtml(batch.foreman_response), "</p>") : "", "\n                  ").concat(batch.procurement_comment ? "<p><strong>Комментарий снабжения:</strong> ".concat(escapeHtml(batch.procurement_comment), "</p>") : "", "\n                  ").concat(batch.scheduled_delivery_date ? "<p><strong>Назначенная доставка:</strong> ".concat(formatDateRu(batch.scheduled_delivery_date), "</p>") : "", "\n                  ").concat(batch.receipt_comment ? "<p><strong>Приемка:</strong> ".concat(escapeHtml(batch.receipt_comment), "</p>") : "", "\n                  ").concat(materialReceiptAttachment(batch), '\n                  <div class="table history-material-items">\n                    ').concat(activeItems.map(
+        (item) => '\n                          <div class="row estimate-material-row'.concat(materialItemChangeClass(item), '">\n                            <div class="material-main">\n                              <strong>').concat(escapeHtml(item.title), '</strong>\n                              <div class="muted">').concat(escapeHtml(item.estimate_section || "без раздела"), "</div>\n                              ").concat(item.comment ? '<div class="muted">'.concat(escapeHtml(item.comment), "</div>") : "", '\n                            </div>\n                            <div class="stack-line">\n                              ').concat(pill(escapeHtml("".concat(item.requested_quantity || item.estimated_quantity || 0, " ").concat(item.requested_unit || item.estimate_material_unit || "")), "blue"), "\n                              ").concat(pill(materialBasisLabel(item.basis_type), materialBasisLevel(item.basis_type)), "\n                              ").concat(pill(money(item.total_amount), "success"), "\n                              ").concat(materialActualTotal(item) ? pill("Закупка: ".concat(money(materialActualTotal(item))), materialActualOverrun(item) ? "danger" : "blue") : "", "\n                            </div>\n                          </div>")
+      ).join(""), '\n                  </div>\n                  <div class="form-actions">\n                    <button class="secondary tiny" type="button" data-open-material-batch="').concat(batch.key, '">Открыть заявку</button>\n                  </div>\n                </div>\n              </details>');
+    }).join(""), "\n      </div>\n    </section>");
+  }
+  function renderProjectEvents(events = []) {
+    if (!events.length) return '<p class="muted">Событий пока нет.</p>';
+    return '\n    <section class="project-history-section">\n      <div class="stack-line project-history-head">\n        <h3>История действий</h3>\n        '.concat(pill("".concat(events.length, " записей"), "blue"), '\n      </div>\n      <div class="list project-event-list">\n        ').concat(events.map(
+      (event) => '\n              <article class="row project-event-row">\n                <div class="stack-line">\n                  <strong>'.concat(escapeHtml(eventType(event.type)), "</strong>\n                  ").concat(pill(event.related_type === "material_request" ? "материалы" : escapeHtml(event.related_type || "объект"), event.related_type === "material_request" ? "blue" : ""), "\n                </div>\n                <p>").concat(escapeHtml(event.text || "").replace(/\n/g, "<br>"), '</p>\n                <div class="muted">').concat(escapeHtml(event.author_name || "автор не указан"), " · ").concat(formatDateRu(event.created_at) || event.created_at || "", "</div>\n              </article>")
+    ).join(""), "\n      </div>\n    </section>");
+  }
+  function renderProjectHistory(project) {
+    return '\n    <div class="project-history">\n      '.concat(renderProjectMaterialHistory(project), "\n      ").concat(renderProjectEvents(project.events || []), "\n    </div>");
+  }
   async function renderProjectDetail(projectId) {
     const project = await api("/api/projects/".concat(projectId));
     state.selectedProjectId = project.id;
@@ -2155,7 +2185,7 @@
       ),
       variations: canViewFinancials() ? renderSmallList(project.variations, (item) => "".concat(item.title, " · ").concat(variationType(item.type), " · ").concat(money(item.amount), " · ").concat(moneyDecision(item.financial_decision))) : '<p class="muted">Финансовые отклонения доступны руководителям и сметчикам.</p>',
       documents: renderGroupedProjectDocuments(docs, project.contracts || []),
-      events: renderSmallList(project.events, (event) => "".concat(event.text))
+      events: renderProjectHistory(project)
     };
     const detailBlocks = [
       [
@@ -2180,7 +2210,8 @@
     const smetterButton = canViewExternalRefs() && smetterText ? smetterHref ? '<a class="secondary tiny project-smetter-button" href="'.concat(escapeAttr(smetterHref), '" target="_blank" rel="noopener noreferrer">Открыть Сметтер</a>') : '<span class="pill success">Сметтер: '.concat(escapeHtml(smetterText), "</span>") : "";
     const customerInfoHtml = '\n    <div class="project-contact-strip">\n      <div class="project-contact-main">\n        <strong>'.concat(escapeHtml(project.customer_name || "Клиент не указан"), "</strong>\n        <span>").concat(customerHistory, " ").concat(customerHistory === 1 ? "объект/договор" : "объектов/договоров", ' в истории</span>\n      </div>\n      <div class="project-contact-actions">\n        ').concat(phoneLink ? '<a class="contact-action" href="'.concat(escapeAttr(phoneLink), '" title="').concat(escapeAttr(customerPhone), '">Позвонить</a>') : '<span class="muted">Телефон не указан</span>', "\n        ").concat(customerEmail ? '<a class="contact-action" href="mailto:'.concat(escapeAttr(customerEmail), '" title="').concat(escapeAttr(customerEmail), '">Написать</a>') : '<span class="muted">E-mail не указан</span>', "\n        ").concat(mapHref ? '<a class="contact-action map" href="'.concat(escapeAttr(mapHref), '" target="_blank" rel="noopener noreferrer">Я.Карты</a>') : '<span class="muted">Локация не указана</span>', "\n        ").concat(smetterButton, "\n      </div>\n    </div>");
     const managerNoteHtml = managerNote ? '<section class="manager-note-panel">\n        <div class="stack-line"><strong>Вводные менеджера при передаче</strong>'.concat(pill(project.sales_manager_name || "Менеджер", "blue"), "</div>\n        <p>").concat(escapeHtml(managerNote), "</p>\n      </section>") : "";
-    qs("#projectDetail").innerHTML = '\n    <div class="stack-line"><h2>'.concat(project.title, "</h2>").concat(pill(label(project.status), "blue"), "</div>\n    ").concat(customerInfoHtml, "\n    ").concat(managerNoteHtml, '\n    <div class="project-detail-blocks sortable-zone" data-sortable-zone="project-detail-v2">\n      ').concat(detailBlocks.filter(([, html]) => String(html || "").trim()).map(([key, html]) => '<div class="project-detail-block" data-sortable-block="'.concat(key, '">').concat(html, "</div>")).join(""), "\n    </div>\n  ");
+    const projectDocsSpotlightHtml = renderProjectDocumentSpotlight(docs);
+    qs("#projectDetail").innerHTML = '\n    <div class="stack-line"><h2>'.concat(project.title, "</h2>").concat(pill(label(project.status), "blue"), "</div>\n    ").concat(customerInfoHtml, "\n    ").concat(managerNoteHtml, "\n    ").concat(projectDocsSpotlightHtml, '\n    <div class="project-detail-blocks sortable-zone" data-sortable-zone="project-detail-v2">\n      ').concat(detailBlocks.filter(([, html]) => String(html || "").trim()).map(([key, html]) => '<div class="project-detail-block" data-sortable-block="'.concat(key, '">').concat(html, "</div>")).join(""), "\n    </div>\n  ");
     initSortableZones(qs("#projectDetail"));
   }
   function renderProjectEditPanel(project) {

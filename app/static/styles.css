@@ -733,6 +733,42 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.project-doc-spotlight {
+  border: 1px solid #cfe1e2;
+  background: #f6fbfa;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin: 7px 0 8px;
+  display: grid;
+  gap: 7px;
+}
+
+.project-doc-spotlight.empty {
+  background: #fff8e7;
+}
+
+.project-doc-spotlight-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.project-doc-spotlight strong {
+  font-size: 13px;
+}
+
+.project-doc-spotlight span,
+.project-doc-spotlight .muted {
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.project-doc-spotlight-list {
+  display: grid;
+  gap: 5px;
+}
+
 #projectDetail {
   font-size: 13px;
 }
@@ -835,6 +871,121 @@ h2 {
 #projectDetail .document-link span {
   font-size: 12px;
   line-height: 1.25;
+}
+
+.project-history {
+  display: grid;
+  gap: 10px;
+}
+
+.project-history-section {
+  display: grid;
+  gap: 7px;
+}
+
+.project-history-head h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.project-history-batches {
+  display: grid;
+  gap: 7px;
+}
+
+.history-batch-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.history-batch-card summary {
+  min-height: 0;
+  padding: 8px 10px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.history-batch-card summary strong,
+.history-batch-card summary small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.history-batch-card summary small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+  margin-top: 2px;
+}
+
+.history-batch-body {
+  border-top: 1px solid var(--line);
+  padding: 8px 10px;
+  display: grid;
+  gap: 8px;
+  background: #fbfdfd;
+}
+
+.history-batch-body p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.history-warning {
+  padding: 7px 8px;
+  border-radius: 7px;
+  background: var(--warning-soft);
+}
+
+.history-batch-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.history-batch-meta span {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.history-batch-meta strong {
+  color: var(--text);
+}
+
+.history-material-items {
+  gap: 5px;
+}
+
+.history-material-items .row {
+  padding: 6px 8px;
+}
+
+.project-event-list {
+  gap: 6px;
+}
+
+.project-event-row {
+  display: grid;
+  gap: 5px;
+  padding: 7px 9px;
+}
+
+.project-event-row p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .document-contract-group {

@@ -506,10 +506,10 @@ function projectTabs() {
     finance_director: ["overview", "tasks", "works", "materials", "variations", "documents", "events"],
     accountant: ["overview", "materials", "variations", "documents", "events"],
     sales_manager: ["overview", "documents"],
-    foreman: ["overview", "tasks", "works", "materials", "documents"],
-    procurement_manager: ["overview", "materials", "documents"],
-    estimator: ["overview", "works", "materials", "variations", "documents"],
-    technical_supervisor: ["overview", "tasks", "works", "materials", "documents"],
+    foreman: ["overview", "tasks", "works", "materials", "documents", "events"],
+    procurement_manager: ["overview", "materials", "documents", "events"],
+    estimator: ["overview", "works", "materials", "variations", "documents", "events"],
+    technical_supervisor: ["overview", "tasks", "works", "materials", "documents", "events"],
   }[base];
   return tabs || ["overview"];
 }
@@ -830,6 +830,35 @@ function renderDocumentSummary(docs, contracts = []) {
         </summary>
         ${renderGroupedProjectDocuments(docs, contracts)}
       </details>
+    </section>`;
+}
+
+function renderProjectDocumentSpotlight(docs = []) {
+  const projectDocs = docs.filter((doc) => doc.status !== "archived" && doc.type === "project_documentation");
+  const canUseProjectDocs = ["foreman", "technical_supervisor", "procurement_manager", "estimator", "construction_manager", "owner"].includes(currentRoleBase());
+  if (!canUseProjectDocs) return "";
+  if (!projectDocs.length) {
+    return `
+      <section class="project-doc-spotlight empty">
+        <div>
+          <strong>Проектная документация</strong>
+          <span>Файлы проекта пока не загружены в карточку объекта.</span>
+        </div>
+      </section>`;
+  }
+  return `
+    <section class="project-doc-spotlight">
+      <div class="project-doc-spotlight-head">
+        <strong>Проектная документация</strong>
+        ${pill(`${projectDocs.length} файл(ов)`, "blue")}
+      </div>
+      <div class="project-doc-spotlight-list">
+        ${projectDocs
+          .slice(0, 4)
+          .map((doc) => `<div class="document-row">${documentFileLink(doc)}</div>`)
+          .join("")}
+      </div>
+      ${projectDocs.length > 4 ? `<p class="muted">Остальные файлы доступны во вкладке “Документы”.</p>` : ""}
     </section>`;
 }
 
@@ -2702,6 +2731,111 @@ function projectFinancialSummaryHtml(project) {
     </div>`;
 }
 
+function renderProjectMaterialHistory(project) {
+  const batches = buildMaterialBatches(project.materials || []);
+  if (!batches.length) return "";
+  return `
+    <section class="project-history-section">
+      <div class="stack-line project-history-head">
+        <h3>Заявки на материалы</h3>
+        ${pill(`${batches.length} шт.`, "blue")}
+      </div>
+      <div class="project-history-batches">
+        ${batches
+          .map((batch) => {
+            const activeItems = materialActiveItems(batch);
+            const removedItems = materialRemovedItems(batch);
+            const totalActual = activeItems.reduce((sum, item) => sum + Number(item.actual_total_amount || 0), 0);
+            return `
+              <details class="history-batch-card">
+                <summary>
+                  <span>
+                    <strong>${escapeHtml(materialBatchTitle(batch))}</strong>
+                    <small>Заказал: ${escapeHtml(batch.creator_name || "не указано")} · позиций: ${activeItems.length}${removedItems.length ? ` · удалено при правке: ${removedItems.length}` : ""}</small>
+                  </span>
+                  <span class="stack-line">
+                    ${pill(label(batch.status), materialBatchLevel(batch.status))}
+                    ${pill(urgencyLabel(batch.delivery_urgency), urgencyLevel(batch.delivery_urgency))}
+                  </span>
+                </summary>
+                <div class="history-batch-body">
+                  <div class="history-batch-meta">
+                    <span>Желаемая доставка: <strong>${escapeHtml(batch.needed_at || "не указана")}</strong></span>
+                    <span>Сметная сумма: <strong>${money(batch.total_amount)}</strong></span>
+                    ${totalActual ? `<span>Факт закупки: <strong>${money(totalActual)}</strong></span>` : ""}
+                  </div>
+                  ${batch.comment ? `<p><strong>Комментарий прораба:</strong> ${escapeHtml(batch.comment)}</p>` : ""}
+                  ${batch.revision_comment ? `<p class="history-warning"><strong>Возврат снабжения:</strong> ${escapeHtml(batch.revision_comment)}</p>` : ""}
+                  ${batch.foreman_response ? `<p><strong>Ответ прораба:</strong> ${escapeHtml(batch.foreman_response)}</p>` : ""}
+                  ${batch.procurement_comment ? `<p><strong>Комментарий снабжения:</strong> ${escapeHtml(batch.procurement_comment)}</p>` : ""}
+                  ${batch.scheduled_delivery_date ? `<p><strong>Назначенная доставка:</strong> ${formatDateRu(batch.scheduled_delivery_date)}</p>` : ""}
+                  ${batch.receipt_comment ? `<p><strong>Приемка:</strong> ${escapeHtml(batch.receipt_comment)}</p>` : ""}
+                  ${materialReceiptAttachment(batch)}
+                  <div class="table history-material-items">
+                    ${activeItems
+                      .map(
+                        (item) => `
+                          <div class="row estimate-material-row${materialItemChangeClass(item)}">
+                            <div class="material-main">
+                              <strong>${escapeHtml(item.title)}</strong>
+                              <div class="muted">${escapeHtml(item.estimate_section || "без раздела")}</div>
+                              ${item.comment ? `<div class="muted">${escapeHtml(item.comment)}</div>` : ""}
+                            </div>
+                            <div class="stack-line">
+                              ${pill(escapeHtml(`${item.requested_quantity || item.estimated_quantity || 0} ${item.requested_unit || item.estimate_material_unit || ""}`), "blue")}
+                              ${pill(materialBasisLabel(item.basis_type), materialBasisLevel(item.basis_type))}
+                              ${pill(money(item.total_amount), "success")}
+                              ${materialActualTotal(item) ? pill(`Закупка: ${money(materialActualTotal(item))}`, materialActualOverrun(item) ? "danger" : "blue") : ""}
+                            </div>
+                          </div>`
+                      )
+                      .join("")}
+                  </div>
+                  <div class="form-actions">
+                    <button class="secondary tiny" type="button" data-open-material-batch="${batch.key}">Открыть заявку</button>
+                  </div>
+                </div>
+              </details>`;
+          })
+          .join("")}
+      </div>
+    </section>`;
+}
+
+function renderProjectEvents(events = []) {
+  if (!events.length) return `<p class="muted">Событий пока нет.</p>`;
+  return `
+    <section class="project-history-section">
+      <div class="stack-line project-history-head">
+        <h3>История действий</h3>
+        ${pill(`${events.length} записей`, "blue")}
+      </div>
+      <div class="list project-event-list">
+        ${events
+          .map(
+            (event) => `
+              <article class="row project-event-row">
+                <div class="stack-line">
+                  <strong>${escapeHtml(eventType(event.type))}</strong>
+                  ${pill(event.related_type === "material_request" ? "материалы" : escapeHtml(event.related_type || "объект"), event.related_type === "material_request" ? "blue" : "")}
+                </div>
+                <p>${escapeHtml(event.text || "").replace(/\n/g, "<br>")}</p>
+                <div class="muted">${escapeHtml(event.author_name || "автор не указан")} · ${formatDateRu(event.created_at) || event.created_at || ""}</div>
+              </article>`
+          )
+          .join("")}
+      </div>
+    </section>`;
+}
+
+function renderProjectHistory(project) {
+  return `
+    <div class="project-history">
+      ${renderProjectMaterialHistory(project)}
+      ${renderProjectEvents(project.events || [])}
+    </div>`;
+}
+
 async function renderProjectDetail(projectId) {
   const project = await api(`/api/projects/${projectId}`);
   state.selectedProjectId = project.id;
@@ -2736,7 +2870,7 @@ async function renderProjectDetail(projectId) {
     ),
     variations: canViewFinancials() ? renderSmallList(project.variations, (item) => `${item.title} · ${variationType(item.type)} · ${money(item.amount)} · ${moneyDecision(item.financial_decision)}`) : `<p class="muted">Финансовые отклонения доступны руководителям и сметчикам.</p>`,
     documents: renderGroupedProjectDocuments(docs, project.contracts || []),
-    events: renderSmallList(project.events, (event) => `${event.text}`),
+    events: renderProjectHistory(project),
   };
   const detailBlocks = [
     [
@@ -2787,10 +2921,12 @@ async function renderProjectDetail(projectId) {
         <p>${escapeHtml(managerNote)}</p>
       </section>`
     : "";
+  const projectDocsSpotlightHtml = renderProjectDocumentSpotlight(docs);
   qs("#projectDetail").innerHTML = `
     <div class="stack-line"><h2>${project.title}</h2>${pill(label(project.status), "blue")}</div>
     ${customerInfoHtml}
     ${managerNoteHtml}
+    ${projectDocsSpotlightHtml}
     <div class="project-detail-blocks sortable-zone" data-sortable-zone="project-detail-v2">
       ${detailBlocks.filter(([, html]) => String(html || "").trim()).map(([key, html]) => `<div class="project-detail-block" data-sortable-block="${key}">${html}</div>`).join("")}
     </div>
