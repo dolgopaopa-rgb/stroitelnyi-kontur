@@ -1588,6 +1588,7 @@ function renderExtraMaterialRow() {
     <div class="row extra-material-row">
       <label>Материал <input data-extra-material-field="material" placeholder="Например: плиточный клей" /></label>
       <label>Наименование <input data-extra-material-field="name" placeholder="Марка, размер, артикул" /></label>
+      <label>Ед. изм. <input data-extra-material-field="unit" placeholder="шт, м, кг, упак." /></label>
       <label>Количество <input data-extra-material-field="quantity" type="number" min="0" step="0.001" placeholder="0" /></label>
       <label>
         Причина
@@ -1615,6 +1616,7 @@ function collectExtraMaterials(containerSelector = "#extraMaterialRows") {
     .map((row) => ({
       material: row.querySelector('[data-extra-material-field="material"]').value.trim(),
       name: row.querySelector('[data-extra-material-field="name"]').value.trim(),
+      unit: row.querySelector('[data-extra-material-field="unit"]').value.trim(),
       quantity: row.querySelector('[data-extra-material-field="quantity"]').value,
       reason: row.querySelector('[data-extra-material-field="reason"]').value,
     }))
@@ -1839,6 +1841,7 @@ function renderMaterialBatchEditSection(batch) {
                 <div class="muted">${item.estimate_section || "без раздела"}</div>
                 ${!item.estimate_material_id ? `<label>Наименование <input data-edit-item-title value="${escapeAttr(item.title)}" /></label>` : ""}
               </div>
+              ${!item.estimate_material_id ? `<label>Ед. изм. <input data-edit-item-unit value="${escapeAttr(item.requested_unit || item.estimate_material_unit || "")}" placeholder="шт, м, кг, упак." /></label>` : ""}
               <label>Количество <input data-edit-item-quantity type="number" min="0" step="0.001" value="${item.requested_quantity || item.estimated_quantity || 0}" /></label>
               ${
                 !item.estimate_material_id
@@ -1876,6 +1879,7 @@ function collectMaterialBatchEdits() {
   return qsa("#materialBatchEditRows .material-batch-edit-row").map((row) => ({
     id: row.dataset.editItemId,
     title: row.querySelector("[data-edit-item-title]")?.value.trim(),
+    unit: row.querySelector("[data-edit-item-unit]")?.value.trim(),
     quantity: row.querySelector("[data-edit-item-quantity]")?.value,
     basis_type: row.querySelector("[data-edit-item-basis]")?.value,
     comment: row.querySelector("[data-edit-item-comment]")?.value.trim(),
@@ -2107,6 +2111,7 @@ function renderEstimateSchedule(jobs) {
         <div class="estimate-timeline-main">
           <strong>${escapeHtml(job.title)}</strong>
           <span>${escapeHtml(job.estimator_name || "сметчик не назначен")} · ${formatDateRu(job.received_at)} → ${formatDateRu(job.due_date)}</span>
+          ${job.question_comment ? `<em>Вопрос сметчика: ${escapeHtml(job.question_comment)}</em>` : ""}
         </div>
         <div class="estimate-timeline-track ${estimateJobStatusLevel(job)}"><i style="width: ${estimateJobProgress(job)}%"></i></div>
         ${pill(label(job.status), estimateJobStatusLevel(job))}
@@ -2246,7 +2251,7 @@ function renderEstimateJobRow(job) {
         ${job.site_costs_comment ? `<p class="muted">Организация площадки: ${escapeHtml(job.site_costs_comment)}</p>` : ""}
         ${smetterHref ? `<a class="link-button inline-link" href="${escapeAttr(smetterHref)}" target="_blank" rel="noopener noreferrer">Открыть Сметтер</a>` : ""}
         ${job.comment ? `<p>${linkifyText(job.comment)}</p>` : ""}
-        ${job.question_comment ? `<p class="muted warning-text">Уточнение: ${linkifyText(job.question_comment)}</p>` : ""}
+        ${job.question_comment ? `<div class="estimate-question-note"><strong>Вопрос сметчика</strong><p>${linkifyText(job.question_comment)}</p></div>` : ""}
         ${job.return_comment ? `<p class="muted danger-text">Возврат менеджеру: ${linkifyText(job.return_comment)}</p>` : ""}
         ${job.result_comment ? `<p class="muted">Итог: ${linkifyText(job.result_comment)}</p>` : ""}
         ${renderEstimateJobFiles(job.files, job.id, canManageFiles)}
@@ -2725,9 +2730,9 @@ async function renderProjectDetail(projectId) {
         <span>${customerHistory} ${customerHistory === 1 ? "объект/договор" : "объектов/договоров"} в истории</span>
       </div>
       <div class="project-contact-actions">
-        ${phoneLink ? `<a class="link-button inline-link" href="${escapeAttr(phoneLink)}">Позвонить</a>` : `<span class="muted">Телефон не указан</span>`}
-        ${customerEmail ? `<a class="link-button inline-link" href="mailto:${escapeAttr(customerEmail)}">Написать</a>` : `<span class="muted">E-mail не указан</span>`}
-        ${mapHref ? `<a class="link-button inline-link" href="${escapeAttr(mapHref)}" target="_blank" rel="noopener noreferrer">Я.Карты</a>` : `<span class="muted">Локация не указана</span>`}
+        ${phoneLink ? `<a class="contact-action" href="${escapeAttr(phoneLink)}" title="${escapeAttr(customerPhone)}">Позвонить</a>` : `<span class="muted">Телефон не указан</span>`}
+        ${customerEmail ? `<a class="contact-action" href="mailto:${escapeAttr(customerEmail)}" title="${escapeAttr(customerEmail)}">Написать</a>` : `<span class="muted">E-mail не указан</span>`}
+        ${mapHref ? `<a class="contact-action map" href="${escapeAttr(mapHref)}" target="_blank" rel="noopener noreferrer">Я.Карты</a>` : `<span class="muted">Локация не указана</span>`}
         ${smetterButton}
       </div>
     </div>`;
@@ -3549,6 +3554,7 @@ async function openMaterialBatchDialog(batchKey) {
   qs("#materialReviewTitle").textContent = materialBatchTitle(batch, currentRoleBase() === "procurement_manager");
   const canReview = currentRoleBase() === "procurement_manager" && batch.id && ["new", "revision_requested"].includes(batch.status);
   const canSchedule = currentRoleBase() === "procurement_manager" && batch.id && ["in_work", "delivery_scheduled"].includes(batch.status);
+  const canSaveActualsOnly = currentRoleBase() === "procurement_manager" && batch.id && !canSchedule && ["received", "receipt_issue"].includes(batch.status);
   const canResolveIssue = currentRoleBase() === "procurement_manager" && batch.id && batch.status === "receipt_issue";
   const canEdit = canEditMaterialBatch(batch);
   const canCreateVariation = canCreateVariationFromBatch(batch);
@@ -3639,6 +3645,33 @@ async function openMaterialBatchDialog(batchKey) {
             <label>Комментарий снабжения <textarea id="materialBatchScheduleComment" rows="3" placeholder="Например: нужна доверенность или кран">${batch.procurement_comment || ""}</textarea></label>
             <div class="form-actions">
               <button class="primary" type="button" data-material-batch-action="schedule" data-material-batch-id="${batch.id}">Уведомить о доставке</button>
+              <button class="secondary" type="button" data-material-batch-action="save_actuals" data-material-batch-id="${batch.id}">Сохранить цены закупки</button>
+            </div>
+          </section>`
+        : ""
+    }
+    ${
+      canSaveActualsOnly
+        ? `<section class="workflow-panel">
+            <h3>Фактические цены закупки</h3>
+            <p class="muted">Заявка уже в архиве или закрыта, но снабжение может допоставить фактические цены и суммы закупки.</p>
+            <div class="table material-review-items">
+              ${batch.items
+                .map(
+                  (item) => `
+                  <div class="row estimate-material-row">
+                    <div class="material-main">
+                      <strong>${item.title}</strong>
+                      <div class="muted">Смета: ${money(item.total_amount)} · ${item.requested_quantity || item.estimated_quantity || 0} ${item.requested_unit || item.estimate_material_unit || ""}</div>
+                    </div>
+                    <label>Цена закупки за ед., ₽ <input type="text" inputmode="decimal" data-material-actual-unit="${item.id}" value="${item.actual_unit_price || ""}" placeholder="0" /></label>
+                    <label>Сумма закупки, ₽ <input type="text" inputmode="decimal" data-material-actual-total="${item.id}" value="${item.actual_total_amount || ""}" placeholder="0" /></label>
+                  </div>`
+                )
+                .join("")}
+            </div>
+            <label>Комментарий снабжения <textarea id="materialBatchScheduleComment" rows="3" placeholder="Например: цены внесены после закрытия заявки">${batch.procurement_comment || ""}</textarea></label>
+            <div class="form-actions">
               <button class="secondary" type="button" data-material-batch-action="save_actuals" data-material-batch-id="${batch.id}">Сохранить цены закупки</button>
             </div>
           </section>`
@@ -5368,11 +5401,17 @@ function bindEvents() {
         body = { comment: qs("#materialBatchResubmitComment")?.value || "" };
       }
       if (action === "update") {
+        const extraItems = collectExtraMaterials("#batchExtraMaterialRows");
+        const incompleteExtra = extraItems.some((item) => !item.material || !item.name || !item.unit || Number(item.quantity || 0) <= 0 || !item.reason);
+        if (incompleteExtra) {
+          showToast("Заполните материал, наименование, ед. измерения, количество и причину");
+          return;
+        }
         body = {
           comment: qs("#materialBatchUpdateComment")?.value || "",
           needed_at: qs("#materialBatchUpdateNeededAt")?.value || "",
           items: collectMaterialBatchEdits(),
-          extra_items: collectExtraMaterials("#batchExtraMaterialRows"),
+          extra_items: extraItems,
         };
       }
       if (action === "schedule") {
@@ -5716,9 +5755,9 @@ function bindEvents() {
       reason: row.querySelector("[data-material-reason] textarea").value,
     }));
     const extra_items = collectExtraMaterials();
-    const incompleteExtra = extra_items.some((item) => !item.material || !item.name || Number(item.quantity || 0) <= 0 || !item.reason);
+    const incompleteExtra = extra_items.some((item) => !item.material || !item.name || !item.unit || Number(item.quantity || 0) <= 0 || !item.reason);
     if (incompleteExtra) {
-      showToast("Заполните все 4 поля в дополнительных материалах");
+      showToast("Заполните материал, наименование, ед. измерения, количество и причину");
       return;
     }
     if (!items.length && !extra_items.length) {

@@ -688,6 +688,31 @@ h2 {
   white-space: nowrap;
 }
 
+.contact-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  border: 1px solid #b9d7cc;
+  border-radius: 7px;
+  background: white;
+  color: var(--brand-strong);
+  padding: 4px 9px;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.contact-action:hover {
+  background: #e6f3ee;
+}
+
+.contact-action.map {
+  border-color: #c7dcc9;
+  background: #f2faf3;
+}
+
 .manager-note-panel {
   border: 1px solid #d8e4e7;
   background: #fff8e7;
@@ -2638,10 +2663,19 @@ h2 {
 }
 
 .estimate-timeline-main span,
+.estimate-timeline-main em,
 .estimate-job-main .muted,
 .estimate-job-main p {
   font-size: 12px;
   line-height: 1.3;
+}
+
+.estimate-timeline-main em {
+  display: block;
+  color: #8a5a07;
+  font-style: normal;
+  font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 .estimate-timeline-track {
@@ -2764,6 +2798,21 @@ h2 {
 
 .warning-text {
   color: #92630a;
+}
+
+.estimate-question-note {
+  border: 1px solid #ead59b;
+  border-radius: 8px;
+  background: #fff8e7;
+  padding: 8px 10px;
+}
+
+.estimate-question-note strong {
+  color: #785105;
+}
+
+.estimate-question-note p {
+  margin-top: 3px;
 }
 
 .danger-outline {

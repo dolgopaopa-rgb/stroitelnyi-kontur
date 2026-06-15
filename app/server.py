@@ -4821,6 +4821,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         comment = str(item.get("comment") or "").strip()
                         title = str(item.get("title") or existing["title"] or "").strip()
                         basis_type = str(item.get("basis_type") or existing["basis_type"] or "main_estimate").strip()
+                        requested_unit = str(item.get("unit") or existing["requested_unit"] or existing["estimate_material_unit"] or "").strip()
                         unit_price = number_value(existing["unit_price"])
                         total_amount = quantity * unit_price if unit_price else number_value(existing["total_amount"])
                         db.execute(
@@ -4831,13 +4832,14 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                                 needed_at = ?,
                                 delivery_urgency = ?,
                                 requested_quantity = ?,
+                                requested_unit = ?,
                                 total_amount = ?,
                                 comment = ?,
                                 procurement_status = 'new',
                                 updated_at = CURRENT_TIMESTAMP
                             WHERE id = ? AND batch_id = ?
                             """,
-                            (title, basis_type, new_needed_at, new_urgency, quantity, total_amount, comment, request_id, batch_id),
+                            (title, basis_type, new_needed_at, new_urgency, quantity, requested_unit, total_amount, comment, request_id, batch_id),
                         )
                     extra_reason_labels = {
                         "additional_work": "Доп",
@@ -4849,12 +4851,13 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     for item in extra_items:
                         material_name = str(item.get("material") or "").strip()
                         item_name = str(item.get("name") or "").strip()
+                        item_unit = str(item.get("unit") or "").strip()
                         quantity = number_value(item.get("quantity"))
                         reason = str(item.get("reason") or "").strip()
                         if not material_name and not item_name and quantity <= 0:
                             continue
-                        if not material_name or not item_name or quantity <= 0 or reason not in allowed_extra_reasons:
-                            raise ValueError("Заполните материал, наименование, количество и причину для дополнительных материалов.")
+                        if not material_name or not item_name or not item_unit or quantity <= 0 or reason not in allowed_extra_reasons:
+                            raise ValueError("Заполните материал, наименование, ед. измерения, количество и причину для дополнительных материалов.")
                         create_material_request(
                             db,
                             batch_id=batch_id,
@@ -4866,7 +4869,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             estimate_section="Дополнительные материалы",
                             needed_at=new_needed_at,
                             requested_quantity=quantity,
-                            requested_unit="",
+                            requested_unit=item_unit,
                             total_amount=0,
                             comment=f"{extra_reason_labels[reason]}. {update_comment}".strip(),
                         )
@@ -5007,7 +5010,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 if action == "save_actuals":
                     if str(data.get("actor_role") or "") != "procurement_manager":
                         raise ValueError("Сохранить цены закупки может только снабжение.")
-                    if str(batch["status"] or "") not in {"in_work", "delivery_scheduled"}:
+                    if str(batch["status"] or "") not in {"in_work", "delivery_scheduled", "received", "receipt_issue"}:
                         raise ValueError("Цены закупки можно сохранять после принятия заявки снабжением в работу.")
                     comment = str(data.get("comment") or "").strip()
                     actual_purchase_amount = save_material_actual_items(db, batch_id, data.get("actual_items") or [])
@@ -5444,12 +5447,13 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 for item in extra_items:
                     material_name = str(item.get("material") or "").strip()
                     item_name = str(item.get("name") or "").strip()
+                    item_unit = str(item.get("unit") or "").strip()
                     quantity = number_value(item.get("quantity"))
                     reason = str(item.get("reason") or "").strip()
                     if not material_name and not item_name and quantity <= 0:
                         continue
-                    if not material_name or not item_name or quantity <= 0 or reason not in allowed_extra_reasons:
-                        raise ValueError("Заполните материал, наименование, количество и причину для дополнительных материалов.")
+                    if not material_name or not item_name or not item_unit or quantity <= 0 or reason not in allowed_extra_reasons:
+                        raise ValueError("Заполните материал, наименование, ед. измерения, количество и причину для дополнительных материалов.")
                     title_text = f"{material_name}: {item_name}"
                     created.append(
                         create_material_request(
@@ -5463,7 +5467,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             estimate_section="Дополнительные материалы",
                             needed_at=needed_at,
                             requested_quantity=quantity,
-                            requested_unit="",
+                            requested_unit=item_unit,
                             total_amount=0,
                             comment=f"{extra_reason_labels[reason]}. {base_comment}".strip(),
                         )
