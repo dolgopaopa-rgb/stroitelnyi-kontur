@@ -59,7 +59,8 @@ python app\server.py
 - `app/static/index.html` - оболочка приложения и версия клиентского кэша.
 - `app/static/login.html` - отдельная страница входа.
 - `app/static/sw.js` - service worker/PWA-кэш. При изменении фронтенда нужно обновлять версию кэша.
-- `tools/kontur_quality_agent.py` - проверяющий агент. Он ничего сам не исправляет, только фиксирует нарушения.
+- `tools/kontur_agent_suite.py` - главный набор проверяющих агентов: доступность, сборка, PWA, мобильность, роли, безопасность, документы, MAX, строительная логика, UX и API smoke.
+- `tools/kontur_quality_agent.py` - основной строгий QA-агент. Сейчас запускается внутри общего набора.
 - `docs/16-project-worklog.md` - подробный технический журнал изменений.
 - `Строительный контур/Журнал дальнейших шагов.md` - человеческий журнал для продолжения работы.
 - `docs/12-deployment.md` - схема постоянного сервера и деплоя без секретов.
@@ -180,7 +181,7 @@ python -m compileall app tools
 node --check app\static\app.js
 node --check app\static\sw.js
 git diff --check
-python tools\kontur_quality_agent.py
+python tools\kontur_agent_suite.py --url https://kontur.derevgroup.ru
 ```
 
 Если менялась мобильная верстка, открыть приложение в браузере с мобильным viewport и проверить:

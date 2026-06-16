@@ -32,6 +32,9 @@
 24. [Контракты проверяющего агента интерфейса](docs/24-quality-agent-ui-contracts.md)
 25. [Правила хранения секретов](docs/25-secrets-management.md)
 26. [Передача проекта в новый чат](docs/26-new-chat-handoff.md)
+27. [Android и мобильная версия](docs/27-android-mobile-version.md)
+28. [Android APK](docs/28-android-apk.md)
+29. [Совет агентов проверки сайта](docs/29-agent-suite.md)
 
 ## Прототип
 

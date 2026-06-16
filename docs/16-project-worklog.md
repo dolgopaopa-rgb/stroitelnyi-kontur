@@ -1437,6 +1437,38 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 - `tools/kontur_quality_agent.py`
 - `docs/16-project-worklog.md`
 
+### 2026-06-16: совет агентов для проверки работоспособности сайта
+
+**Запрос.** Нужен набор разных проверяющих агентов, которые после изменений контролируют работоспособность сайта, роли, мобильную часть, документы, материалы, уведомления и строительную логику.
+
+**Решение.**
+
+- Добавлен новый запуск `tools/kontur_agent_suite.py`.
+- Внутри набора создано 12 проверяющих направлений: доступность сайта, сборка и синтаксис, статика/PWA, мобильность, роли и доступы, безопасность, документы и файлы, MAX-уведомления, строительная логика, UX/дизайн, API smoke и существующий основной QA-агент.
+- Старый `tools/kontur_quality_agent.py` не удален: он запускается внутри нового набора как строгий базовый контролер.
+- GitHub Actions `Quality Agent` теперь запускает весь набор агентов после `push`, pull request и вручную.
+- Добавлен документ `docs/29-agent-suite.md` с описанием агентов, команд запуска и правил чтения отчета.
+- Обновлены `README.md`, `docs/17-quality-agent.md` и `docs/26-new-chat-handoff.md`, чтобы в новом чате и на другом компьютере основным стандартом проверки был `kontur_agent_suite`.
+
+**Проверки.**
+
+- `python -m py_compile tools\kontur_quality_agent.py tools\kontur_agent_suite.py app\server.py app\database.py app\send_max_message.py` - успешно.
+- `node --check app\static\app.js` через bundled Node - успешно.
+- `node --check app\static\app.compat.js` через bundled Node - успешно.
+- `node --check app\static\sw.js` через bundled Node - успешно.
+- `git diff --check` - успешно, только стандартные предупреждения Windows о CRLF.
+- `python tools\kontur_agent_suite.py --url https://kontur.derevgroup.ru --report-dir docs\agent-reports` - 38 OK, 0 WARN, 0 FAIL, 1 INFO без закрытых учетных данных для API smoke.
+
+**Измененные файлы.**
+
+- `.github/workflows/quality-agent.yml`
+- `tools/kontur_agent_suite.py`
+- `docs/29-agent-suite.md`
+- `docs/17-quality-agent.md`
+- `docs/26-new-chat-handoff.md`
+- `README.md`
+- `docs/16-project-worklog.md`
+
 ### 2026-06-16: мягкая прокрутка колесиком мыши
 
 **Запрос.** При просмотре страниц плохо работала прокрутка колесиком мыши, хотя правый scrollbar прокручивал страницу нормально.
