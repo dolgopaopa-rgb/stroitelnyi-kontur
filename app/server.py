@@ -62,6 +62,9 @@ def html_response(handler: BaseHTTPRequestHandler, body: str, status: int = 200,
     handler.send_header("Content-Type", "text/html; charset=utf-8")
     handler.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
     handler.send_header("Pragma", "no-cache")
+    handler.send_header("Expires", "0")
+    handler.send_header("Surrogate-Control", "no-store")
+    handler.send_header("X-Robots-Tag", "noindex, nofollow")
     if cookie:
         handler.send_header("Set-Cookie", cookie)
     else:
@@ -74,7 +77,10 @@ def html_response(handler: BaseHTTPRequestHandler, body: str, status: int = 200,
 def redirect_response(handler: BaseHTTPRequestHandler, location: str, status: int = 303, cookie: str | None = None) -> None:
     handler.send_response(status)
     handler.send_header("Location", location)
-    handler.send_header("Cache-Control", "no-store")
+    handler.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+    handler.send_header("Pragma", "no-cache")
+    handler.send_header("Expires", "0")
+    handler.send_header("Surrogate-Control", "no-store")
     if cookie:
         handler.send_header("Set-Cookie", cookie)
     else:
@@ -3445,7 +3451,19 @@ class AppHandler(BaseHTTPRequestHandler):
             return
         audit_snapshot = re.match(r"^/ai-audit-snapshot/([^/]+)$", path)
         if audit_snapshot:
+            query = parse_qs(parsed.query)
+            current_commit = str(app_metadata(self).get("commitHash") or "unknown")
+            has_current_version = str((query.get("v") or [""])[0]) == current_commit and bool((query.get("generatedAt") or [""])[0])
+            if not has_current_version:
+                token = quote(unquote(audit_snapshot.group(1)), safe="")
+                generated_at = quote(datetime.now().astimezone().isoformat(timespec="seconds"), safe="")
+                redirect_response(self, f"/ai-audit-snapshot/{token}?v={quote(current_commit, safe='')}&generatedAt={generated_at}", status=302)
+                return
             self.handle_ai_audit_snapshot(unquote(audit_snapshot.group(1)))
+            return
+        qa_artifact = re.match(r"^/qa-artifacts/latest/(qa-report\.(?:md|json))$", path)
+        if qa_artifact:
+            self.serve_qa_artifact(qa_artifact.group(1))
             return
         if path == "/logout":
             logout_response(self)
@@ -3565,6 +3583,29 @@ class AppHandler(BaseHTTPRequestHandler):
 
     def log_message(self, format: str, *args: object) -> None:
         return
+
+    def serve_qa_artifact(self, file_name: str) -> None:
+        if file_name not in {"qa-report.md", "qa-report.json"}:
+            self.send_error(404)
+            return
+        file_path = (APP_DIR.parent / "qa-artifacts" / "latest" / file_name).resolve()
+        allowed_dir = (APP_DIR.parent / "qa-artifacts" / "latest").resolve()
+        if allowed_dir not in file_path.parents or not file_path.exists() or not file_path.is_file():
+            self.send_error(404)
+            return
+        content_type = "text/markdown; charset=utf-8" if file_name.endswith(".md") else "application/json; charset=utf-8"
+        body = file_path.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
+        self.send_header("Surrogate-Control", "no-store")
+        self.send_header("X-Robots-Tag", "noindex, nofollow")
+        self.send_header("Content-Disposition", f'inline; filename="{file_name}"')
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        write_response_body(self, body)
 
     def serve_static(self, relative_path: str) -> None:
         file_path = (STATIC_DIR / relative_path).resolve()
@@ -3852,6 +3893,7 @@ class AppHandler(BaseHTTPRequestHandler):
         qa_app_version = str(qa_report.get("appVersion") or app_version or "unknown")
         qa_commit = str(qa_report.get("qaRunCommitHash") or qa_report.get("commit") or commit_hash or "unknown")
         qa_environment = str(metadata["environment"])
+        qa_report_url = f"/qa-artifacts/latest/qa-report.md?v={quote(qa_commit, safe='')}"
         token_uses_left = "без лимита" if int(token_row.get("unlimited_until_expiry") or 0) == 1 else max(0, int(token_row.get("max_uses") or 0) - int(token_row.get("used_count") or 0))
 
         def e(value: object) -> str:
@@ -4363,6 +4405,7 @@ class AppHandler(BaseHTTPRequestHandler):
           <div class="meta-row"><span>token expires_at</span><strong>{e(token_row.get("expires_at") or "не задан")}</strong></div>
           <div class="meta-row"><span>uses_left</span><strong>{e(token_uses_left)}</strong></div>
           <div class="meta-row"><span>QA status</span>{badge(qa_overall, "success" if qa_overall == "PASS" else "danger" if qa_overall == "FAIL" else "warning" if qa_overall == "PARTIAL" else "neutral")}</div>
+          <div class="meta-row"><span>qa-report.md</span><strong><a href="{e(qa_report_url)}">открыть отчёт</a></strong></div>
         </section>
         <section class="meta-panel">
           {qa_row("scroll_tests", "Прокрутка")}
