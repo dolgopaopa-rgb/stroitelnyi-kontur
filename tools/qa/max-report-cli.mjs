@@ -76,6 +76,13 @@ summary.checks = report.checks || summary.checks || {};
 summary.problems = report.criticalErrors || summary.problems || [];
 summary.notChecked = report.notChecked || summary.notChecked || [];
 summary.result = report.overall || summary.result || "PARTIAL";
+const reportCommitHash = report.qaRunCommitHash || report.commit || "";
+if (reportCommitHash) {
+  const artifacts = summary.artifacts || [];
+  if (!artifacts.some((item) => String(item).includes(String(reportCommitHash)))) {
+    summary.artifacts = [...artifacts, `commitHash: ${reportCommitHash}`];
+  }
+}
 
 const message = formatMaxReport(summary);
 const validation = validateMaxReport(message);
