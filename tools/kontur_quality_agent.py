@@ -271,7 +271,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         (
             "Mobile load stability scenario",
             "Mobile startup must stay light, recover from stale PWA cache after deploys, and serve a Huawei-compatible frontend bundle.",
-            ["g2-logo-192.png", "app.compat.js?v=20260616-wheel-scroll", "controllerchange", "registration.update", "SKIP_WAITING", "stroitelnyi-kontur-20260616-wheel-scroll"],
+            ["g2-logo-192.png", "app.compat.js?v=20260616-ux-today", "controllerchange", "registration.update", "SKIP_WAITING", "stroitelnyi-kontur-20260616-ux-today"],
             "Keep the startup logo lightweight, preserve service-worker auto-update handling, and serve the compatibility bundle so phones do not stay stuck on stale cached app shells.",
         ),
         (

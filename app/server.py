@@ -1223,7 +1223,20 @@ def clean_feedback_decision_comment(value: object) -> str:
     return text
 
 
+def normalize_max_message_text(text: str) -> str:
+    clean = str(text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    clean = "\n".join(line.rstrip() for line in clean.split("\n"))
+    clean = re.sub(r"\n{3,}", "\n\n", clean)
+    if "\n\n" not in clean and len(clean) > 180:
+        clean = re.sub(r"(?<=[.!?])\s+(?=(?:[А-ЯЁA-Z]|[•▪▫✅☑️🔔📌🛠️]))", "\n\n", clean)
+    clean = re.sub(r"^(\*\*[^*\n]{2,90}\*\*)\n(?!\n)", r"\1\n\n", clean)
+    clean = re.sub(r"\s+(?=(?:[•▪▫✅☑️🔔📌🛠️]\s))", "\n", clean)
+    clean = re.sub(r"\n{3,}", "\n\n", clean)
+    return clean.strip()
+
+
 def max_message_payload(text: str) -> bytes:
+    text = normalize_max_message_text(text)
     payload = json.dumps(
         {"text": str(text or ""), "format": "markdown", "notify": True},
         ensure_ascii=True,
@@ -1238,6 +1251,7 @@ def send_max_message(chat_id: str, text: str) -> tuple[bool, str]:
         return False, "MAX_TOKEN is not configured"
     if not chat_id:
         return False, "MAX chat is not bound"
+    text = normalize_max_message_text(text)
     if max_message_text_is_corrupted(text):
         return False, "MAX message text looks corrupted; refused to send"
     payload = max_message_payload(text)
@@ -1494,11 +1508,19 @@ SNAPSHOT_TYPE_KEYS = {
     "standard",
     "instruction",
     "other",
+    "project",
+    "estimate",
+    "invoice",
+    "media",
+    "variation_attachment",
+    "service_file",
+    "unclassified",
     "photo_report",
     "object_remark",
     "object_remark_photo",
     "task",
     "question",
+    "issue",
     "remark",
     "photo",
     "material",
@@ -1577,6 +1599,8 @@ def snapshot_clean_text(value: object, status_map: dict[str, str]) -> str:
     text = str(value or "").strip()
     if not text:
         return ""
+    if max_message_text_is_corrupted(text):
+        return "Текст повреждён старой кодировкой"
     for key in sorted(SNAPSHOT_FORBIDDEN_ENUMS, key=len, reverse=True):
         replacement = status_map.get(key, "служебный статус")
         text = re.sub(rf"(?<![A-Za-z0-9_]){re.escape(key)}(?![A-Za-z0-9_])", replacement, text)
@@ -1610,6 +1634,35 @@ def snapshot_task_is_overdue(row: dict) -> bool:
     if not due_date or str(row.get("status") or "") in {"accepted", "returned", "closed", "archived"}:
         return False
     return due_date < date.today().isoformat()
+
+
+def normalize_task_type_value(value: object, title: object = "", description: object = "", related_type: object = "") -> str:
+    raw = str(value or related_type or "task").strip()
+    aliases = {"photo": "photo_report", "remark": "issue"}
+    raw = aliases.get(raw, raw) or "task"
+    text = f"{title or ''} {description or ''} {related_type or ''}".lower()
+    if re.search(r"фото\s*отч[её]т|фотоотч[её]т|photo", text):
+        return "photo_report"
+    if "?" in text or re.search(r"что\s+думаете|вопрос|уточнить|уточнение", text):
+        return "question"
+    if raw == "material" or re.search(r"материал|заявк|снабжен|поставк", text):
+        return "material"
+    if re.search(r"дефект|замечани|исправ|передел|брак|не\s+принят", text):
+        return "issue"
+    if raw in {"task", "question", "decision", "photo_report", "issue", "material"}:
+        return raw
+    return "task"
+
+
+def normalize_task_rows(rows: list[dict]) -> list[dict]:
+    for row in rows:
+        row["task_type"] = normalize_task_type_value(
+            row.get("task_type"),
+            row.get("title"),
+            row.get("description"),
+            row.get("related_type"),
+        )
+    return rows
 
 
 def attach_task_events(db, tasks: list[dict]) -> list[dict]:
@@ -1726,6 +1779,8 @@ def redact_sensitive_text(value: object) -> str:
     text = str(value or "")
     if not text:
         return ""
+    if max_message_text_is_corrupted(text):
+        return "[текст повреждён старой кодировкой]"
     text = EMAIL_RE.sub("[email скрыт]", text)
     text = PHONE_RE.sub("[телефон скрыт]", text)
     text = LONG_NUMBER_RE.sub("[номер скрыт]", text)
@@ -2841,7 +2896,7 @@ def get_project_detail(project_id: int, account: dict | None = None) -> dict | N
             ).fetchone()["count"]
         else:
             detail["customer_projects_count"] = 1
-        detail["tasks"] = attach_task_events(
+        detail["tasks"] = normalize_task_rows(attach_task_events(
             db,
             rows_to_dicts(
                 db.execute(
@@ -2859,7 +2914,7 @@ def get_project_detail(project_id: int, account: dict | None = None) -> dict | N
                     (project_id,),
                 ).fetchall()
             ),
-        )
+        ))
         detail["materials"] = rows_to_dicts(
             db.execute(
                 """
@@ -3176,7 +3231,7 @@ class AppHandler(BaseHTTPRequestHandler):
                     """
                 ).fetchall()
             )
-            task_rows = sanitize_tasks_for_account(task_rows, account)
+            task_rows = normalize_task_rows(sanitize_tasks_for_account(task_rows, account))
             material_rows = rows_to_dicts(
                 db.execute(
                     """
@@ -3271,7 +3326,7 @@ class AppHandler(BaseHTTPRequestHandler):
             return badge(label(status_map, value), status_level(value))
 
         def type_badge(value: object) -> str:
-            return badge(label(type_map, value, "Тип не задан"), "neutral")
+            return badge(label(type_map, value, "Не разобрано"), "neutral")
 
         def chips(items: list[str]) -> str:
             return "".join(f'<span class="chip">{e(item)}</span>' for item in items if str(item or "").strip())
@@ -3363,9 +3418,10 @@ class AppHandler(BaseHTTPRequestHandler):
         def task_card(task: dict) -> str:
             return f"""
             <article class="sample-row">
-              <div class="row-head"><strong>{e(task.get("title") or "Задача")}</strong>{status_badge(task.get("status"))}</div>
-              <div class="chips">{type_badge(task.get("task_type") or "task")}{badge(task.get("due_date") or "без срока", "danger" if snapshot_task_is_overdue(task) else "neutral")}</div>
+              <div class="row-head"><span>{type_badge(task.get("task_type") or "task")} <strong>{e(task.get("title") or "Задача")}</strong></span>{status_badge(task.get("status"))}</div>
               <div class="muted">{e(task.get("project_title") or "Объект не указан")} · ответственный: {e(task.get("assignee_name") or "не назначен")}</div>
+              <div class="chips">{badge(task.get("due_date") or "без срока", "danger" if snapshot_task_is_overdue(task) else "neutral")}</div>
+              <p class="short-description">{e(task.get("description") or "")}</p>
             </article>
             """
 
@@ -3380,10 +3436,43 @@ class AppHandler(BaseHTTPRequestHandler):
             </article>
             """
 
+        def snapshot_document_type(row: dict) -> str:
+            raw = str(row.get("type") or "").strip()
+            if raw == "project_documentation":
+                return "project"
+            if raw in {"smetter_materials", "smetter_work_task", "variation_estimate"}:
+                return "estimate"
+            if raw in {"contract", "additional_agreement"}:
+                return "contract"
+            if raw in {"act", "ks_2", "ks_3"}:
+                return "act"
+            if raw in {"invoice", "media", "variation_attachment", "service_file", "other"}:
+                return raw
+            name = f"{row.get('title') or ''} {row.get('file_name') or ''}".lower()
+            mime = str(row.get("mime_type") or "").lower()
+            process_type = str(row.get("process_type") or "").lower()
+            if process_type.startswith("variation:"):
+                return "variation_attachment"
+            if mime.startswith("image/") or mime.startswith("video/"):
+                return "media"
+            if re.search(r"проект|узел|решени", name):
+                return "project"
+            if re.search(r"смет|задани[ея]\s+на\s+работ|smetter|work_assignment|purchase", name):
+                return "estimate"
+            if re.search(r"договор|допник|доп\.?\s*соглаш|contract", name):
+                return "contract"
+            if re.search(r"\bакт\b|кс-?2|кс-?3", name):
+                return "act"
+            if re.search(r"сч[её]т|invoice", name):
+                return "invoice"
+            if re.search(r"скрин|служеб|интерфейс|feedback", name):
+                return "service_file"
+            return "unclassified" if not raw else "other"
+
         def document_card(row: dict) -> str:
             return f"""
             <article class="sample-row">
-              <div class="row-head"><strong>{e(row.get("title") or row.get("file_name") or "Документ")}</strong>{type_badge(row.get("type"))}</div>
+              <div class="row-head"><strong>{e(row.get("title") or row.get("file_name") or "Документ")}</strong>{type_badge(snapshot_document_type(row))}</div>
               <div class="muted">{e(row.get("project_title") or "без объекта")} · файл скрыт в режиме аудита</div>
             </article>
             """
@@ -3431,6 +3520,27 @@ class AppHandler(BaseHTTPRequestHandler):
         risky_materials = [row for row in material_rows if material_is_risky(row)]
         no_photo_projects = [project for project in project_rows if int(project.get("id") or 0) not in {int(row.get("project_id") or 0) for row in photo_rows if str(row.get("report_date") or row.get("created_at") or "")[:10] == today}]
 
+        def decision_card(item: dict) -> str:
+            return f"""
+            <article class="sample-row decision-row">
+              <div class="row-head"><strong>{e(item.get("type"))}: {e(item.get("object"))} — {e(item.get("title"))}</strong>{badge(item.get("criticality"), item.get("level") or "neutral")}</div>
+              <div class="muted">Ответственный: {e(item.get("responsible"))} · Срок: {e(item.get("due"))}</div>
+              <div class="chips">{badge(item.get("action") or "Открыть", "blue")}</div>
+            </article>
+            """
+
+        decision_items: list[dict] = []
+        for task in overdue_tasks[:4]:
+            decision_items.append({"type": "Просрочено", "object": task.get("project_title") or "Объект", "title": task.get("title") or "Задача", "responsible": task.get("assignee_name") or "не назначен", "due": task.get("due_date") or "без срока", "criticality": "Высокая", "level": "danger", "action": "Открыть задачу"})
+        for task in returned_tasks[:4]:
+            decision_items.append({"type": "Возвращено", "object": task.get("project_title") or "Объект", "title": task.get("title") or "Задача", "responsible": task.get("assignee_name") or "не назначен", "due": task.get("due_date") or "без срока", "criticality": "Средняя", "level": "warning", "action": "Открыть задачу"})
+        for task in waiting_tasks[:4]:
+            decision_items.append({"type": "Ждёт проверки", "object": task.get("project_title") or "Объект", "title": task.get("title") or "Задача", "responsible": task.get("reviewer_name") or "не назначен", "due": task.get("due_date") or "без срока", "criticality": "Рабочая", "level": "blue", "action": "Открыть задачу"})
+        for row in risky_materials[:4]:
+            decision_items.append({"type": "Материал", "object": row.get("project_title") or "Объект", "title": row.get("title") or "Материал", "responsible": "Снабжение", "due": row.get("needed_at") or "без срока", "criticality": "Под риском", "level": "warning", "action": "Открыть заявку"})
+        for project in no_photo_projects[:4]:
+            decision_items.append({"type": "Нет фотоотчёта", "object": project.get("title") or "Объект", "title": "Сделать фотоотчёт", "responsible": project.get("tech_supervisor_name") or project.get("foreman_name") or "не назначен", "due": today, "criticality": "Средняя", "level": "warning", "action": "Открыть объект"})
+
         today_body = f"""
         <div class="metric-grid">
           <div class="metric"><span>Мои задачи сегодня</span><strong>{len(today_tasks)}</strong></div>
@@ -3441,15 +3551,27 @@ class AppHandler(BaseHTTPRequestHandler):
           <div class="metric"><span>Без фотоотчёта сегодня</span><strong>{len(no_photo_projects)}</strong></div>
         </div>
         <h3>Требует решения</h3>
-        <div class="chips">
-          {badge(f"просроченные задачи: {len(overdue_tasks)}", "danger" if overdue_tasks else "neutral")}
-          {badge(f"возвращённые задачи: {len(returned_tasks)}", "warning" if returned_tasks else "neutral")}
-          {badge(f"материалы с проблемами: {len(risky_materials)}", "danger" if risky_materials else "neutral")}
-        </div>
+        {rows(decision_items[:10], decision_card, "Критичных сигналов нет")}
         <h3>Активные объекты</h3>
         {rows(project_rows[:3], project_card, "Активных объектов пока нет")}
         """
 
+        selected_project_body = project_card(project_rows[0]) if project_rows else '<p class="muted">Пример объекта пока отсутствует</p>'
+        short_task_body = task_card(task_rows[0]) if task_rows else '<p class="muted">Пример задачи пока отсутствует</p>'
+        photo_empty_body = f"""
+        <article class="sample-row empty-demo">
+          <strong>Фотоотчётов пока нет</strong>
+          <p>По активным объектам сегодня нет {len(no_photo_projects)} фотоотчётов.</p>
+          <div class="chips">{chips([project.get("title") or "Объект" for project in no_photo_projects[:6]])}</div>
+        </article>
+        """
+        remark_empty_body = """
+        <article class="sample-row empty-demo">
+          <strong>Замечаний по объектам пока нет</strong>
+          <p>Здесь будут строительные замечания: дефекты, переделки, контроль качества.</p>
+          <div class="chips"><span class="chip">Фото до</span><span class="chip">Описание</span><span class="chip">Ответственный</span><span class="chip">Срок</span><span class="chip">Фото после</span><span class="chip">Принято</span></div>
+        </article>
+        """
         project_body = rows(project_rows, project_card)
         task_body = rows(task_rows, task_card)
         material_body = rows(material_rows, material_card)
@@ -3479,6 +3601,24 @@ class AppHandler(BaseHTTPRequestHandler):
         )
 
         feature_body = "".join(feature_row(key, value) for key, value in feature_flags.items())
+        app_js_snapshot = (STATIC_DIR / "app.js").read_text(encoding="utf-8", errors="replace") if (STATIC_DIR / "app.js").exists() else ""
+        index_snapshot = (STATIC_DIR / "index.html").read_text(encoding="utf-8", errors="replace") if (STATIC_DIR / "index.html").exists() else ""
+        server_snapshot = Path(__file__).read_text(encoding="utf-8", errors="replace")
+        first_tz_checks = {
+            "human_status_labels": "ok" if feature_flags.get("human_status_labels") else "missing",
+            "today_screen": "ok" if feature_flags.get("today_screen") else "missing",
+            "object_attention_block": "ok" if feature_flags.get("object_attention_block") else "missing",
+            "task_short_cards": "ok" if all(marker in app_js_snapshot for marker in ["task-summary-title", "task-description-clamp", "renderCompactTaskRow"]) else "partial",
+            "photo_reports_entity": "ok" if feature_flags.get("photo_reports_entity") else "missing",
+            "object_issues_entity": "ok" if feature_flags.get("object_issues_entity") else "missing",
+            "feedback_split": "ok" if "object_remarksView" in index_snapshot and "feedbackView" in index_snapshot else "missing",
+            "document_classification": "ok" if "documentTypeKey" in app_js_snapshot and "classification-notice" in app_js_snapshot else "missing",
+            "live_audit_login": "ok" if "ai-audit-login" in server_snapshot else "missing",
+        }
+        first_tz_body = "".join(
+            f'<div class="meta-row"><span><code>{e(key)}</code></span><strong>{e(value)}</strong></div>'
+            for key, value in first_tz_checks.items()
+        )
         metadata_body = f"""
         <section class="meta-panel">
           <div class="meta-row"><span>generatedAt</span><strong>{e(generated_at)}</strong></div>
@@ -3531,6 +3671,9 @@ class AppHandler(BaseHTTPRequestHandler):
             .metric.warning strong {{ color:var(--warning); }}
             .metric.blue strong {{ color:var(--blue); }}
             .attention-mini {{ display:grid; gap:6px; margin-top:8px; padding-top:8px; border-top:1px solid var(--line); }}
+            .decision-row .row-head strong {{ line-height:1.35; }}
+            .short-description {{ color:var(--muted); margin:6px 0 0; line-height:1.35; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }}
+            .empty-demo {{ background:#f7fbfb; border-style:dashed; }}
             .meta-panel {{ background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:12px; display:grid; gap:8px; }}
             .meta-row {{ display:grid; grid-template-columns:1fr auto; gap:10px; align-items:center; border-bottom:1px solid #eef2f4; padding-bottom:7px; }}
             .meta-row:last-child {{ border-bottom:0; padding-bottom:0; }}
@@ -3549,21 +3692,25 @@ class AppHandler(BaseHTTPRequestHandler):
             <p class="lead">Эта страница показывает основные экраны приложения в статичном виде. Примеры данных обезличены: телефоны, e-mail, адреса, договоры, файлы и финансовые суммы скрыты.</p>
             <div class="top-grid">{metadata_body}</div>
             <div class="grid">
+              {block("Проверка первого ТЗ", ["Сверить контракт", "Найти частичные пункты"], ["UX-контракт", "Аудит", "Статусы"], first_tz_body)}
               {block("1. Сегодня", ["Открыть задачи", "Открыть материалы", "Открыть фотоотчёты"], ["Мои задачи", "Требует решения", "Активные объекты"], today_body)}
               {block("2. Ролевые варианты", ["Сравнить видимость", "Проверить ограничения", "Оценить сценарий роли"], ["Роли", "Доступы", "Сценарии"], roles_body)}
-              {block("3. Рабочий стол", ["Открыть объекты", "Открыть задачи", "Посмотреть события"], ["Сигналы", "Сводка", "Задачи"], notification_body)}
+              {block("3. Сигналы", ["Открыть объекты", "Открыть задачи", "Посмотреть события"], ["Сигналы", "Сводка", "Задачи"], notification_body)}
               {block("4. Список объектов", ["Выбрать объект", "Открыть карточку", "Перейти к задачам"], ["Объекты", "Статусы", "Прораб"], project_body)}
-              {block("5. Карточка объекта", ["Переключать вкладки", "Смотреть документы", "Смотреть историю"], ["Обзор", "Задачи", "Материалы", "Фото", "Замечания", "Документы", "История", "Финансы"], project_body)}
-              {block("6. Задачи", ["Развернуть задачу", "Свернуть задачу", "Посмотреть комментарии"], ["Тип", "Ответственный", "Срок", "Статус"], task_body)}
-              {block("7. Материалы / заявки", ["Открыть заявку", "Посмотреть статус", "Посмотреть основание"], ["Заявки", "Снабжение", "Материалы"], material_body)}
-              {block("8. Фотоотчёты", ["Открыть карточку отчёта", "Посмотреть вложения", "Проверить статус"], ["Фотоотчёты", "Файлы", "Проверка"], photo_body)}
-              {block("9. Замечания по объектам", ["Открыть замечание", "Проверить фото до/после", "Посмотреть ответственного"], ["Объект", "Зона", "Срок", "Проверка"], remark_body)}
-              {block("10. Документы", ["Открыть папку", "Посмотреть список", "Проверить группировку"], ["База знаний", "Папки", "Файлы"], document_body)}
-              {block("11. Обратная связь по программе", ["Фильтровать", "Открыть сообщение", "Смотреть статус"], ["MAX", "Комментарии", "Статусы"], feedback_body)}
-              {block("12. Настройки", ["Оценить структуру ролей", "Смотреть список участников"], ["Роли", "Уведомления", "MAX"], settings_body)}
-              {block("13. Мобильный вид главной", ["Прокрутить", "Потянуть для обновления", "Открыть нижнее меню"], ["Мобильная навигация", "Карточки", "Сигналы"], today_body, mobile=True)}
-              {block("14. Мобильный вид карточки объекта", ["Развернуть раздел", "Свернуть раздел", "Перейти к задачам"], ["Обзор", "Вкладки", "Документы"], project_body, mobile=True)}
-              {block("15. Мобильный вид задачи", ["Развернуть задачу", "Свернуть задачу", "Посмотреть комментарии"], ["Задачи", "Комментарии", "Статусы"], task_body, mobile=True)}
+              {block("5. Карточка объекта", ["Открыть задачи", "Добавить фотоотчёт", "Создать замечание", "Запросить материал", "Открыть документы"], ["Один выбранный объект", "Метрики", "Ближайшие действия"], selected_project_body)}
+              {block("6. Задача в коротком формате", ["Развернуть задачу", "Свернуть задачу", "Посмотреть комментарии"], ["Тип", "Ответственный", "Срок", "Статус"], short_task_body)}
+              {block("7. Задачи", ["Развернуть задачу", "Свернуть задачу", "Посмотреть комментарии"], ["Тип", "Ответственный", "Срок", "Статус"], task_body)}
+              {block("8. Материалы / заявки", ["Открыть заявку", "Посмотреть статус", "Посмотреть основание"], ["Все", "Нужно согласовать", "Согласовано", "Заказано", "В пути", "На объекте", "Проблема", "Закрыто"], material_body)}
+              {block("9. Фотоотчёты", ["Открыть карточку отчёта", "Посмотреть вложения", "Проверить статус"], ["Фотоотчёты", "Файлы", "Проверка"], photo_body)}
+              {block("10. Пустое состояние фотоотчётов", ["Открыть объект", "Добавить фотоотчёт"], ["Пустое состояние", "Список объектов"], photo_empty_body)}
+              {block("11. Замечания по объектам", ["Открыть замечание", "Проверить фото до/после", "Посмотреть ответственного"], ["Объект", "Зона", "Срок", "Проверка"], remark_body)}
+              {block("12. Пустое состояние замечаний", ["Создать замечание", "Назначить ответственного"], ["Пример структуры", "Контроль качества"], remark_empty_body)}
+              {block("13. Документы", ["Открыть папку", "Посмотреть список", "Проверить классификацию"], ["Проект", "Смета", "Договор", "Акт", "Счёт", "Фото/видео", "Не разобрано"], document_body)}
+              {block("14. Обратная связь по программе", ["Фильтровать", "Открыть сообщение", "Смотреть статус"], ["MAX", "Комментарии", "Статусы"], feedback_body)}
+              {block("15. Настройки", ["Оценить структуру ролей", "Смотреть список участников"], ["Роли", "Уведомления", "MAX"], settings_body)}
+              {block("16. Мобильный вид главной", ["Прокрутить", "Потянуть для обновления", "Открыть нижнее меню"], ["Мобильная навигация", "Карточки", "Сигналы"], today_body, mobile=True)}
+              {block("17. Мобильный вид карточки объекта", ["Развернуть раздел", "Свернуть раздел", "Перейти к задачам"], ["Обзор", "Вкладки", "Документы"], selected_project_body, mobile=True)}
+              {block("18. Мобильный вид задачи", ["Развернуть задачу", "Свернуть задачу", "Посмотреть комментарии"], ["Задачи", "Комментарии", "Статусы"], short_task_body, mobile=True)}
             </div>
           </main>
         </body>
@@ -4291,7 +4438,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         ]
                     elif role not in {"owner", "construction_manager", "finance_director", "technical_supervisor", "ai_auditor"}:
                         rows = []
-                    rows = attach_task_events(db, rows)
+                    rows = normalize_task_rows(attach_task_events(db, rows))
                     rows = sanitize_tasks_for_account(rows, account)
                 json_response(self, rows)
                 return
@@ -6699,6 +6846,12 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 assignee_id = int(data.get("assignee_id") or 2)
                 project_id = int(data["project_id"])
                 contract_id = int(data.get("contract_id") or 0) or first_project_contract_id(db, project_id)
+                task_type = normalize_task_type_value(
+                    data.get("task_type"),
+                    data.get("title") or "Новая задача",
+                    data.get("description") or "",
+                    data.get("related_type") or "project",
+                )
                 cursor = db.execute(
                     """
                     INSERT INTO tasks (
@@ -6715,7 +6868,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         reviewer_id,
                         data.get("due_date") or None,
                         data.get("priority") or "normal",
-                        data.get("task_type") or data.get("related_type") or "task",
+                        task_type,
                         data.get("related_type") or "project",
                         data.get("description") or "",
                         data.get("start_date") or None,

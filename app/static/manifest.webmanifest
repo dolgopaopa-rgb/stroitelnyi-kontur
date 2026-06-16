@@ -27,9 +27,9 @@
   ],
   "shortcuts": [
     {
-      "name": "Рабочий стол",
-      "short_name": "Стол",
-      "url": "/?source=pwa&view=dashboard",
+      "name": "Сегодня",
+      "short_name": "Сегодня",
+      "url": "/?source=pwa&view=today",
       "icons": [{ "src": "/static/assets/g2-logo-192.png", "sizes": "192x192" }]
     },
     {

@@ -447,11 +447,15 @@ def agent_ux_design(checks: list[AgentCheck]) -> None:
     snapshot_contract = [
         "generatedAt",
         "appVersion",
+        "Проверка первого ТЗ",
         "human_status_labels",
         "today_screen",
         "object_attention_block",
+        "task_short_cards",
         "photo_reports_entity",
         "object_issues_entity",
+        "document_classification",
+        "live_audit_login",
         "frontend_label_maps",
         "SNAPSHOT_FORBIDDEN_ENUMS",
     ]

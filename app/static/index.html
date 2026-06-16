@@ -12,7 +12,7 @@
     <link rel="manifest" href="/static/manifest.webmanifest?v=20260611-android-pwa" />
     <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260616-wheel-scroll" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260616-ux-today" />
   </head>
   <body>
     <div class="app">
@@ -25,7 +25,7 @@
         </div>
         <nav class="nav">
           <button class="nav-button active" data-view="today"><span class="nav-icon">◉</span><span>Сегодня</span></button>
-          <button class="nav-button" data-view="dashboard"><span class="nav-icon">⌂</span><span>Рабочий стол</span></button>
+          <button class="nav-button" data-view="dashboard"><span class="nav-icon">⌂</span><span>Сигналы</span></button>
           <button class="nav-button" data-view="projects"><span class="nav-icon">▦</span><span>Объекты</span></button>
           <button class="nav-button" data-view="estimates"><span class="nav-icon">≋</span><span>Сметы</span></button>
           <button class="nav-button" data-view="tasks"><span class="nav-icon">✓</span><span>Задачи</span></button>
@@ -44,7 +44,7 @@
       <main class="main">
         <header class="topbar">
           <div>
-            <h1 id="pageTitle">Рабочий стол</h1>
+            <h1 id="pageTitle">Сегодня</h1>
           </div>
           <div class="actions">
             <label class="role-switcher">
@@ -216,6 +216,16 @@
                   <button class="segment" type="button" data-material-list-mode="archive">Архив</button>
                 </div>
                 <button class="secondary" id="exportCompletedMaterialsButton" type="button">Выгрузить выполненные</button>
+              </div>
+              <div class="material-pipeline-tabs" role="tablist" aria-label="Статус материалов">
+                <button class="pipeline-filter active" type="button" data-material-pipeline-filter="all">Все</button>
+                <button class="pipeline-filter" type="button" data-material-pipeline-filter="need_approval">Нужно согласовать</button>
+                <button class="pipeline-filter" type="button" data-material-pipeline-filter="agreed">Согласовано</button>
+                <button class="pipeline-filter" type="button" data-material-pipeline-filter="ordered">Заказано</button>
+                <button class="pipeline-filter" type="button" data-material-pipeline-filter="in_transit">В пути</button>
+                <button class="pipeline-filter" type="button" data-material-pipeline-filter="on_site">На объекте</button>
+                <button class="pipeline-filter" type="button" data-material-pipeline-filter="problem">Проблема</button>
+                <button class="pipeline-filter" type="button" data-material-pipeline-filter="closed">Закрыто</button>
               </div>
               <div class="table" id="materialRows"></div>
             </section>
@@ -510,8 +520,8 @@
           <select name="task_type">
             <option value="task">Задача</option>
             <option value="question">Вопрос</option>
-            <option value="remark">Замечание</option>
-            <option value="photo">Фотоотчёт</option>
+            <option value="issue">Замечание</option>
+            <option value="photo_report">Фотоотчёт</option>
             <option value="material">Материал</option>
             <option value="decision">Решение</option>
           </select>
@@ -1025,6 +1035,6 @@
       </div>
     </div>
     <div class="toast" id="toast"></div>
-    <script src="/static/app.compat.js?v=20260616-wheel-scroll"></script>
+    <script src="/static/app.compat.js?v=20260616-ux-today"></script>
   </body>
 </html>

@@ -56,6 +56,7 @@
     selectedProjectTab: "overview",
     projectListMode: "active",
     materialListMode: "active",
+    materialPipelineFilter: "all",
     taskFilter: "all",
     feedbackFilter: "all",
     remarkFilter: "all",
@@ -114,7 +115,7 @@
   var sortableDragSource = null;
   var viewTitles = {
     today: "Сегодня",
-    dashboard: "Рабочий стол",
+    dashboard: "Сигналы",
     projects: "Объекты",
     estimates: "Сметы",
     tasks: "Задачи",
@@ -204,11 +205,19 @@
     standard: "Стандарт",
     instruction: "Инструкция",
     other: "Документ",
+    project: "Проект",
+    estimate: "Смета",
+    invoice: "Счёт",
+    media: "Фото/видео",
+    variation_attachment: "Вложение к допработе",
+    service_file: "Служебный файл",
+    unclassified: "Не разобрано",
     photo_report: "Фотоотчёт",
     object_remark: "Замечание по объекту",
     object_remark_photo: "Фото замечания",
     task: "Задача",
     question: "Вопрос",
+    issue: "Замечание",
     remark: "Замечание",
     photo: "Фотоотчёт",
     material: "Материал",
@@ -724,8 +733,42 @@
     if (!href) return '<span class="muted">Локация не указана</span>';
     return '<a class="link-button inline-link" href="'.concat(escapeAttr(href), '" target="_blank" rel="noopener noreferrer">').concat(label2, "</a>");
   }
-  function documentType(type) {
-    return statusLabelMap[type] || "Документ";
+  function documentTypeKey(input) {
+    const doc = typeof input === "object" && input ? input : { type: input };
+    const rawType = String(doc.type || "").trim();
+    if (rawType && rawType !== "documents") {
+      if (rawType === "project_documentation") return "project";
+      if (rawType === "smetter_materials" || rawType === "smetter_work_task" || rawType === "variation_estimate") return "estimate";
+      if (rawType === "contract" || rawType === "additional_agreement") return "contract";
+      if (rawType === "act" || rawType === "ks_2" || rawType === "ks_3") return "act";
+      if (rawType === "invoice") return "invoice";
+      if (rawType === "photo_report" || rawType === "object_remark_photo" || rawType === "media") return "media";
+      if (rawType === "variation_attachment") return "variation_attachment";
+      if (rawType === "service_file") return "service_file";
+      if (rawType === "other") return "other";
+      if (statusLabelMap[rawType]) return rawType;
+    }
+    const name = "".concat(doc.title || "", " ").concat(doc.file_name || "").toLowerCase();
+    const processType = String(doc.process_type || "").toLowerCase();
+    const mime = String(doc.mime_type || "").toLowerCase();
+    if (processType.startsWith("variation:")) return "variation_attachment";
+    if (mime.startsWith("image/") || mime.startsWith("video/")) return "media";
+    if (/проект|пдф|узел|решени/.test(name)) return "project";
+    if (/смет|задани[ея]\s+на\s+работ|smetter|work_assignment|purchase/.test(name)) return "estimate";
+    if (/договор|допник|доп\.?\s*соглаш|contract/.test(name)) return "contract";
+    if (/\bакт\b|кс-?2|кс-?3/.test(name)) return "act";
+    if (/сч[её]т|invoice/.test(name)) return "invoice";
+    if (/скрин|служеб|интерфейс|feedback/.test(name)) return "service_file";
+    return rawType ? "other" : "unclassified";
+  }
+  function documentType(input) {
+    return statusLabelMap[documentTypeKey(input)] || "Не разобрано";
+  }
+  function documentTypeLevel(input) {
+    return documentTypeKey(input) === "unclassified" ? "warning" : "blue";
+  }
+  function documentNeedsClassification(doc) {
+    return documentTypeKey(doc) === "unclassified";
   }
   function isBrokenText(value) {
     const text = String(value || "").trim();
@@ -746,10 +789,10 @@
   function documentTitle(doc) {
     const title = String(doc.title || "").trim();
     if (title && !isBrokenText(title)) return title;
-    return documentType(doc.type) || doc.file_name || "Документ";
+    return documentType(doc) || doc.file_name || "Документ";
   }
   function documentFileLink(doc) {
-    const type = documentType(doc.type);
+    const type = documentType(doc);
     const title = documentTitle(doc);
     const file = doc.file_name || "";
     if (!doc.file_path) {
@@ -1763,14 +1806,33 @@
   function taskStatusLevel(status) {
     return statusLevel(status);
   }
-  function taskTypeLabel(type) {
-    return statusLabelMap[type || "task"] || "Задача";
+  function normalizeTaskType(type) {
+    const key = String(type || "task").trim();
+    if (key === "photo") return "photo_report";
+    if (key === "remark") return "issue";
+    return key || "task";
   }
-  function taskTypeLevel(type) {
+  function inferTaskType(taskOrType) {
+    if (!taskOrType || typeof taskOrType !== "object") return normalizeTaskType(taskOrType);
+    const explicit = normalizeTaskType(taskOrType.task_type || taskOrType.related_type || "task");
+    const text = "".concat(taskOrType.title || "", " ").concat(taskOrType.description || "", " ").concat(taskOrType.related_type || "").toLowerCase();
+    if (/фото\s*отч[её]т|фотоотч[её]т|photo/.test(text)) return "photo_report";
+    if (/[?？]/.test(text) || /что\s+думаете|вопрос|уточнить|уточнение/.test(text)) return "question";
+    if (/материал|заявк|снабжен|поставк/.test(text) || explicit === "material") return "material";
+    if (/дефект|замечани|исправ|передел|брак|не\s+принят/.test(text)) return "issue";
+    return explicit;
+  }
+  function taskTypeLabel(taskOrType) {
+    return statusLabelMap[inferTaskType(taskOrType)] || "Задача";
+  }
+  function taskTypeLevel(taskOrType) {
+    const type = inferTaskType(taskOrType);
     return {
       task: "blue",
       question: "warning",
+      issue: "danger",
       remark: "danger",
+      photo_report: "success",
       photo: "success",
       material: "blue",
       decision: "warning"
@@ -2193,7 +2255,7 @@
     return taskRows.filter((task) => task.status === "returned" || taskCountsAsOverdue(task)).length + materialRowsForProject.filter(materialIsRisky).length + remarks.filter((remark) => !["accepted", "closed"].includes(remark.status)).length;
   }
   function renderTodayTaskCard(task) {
-    return '\n    <button class="row clickable today-task-card" type="button" data-open-task="'.concat(task.id, '">\n      <div class="stack-line">\n        ').concat(pill(taskTypeLabel(task.task_type), taskTypeLevel(task.task_type)), "\n        ").concat(pill(statusLabel(task.status), taskStatusLevel(task.status)), "\n        ").concat(pill(task.due_date || "без срока", levelByDate(task.due_date)), "\n      </div>\n      <strong>").concat(escapeHtml(task.title || "Задача"), '</strong>\n      <div class="muted">').concat(escapeHtml(task.project_title || "Объект не указан"), " · ответственный: ").concat(escapeHtml(task.assignee_name || "не назначен"), "</div>\n    </button>");
+    return '\n    <button class="row clickable today-task-card" type="button" data-open-task="'.concat(task.id, '">\n      <div class="stack-line">\n        ').concat(pill(taskTypeLabel(task), taskTypeLevel(task)), "\n        ").concat(pill(statusLabel(task.status), taskStatusLevel(task.status)), "\n        ").concat(pill(task.due_date || "без срока", levelByDate(task.due_date)), "\n      </div>\n      <strong>").concat(escapeHtml(task.title || "Задача"), '</strong>\n      <div class="muted">').concat(escapeHtml(task.project_title || "Объект не указан"), " · ответственный: ").concat(escapeHtml(task.assignee_name || "не назначен"), "</div>\n    </button>");
   }
   function renderTodayMaterialCard(batch) {
     const overrun = Number(batch.actual_purchase_amount || 0) > Number(batch.total_amount || 0) && Number(batch.actual_purchase_amount || 0) > 0;
@@ -2208,9 +2270,49 @@
     const latestPhoto = latestPhotoReportDate(project.id);
     return '\n    <button class="today-object-card clickable" type="button" data-open-project="'.concat(project.id, '">\n      <div class="today-object-head">\n        <strong>').concat(escapeHtml(project.title || "Объект"), "</strong>\n        ").concat(pill(statusLabel(project.status), statusLevel(project.status)), '\n      </div>\n      <div class="muted">ответственный: ').concat(escapeHtml(project.foreman_name || "прораб не назначен"), " · этап: ").concat(statusLabel(project.stage || project.status), '</div>\n      <div class="today-object-metrics">\n        ').concat(pill("открыто: ".concat(openTasks.length), openTasks.length ? "blue" : ""), "\n        ").concat(overdueTasks.length ? pill("просрочено: ".concat(overdueTasks.length), "danger") : "", "\n        ").concat(blockers ? pill("блокеры: ".concat(blockers), "danger") : "", "\n        ").concat(riskyMaterials.length ? pill("материалы под риском: ".concat(riskyMaterials.length), "warning") : "", '\n      </div>\n      <div class="muted">последний фотоотчёт: ').concat(latestPhoto ? formatDateRu(latestPhoto) : "не найден", "</div>\n    </button>");
   }
-  function renderTodayAttentionCard(title, count, text, level, targetAttrs) {
-    if (!Number(count || 0)) return "";
-    return '\n    <button class="attention-item '.concat(level, '" type="button" ').concat(targetAttrs || 'data-view-target="dashboard"', '>\n      <span class="attention-count">').concat(escapeHtml(String(count)), '</span>\n      <span class="attention-body">\n        <strong>').concat(escapeHtml(title), "</strong>\n        <small>").concat(escapeHtml(text), "</small>\n      </span>\n    </button>");
+  function todayDecisionItems({ overdueTasks = [], returnedTasks = [], waitingTasks = [], riskyMaterials = [], noPhotoProjects = [] }) {
+    const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+    const taskItem = (task, type, level, action = "Открыть задачу") => ({
+      type,
+      level,
+      object: task.project_title || "Объект не указан",
+      title: task.title || "Задача",
+      responsible: task.assignee_name || "не назначен",
+      due: task.due_date || "без срока",
+      criticality: level === "danger" ? "Высокая" : level === "warning" ? "Средняя" : "Рабочая",
+      action,
+      attrs: 'data-open-task="'.concat(task.id, '"')
+    });
+    return [
+      ...overdueTasks.map((task) => taskItem(task, "Просрочено", "danger")),
+      ...returnedTasks.map((task) => taskItem(task, "Возвращено", "warning")),
+      ...waitingTasks.map((task) => taskItem(task, "Ждёт проверки", "blue")),
+      ...riskyMaterials.map((batch) => ({
+        type: "Материал",
+        level: materialPipelineLevel(batch),
+        object: batch.project_title || "Объект не указан",
+        title: materialBatchTitle(batch),
+        responsible: "Снабжение",
+        due: batch.needed_at || "без срока",
+        criticality: materialPipelineStatus(batch) === "problem" ? "Высокая" : "Под риском",
+        action: "Открыть заявку",
+        attrs: 'data-open-material-batch="'.concat(batch.key, '"')
+      })),
+      ...noPhotoProjects.map((project) => ({
+        type: "Нет фотоотчёта",
+        level: "warning",
+        object: project.title || "Объект",
+        title: "Сделать фотоотчёт за сегодня",
+        responsible: project.tech_supervisor_name || project.foreman_name || "не назначен",
+        due: today,
+        criticality: "Средняя",
+        action: "Открыть объект",
+        attrs: 'data-open-project="'.concat(project.id, '"')
+      }))
+    ];
+  }
+  function renderTodayDecisionItem(item) {
+    return '\n    <button class="attention-item decision-item '.concat(item.level || "", '" type="button" ').concat(item.attrs || 'data-view-target="tasks"', '>\n      <span class="attention-count">').concat(escapeHtml(item.type || "Сигнал"), '</span>\n      <span class="attention-body">\n        <strong>').concat(escapeHtml(item.object || "Объект"), " — ").concat(escapeHtml(item.title || "Что-то требует решения"), "</strong>\n        <small>Ответственный: ").concat(escapeHtml(item.responsible || "не назначен"), " · Срок: ").concat(escapeHtml(item.due || "без срока"), " · Критичность: ").concat(escapeHtml(item.criticality || "рабочая"), "</small>\n        <em>").concat(escapeHtml(item.action || "Открыть"), "</em>\n      </span>\n    </button>");
   }
   async function renderToday() {
     if (!qs("#todayView")) return;
@@ -2232,13 +2334,8 @@
     const noPhotoProjects = activeProjects.filter((project) => !isTodayDate(latestPhotoReportDate(project.id)));
     const recentComments = notifications.filter((row) => isLast24Hours(row.created_at)).slice(0, 8);
     qs("#todayTasks").innerHTML = todayTasks.length ? todayTasks.slice(0, 6).map(renderTodayTaskCard).join("") : '<p class="muted">На сегодня задач по выбранной роли нет.</p>';
-    qs("#todayAttention").innerHTML = [
-      renderTodayAttentionCard("Просроченные задачи", overdueTasks.length, "Нужно принять решение по срокам или результату.", "danger", 'data-task-filter="overdue"'),
-      renderTodayAttentionCard("Возвращённые задачи", returnedTasks.length, "Исполнитель ждёт комментарий или повторную работу.", "warning", 'data-task-filter="returned"'),
-      renderTodayAttentionCard("Ждут проверки", waitingTasks.length, "Исполнитель отметил выполнение, но результат ещё не принят.", "blue", 'data-task-filter="waiting"'),
-      renderTodayAttentionCard("Материалы с проблемами", riskyMaterials.length, "Есть возвраты, срочность, проблемы или факт выше сметы.", "danger", 'data-view-target="materials"'),
-      renderTodayAttentionCard("Объекты без фотоотчёта", noPhotoProjects.length, "За сегодня по объектам нет фото/видео отчёта.", "warning", 'data-view-target="photos"')
-    ].filter(Boolean).join("") || '<div class="attention-empty"><strong>Критичных сигналов нет</strong><span>На сейчас ничего срочного не найдено.</span></div>';
+    const decisionItems = todayDecisionItems({ overdueTasks, returnedTasks, waitingTasks, riskyMaterials, noPhotoProjects }).slice(0, 12);
+    qs("#todayAttention").innerHTML = decisionItems.length ? decisionItems.map(renderTodayDecisionItem).join("") : '<div class="attention-empty"><strong>Критичных сигналов нет</strong><span>На сейчас ничего срочного не найдено.</span></div>';
     qs("#todayMaterials").innerHTML = riskyMaterials.length ? riskyMaterials.slice(0, 8).map(renderTodayMaterialCard).join("") : '<p class="muted">Материалов под риском нет.</p>';
     qs("#todayComments").innerHTML = recentComments.length ? recentComments.map(
       (row) => '\n          <button class="row clickable" type="button" '.concat(notificationTargetAttrs(row), ">\n            <strong>").concat(escapeHtml(row.title || "Событие"), '</strong>\n            <div class="muted">').concat(escapeHtml(row.project_title || "без объекта"), " · ").concat(formatDateRu(row.created_at), "</div>\n            <p>").concat(escapeHtml(row.text || ""), "</p>\n          </button>")
@@ -2327,6 +2424,16 @@
     const attachments = (report.attachments || []).filter((doc) => String(doc.mime_type || "").startsWith("image/") || String(doc.mime_type || "").startsWith("video/"));
     return '\n    <article class="row photo-report-card">\n      <div class="photo-report-main">\n        <div class="stack-line">\n          <strong>'.concat(escapeHtml(report.project_title || "Объект не указан"), "</strong>\n          ").concat(pill(statusLabel(report.status || "review"), statusLevel(report.status || "review")), "\n          ").concat(pill(formatDateRu(report.report_date), "blue"), '\n        </div>\n        <div class="muted">автор: ').concat(escapeHtml(report.author_name || "не указан"), " · этап: ").concat(escapeHtml(report.stage || "не указан"), " · зоны: ").concat(escapeHtml(report.zones || "не указаны"), "</div>\n        ").concat(report.comment ? "<p>".concat(escapeHtml(report.comment), "</p>") : "", '\n      </div>\n      <div class="media-grid">').concat(attachments.length ? attachments.map(mediaPreviewLink).join("") : '<span class="muted">Фото/видео не прикреплены.</span>', "</div>\n    </article>");
   }
+  function projectsWithoutTodayPhoto() {
+    return state.projects.filter((project) => project.status !== "archived").filter((project) => !isTodayDate(latestPhotoReportDate(project.id)));
+  }
+  function renderPhotoEmptyState(projects = projectsWithoutTodayPhoto()) {
+    const count = projects.length;
+    return '\n    <section class="empty-state photo-empty-state">\n      <strong>Фотоотчётов пока нет</strong>\n      <p>По активным объектам сегодня нет '.concat(count, " фотоотчёт").concat(count === 1 ? "а" : count >= 2 && count <= 4 ? "ов" : "ов", ".</p>\n      ").concat(count ? '<div class="list compact-empty-list">'.concat(projects.slice(0, 8).map((project) => '<button class="row clickable" type="button" data-open-project="'.concat(project.id, '"><strong>').concat(escapeHtml(project.title || "Объект"), '</strong><span class="muted">последний фотоотчёт: ').concat(latestPhotoReportDate(project.id) ? formatDateRu(latestPhotoReportDate(project.id)) : "не найден", "</span></button>")).join(""), "</div>") : '<p class="muted">По всем активным объектам есть фотоотчёт за сегодня.</p>', "\n    </section>");
+  }
+  function renderRemarkEmptyState() {
+    return '\n    <section class="empty-state remark-empty-state">\n      <strong>Замечаний по объектам пока нет</strong>\n      <p>Здесь будут строительные замечания: дефекты, переделки, контроль качества.</p>\n      <div class="remark-example-flow">\n        <span>Фото до</span>\n        <span>Описание</span>\n        <span>Ответственный</span>\n        <span>Срок</span>\n        <span>Фото после</span>\n        <span>Принято</span>\n      </div>\n    </section>';
+  }
   async function renderPhotoReports() {
     const rowsNode = qs("#photoReportRows");
     if (!rowsNode) return;
@@ -2335,7 +2442,7 @@
       return;
     }
     const reports = state.photoReports || [];
-    rowsNode.innerHTML = reports.length ? reports.map(renderPhotoReportCard).join("") : '<p class="muted">Фотоотчётов пока нет.</p>';
+    rowsNode.innerHTML = reports.length ? reports.map(renderPhotoReportCard).join("") : renderPhotoEmptyState();
   }
   function remarkPhotoBlock(title, doc) {
     if (!(doc == null ? void 0 : doc.id)) return "";
@@ -2365,7 +2472,7 @@
       ([key, title, count, level]) => '\n      <button class="task-stat '.concat(level, '" type="button" data-remark-filter="').concat(key, '">\n        <span>').concat(title, "</span>\n        <strong>").concat(count, "</strong>\n      </button>")
     ).join("");
     const filtered = state.remarkFilter && state.remarkFilter !== "all" ? remarks.filter((item) => item.status === state.remarkFilter) : remarks;
-    rowsNode.innerHTML = filtered.length ? filtered.map(renderObjectRemarkCard).join("") : '<p class="muted">Замечаний по объектам пока нет.</p>';
+    rowsNode.innerHTML = filtered.length ? filtered.map(renderObjectRemarkCard).join("") : renderRemarkEmptyState();
   }
   async function renderProjects() {
     const projects = state.projectListMode === "archive" ? state.archivedProjects : state.projects;
@@ -2449,8 +2556,9 @@
     const openTasks = tasks.filter(isOpenTask);
     const overdueTasks = tasks.filter(taskCountsAsOverdue);
     const riskyMaterials = batches.filter(materialIsRisky);
+    const openRemarks = (project.object_remarks || []).filter((remark) => !["accepted", "closed"].includes(remark.status));
     const blockers = projectAttentionItems(project).reduce((sum, item) => sum + Number(item.count || 0), 0);
-    return '\n    <section class="project-hero">\n      <div class="project-hero-main">\n        <div class="stack-line">\n          <h2>'.concat(escapeHtml(project.title || "Объект"), "</h2>\n          ").concat(pill(statusLabel(project.status), statusLevel(project.status)), '\n        </div>\n        <div class="project-hero-meta">\n          <span>Ответственный: <strong>').concat(escapeHtml(project.foreman_name || "прораб не назначен"), "</strong></span>\n          <span>Этап: <strong>").concat(statusLabel(project.stage || project.status), "</strong></span>\n          <span>Ближайший дедлайн: <strong>").concat(project.planned_end_date ? formatDateRu(project.planned_end_date) : "не задан", "</strong></span>\n          <span>Последний фотоотчёт: <strong>").concat(latestPhoto ? formatDateRu(latestPhoto) : "не найден", '</strong></span>\n        </div>\n      </div>\n      <div class="project-hero-stats">\n        <div class="info"><span>Открытые задачи</span><strong>').concat(openTasks.length, '</strong></div>\n        <div class="info ').concat(overdueTasks.length ? "danger" : "", '"><span>Просрочено</span><strong>').concat(overdueTasks.length, '</strong></div>\n        <div class="info ').concat(blockers ? "danger" : "", '"><span>Блокеры</span><strong>').concat(blockers, '</strong></div>\n        <div class="info ').concat(riskyMaterials.length ? "warning" : "", '"><span>Материалы под риском</span><strong>').concat(riskyMaterials.length, "</strong></div>\n      </div>\n    </section>");
+    return '\n    <section class="project-hero">\n      <div class="project-hero-main">\n        <div class="stack-line">\n          <h2>'.concat(escapeHtml(project.title || "Объект"), "</h2>\n          ").concat(pill(statusLabel(project.status), statusLevel(project.status)), '\n        </div>\n        <div class="project-hero-meta">\n          <span>Ответственный: <strong>').concat(escapeHtml(project.foreman_name || "прораб не назначен"), "</strong></span>\n          <span>Этап: <strong>").concat(statusLabel(project.stage || project.status), "</strong></span>\n          <span>Ближайший дедлайн: <strong>").concat(project.planned_end_date ? formatDateRu(project.planned_end_date) : "не задан", "</strong></span>\n          <span>Последний фотоотчёт: <strong>").concat(latestPhoto ? formatDateRu(latestPhoto) : "не найден", '</strong></span>\n        </div>\n      </div>\n      <div class="project-hero-stats">\n        <div class="info"><span>Открытые задачи</span><strong>').concat(openTasks.length, '</strong></div>\n        <div class="info ').concat(overdueTasks.length ? "danger" : "", '"><span>Просрочено</span><strong>').concat(overdueTasks.length, '</strong></div>\n        <div class="info ').concat(blockers ? "danger" : "", '"><span>Блокеры</span><strong>').concat(blockers, '</strong></div>\n        <div class="info ').concat(riskyMaterials.length ? "warning" : "", '"><span>Материалы под риском</span><strong>').concat(riskyMaterials.length, '</strong></div>\n        <div class="info ').concat(openRemarks.length ? "warning" : "", '"><span>Открытые замечания</span><strong>').concat(openRemarks.length, "</strong></div>\n      </div>\n    </section>");
   }
   function renderProjectAttention(project) {
     const items = projectAttentionItems(project);
@@ -2461,6 +2569,16 @@
       (item) => '\n            <button class="attention-chip '.concat(item.level, '" type="button" data-project-tab="').concat(item.tab, '">\n              <span>').concat(escapeHtml(item.title), "</span>\n              <strong>").concat(item.count, "</strong>\n            </button>")
     ).join(""), "\n      </div>\n    </section>");
   }
+  function renderProjectQuickActions() {
+    const actions = [
+      ['data-project-tab="tasks"', "Открыть задачи"],
+      ['data-project-tab="photos"', "Добавить фотоотчёт"],
+      ['data-project-tab="remarks"', "Создать замечание"],
+      ['data-view-target="materials"', "Запросить материал"],
+      ['data-project-tab="documents"', "Открыть документы"]
+    ];
+    return '\n    <section class="project-quick-actions">\n      <strong>Ближайшие действия</strong>\n      <div class="project-action-list">\n        '.concat(actions.map(([attrs, title]) => '<button class="secondary tiny" type="button" '.concat(attrs, ">").concat(title, "</button>")).join(""), "\n      </div>\n    </section>");
+  }
   function renderProjectOverview(project) {
     return '\n    <div class="detail-grid">\n      <div class="info"><span>Статус</span><strong>'.concat(statusLabel(project.status), '</strong></div>\n      <div class="info"><span>Ответственный</span><strong>').concat(project.foreman_name || "не назначен", '</strong></div>\n      <div class="info"><span>Этап</span><strong>').concat(statusLabel(project.stage || project.status), '</strong></div>\n      <div class="info"><span>Срок</span><strong>').concat(project.planned_end_date ? formatDateRu(project.planned_end_date) : "не задан", "</strong></div>\n    </div>");
   }
@@ -2469,7 +2587,7 @@
     return '<div class="list">'.concat(tasks.map(renderCompactTaskRow).join(""), "</div>");
   }
   function renderCompactTaskRow(task) {
-    return '\n    <button class="row clickable compact-task-card" type="button" data-open-task="'.concat(task.id, '">\n      <div class="compact-task-title">\n        ').concat(pill(taskTypeLabel(task.task_type), taskTypeLevel(task.task_type)), "\n        <strong>").concat(escapeHtml(task.title || "Задача"), '</strong>\n      </div>\n      <div class="compact-task-meta">\n        <span>').concat(escapeHtml(task.project_title || "объект"), "</span>\n        <span>ответственный: ").concat(escapeHtml(task.assignee_name || "не назначен"), "</span>\n        <span>срок: ").concat(task.due_date ? formatDateRu(task.due_date) : "без срока", '</span>\n      </div>\n      <div class="stack-line">\n        ').concat(pill(statusLabel(task.status), taskStatusLevel(task.status)), "\n        ").concat(pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority)), "\n      </div>\n    </button>");
+    return '\n    <button class="row clickable compact-task-card" type="button" data-open-task="'.concat(task.id, '">\n      <div class="compact-task-title">\n        ').concat(pill(taskTypeLabel(task), taskTypeLevel(task)), "\n        <strong>").concat(escapeHtml(task.title || "Задача"), '</strong>\n      </div>\n      <div class="compact-task-meta">\n        <span>').concat(escapeHtml(task.project_title || "объект"), "</span>\n        <span>ответственный: ").concat(escapeHtml(task.assignee_name || "не назначен"), "</span>\n        <span>срок: ").concat(task.due_date ? formatDateRu(task.due_date) : "без срока", "</span>\n      </div>\n      ").concat(task.description ? '<p class="task-description-clamp">'.concat(escapeHtml(task.description), "</p>") : "", '\n      <div class="stack-line">\n        ').concat(pill(statusLabel(task.status), taskStatusLevel(task.status)), "\n        ").concat(pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority)), "\n      </div>\n    </button>");
   }
   function renderProjectMaterialList(project) {
     const batches = projectDetailBatches(project);
@@ -2493,8 +2611,8 @@
         (item) => item.kind === "extra" ? "".concat(item.title, " · ").concat(item.quantity || 0, " ").concat(item.unit || "", " · ").concat(workReasonLabel(item.reason)) : "".concat(item.title, " · ").concat(item.estimated_quantity || 0, " ").concat(item.unit || "", " · ").concat(money(item.total_price))
       ),
       variations: canViewFinancials() ? renderSmallList(project.variations, (item) => "".concat(item.title, " · ").concat(variationType(item.type), " · ").concat(money(item.amount), " · ").concat(moneyDecision(item.financial_decision))) : '<p class="muted">Финансовые отклонения доступны руководителям и сметчикам.</p>',
-      photos: (project.photo_reports || []).length ? (project.photo_reports || []).map(renderPhotoReportCard).join("") : '<p class="muted">Фотоотчётов по объекту пока нет.</p>',
-      remarks: (project.object_remarks || []).length ? (project.object_remarks || []).map(renderObjectRemarkCard).join("") : '<p class="muted">Замечаний по объекту пока нет.</p>',
+      photos: (project.photo_reports || []).length ? (project.photo_reports || []).map(renderPhotoReportCard).join("") : renderPhotoEmptyState([project]),
+      remarks: (project.object_remarks || []).length ? (project.object_remarks || []).map(renderObjectRemarkCard).join("") : renderRemarkEmptyState(),
       documents: renderGroupedProjectDocuments(docs, project.contracts || []),
       events: renderProjectHistory(project),
       finances: canViewFinancials() ? projectFinancialSummaryHtml(project) : '<p class="muted">Финансы доступны руководителям и бухгалтерии.</p>'
@@ -2523,7 +2641,7 @@
     const customerInfoHtml = '\n    <div class="project-contact-strip">\n      <div class="project-contact-main">\n        <strong>'.concat(escapeHtml(project.customer_name || "Клиент не указан"), "</strong>\n        <span>").concat(customerHistory, " ").concat(customerHistory === 1 ? "объект/договор" : "объектов/договоров", ' в истории</span>\n      </div>\n      <div class="project-contact-actions">\n        ').concat(phoneLink ? '<a class="contact-action" href="'.concat(escapeAttr(phoneLink), '" title="').concat(escapeAttr(customerPhone), '">Позвонить</a>') : '<span class="muted">Телефон не указан</span>', "\n        ").concat(customerEmail ? '<a class="contact-action" href="mailto:'.concat(escapeAttr(customerEmail), '" title="').concat(escapeAttr(customerEmail), '">Написать</a>') : '<span class="muted">E-mail не указан</span>', "\n        ").concat(mapHref ? '<a class="contact-action map" href="'.concat(escapeAttr(mapHref), '" target="_blank" rel="noopener noreferrer">Я.Карты</a>') : '<span class="muted">Локация не указана</span>', "\n        ").concat(smetterButton, "\n      </div>\n    </div>");
     const managerNoteHtml = managerNote ? '<section class="manager-note-panel">\n        <div class="stack-line"><strong>Вводные менеджера при передаче</strong>'.concat(pill(project.sales_manager_name || "Менеджер", "blue"), "</div>\n        <p>").concat(escapeHtml(managerNote), "</p>\n      </section>") : "";
     const projectDocsSpotlightHtml = renderProjectDocumentSpotlight(docs);
-    qs("#projectDetail").innerHTML = "\n    ".concat(renderProjectHero(project), "\n    ").concat(renderProjectAttention(project), "\n    ").concat(customerInfoHtml, "\n    ").concat(managerNoteHtml, "\n    ").concat(projectDocsSpotlightHtml, '\n    <div class="project-detail-blocks sortable-zone" data-sortable-zone="project-detail-v2">\n      ').concat(detailBlocks.filter(([, html]) => String(html || "").trim()).map(([key, html]) => '<div class="project-detail-block" data-sortable-block="'.concat(key, '">').concat(html, "</div>")).join(""), "\n    </div>\n  ");
+    qs("#projectDetail").innerHTML = "\n    ".concat(renderProjectHero(project), "\n    ").concat(renderProjectAttention(project), "\n    ").concat(renderProjectQuickActions(project), "\n    ").concat(customerInfoHtml, "\n    ").concat(managerNoteHtml, "\n    ").concat(projectDocsSpotlightHtml, '\n    <div class="project-detail-blocks sortable-zone" data-sortable-zone="project-detail-v2">\n      ').concat(detailBlocks.filter(([, html]) => String(html || "").trim()).map(([key, html]) => '<div class="project-detail-block" data-sortable-block="'.concat(key, '">').concat(html, "</div>")).join(""), "\n    </div>\n  ");
     initSortableZones(qs("#projectDetail"));
   }
   function renderProjectEditPanel(project) {
@@ -2748,7 +2866,7 @@
       const canReview = task.status === "completed_pending_acceptance" && (["owner", "construction_manager", "finance_director"].includes(currentRoleBase()) || canActAsTaskUser(task, "reviewer"));
       const lastComment = latestTaskComment(task);
       const taskKey = "task:".concat(task.id);
-      return '\n            <details class="row task-row task-collapsible" data-collapsible-key="'.concat(escapeAttr(taskKey), '"').concat(openAttrForKey(taskKey), '>\n              <summary class="task-summary">\n                <span class="task-summary-main">\n                  <span class="stack-line">').concat(pill(taskTypeLabel(task.task_type), taskTypeLevel(task.task_type)), "<strong>").concat(escapeHtml(task.title || "Задача"), '</strong></span>\n                  <span class="task-summary-meta">').concat(escapeHtml(task.project_title || "объект не указан"), " · ").concat(escapeHtml(task.assignee_name || "ответственный не назначен"), '</span>\n                  <span class="stack-line">').concat(pill(label(task.status), taskStatusLevel(task.status))).concat(pill(task.due_date || "без срока", levelByDate(task.due_date))).concat(pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority)), '</span>\n                </span>\n              </summary>\n              <div class="task-row-body">\n              <div class="row-grid">\n                <div class="task-main">\n                  <div class="muted">').concat(task.project_title, " · поставил: ").concat(task.creator_name || "не указано", " · создана: ").concat(formatDateRu(task.created_at)).concat(task.start_date ? " · начало: ".concat(formatDateRu(task.start_date)) : "").concat(task.contract_title ? " · ".concat(contractType(task.contract_type), ": ").concat(task.contract_title) : "", "</div>\n                  ").concat(task.description ? "<div>".concat(task.description, "</div>") : "", "\n                  ").concat(task.rejection_comment ? '<div class="muted">Комментарий по возврату: '.concat(task.rejection_comment, "</div>") : "", "\n                  ").concat(lastComment ? '<div class="task-last-comment"><strong>'.concat(escapeHtml(lastComment.actor_name || "Комментарий"), ":</strong> ").concat(escapeHtml(lastComment.comment), "</div>") : "", '\n                </div>\n                <div class="task-people">Ответственный: ').concat(task.assignee_name || "не назначен", '<br /><span class="muted">Принимает: ').concat(task.reviewer_name || task.creator_name || "не назначен", '</span></div>\n              </div>\n              <div class="task-actions">\n                <button class="secondary" type="button" data-open-task="').concat(task.id, '">Подробнее</button>\n                ').concat(canComplete ? '<button class="secondary" data-task-action="complete" data-task-id="'.concat(task.id, '">Выполнено</button>') : "", "\n                ").concat(canReview ? '<button class="primary" data-task-action="accept" data-task-id="'.concat(task.id, '">Принять</button><button class="secondary" data-task-action="return" data-task-id="').concat(task.id, '">Вернуть</button>') : "", "\n                ").concat(canDeleteTask(task) ? '<button class="danger-button" data-task-action="delete" data-task-id="'.concat(task.id, '">Удалить</button>') : "", "\n              </div>\n              </div>\n            </details>");
+      return '\n            <details class="row task-row task-collapsible" data-collapsible-key="'.concat(escapeAttr(taskKey), '"').concat(openAttrForKey(taskKey), '>\n              <summary class="task-summary">\n                <span class="task-summary-main">\n                  <span class="task-summary-title">').concat(pill(taskTypeLabel(task), taskTypeLevel(task)), "<strong>").concat(escapeHtml(task.title || "Задача"), '</strong></span>\n                  <span class="task-summary-meta">').concat(escapeHtml(task.project_title || "объект не указан"), " · ").concat(escapeHtml(task.assignee_name || "ответственный не назначен"), " · ").concat(task.due_date ? formatDateRu(task.due_date) : "без срока", "</span>\n                  ").concat(task.description ? '<span class="task-description-clamp">'.concat(escapeHtml(task.description), "</span>") : "", '\n                  <span class="stack-line">').concat(pill(label(task.status), taskStatusLevel(task.status))).concat(pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority)), '</span>\n                </span>\n              </summary>\n              <div class="task-row-body">\n              <div class="row-grid">\n                <div class="task-main">\n                  <div class="muted">').concat(task.project_title, " · поставил: ").concat(task.creator_name || "не указано", " · создана: ").concat(formatDateRu(task.created_at)).concat(task.start_date ? " · начало: ".concat(formatDateRu(task.start_date)) : "").concat(task.contract_title ? " · ".concat(contractType(task.contract_type), ": ").concat(task.contract_title) : "", "</div>\n                  ").concat(task.description ? '<div class="preserve-lines">'.concat(escapeHtml(task.description), "</div>") : "", "\n                  ").concat(task.rejection_comment ? '<div class="muted">Комментарий по возврату: '.concat(escapeHtml(task.rejection_comment), "</div>") : "", "\n                  ").concat(lastComment ? '<div class="task-last-comment"><strong>'.concat(escapeHtml(lastComment.actor_name || "Комментарий"), ":</strong> ").concat(escapeHtml(lastComment.comment), "</div>") : "", '\n                </div>\n                <div class="task-people">Ответственный: ').concat(task.assignee_name || "не назначен", '<br /><span class="muted">Принимает: ').concat(task.reviewer_name || task.creator_name || "не назначен", '</span></div>\n              </div>\n              <div class="task-actions">\n                <button class="secondary" type="button" data-open-task="').concat(task.id, '">Подробнее</button>\n                ').concat(canComplete ? '<button class="secondary" data-task-action="complete" data-task-id="'.concat(task.id, '">Выполнено</button>') : "", "\n                ").concat(canReview ? '<button class="primary" data-task-action="accept" data-task-id="'.concat(task.id, '">Принять</button><button class="secondary" data-task-action="return" data-task-id="').concat(task.id, '">Вернуть</button>') : "", "\n                ").concat(canDeleteTask(task) ? '<button class="danger-button" data-task-action="delete" data-task-id="'.concat(task.id, '">Удалить</button>') : "", "\n              </div>\n              </div>\n            </details>");
     }).join("") : '<p class="muted">'.concat(tasks.length ? "В этом фильтре задач нет." : "Задач пока нет.", "</p>");
   }
   function workProjectId() {
@@ -2906,19 +3024,35 @@
     qsa("[data-material-list-mode]").forEach((button) => {
       button.classList.toggle("active", button.dataset.materialListMode === state.materialListMode);
     });
+    qsa("[data-material-pipeline-filter]").forEach((button) => {
+      const key = button.dataset.materialPipelineFilter;
+      const isActive = key === state.materialPipelineFilter;
+      button.classList.toggle("active", isActive);
+      const count = buildMaterialBatches(state.materialRequests || []).filter((batch) => key === "all" || materialPipelineStatus(batch) === key).length;
+      button.dataset.count = String(count || "");
+    });
     const exportButton = qs("#exportCompletedMaterialsButton");
     if (exportButton) exportButton.hidden = !["owner", "construction_manager", "finance_director", "accountant", "procurement_manager"].includes(currentRoleBase());
     const items = await api("/api/material-requests?archive=".concat(state.materialListMode === "archive" ? "1" : "0"));
     state.materialRequests = items;
     const visibleItems = currentRoleBase() === "foreman" ? items.filter((item) => Number(item.project_foreman_id) === Number(currentUserId()) || Number(item.creator_id) === Number(currentUserId())) : items;
-    const batches = buildMaterialBatches(visibleItems);
+    const allBatches = buildMaterialBatches(visibleItems);
+    qsa("[data-material-pipeline-filter]").forEach((button) => {
+      const key = button.dataset.materialPipelineFilter;
+      button.classList.toggle("active", key === state.materialPipelineFilter);
+      button.dataset.count = String(allBatches.filter((batch) => key === "all" || materialPipelineStatus(batch) === key).length);
+    });
+    const batches = state.materialPipelineFilter === "all" ? allBatches : allBatches.filter((batch) => materialPipelineStatus(batch) === state.materialPipelineFilter);
     const renderBatchCard = (batch) => {
       const activeCount = materialActiveItems(batch).length;
       const removedCount = materialRemovedItems(batch).length;
-      return '\n      <button class="row clickable material-request-row material-batch-row" type="button" data-open-material-batch="'.concat(batch.key, '">\n        <div class="material-main">\n          <strong>').concat(materialBatchTitle(batch, currentRoleBase() === "procurement_manager"), '</strong>\n          <div class="muted">Объект: ').concat(batch.project_title || "не указан", " · кто заказал: ").concat(batch.creator_name || "не указано", '</div>\n          <div class="muted">Позиций: ').concat(activeCount).concat(removedCount ? " · удалено при исправлении: ".concat(removedCount) : "", " · желаемая доставка: ").concat(batch.needed_at || "не указана", " · сумма: ").concat(money(batch.total_amount), "</div>\n          ").concat(batch.actual_purchase_amount ? '<div class="muted">Фактическая стоимость закупки: '.concat(money(batch.actual_purchase_amount), "</div>") : "", '\n          <div class="muted">Основания: ').concat(materialBatchBasisSummary(batch), '</div>\n          <div class="muted">').concat(materialBatchDestination(batch), "</div>\n          ").concat(materialReceiptActionNote(batch), "\n          ").concat(batch.revision_comment ? '<div class="muted">Комментарий по доработке: '.concat(batch.revision_comment, "</div>") : "", "\n          ").concat(state.materialListMode === "archive" && batch.archived_at ? '<div class="muted">В архиве с '.concat(formatDateRu(batch.archived_at), "</div>") : "", '\n        </div>\n        <div class="stack-line">\n          ').concat(pill(urgencyLabel(batch.delivery_urgency), urgencyLevel(batch.delivery_urgency)), "\n          ").concat(pill(statusLabel(materialPipelineStatus(batch)), materialPipelineLevel(batch)), "\n        </div>\n      </button>");
+      const neededAt = batch.needed_at ? formatDateRu(batch.needed_at) : "не указано";
+      const responsible = batch.procurement_name || "Снабжение";
+      return '\n      <button class="row clickable material-request-row material-batch-row" type="button" data-open-material-batch="'.concat(batch.key, '">\n        <div class="material-main">\n          <strong>').concat(materialBatchTitle(batch, currentRoleBase() === "procurement_manager"), '</strong>\n          <div class="material-card-grid">\n            <span><b>Объект:</b> ').concat(escapeHtml(batch.project_title || "не указан"), "</span>\n            <span><b>Позиций:</b> ").concat(activeCount).concat(removedCount ? ", удалено: ".concat(removedCount) : "", "</span>\n            <span><b>Основание:</b> ").concat(escapeHtml(materialBatchBasisSummary(batch) || "не указано"), "</span>\n            <span><b>Кто запросил:</b> ").concat(escapeHtml(batch.creator_name || "не указано"), "</span>\n            <span><b>Когда нужно:</b> ").concat(escapeHtml(neededAt), "</span>\n            <span><b>Ответственный:</b> ").concat(escapeHtml(responsible), '</span>\n          </div>\n          <div class="muted">Сумма: ').concat(money(batch.total_amount), "</div>\n          ").concat(batch.actual_purchase_amount ? '<div class="muted">Фактическая стоимость закупки: '.concat(money(batch.actual_purchase_amount), "</div>") : "", '\n          <div class="muted">').concat(materialBatchDestination(batch), "</div>\n          ").concat(materialReceiptActionNote(batch), "\n          ").concat(batch.revision_comment ? '<div class="muted">Комментарий по доработке: '.concat(batch.revision_comment, "</div>") : "", "\n          ").concat(state.materialListMode === "archive" && batch.archived_at ? '<div class="muted">В архиве с '.concat(formatDateRu(batch.archived_at), "</div>") : "", '\n        </div>\n        <div class="stack-line">\n          ').concat(pill(urgencyLabel(batch.delivery_urgency), urgencyLevel(batch.delivery_urgency)), "\n          ").concat(pill(statusLabel(materialPipelineStatus(batch)), materialPipelineLevel(batch)), "\n        </div>\n      </button>");
     };
     if (!batches.length) {
-      qs("#materialRows").innerHTML = '<p class="muted">'.concat(state.materialListMode === "archive" ? "В архиве заявок пока нет." : currentRoleBase() === "foreman" ? "По объектам этого прораба заявок пока нет. Нажмите “Добавить заявку”, чтобы заказать материалы." : "Заявок на материалы пока нет.", "</p>");
+      const filterLabel = state.materialPipelineFilter === "all" ? "" : " со статусом «".concat(statusLabel(state.materialPipelineFilter), "»");
+      qs("#materialRows").innerHTML = '<p class="muted">'.concat(state.materialListMode === "archive" ? "В архиве заявок".concat(filterLabel, " пока нет.") : currentRoleBase() === "foreman" ? "По объектам этого прораба заявок".concat(filterLabel, " пока нет. Нажмите “Добавить заявку”, чтобы заказать материалы.") : "Заявок".concat(filterLabel, " пока нет."), "</p>");
       return;
     }
     if (state.materialListMode === "archive") {
@@ -3133,7 +3267,7 @@
   }
   function renderKnowledgeDocumentRow(doc) {
     const moveControls = canManageKnowledgeBase() ? '\n      <div class="knowledge-move-row">\n        <select data-document-move-folder="'.concat(doc.id, '" aria-label="Папка материала">').concat(knowledgeFolderOptions(doc.folder_id || ""), '</select>\n        <button class="secondary tiny" type="button" data-document-action="move" data-document-id="').concat(doc.id, '">Переместить</button>\n      </div>') : "";
-    return '\n    <article class="knowledge-item knowledge-file-card">\n      <div class="knowledge-item-icon" aria-hidden="true">□</div>\n      <div class="knowledge-item-main">\n        '.concat(doc.file_path ? documentFileLink(doc) : "<div><strong>".concat(escapeHtml(documentTitle(doc)), '</strong><div class="muted">').concat(escapeHtml(doc.file_name || "Файл не загружен"), "</div></div>"), '\n        <div class="stack-line">').concat(pill(documentType(doc.type), "blue")).concat(pill(label(doc.status)), '</div>\n      </div>\n      <div class="knowledge-item-actions">\n        ').concat(moveControls, "\n        ").concat(canDeleteKnowledgeBase() ? '<button class="danger-button tiny" type="button" data-document-action="delete" data-document-id="'.concat(doc.id, '">Удалить</button>') : "", "\n      </div>\n    </article>");
+    return '\n    <article class="knowledge-item knowledge-file-card">\n      <div class="knowledge-item-icon" aria-hidden="true">□</div>\n      <div class="knowledge-item-main">\n        '.concat(doc.file_path ? documentFileLink(doc) : "<div><strong>".concat(escapeHtml(documentTitle(doc)), '</strong><div class="muted">').concat(escapeHtml(doc.file_name || "Файл не загружен"), "</div></div>"), '\n      <div class="stack-line">').concat(pill(documentType(doc), documentTypeLevel(doc))).concat(pill(label(doc.status)), '</div>\n      </div>\n      <div class="knowledge-item-actions">\n        ').concat(moveControls, "\n        ").concat(canDeleteKnowledgeBase() ? '<button class="danger-button tiny" type="button" data-document-action="delete" data-document-id="'.concat(doc.id, '">Удалить</button>') : "", "\n      </div>\n    </article>");
   }
   function renderKnowledgeFolderRow(folder, folders = [], docs = []) {
     const id = String(folder.id);
@@ -3162,7 +3296,9 @@
       ...childFolders.map((folder) => renderKnowledgeFolderRow(folder, folders, docs)),
       ...folderDocs.map(renderKnowledgeDocumentRow)
     ].filter(Boolean).join("");
-    return '\n    <section class="knowledge-manager" data-knowledge-drop-zone data-folder-id="'.concat(escapeAttr(currentId), '">\n      ').concat(renderKnowledgeBreadcrumb(currentId, folders), '\n      <div class="knowledge-current-head">\n        <div>\n          <h3>').concat(escapeHtml((currentFolder == null ? void 0 : currentFolder.title) || "База знаний"), '</h3>\n          <p class="muted">').concat(currentId ? escapeHtml((currentFolder == null ? void 0 : currentFolder.path) || "") : "Корень базы знаний", " · ").concat(childFolders.length, " папок · ").concat(folderDocs.length, " файлов</p>\n        </div>\n        ").concat(canManageKnowledgeBase() ? '<div class="knowledge-drop-text">Перетащите файлы или папку сюда, чтобы загрузить их в текущую папку</div>' : "", '\n      </div>\n      <div class="knowledge-list">\n        ').concat(rows || '<p class="muted knowledge-empty">'.concat(emptyMessage, "</p>"), "\n      </div>\n      ").concat(canManageKnowledgeBase() ? renderKnowledgeUploadOverlay() : "", "\n    </section>");
+    const unclassifiedRows = folderDocs.filter(documentNeedsClassification);
+    const classificationNotice = unclassifiedRows.length ? '\n      <section class="classification-notice">\n        <strong>Требует классификации</strong>\n        <p class="muted">Эти файлы не удалось автоматически отнести к проекту, смете, договору, акту, счёту или фото/видео.</p>\n        <div class="stack-line">'.concat(unclassifiedRows.slice(0, 8).map((doc) => pill(documentTitle(doc), "warning")).join(""), "</div>\n      </section>") : "";
+    return '\n    <section class="knowledge-manager" data-knowledge-drop-zone data-folder-id="'.concat(escapeAttr(currentId), '">\n      ').concat(renderKnowledgeBreadcrumb(currentId, folders), '\n      <div class="knowledge-current-head">\n        <div>\n          <h3>').concat(escapeHtml((currentFolder == null ? void 0 : currentFolder.title) || "База знаний"), '</h3>\n          <p class="muted">').concat(currentId ? escapeHtml((currentFolder == null ? void 0 : currentFolder.path) || "") : "Корень базы знаний", " · ").concat(childFolders.length, " папок · ").concat(folderDocs.length, " файлов</p>\n        </div>\n        ").concat(canManageKnowledgeBase() ? '<div class="knowledge-drop-text">Перетащите файлы или папку сюда, чтобы загрузить их в текущую папку</div>' : "", '\n      </div>\n      <div class="knowledge-list">\n        ').concat(classificationNotice, "\n        ").concat(rows || '<p class="muted knowledge-empty">'.concat(emptyMessage, "</p>"), "\n      </div>\n      ").concat(canManageKnowledgeBase() ? renderKnowledgeUploadOverlay() : "", "\n    </section>");
   }
   function knowledgeUploadItem(file, relativePath = "") {
     return {
@@ -4108,6 +4244,12 @@
     qsa("[data-material-list-mode]").forEach(
       (button) => button.addEventListener("click", async () => {
         state.materialListMode = button.dataset.materialListMode;
+        await renderMaterials();
+      })
+    );
+    qsa("[data-material-pipeline-filter]").forEach(
+      (button) => button.addEventListener("click", async () => {
+        state.materialPipelineFilter = button.dataset.materialPipelineFilter || "all";
         await renderMaterials();
       })
     );
