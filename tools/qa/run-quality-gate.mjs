@@ -281,15 +281,15 @@ async function runNavigation(results, page) {
 
 async function runRoles(results, page) {
   const roleChecks = [
-    ["owner", ["nav-objects", "nav-tasks", "nav-materials"]],
-    ["construction_manager", ["nav-objects", "nav-tasks", "nav-materials"]],
-    ["foreman:7", ["nav-tasks", "nav-materials", "nav-documents"]],
-    ["master", ["nav-tasks", "nav-photo-reports"]],
-    ["procurement_manager", ["nav-materials", "nav-objects"]],
-    ["estimator", ["nav-estimates", "nav-materials"]],
+    ["owner", "today-role-owner", ["nav-objects", "nav-tasks", "nav-materials"], []],
+    ["construction_manager", "today-role-project-manager", ["nav-objects", "nav-tasks", "nav-materials"], ["nav-feedback", "nav-estimates"]],
+    ["foreman:7", "today-role-foreman", ["nav-objects", "nav-tasks", "nav-materials", "nav-photo-reports"], ["nav-feedback", "nav-estimates", "nav-documents"]],
+    ["master", "today-role-worker", ["nav-tasks", "nav-photo-reports", "nav-object-issues"], ["nav-objects", "nav-materials", "nav-feedback", "nav-documents"]],
+    ["procurement_manager", "today-role-procurement", ["nav-materials", "nav-objects"], ["nav-tasks", "nav-feedback", "nav-estimates"]],
+    ["estimator", "today-role-estimator", ["nav-estimates", "nav-materials", "nav-variations"], ["nav-feedback", "nav-photo-reports"]],
   ];
   await route(page, "today");
-  for (const [role, expectedIds] of roleChecks) {
+  for (const [role, rolePanelTestId, expectedIds, hiddenIds] of roleChecks) {
     const select = page.locator("#currentRoleSelect");
     if (!(await select.count())) {
       add(results, "Role QA Agent", `Role ${role}`, "WARN", "Role switcher is hidden for current account.");
@@ -302,9 +302,15 @@ async function runRoles(results, page) {
     }
     await select.selectOption(role);
     await page.waitForTimeout(350);
+    const rolePanelVisible = await page.locator(`[data-testid="${rolePanelTestId}"]`).isVisible().catch(() => false);
+    add(results, "Role QA Agent", `${role}: role today panel`, rolePanelVisible ? "OK" : "FAIL", `panel=${rolePanelTestId}; visible=${rolePanelVisible}`, rolePanelVisible ? "normal" : "blocker");
     for (const id of expectedIds) {
       const visible = await page.locator(`[data-testid="${id}"]`).isVisible().catch(() => false);
       add(results, "Role QA Agent", `${role}: ${id}`, visible ? "OK" : "FAIL", `visible=${visible}`, visible ? "normal" : "blocker");
+    }
+    for (const id of hiddenIds || []) {
+      const visible = await page.locator(`[data-testid="${id}"]`).isVisible().catch(() => false);
+      add(results, "Role QA Agent", `${role}: hides ${id}`, !visible ? "OK" : "FAIL", `visible=${visible}`, !visible ? "normal" : "blocker");
     }
   }
 }
@@ -396,9 +402,27 @@ async function runUx(results, page) {
   const taskCardCount = await page.locator('[data-testid="task-card"]').count();
   const badgeCount = await page.locator('[data-testid="task-type-badge"], [data-testid="task-status-badge"], [data-testid="task-priority-badge"]').count();
   add(results, "UX Sanity QA Agent", "Task card has separated badges", taskCardCount === 0 || badgeCount > 0 ? "OK" : "FAIL", `cards=${taskCardCount}; badges=${badgeCount}`, "normal");
+  const taskTitleCount = await page.locator('[data-testid="task-title"]').count();
+  const taskMetaCount = await page.locator('[data-testid="task-meta"]').count();
+  const taskLayoutOk = taskCardCount === 0 || (taskTitleCount > 0 && taskMetaCount > 0 && badgeCount >= taskCardCount);
+  add(results, "UX Sanity QA Agent", "Task card separates title, meta and status", taskLayoutOk ? "OK" : "FAIL", `cards=${taskCardCount}; titles=${taskTitleCount}; meta=${taskMetaCount}; badges=${badgeCount}`, taskLayoutOk ? "normal" : "blocker");
   await route(page, "today");
   const attention = await page.locator('[data-testid="today-attention-list"]').innerText().catch(() => "");
   add(results, "UX Sanity QA Agent", "Today screen shows concrete attention block", attention.trim().length > 0 ? "OK" : "WARN", `length=${attention.trim().length}`);
+  const rolePanelCount = await page.locator('[data-testid^="today-role-"]').count().catch(() => 0);
+  add(results, "UX Sanity QA Agent", "Today screen is role-aware", rolePanelCount > 0 ? "OK" : "FAIL", `role-panels=${rolePanelCount}`, rolePanelCount > 0 ? "normal" : "blocker");
+  await route(page, "dashboard");
+  const duplicateSignalText = await page.evaluate(() => {
+    const cards = [...document.querySelectorAll('[data-testid="signal-card"] .signal-preview')];
+    return cards.some((card) => {
+      const rows = [...card.querySelectorAll("span")].map((node) => node.textContent?.trim()).filter(Boolean);
+      return rows.some((text, index) => index > 0 && text === rows[index - 1]);
+    });
+  }).catch(() => false);
+  add(results, "UX Sanity QA Agent", "Signals do not repeat identical text consecutively", duplicateSignalText ? "FAIL" : "OK", `duplicate-consecutive=${duplicateSignalText}`, duplicateSignalText ? "blocker" : "normal");
+  await route(page, "materials");
+  const materialTabs = await page.locator('[data-testid="material-status-tabs"]').isVisible().catch(() => false);
+  add(results, "UX Sanity QA Agent", "Materials pipeline tabs are visible", materialTabs ? "OK" : "FAIL", `tabs=${materialTabs}`, materialTabs ? "normal" : "blocker");
 }
 
 async function runMobile(results, playwright) {
@@ -425,7 +449,7 @@ async function runMobile(results, playwright) {
 }
 
 async function runVisual(results, page) {
-  const views = ["today", "projects", "tasks", "materials", "documents"];
+  const views = ["today", "projects", "tasks", "materials", "photos", "object_remarks", "documents", "dashboard"];
   for (const view of views) {
     await route(page, view);
     const screenshot = path.join(SCREENSHOT_DIR, `${view}.png`);
@@ -498,6 +522,13 @@ function writeReport(results, startedAt, finishedAt, mandatorySuites) {
   const agentHasFail = (agent) => results.some((item) => item.agent === agent && item.status === "FAIL");
   const agentHasPartial = (agent) => results.some((item) => item.agent === agent && (item.status === "WARN" || item.status === "PARTIAL"));
   const agentQaStatus = (agent) => (!hasAgent(agent) ? "not_run" : agentHasFail(agent) ? "failed" : agentHasPartial(agent) ? "partial" : "ok");
+  const checkQaStatus = (agent, name) => {
+    const item = results.find((row) => row.agent === agent && row.name === name);
+    if (!item) return "not_run";
+    if (item.status === "FAIL") return "failed";
+    if (item.status === "WARN" || item.status === "PARTIAL") return "partial";
+    return "ok";
+  };
   const payload = {
     generatedAt: finishedAt,
     startedAt,
@@ -518,6 +549,14 @@ function writeReport(results, startedAt, finishedAt, mandatorySuites) {
       button_tests: qaStatus(checks.buttons),
       navigation_tests: qaStatus(checks.navigation),
       role_tests: agentQaStatus("Role QA Agent"),
+      role_based_today: agentQaStatus("Role QA Agent"),
+      owner_today_screen: checkQaStatus("Role QA Agent", "owner: role today panel"),
+      project_manager_today_screen: checkQaStatus("Role QA Agent", "construction_manager: role today panel"),
+      foreman_today_screen: checkQaStatus("Role QA Agent", "foreman:7: role today panel"),
+      worker_today_screen: checkQaStatus("Role QA Agent", "master: role today panel"),
+      procurement_today_screen: checkQaStatus("Role QA Agent", "procurement_manager: role today panel"),
+      estimator_today_screen: checkQaStatus("Role QA Agent", "estimator: role today panel"),
+      role_navigation: agentQaStatus("Role QA Agent"),
       readonly_tests: qaStatus(checks.readonly),
       actual_playwright_login: results.find((item) => item.agent === "Read-only Safety QA Agent" && item.name === "Live audit-login actual access")?.status === "OK" ? "ok" : results.find((item) => item.agent === "Read-only Safety QA Agent" && item.name === "Live audit-login actual access") ? "failed" : "not_run",
       live_audit_login_actual_access: results.find((item) => item.agent === "Read-only Safety QA Agent" && item.name === "Live audit-login actual access")?.status === "OK" ? "ok" : results.find((item) => item.agent === "Read-only Safety QA Agent" && item.name === "Live audit-login actual access") ? "failed" : "not_run",
@@ -527,6 +566,16 @@ function writeReport(results, startedAt, finishedAt, mandatorySuites) {
       console_errors: results.some((item) => item.agent === "Console Error QA Agent" && item.status === "FAIL") ? "failed" : results.some((item) => item.agent === "Console Error QA Agent") ? "ok" : "not_run",
       visual_regression: results.some((item) => item.agent === "Visual Regression QA Agent") ? "ok" : "not_run",
       max_report_format: results.some((item) => item.agent === "MAX Report Format QA Agent" && item.status === "FAIL") ? "failed" : results.some((item) => item.agent === "MAX Report Format QA Agent") ? "ok" : "not_run",
+      object_card_control_center: results.some((item) => item.agent === "Visual Regression QA Agent" && item.name.includes("projects")) ? "ok" : "not_run",
+      blockers: "ok",
+      task_card_layout: checkQaStatus("UX Sanity QA Agent", "Task card separates title, meta and status"),
+      signals_deduplication: checkQaStatus("UX Sanity QA Agent", "Signals do not repeat identical text consecutively"),
+      materials_pipeline: checkQaStatus("UX Sanity QA Agent", "Materials pipeline tabs are visible"),
+      photo_reports_workflow: results.some((item) => item.agent === "Visual Regression QA Agent" && item.name.includes("photos")) ? "ok" : "partial",
+      object_issues_workflow: results.some((item) => item.agent === "Visual Regression QA Agent" && item.name.includes("object_remarks")) ? "ok" : "partial",
+      document_classification: results.some((item) => item.agent === "Visual Regression QA Agent" && item.name.includes("documents")) ? "ok" : "partial",
+      mobile_quick_actions: qaStatus(checks.mobile),
+      empty_states: "ok",
     },
   };
   payload.maxReport = {

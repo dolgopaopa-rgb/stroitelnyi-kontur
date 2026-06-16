@@ -345,6 +345,11 @@ function isTodayDate(value) {
   return dateOnly(value) === todayIso();
 }
 
+function isDateOverdue(value) {
+  const date = dateOnly(value);
+  return Boolean(date && date < todayIso());
+}
+
 function isLast24Hours(value) {
   if (!value) return false;
   const date = new Date(value);
@@ -520,17 +525,81 @@ function canQuestionEstimateJob(job) {
 
 const viewAccess = {
   owner: ["today", "dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "object_remarks", "photos", "locations", "documents", "feedback", "events"],
-  construction_manager: ["today", "dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "object_remarks", "photos", "locations", "documents", "feedback", "events"],
+  construction_manager: ["today", "dashboard", "projects", "tasks", "works", "materials", "object_remarks", "photos", "documents", "events"],
   ai_auditor: ["today", "dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "object_remarks", "photos", "locations", "documents", "feedback", "events"],
   finance_director: ["today", "dashboard", "projects", "tasks", "works", "materials", "variations", "object_remarks", "photos", "locations", "documents", "feedback", "events"],
   accountant: ["today", "dashboard", "projects", "materials", "variations", "locations", "documents", "events"],
   sales_manager: ["today", "dashboard", "projects", "estimates", "documents"],
-  foreman: ["today", "dashboard", "tasks", "works", "materials", "variations", "object_remarks", "photos", "locations", "documents"],
-  master: ["today", "tasks", "works", "object_remarks", "photos", "documents"],
-  procurement_manager: ["today", "dashboard", "projects", "materials", "object_remarks", "locations", "documents"],
-  estimator: ["today", "dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "object_remarks", "documents"],
+  foreman: ["today", "dashboard", "projects", "tasks", "materials", "object_remarks", "photos"],
+  master: ["today", "tasks", "object_remarks", "photos"],
+  procurement_manager: ["today", "dashboard", "projects", "materials", "locations", "documents"],
+  estimator: ["today", "estimates", "tasks", "materials", "variations", "documents"],
   technical_supervisor: ["today", "dashboard", "projects", "tasks", "works", "materials", "object_remarks", "photos", "locations", "documents"],
 };
+
+const navLabelsByRole = {
+  owner: {
+    dashboard: "Сигналы",
+    projects: "Объекты",
+    tasks: "Задачи",
+    materials: "Материалы",
+    object_remarks: "Замечания",
+    photos: "Фотоотчёты",
+  },
+  construction_manager: {
+    projects: "Мои объекты",
+    dashboard: "Сигналы",
+    tasks: "Задачи",
+    materials: "Материалы",
+    object_remarks: "Замечания",
+    photos: "Фотоотчёты",
+  },
+  foreman: {
+    projects: "Мои объекты",
+    tasks: "Мои задачи",
+    photos: "Фото",
+    materials: "Материалы",
+    object_remarks: "Замечания",
+    dashboard: "Проблемы",
+  },
+  master: {
+    tasks: "Мои задачи",
+    photos: "Фото",
+    object_remarks: "Проблема",
+  },
+  procurement_manager: {
+    dashboard: "Проблемы",
+    materials: "Заявки",
+    locations: "Поставщики",
+  },
+  estimator: {
+    tasks: "Проверки",
+    materials: "Материалы вне сметы",
+    variations: "Допработы",
+  },
+};
+
+const defaultNavLabels = {
+  today: "Сегодня",
+  dashboard: "Сигналы",
+  projects: "Объекты",
+  estimates: "Сметы",
+  tasks: "Задачи",
+  works: "Работы",
+  materials: "Материалы",
+  variations: "Допработы",
+  object_remarks: "Замечания",
+  photos: "Фотоотчёты",
+  locations: "Локации",
+  documents: "База знаний",
+  feedback: "Обратная связь по программе",
+  events: "Журнал",
+};
+
+function navLabelForView(view) {
+  const role = currentRoleBase();
+  return navLabelsByRole[role]?.[view] || defaultNavLabels[view] || view;
+}
 
 function allowedViews() {
   return viewAccess[currentRoleBase()] || viewAccess.owner;
@@ -544,9 +613,16 @@ function syncNavigationAccess() {
   const allowed = allowedViews();
   qsa("[data-view]").forEach((button) => {
     button.hidden = !allowed.includes(button.dataset.view);
+    const labelNode = button.querySelector("span:last-child");
+    if (labelNode) labelNode.textContent = navLabelForView(button.dataset.view);
   });
   qsa("[data-view-target]").forEach((button) => {
     button.hidden = !allowed.includes(button.dataset.viewTarget);
+    if (button.closest(".mobile-bottom-nav")) {
+      const spans = button.querySelectorAll("span");
+      const labelNode = spans.length > 1 ? spans[spans.length - 1] : null;
+      if (labelNode) labelNode.textContent = navLabelForView(button.dataset.viewTarget);
+    }
   });
   qsa("[data-requires-view]").forEach((node) => {
     node.hidden = !allowed.includes(node.dataset.requiresView);
@@ -887,14 +963,14 @@ function documentTypeKey(input) {
   const processType = String(doc.process_type || "").toLowerCase();
   const mime = String(doc.mime_type || "").toLowerCase();
   if (processType.startsWith("variation:")) return "extra_work_attachment";
-  if (/\b(кнопка|экран|ошибка|скрин|screenshot|feedback|интерфейс)\b/.test(name) && (mime.startsWith("image/") || /\.(png|jpe?g|webp)$/i.test(name))) return "service_screenshot";
+  if (/(кнопка|экран|ошибка|скрин|skrin|oshibka|screen|screenshot|feedback|интерфейс)/.test(name) && (mime.startsWith("image/") || /\.(png|jpe?g|webp)$/i.test(name))) return "service_screenshot";
   if (mime.startsWith("image/") || mime.startsWith("video/") || /\.(mov|mp4|jpe?g|png|webp)$/i.test(name)) return "photo_video";
   if (/проект|пдф|узел|решени/.test(name)) return "project";
   if (/смет|задани[ея]\s+на\s+работ|smetter|work_assignment|purchase/.test(name)) return "estimate";
   if (/договор|допник|доп\.?\s*соглаш|contract/.test(name)) return "contract";
   if (/\bакт\b|кс-?2|кс-?3/.test(name)) return "act";
   if (/сч[её]т|invoice/.test(name)) return "invoice";
-  if (/скрин|служеб|интерфейс|feedback|ошибка|экран|screenshot/.test(name)) return "service_screenshot";
+  if (/скрин|skrin|служеб|интерфейс|feedback|ошибка|oshibka|экран|screen|screenshot/.test(name)) return "service_screenshot";
   return genericTypes.has(rawType) ? "unclassified" : "other";
 }
 
@@ -2378,12 +2454,17 @@ function roleTodayProfile() {
   const role = currentRoleBase();
   const profiles = {
     owner: {
+      testId: "today-role-owner",
       label: "Руководитель компании",
       question: "Где горит и где нужно моё решение?",
       hint: "Показываем просрочки, блокеры, материалы под риском и объекты с проблемами по всей компании.",
       tasksTitle: "Задачи и решения на сегодня",
       attentionTitle: "Требует моего решения",
       materialsTitle: "Материалы под риском",
+      visibleSections: ["tasks", "attention", "materials", "comments", "objects", "noPhoto"],
+      taskMode: "leadership",
+      materialMode: "risk",
+      objectMode: "risk-first",
       actions: [
         ["dashboard", "Посмотреть сигналы"],
         ["projects", "Проблемные объекты"],
@@ -2391,12 +2472,17 @@ function roleTodayProfile() {
       ],
     },
     construction_manager: {
+      testId: "today-role-project-manager",
       label: "Руководитель строительства",
       question: "Что происходит на моих объектах?",
       hint: "Фокус на объектах, задачах, фотоотчётах, замечаниях и материалах, которые тормозят стройку.",
       tasksTitle: "Задачи по объектам",
       attentionTitle: "Вопросы, требующие решения",
       materialsTitle: "Материалы, влияющие на объекты",
+      visibleSections: ["tasks", "attention", "materials", "comments", "objects", "noPhoto"],
+      taskMode: "project-manager",
+      materialMode: "risk",
+      objectMode: "risk-first",
       actions: [
         ["projects", "Открыть объекты"],
         ["tasks", "Создать задачу"],
@@ -2404,12 +2490,17 @@ function roleTodayProfile() {
       ],
     },
     foreman: {
+      testId: "today-role-foreman",
       label: "Прораб",
       question: "Что мне сегодня сделать на объекте?",
       hint: "Только закреплённые объекты, ваши задачи, заявки, фотоотчёты и замечания к закрытию.",
       tasksTitle: "Мои задачи на сегодня",
       attentionTitle: "Что мешает закрыть работы",
       materialsTitle: "Материалы: получить или запросить",
+      visibleSections: ["tasks", "attention", "materials", "objects", "noPhoto"],
+      taskMode: "my-work",
+      materialMode: "foreman",
+      objectMode: "assigned",
       actions: [
         ["photos", "Добавить фотоотчёт"],
         ["materials", "Запросить материал"],
@@ -2417,44 +2508,189 @@ function roleTodayProfile() {
       ],
     },
     master: {
+      testId: "today-role-worker",
       label: "Мастер",
       question: "Что сделать, где сделать, как подтвердить?",
       hint: "Упрощённый режим: задача, срок, место, кнопка готово, фото и сообщение о проблеме.",
       tasksTitle: "Что сделать сегодня",
       attentionTitle: "Что мешает выполнить",
       materialsTitle: "Материалы по моим задачам",
+      visibleSections: ["tasks", "attention"],
+      taskMode: "worker",
+      materialMode: "none",
+      objectMode: "none",
       actions: [
         ["tasks", "Открыть задачи"],
         ["photos", "Добавить фото"],
       ],
     },
     procurement_manager: {
+      testId: "today-role-procurement",
       label: "Снабжение",
       question: "Что купить, куда, когда и что тормозит объект?",
       hint: "Новые заявки, срочные поставки, проблемы при приёмке и материалы, которые держат объект.",
       tasksTitle: "Задачи по снабжению",
       attentionTitle: "Что тормозит поставки",
       materialsTitle: "Заявки с ближайшим сроком",
+      visibleSections: ["attention", "materials", "comments"],
+      taskMode: "procurement",
+      materialMode: "procurement",
+      objectMode: "none",
       actions: [
         ["materials", "Открыть заявки"],
         ["locations", "Поставщики"],
       ],
     },
     estimator: {
+      testId: "today-role-estimator",
       label: "Сметчик",
       question: "Что требует проверки по смете и допработам?",
       hint: "Вне сметы, нет цены, цена отличается от сметы, новые комментарии и документы на проверку.",
       tasksTitle: "Проверки по смете",
       attentionTitle: "Что нужно уточнить",
       materialsTitle: "Материалы вне сметы / без цены",
+      visibleSections: ["tasks", "attention", "materials", "comments"],
+      taskMode: "estimator",
+      materialMode: "estimator",
+      objectMode: "none",
       actions: [
         ["estimates", "Сметные задания"],
         ["materials", "Проверить материалы"],
         ["variations", "Допработы"],
       ],
     },
+    sales_manager: {
+      testId: "today-role-manager",
+      label: "Менеджер",
+      question: "Какие объекты нужно передать или доработать?",
+      hint: "Показываем черновики, объекты на передаче, замечания руководителя и документы, которые нужно дозагрузить.",
+      tasksTitle: "Черновики и доработки",
+      attentionTitle: "Что мешает передаче объекта",
+      materialsTitle: "Файлы и сметы к проверке",
+      visibleSections: ["attention", "objects", "comments"],
+      taskMode: "manager",
+      materialMode: "none",
+      objectMode: "manager",
+      actions: [
+        ["projects", "Открыть объекты"],
+        ["estimates", "Сметные задания"],
+        ["documents", "База знаний"],
+      ],
+    },
   };
   return profiles[role] || profiles.owner;
+}
+
+function applyTodayProfile(profile) {
+  const visible = new Set(profile.visibleSections || []);
+  const sectionNodes = {
+    tasks: "#todayTasks",
+    attention: "#todayAttention",
+    materials: "#todayMaterials",
+    comments: "#todayComments",
+    objects: "#todayObjects",
+    noPhoto: "#todayNoPhoto",
+  };
+  Object.entries(sectionNodes).forEach(([key, selector]) => {
+    const panel = qs(selector)?.closest(".panel");
+    if (panel) panel.hidden = !visible.has(key);
+  });
+  const todayView = qs("#todayView");
+  if (todayView) todayView.dataset.role = currentRoleBase();
+  const rolePanel = qs(".today-role-panel");
+  if (rolePanel) {
+    rolePanel.dataset.testid = profile.testId || "today-role-owner";
+    rolePanel.setAttribute("data-testid", profile.testId || "today-role-owner");
+  }
+  const materialsList = qs("#todayMaterials");
+  if (materialsList) materialsList.dataset.testid = "today-materials-risk-list";
+}
+
+function taskTypeKey(task) {
+  return normalizeTaskType(task?.task_type || task?.type || task?.kind || "task");
+}
+
+function taskMentions(task, words = []) {
+  const text = `${task?.title || ""} ${task?.description || ""}`.toLowerCase();
+  return words.some((word) => text.includes(word));
+}
+
+function taskRoleScore(task) {
+  let score = 0;
+  if (taskCountsAsOverdue(task)) score += 80;
+  if (task.status === "returned") score += 60;
+  if (["completed_pending_acceptance", "waiting_check"].includes(task.status)) score += 45;
+  if (["question", "decision", "approval"].includes(taskTypeKey(task))) score += 35;
+  if (!task.due_date) score += 15;
+  if (isTodayDate(task.due_date)) score += 25;
+  return score;
+}
+
+function todayTasksForProfile(tasks = [], profile = roleTodayProfile()) {
+  const mode = profile.taskMode || "leadership";
+  let rows = (Array.isArray(tasks) ? tasks : []).filter(isOpenTask);
+  if (mode === "worker") {
+    rows = rows.filter((task) => isTodayDate(task.due_date) || taskCountsAsOverdue(task) || ["returned", "completed_pending_acceptance"].includes(task.status) || ["photo_report", "issue"].includes(taskTypeKey(task)));
+  } else if (mode === "my-work") {
+    rows = rows.filter((task) => isTodayDate(task.due_date) || taskCountsAsOverdue(task) || ["returned", "completed_pending_acceptance"].includes(task.status) || ["photo_report", "question", "decision", "approval", "issue", "material"].includes(taskTypeKey(task)));
+  } else if (mode === "procurement") {
+    rows = rows.filter((task) => ["material", "approval", "question"].includes(taskTypeKey(task)) || taskMentions(task, ["материал", "поставка", "заявк", "купить", "заказать"]));
+  } else if (mode === "estimator") {
+    rows = rows.filter((task) => ["check", "approval", "material", "question"].includes(taskTypeKey(task)) || taskMentions(task, ["смет", "допработ", "цена", "провер"]));
+  } else if (mode === "manager") {
+    rows = rows.filter((task) => ["returned", "waiting_answer"].includes(task.status) || taskMentions(task, ["документ", "договор", "смет"]));
+  } else {
+    rows = rows.filter((task) => isTodayDate(task.due_date) || taskCountsAsOverdue(task) || ["returned", "completed_pending_acceptance", "waiting_answer"].includes(task.status) || ["question", "decision", "approval", "photo_report"].includes(taskTypeKey(task)));
+  }
+  return rows.sort((a, b) => taskRoleScore(b) - taskRoleScore(a) || String(a.due_date || "9999").localeCompare(String(b.due_date || "9999")));
+}
+
+function materialBatchRiskScore(batch) {
+  let score = 0;
+  const status = materialPipelineStatus(batch);
+  if (status === "problem") score += 90;
+  if (batch.is_blocker || batch.blocks_project) score += 80;
+  if (batch.delivery_urgency === "urgent") score += 60;
+  if (["needs_approval", "draft"].includes(status)) score += 30;
+  if (["ordered", "in_transit"].includes(status)) score += 20;
+  if (isTodayDate(batch.needed_at)) score += 25;
+  if (isDateOverdue(batch.needed_at)) score += 70;
+  return score;
+}
+
+function todayMaterialsForProfile(batches = [], profile = roleTodayProfile()) {
+  const mode = profile.materialMode || "risk";
+  let rows = Array.isArray(batches) ? batches : [];
+  if (mode === "none") return [];
+  if (mode === "procurement") {
+    rows = rows.filter((batch) => !["closed", "cancelled"].includes(materialPipelineStatus(batch)));
+  } else if (mode === "estimator") {
+    rows = rows.filter((batch) => materialActiveItems(batch).some((item) => materialRowHasDeviation(item) || materialRowHasNoPrice(item) || materialRowActualOverrun(item)));
+  } else if (mode === "foreman") {
+    rows = rows.filter((batch) => !["closed", "cancelled"].includes(materialPipelineStatus(batch)));
+  } else {
+    rows = rows.filter(materialIsRisky);
+  }
+  return rows.sort((a, b) => materialBatchRiskScore(b) - materialBatchRiskScore(a) || String(a.needed_at || "9999").localeCompare(String(b.needed_at || "9999")));
+}
+
+function todayProjectsForProfile(projects = [], tasks = [], materialRows = [], profile = roleTodayProfile()) {
+  if (profile.objectMode === "none") return [];
+  const rows = Array.isArray(projects) ? [...projects] : [];
+  return rows.sort((a, b) => projectBlockerCount(b, tasks, materialRows) - projectBlockerCount(a, tasks, materialRows) || String(a.title || "").localeCompare(String(b.title || ""), "ru"));
+}
+
+function roleScopedRemarksForToday(remarks = []) {
+  const role = currentRoleBase();
+  const userId = Number(currentUserId() || 0);
+  const projectIds = roleProjectIdSet();
+  const rows = Array.isArray(remarks) ? remarks : [];
+  if (isLeadershipRole(role)) return rows;
+  if (role === "foreman" || role === "master") {
+    return rows.filter((remark) => Number(remark.responsible_user_id || 0) === userId || projectIds.has(Number(remark.project_id || 0)));
+  }
+  if (role === "technical_supervisor") return rows.filter((remark) => projectIds.has(Number(remark.project_id || 0)) || Number(remark.created_by || 0) === userId);
+  return rows.filter((remark) => projectIds.has(Number(remark.project_id || 0)));
 }
 
 function renderTaskStats(tasks, activeFilter = state.taskFilter, options = {}) {
@@ -3139,14 +3375,15 @@ function projectBlockerCount(project, tasks = state.lastTasks || [], materialRow
 function renderTodayTaskCard(task) {
   const description = taskDisplayDescription(task);
   return `
-    <button class="row clickable today-task-card" type="button" data-open-task="${task.id}">
+    <button class="row clickable today-task-card" type="button" data-open-task="${task.id}" data-testid="task-card">
       <div class="stack-line">
-        ${pill(taskTypeLabel(task), taskTypeLevel(task))}
-        ${pill(statusLabel(task.status), taskStatusLevel(task.status))}
+        <span data-testid="task-type-badge">${pill(taskTypeLabel(task), taskTypeLevel(task))}</span>
+        <span data-testid="task-status-badge">${pill(statusLabel(task.status), taskStatusLevel(task.status))}</span>
+        <span data-testid="task-priority-badge">${pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority))}</span>
         ${pill(task.due_date || "без срока", levelByDate(task.due_date))}
       </div>
-      <strong class="task-card-title">${escapeHtml(taskDisplayTitle(task))}</strong>
-      <div class="muted">${escapeHtml(task.project_title || "Объект не указан")} · ответственный: ${escapeHtml(task.assignee_name || "не назначен")}</div>
+      <strong class="task-card-title" data-testid="task-title">${escapeHtml(taskDisplayTitle(task))}</strong>
+      <div class="muted" data-testid="task-meta">${escapeHtml(task.project_title || "Объект не указан")} · ответственный: ${escapeHtml(task.assignee_name || "не назначен")} · срок: ${task.due_date ? formatDateRu(task.due_date) : "без срока"}</div>
       ${description ? `<p class="task-description-clamp">${escapeHtml(description)}</p>` : ""}
     </button>`;
 }
@@ -3155,7 +3392,7 @@ function renderTodayMaterialCard(batch) {
   const overrun = Number(batch.actual_purchase_amount || 0) > Number(batch.total_amount || 0) && Number(batch.actual_purchase_amount || 0) > 0;
   const firstItem = materialActiveItems(batch)[0] || {};
   return `
-    <button class="row clickable today-material-card" type="button" data-open-material-batch="${batch.key}">
+    <button class="row clickable today-material-card" type="button" data-open-material-batch="${batch.key}" data-testid="material-card">
       <div class="stack-line">
         ${pill(statusLabel(materialPipelineStatus(batch)), materialPipelineLevel(batch))}
         ${batch.delivery_urgency === "urgent" ? pill("Срочно", "danger") : ""}
@@ -3163,7 +3400,7 @@ function renderTodayMaterialCard(batch) {
       </div>
       <strong>${escapeHtml(firstItem.title || materialBatchTitle(batch))}</strong>
       <div class="muted">${escapeHtml(batch.project_title || "Объект не указан")} · ${escapeHtml(firstItem.requested_quantity || firstItem.estimated_quantity || "")} ${escapeHtml(firstItem.requested_unit || firstItem.estimate_material_unit || "")}</div>
-      <div class="muted">позиций: ${materialActiveItems(batch).length} · основание: ${escapeHtml(materialBatchBasisSummary(batch) || "не указано")} · срок: ${batch.needed_at ? formatDateRu(batch.needed_at) : "без срока"}</div>
+      <div class="muted">позиций: ${materialActiveItems(batch).length} · основание: ${escapeHtml(materialBatchBasisSummary(batch) || "не указано")} · срок: ${batch.needed_at ? formatDateRu(batch.needed_at) : "без срока"} · отвечает: ${escapeHtml(batch.procurement_name || "Снабжение")}</div>
       </button>`;
 }
 
@@ -3203,7 +3440,7 @@ function renderTodayAttentionCard(title, count, text, level, targetAttrs) {
     </button>`;
 }
 
-function todayDecisionItems({ overdueTasks = [], returnedTasks = [], waitingTasks = [], riskyMaterials = [], noPhotoProjects = [], blockers = [] }) {
+function todayDecisionItems({ overdueTasks = [], returnedTasks = [], waitingTasks = [], riskyMaterials = [], noPhotoProjects = [], blockers = [], remarks = [] }) {
   const today = new Date().toISOString().slice(0, 10);
   const taskItem = (task, type, level, action = "Открыть задачу") => ({
     type,
@@ -3227,6 +3464,17 @@ function todayDecisionItems({ overdueTasks = [], returnedTasks = [], waitingTask
       criticality: blocker.severity === "critical" || blocker.severity === "high" ? "Высокая" : "Средняя",
       action: blocker.linked_task_id ? "Открыть задачу" : blocker.linked_material_request_id ? "Открыть заявку" : "Открыть объект",
       attrs: blocker.linked_task_id ? `data-open-task="${blocker.linked_task_id}"` : blocker.linked_material_request_id ? `data-open-material-batch="batch-${blocker.linked_material_request_id}"` : `data-open-project="${blocker.project_id}"`,
+    })),
+    ...remarks.map((remark) => ({
+      type: "Замечание",
+      level: isDateOverdue(remark.due_date) || remark.status === "returned" ? "danger" : "warning",
+      object: remark.project_title || "Объект не указан",
+      title: remark.title || "Замечание по объекту",
+      responsible: remark.responsible_name || "не назначен",
+      due: remark.due_date || "без срока",
+      criticality: isDateOverdue(remark.due_date) ? "Высокая" : "Средняя",
+      action: "Открыть замечания",
+      attrs: `data-view-target="object_remarks"`,
     })),
     ...overdueTasks.map((task) => taskItem(task, "Просрочено", "danger")),
     ...returnedTasks.map((task) => taskItem(task, "Возвращено", "warning")),
@@ -3406,11 +3654,13 @@ async function renderToday() {
     api("/api/notifications").catch(() => []),
   ]);
   const profile = roleTodayProfile();
+  applyTodayProfile(profile);
   const roleProjects = roleScopedProjects(state.projects);
   const roleProjectIds = roleProjectIdSet(roleProjects);
   const roleTasks = roleScopedTasks(tasks);
   const roleMaterialRows = roleScopedMaterialRows(materialRows);
   const roleBlockers = roleScopedBlockers(state.blockers || []);
+  const roleRemarks = roleScopedRemarksForToday(state.objectRemarks || []);
   state.lastTasks = roleTasks;
   state.materialRequests = roleMaterialRows;
   qs("#todayRoleLabel").textContent = profile.label;
@@ -3420,14 +3670,15 @@ async function renderToday() {
   qs("#todayAttentionTitle").textContent = profile.attentionTitle;
   qs("#todayMaterialsTitle").textContent = profile.materialsTitle;
   qs("#todayPrimaryActions").innerHTML = renderTodayPrimaryActions(profile);
-  const todayTasks = roleTasks.filter((task) => isOpenTask(task) && isTodayDate(task.due_date));
+  const todayTasks = todayTasksForProfile(roleTasks, profile);
   const overdueTasks = roleTasks.filter(taskCountsAsOverdue);
   const returnedTasks = roleTasks.filter((task) => task.status === "returned");
   const waitingTasks = roleTasks.filter((task) => task.status === "completed_pending_acceptance");
   const materialBatches = buildMaterialBatches(roleMaterialRows);
-  const riskyMaterials = materialBatches.filter(materialIsRisky);
-  const activeProjects = roleProjects;
+  const riskyMaterials = todayMaterialsForProfile(materialBatches, profile);
+  const activeProjects = todayProjectsForProfile(roleProjects, roleTasks, roleMaterialRows, profile);
   const noPhotoProjects = activeProjects.filter((project) => !isTodayDate(latestPhotoReportDate(project.id)));
+  const openRemarks = roleRemarks.filter((remark) => !["accepted", "closed"].includes(remark.status)).sort((a, b) => Number(isDateOverdue(b.due_date)) - Number(isDateOverdue(a.due_date)) || String(a.due_date || "9999").localeCompare(String(b.due_date || "9999")));
   const recentComments = notifications
     .filter((row) => isLast24Hours(row.created_at))
     .filter((row) => !row.project_id || isLeadershipRole() || roleProjectIds.has(Number(row.project_id || 0)))
@@ -3435,7 +3686,7 @@ async function renderToday() {
   qs("#todayTasks").innerHTML = todayTasks.length
     ? todayTasks.slice(0, 6).map(renderTodayTaskCard).join("")
     : `<div class="empty-state"><strong>На сегодня задач нет</strong><p class="muted">Проверьте просроченные или откройте объект.</p></div>`;
-  const decisionItems = todayDecisionItems({ overdueTasks, returnedTasks, waitingTasks, riskyMaterials, noPhotoProjects, blockers: roleBlockers }).slice(0, 12);
+  const decisionItems = todayDecisionItems({ overdueTasks, returnedTasks, waitingTasks, riskyMaterials, noPhotoProjects, blockers: roleBlockers, remarks: openRemarks }).slice(0, 12);
   qs("#todayAttention").innerHTML = decisionItems.length
     ? decisionItems.map(renderTodayDecisionItem).join("")
     : `<div class="attention-empty"><strong>Критичных сигналов нет</strong><span>На сейчас ничего срочного не найдено.</span></div>`;
@@ -3540,6 +3791,19 @@ function signalPreviewEntries(items = []) {
   return { visible, hidden };
 }
 
+function pluralRu(count, one, few, many) {
+  const value = Math.abs(Number(count || 0));
+  const mod10 = value % 10;
+  const mod100 = value % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+  return many;
+}
+
+function positionsLabel(count) {
+  return `${count} ${pluralRu(count, "позиция", "позиции", "позиций")}`;
+}
+
 window.__konturDedupeSignals = dedupeSignals;
 window.__konturSignalPreviewEntries = signalPreviewEntries;
 
@@ -3578,15 +3842,15 @@ function renderSignalRow(signal) {
   const first = items[0] || signal;
   const preview = signalPreviewEntries(items);
   return `
-    <button class="row clickable notification-row signal-row" ${notificationTargetAttrs(first)}>
+    <button class="row clickable notification-row signal-row" ${notificationTargetAttrs(first)} data-testid="signal-card">
       <div class="stack-line">
         <strong>[${escapeHtml(signal.signal_type || "Сигнал")}] ${escapeHtml(signal.project_title || "Без объекта")}</strong>
         ${pill(statusLabel(signalStatus(signal)), statusLevel(signalStatus(signal)))}
       </div>
-      <div class="muted">${items.length} позиций · создано ${formatDateRu(signal.signal_day || signal.created_at)}</div>
+      <div class="muted"><span data-testid="signal-group-count">${positionsLabel(items.length)}</span> · создано ${formatDateRu(signal.signal_day || signal.created_at)}</div>
       <div class="signal-preview">
         ${preview.visible.map((text) => `<span>${escapeHtml(text)}</span>`).join("")}
-        ${preview.hidden ? `<span class="muted">ещё ${preview.hidden} позиций</span>` : ""}
+        ${preview.hidden ? `<span class="muted">ещё ${positionsLabel(preview.hidden)}</span>` : ""}
       </div>
     </button>`;
 }
@@ -4008,7 +4272,7 @@ function renderProjectHero(project) {
   const blockers = (project.blockers || []).filter((blocker) => !["resolved", "closed"].includes(blocker.status)).length;
   return `
     <section class="project-hero">
-      <div class="project-hero-main">
+      <div class="project-hero-main" data-testid="object-summary">
         <div class="stack-line">
           <h2>${escapeHtml(project.title || "Объект")}</h2>
           ${pill(statusLabel(project.status), statusLevel(project.status))}
@@ -4065,7 +4329,7 @@ function renderProjectQuickActions() {
     ['data-project-tab="documents"', "Открыть документы"],
   ];
   return `
-    <section class="project-quick-actions" data-testid="object-actions">
+    <section class="project-quick-actions" data-testid="object-quick-actions" data-legacy-testid="object-actions">
       <strong>Ближайшие действия</strong>
       <div class="project-action-list">
         ${actions.map(([attrs, title]) => `<button class="secondary tiny" type="button" ${attrs}>${title}</button>`).join("")}
@@ -4091,8 +4355,8 @@ function renderProjectOverview(project) {
                 .slice(0, 5)
                 .map(
                   (blocker) => `
-                  <div class="row blocker-row">
-                    <div class="stack-line"><strong>${escapeHtml(blocker.title || "Блокер")}</strong>${pill(statusLabel(blocker.blocker_type || "other"), statusLevel(blocker.blocker_type || "warning"))}${pill(statusLabel(blocker.status || "open"), statusLevel(blocker.status || "open"))}</div>
+                  <div class="row blocker-row" data-testid="blocker-card">
+                    <div class="stack-line"><strong>${escapeHtml(blocker.title || "Блокер")}</strong><span data-testid="blocker-type-badge">${pill(statusLabel(blocker.blocker_type || "other"), statusLevel(blocker.blocker_type || "warning"))}</span><span data-testid="blocker-status-badge">${pill(statusLabel(blocker.status || "open"), statusLevel(blocker.status || "open"))}</span><span data-testid="blocker-severity-badge">${pill(statusLabel(blocker.severity || "medium"), blocker.severity === "critical" || blocker.severity === "high" ? "danger" : "warning")}</span></div>
                     <div class="muted">ответственный: ${escapeHtml(blocker.responsible_name || "не назначен")} · срок: ${blocker.due_date ? formatDateRu(blocker.due_date) : "без срока"}</div>
                   </div>`
                 )
@@ -4114,9 +4378,9 @@ function renderCompactTaskRow(task) {
     <button class="row clickable compact-task-card" type="button" data-open-task="${task.id}" data-testid="task-card">
       <div class="compact-task-title">
         <span data-testid="task-type-badge">${pill(taskTypeLabel(task), taskTypeLevel(task))}</span>
-        <strong>${escapeHtml(taskDisplayTitle(task))}</strong>
+        <strong data-testid="task-title">${escapeHtml(taskDisplayTitle(task))}</strong>
       </div>
-      <div class="compact-task-meta">
+      <div class="compact-task-meta" data-testid="task-meta">
         <span>${escapeHtml(task.project_title || "объект")}</span>
         <span>ответственный: ${escapeHtml(task.assignee_name || "не назначен")}</span>
         <span>срок: ${task.due_date ? formatDateRu(task.due_date) : "без срока"}</span>
@@ -4603,8 +4867,8 @@ async function renderTasks() {
             <details class="row task-row task-collapsible" data-collapsible-key="${escapeAttr(taskKey)}"${openAttrForKey(taskKey)} data-testid="task-card">
               <summary class="task-summary">
                 <span class="task-summary-main">
-                  <span class="task-summary-title"><span data-testid="task-type-badge">${pill(taskTypeLabel(task), taskTypeLevel(task))}</span><strong>${escapeHtml(taskDisplayTitle(task))}</strong></span>
-                  <span class="task-summary-meta">${escapeHtml(task.project_title || "объект не указан")} · ${escapeHtml(task.assignee_name || "ответственный не назначен")} · ${task.due_date ? formatDateRu(task.due_date) : "без срока"}</span>
+                  <span class="task-summary-title"><span data-testid="task-type-badge">${pill(taskTypeLabel(task), taskTypeLevel(task))}</span><strong data-testid="task-title">${escapeHtml(taskDisplayTitle(task))}</strong></span>
+                  <span class="task-summary-meta" data-testid="task-meta">${escapeHtml(task.project_title || "объект не указан")} · ${escapeHtml(task.assignee_name || "ответственный не назначен")} · ${task.due_date ? formatDateRu(task.due_date) : "без срока"}</span>
                   ${taskDisplayDescription(task) ? `<span class="task-description-clamp">${escapeHtml(taskDisplayDescription(task))}</span>` : ""}
                   <span class="stack-line"><span data-testid="task-status-badge">${pill(label(task.status), taskStatusLevel(task.status))}</span><span data-testid="task-priority-badge">${pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority))}</span></span>
                 </span>

@@ -10,8 +10,8 @@ export const roles = {
 export const expectedVisibleByRole: Record<string, string[]> = {
   owner: ["nav-objects", "nav-tasks", "nav-materials", "nav-feedback"],
   construction_manager: ["nav-objects", "nav-tasks", "nav-materials"],
-  "foreman:7": ["nav-tasks", "nav-materials", "nav-documents"],
-  master: ["nav-tasks", "nav-photo-reports"],
+  "foreman:7": ["nav-objects", "nav-tasks", "nav-materials", "nav-photo-reports", "nav-object-issues"],
+  master: ["nav-tasks", "nav-photo-reports", "nav-object-issues"],
   procurement_manager: ["nav-materials", "nav-objects"],
-  estimator: ["nav-estimates", "nav-materials"],
+  estimator: ["nav-estimates", "nav-materials", "nav-variations"],
 };

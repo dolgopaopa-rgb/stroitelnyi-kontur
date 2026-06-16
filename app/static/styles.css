@@ -3817,6 +3817,28 @@ textarea {
   font-size: 12px;
 }
 
+.today-task-card,
+.today-material-card {
+  align-content: start;
+  gap: 7px;
+}
+
+.today-task-card .stack-line,
+.today-material-card .stack-line {
+  gap: 5px;
+}
+
+.task-card-title,
+.material-main > strong,
+.today-material-card > strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 .project-hero {
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.9fr);

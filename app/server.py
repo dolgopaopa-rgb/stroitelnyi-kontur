@@ -4349,15 +4349,24 @@ class AppHandler(BaseHTTPRequestHandler):
             for key, value in first_tz_checks.items()
         )
         stage3_checks = {
-            "role_based_today": "ok" if "roleTodayProfile" in app_js_snapshot and "todayRoleQuestion" in index_snapshot else "missing",
-            "task_card_layout": "ok" if all(marker in app_js_snapshot for marker in ["task-summary-title", "task-summary-meta", "task-description-clamp"]) else "partial",
-            "task_type_rules": "ok" if all(marker in app_js_snapshot for marker in ["check", "approval", "inferTaskType"]) else "partial",
-            "signals_deduplication": "ok" if "dedupeSignals" in app_js_snapshot else "missing",
+            "role_based_today": "ok" if all(marker in app_js_snapshot for marker in ["roleTodayProfile", "visibleSections", "todayTasksForProfile"]) else "partial",
+            "owner_today_screen": "ok" if "today-role-owner" in app_js_snapshot else "missing",
+            "project_manager_today_screen": "ok" if "today-role-project-manager" in app_js_snapshot else "missing",
+            "foreman_today_screen": "ok" if "today-role-foreman" in app_js_snapshot else "missing",
+            "worker_today_screen": "ok" if "today-role-worker" in app_js_snapshot else "missing",
+            "procurement_today_screen": "ok" if "today-role-procurement" in app_js_snapshot else "missing",
+            "estimator_today_screen": "ok" if "today-role-estimator" in app_js_snapshot else "missing",
+            "object_card_control_center": "ok" if all(marker in app_js_snapshot for marker in ["object-summary", "object-attention-block", "object-quick-actions"]) else "partial",
             "blockers": "ok" if "CREATE TABLE IF NOT EXISTS blockers" in ((APP_DIR / "database.py").read_text(encoding="utf-8", errors="replace")) and "/api/blockers" in server_snapshot else "partial",
-            "materials_filters": "ok" if "data-material-quick-filter" in index_snapshot and "materialBatchMatchesQuickFilter" in app_js_snapshot else "missing",
-            "document_classification_rules": "ok" if "photo_video" in app_js_snapshot and "service_screenshot" in app_js_snapshot and "knowledgeClassificationOnly" in app_js_snapshot else "partial",
+            "task_card_layout": "ok" if all(marker in app_js_snapshot for marker in ["task-title", "task-meta", "task-priority-badge"]) else "partial",
+            "signals_deduplication": "ok" if all(marker in app_js_snapshot for marker in ["dedupeSignals", "signalPreviewEntries", "positionsLabel"]) else "missing",
+            "materials_pipeline": "ok" if "data-material-pipeline-filter" in index_snapshot and "materialPipelineStatus" in app_js_snapshot else "missing",
+            "photo_reports_workflow": "ok" if "renderPhotoReportCard" in app_js_snapshot and "renderPhotoEmptyState" in app_js_snapshot else "partial",
+            "object_issues_workflow": "ok" if "renderObjectRemarkCard" in app_js_snapshot and "renderRemarkEmptyState" in app_js_snapshot else "partial",
+            "document_classification": "ok" if "documentTypeKey" in app_js_snapshot and "classification-notice" in app_js_snapshot else "missing",
             "mobile_quick_actions": "ok" if "mobileQuickActionsForRole" in app_js_snapshot and "mobile-bottom-nav" in index_snapshot else "missing",
             "empty_states": "ok" if "renderPhotoEmptyState" in app_js_snapshot and "renderRemarkEmptyState" in app_js_snapshot and "empty-state" in app_js_snapshot else "partial",
+            "role_navigation": "ok" if "navLabelsByRole" in app_js_snapshot and "viewAccess" in app_js_snapshot else "partial",
             "live_audit_login": qa_snapshot_status(qa_report, "live_audit_login_actual_access"),
         }
         stage3_body = "".join(
@@ -4380,6 +4389,12 @@ class AppHandler(BaseHTTPRequestHandler):
             ["Требует моего решения", "Просрочки", "Блокеры", "Материалы под риском", "Объекты без фотоотчёта"],
             ["Открыть проблемный объект", "Открыть задачу", "Посмотреть сигналы"],
         )
+        today_project_manager_body = role_today_sample(
+            "Руководитель проекта",
+            "Что происходит на моих объектах?",
+            ["Мои объекты", "Задачи по объектам", "Материалы под риском", "Замечания", "Фотоотчёты"],
+            ["Открыть объект", "Создать задачу", "Запросить фотоотчёт"],
+        )
         today_foreman_body = role_today_sample(
             "Прораб",
             "Что мне сегодня сделать на объекте?",
@@ -4392,12 +4407,25 @@ class AppHandler(BaseHTTPRequestHandler):
             ["Что сделать сегодня", "Где сделать", "Срок", "Фото/видео"],
             ["Готово", "Сообщить проблему", "Добавить фото"],
         )
+        today_procurement_body = role_today_sample(
+            "Снабжение",
+            "Что купить, куда, когда и что тормозит объект?",
+            ["Новые заявки", "Нужно согласовать", "Заказано", "В пути", "Проблема"],
+            ["Открыть заявку", "Изменить статус", "Добавить поставщика"],
+        )
+        today_estimator_body = role_today_sample(
+            "Сметчик",
+            "Что требует проверки по смете и допработам?",
+            ["Материалы вне сметы", "Нет цены", "Цена отличается от сметы", "Допработы на согласовании"],
+            ["Открыть заявку", "Проверить основание", "Вернуть на уточнение"],
+        )
 
         signal_group_body = f"""
         <article class="sample-row">
           <div class="row-head"><strong>[Материалы вне основной сметы] {e((project_rows[0] or {}).get("title") if project_rows else "Объект")}</strong>{badge("новый", "warning")}</div>
-          <div class="muted">27 позиций · создано {e(today)}</div>
-          <div class="chips">{chips(["первые 3 позиции", "ещё 24 позиции", "Действие: открыть заявку"])}</div>
+          <div class="muted">4 позиции · создано {e(today)}</div>
+          <div class="signal-preview"><span>Материалы по заявке получены прорабом</span><span class="muted">ещё 3 позиции</span></div>
+          <div class="chips">{chips(["Действие: открыть заявку", "Без повторения одинакового текста"])}</div>
         </article>
         """
         blocker_body = rows(blocker_rows, blocker_card, "Блокеров пока нет")
@@ -4523,31 +4551,34 @@ class AppHandler(BaseHTTPRequestHandler):
             <div class="grid">
               {block("QA-проверки", ["Открыть qa-report", "Посмотреть скриншоты", "Разобрать FAIL/PARTIAL"], ["Фактический прогон", "Quality gate", "Без фальшивого ok"], qa_body)}
               {block("Проверка первого ТЗ", ["Сверить контракт", "Найти частичные пункты"], ["UX-контракт", "Аудит", "Статусы"], first_tz_body)}
-              {block("Проверка этапа 3", ["Сверить ролевые сценарии", "Проверить мобильный UX", "Проверить блокеры"], ["Роли", "Сигналы", "Блокеры", "Мобильный UX"], stage3_body)}
+              {block("Проверка этапа UX-логики", ["Сверить ролевые сценарии", "Проверить мобильный UX", "Проверить блокеры"], ["Роли", "Сигналы", "Блокеры", "Мобильный UX"], stage3_body)}
               {block("1. Сегодня", ["Открыть задачи", "Открыть материалы", "Открыть фотоотчёты"], ["Мои задачи", "Требует решения", "Активные объекты"], today_body)}
               {block("2. Сегодня для руководителя", ["Открыть проблемный объект", "Открыть задачу", "Посмотреть сигналы"], ["Руководитель", "Решения", "Блокеры"], today_owner_body)}
-              {block("3. Сегодня для прораба", ["Добавить фотоотчёт", "Создать заявку", "Отметить выполнено"], ["Прораб", "Мои объекты", "Материалы"], today_foreman_body)}
-              {block("4. Сегодня для мастера", ["Готово", "Сообщить проблему", "Добавить фото"], ["Мастер", "Простой режим", "Фото"], today_master_body, mobile=True)}
-              {block("5. Ролевые варианты", ["Сравнить видимость", "Проверить ограничения", "Оценить сценарий роли"], ["Роли", "Доступы", "Сценарии"], roles_body)}
-              {block("6. Сгруппированный сигнал", ["Открыть заявку", "Развернуть список", "Скрыть сигнал"], ["Дедупликация", "Группировка", "Сигналы"], signal_group_body)}
-              {block("7. Блокер", ["Открыть объект", "Назначить ответственного", "Закрыть после решения"], ["Блокер", "Ответственный", "Срок"], blocker_body)}
-              {block("8. Сигналы", ["Открыть объекты", "Открыть задачи", "Посмотреть события"], ["Сигналы", "Сводка", "Задачи"], notification_body)}
-              {block("9. Список объектов", ["Выбрать объект", "Открыть карточку", "Перейти к задачам"], ["Объекты", "Статусы", "Прораб"], project_body)}
-              {block("10. Карточка объекта", ["Открыть задачи", "Добавить фотоотчёт", "Создать замечание", "Запросить материал", "Открыть документы"], ["Один выбранный объект", "Метрики", "Ближайшие действия"], selected_project_body)}
-              {block("11. Задача в коротком формате", ["Развернуть задачу", "Свернуть задачу", "Посмотреть комментарии"], ["Тип", "Ответственный", "Срок", "Статус"], short_task_body)}
-              {block("12. Задачи", ["Развернуть задачу", "Свернуть задачу", "Посмотреть комментарии"], ["Тип", "Ответственный", "Срок", "Статус"], task_body)}
-              {block("13. Материалы / заявки", ["Открыть заявку", "Посмотреть статус", "Посмотреть основание"], ["Все", "Мои", "Срочные", "Без срока", "Тормозит объект", "Вне сметы"], material_body)}
-              {block("14. Пример заявки на материал", ["Открыть заявку", "Изменить статус", "Добавить комментарий"], ["Материал", "Срок", "Статус", "Ответственный"], material_body)}
-              {block("15. Фотоотчёты", ["Открыть карточку отчёта", "Посмотреть вложения", "Проверить статус"], ["Фотоотчёты", "Файлы", "Проверка"], photo_body)}
-              {block("16. Пустое состояние фотоотчётов", ["Открыть объект", "Добавить фотоотчёт"], ["Пустое состояние", "Список объектов"], photo_empty_body)}
-              {block("17. Замечания по объектам", ["Открыть замечание", "Проверить фото до/после", "Посмотреть ответственного"], ["Объект", "Зона", "Срок", "Проверка"], remark_body)}
-              {block("18. Пустое состояние замечаний", ["Создать замечание", "Назначить ответственного"], ["Пример структуры", "Контроль качества"], remark_empty_body)}
-              {block("19. Документы", ["Открыть папку", "Посмотреть список", "Проверить классификацию"], ["Проект", "Смета", "Договор", "Акт", "Счёт", "Фото/видео", "Не разобрано"], document_body)}
-              {block("20. Мобильное меню с кнопкой +", ["Открыть быстрое действие", "Добавить фото", "Сообщить проблему"], ["Сегодня", "Объекты", "+", "Уведомления", "Я"], mobile_menu_body, mobile=True)}
-              {block("21. Обратная связь по программе", ["Фильтровать", "Открыть сообщение", "Смотреть статус"], ["MAX", "Комментарии", "Статусы"], feedback_body)}
-              {block("22. Настройки", ["Оценить структуру ролей", "Смотреть список участников"], ["Роли", "Уведомления", "MAX"], settings_body)}
-              {block("23. Мобильный вид карточки объекта", ["Развернуть раздел", "Свернуть раздел", "Перейти к задачам"], ["Обзор", "Вкладки", "Документы"], selected_project_body, mobile=True)}
-              {block("24. Мобильный вид задачи", ["Развернуть задачу", "Свернуть задачу", "Посмотреть комментарии"], ["Задачи", "Комментарии", "Статусы"], short_task_body, mobile=True)}
+              {block("3. Сегодня для руководителя проекта", ["Открыть объект", "Создать задачу", "Запросить фотоотчёт"], ["Руководитель проекта", "Мои объекты", "Материалы"], today_project_manager_body)}
+              {block("4. Сегодня для прораба", ["Добавить фотоотчёт", "Создать заявку", "Отметить выполнено"], ["Прораб", "Мои объекты", "Материалы"], today_foreman_body)}
+              {block("5. Сегодня для мастера", ["Готово", "Сообщить проблему", "Добавить фото"], ["Мастер", "Простой режим", "Фото"], today_master_body, mobile=True)}
+              {block("6. Сегодня для снабжения", ["Открыть заявку", "Изменить статус", "Добавить поставщика"], ["Снабжение", "Заявки", "Pipeline"], today_procurement_body)}
+              {block("7. Сегодня для сметчика", ["Открыть заявку", "Проверить основание", "Вернуть на уточнение"], ["Сметчик", "Проверки", "Допработы"], today_estimator_body)}
+              {block("8. Ролевые варианты", ["Сравнить видимость", "Проверить ограничения", "Оценить сценарий роли"], ["Роли", "Доступы", "Сценарии"], roles_body)}
+              {block("9. Сгруппированный сигнал", ["Открыть заявку", "Развернуть список", "Скрыть сигнал"], ["Дедупликация", "Группировка", "Сигналы"], signal_group_body)}
+              {block("10. Блокер", ["Открыть объект", "Назначить ответственного", "Закрыть после решения"], ["Блокер", "Ответственный", "Срок"], blocker_body)}
+              {block("11. Сигналы", ["Открыть объекты", "Открыть задачи", "Посмотреть события"], ["Сигналы", "Сводка", "Задачи"], notification_body)}
+              {block("12. Список объектов", ["Выбрать объект", "Открыть карточку", "Перейти к задачам"], ["Объекты", "Статусы", "Прораб"], project_body)}
+              {block("13. Карточка объекта", ["Открыть задачи", "Добавить фотоотчёт", "Создать замечание", "Запросить материал", "Открыть документы"], ["Один выбранный объект", "Метрики", "Ближайшие действия"], selected_project_body)}
+              {block("14. Задача в коротком формате", ["Развернуть задачу", "Свернуть задачу", "Посмотреть комментарии"], ["Тип", "Ответственный", "Срок", "Статус"], short_task_body)}
+              {block("15. Задачи", ["Развернуть задачу", "Свернуть задачу", "Посмотреть комментарии"], ["Тип", "Ответственный", "Срок", "Статус"], task_body)}
+              {block("16. Материалы / заявки", ["Открыть заявку", "Посмотреть статус", "Посмотреть основание"], ["Все", "Мои", "Срочные", "Без срока", "Тормозит объект", "Вне сметы"], material_body)}
+              {block("17. Пример заявки на материал", ["Открыть заявку", "Изменить статус", "Добавить комментарий"], ["Материал", "Срок", "Статус", "Ответственный"], material_body)}
+              {block("18. Фотоотчёты", ["Открыть карточку отчёта", "Посмотреть вложения", "Проверить статус"], ["Фотоотчёты", "Файлы", "Проверка"], photo_body)}
+              {block("19. Пустое состояние фотоотчётов", ["Открыть объект", "Добавить фотоотчёт"], ["Пустое состояние", "Список объектов"], photo_empty_body)}
+              {block("20. Замечания по объектам", ["Открыть замечание", "Проверить фото до/после", "Посмотреть ответственного"], ["Объект", "Зона", "Срок", "Проверка"], remark_body)}
+              {block("21. Пустое состояние замечаний", ["Создать замечание", "Назначить ответственного"], ["Пример структуры", "Контроль качества"], remark_empty_body)}
+              {block("22. Документы", ["Открыть папку", "Посмотреть список", "Проверить классификацию"], ["Проект", "Смета", "Договор", "Акт", "Счёт", "Фото/видео", "Не разобрано"], document_body)}
+              {block("23. Мобильное меню с кнопкой +", ["Открыть быстрое действие", "Добавить фото", "Сообщить проблему"], ["Сегодня", "Объекты", "+", "Уведомления", "Я"], mobile_menu_body, mobile=True)}
+              {block("24. Обратная связь по программе", ["Фильтровать", "Открыть сообщение", "Смотреть статус"], ["MAX", "Комментарии", "Статусы"], feedback_body)}
+              {block("25. Настройки", ["Оценить структуру ролей", "Смотреть список участников"], ["Роли", "Уведомления", "MAX"], settings_body)}
+              {block("26. Мобильный вид карточки объекта", ["Развернуть раздел", "Свернуть раздел", "Перейти к задачам"], ["Обзор", "Вкладки", "Документы"], selected_project_body, mobile=True)}
+              {block("27. Мобильный вид задачи", ["Развернуть задачу", "Свернуть задачу", "Посмотреть комментарии"], ["Задачи", "Комментарии", "Статусы"], short_task_body, mobile=True)}
             </div>
           </main>
         </body>
