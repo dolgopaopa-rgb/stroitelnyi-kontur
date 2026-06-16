@@ -5363,20 +5363,16 @@ function hasOpenDialog() {
   return Boolean(document.querySelector("dialog[open]"));
 }
 
-function canScrollElementVertically(element, deltaY) {
+function nearestScrollableElement(element) {
   let current = element instanceof Element ? element : element?.parentElement;
   while (current && current !== document.body && current !== document.documentElement) {
     const style = window.getComputedStyle(current);
     const overflowY = style.overflowY;
     const canScroll = /auto|scroll|overlay/.test(overflowY) && current.scrollHeight > current.clientHeight + 1;
-    if (canScroll) {
-      const atTop = current.scrollTop <= 0;
-      const atBottom = current.scrollTop + current.clientHeight >= current.scrollHeight - 1;
-      if ((deltaY < 0 && !atTop) || (deltaY > 0 && !atBottom)) return true;
-    }
+    if (canScroll) return current;
     current = current.parentElement;
   }
-  return false;
+  return null;
 }
 
 function canScrollPageVertically(deltaY) {
@@ -5400,10 +5396,15 @@ function bindWheelPageScroll() {
     "wheel",
     (event) => {
       if (event.defaultPrevented || hasOpenDialog()) return;
-      if (event.target.closest?.("input, textarea, select, button, a, dialog")) return;
+      if (event.target.closest?.("input, textarea, select, dialog")) return;
       if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
       const deltaY = normalizedWheelDeltaY(event);
-      if (!deltaY || canScrollElementVertically(event.target, deltaY) || !canScrollPageVertically(deltaY)) return;
+      if (!deltaY || !canScrollPageVertically(deltaY)) return;
+      const scrollable = nearestScrollableElement(event.target);
+      if (!scrollable) return;
+      const atTop = scrollable.scrollTop <= 0;
+      const atBottom = scrollable.scrollTop + scrollable.clientHeight >= scrollable.scrollHeight - 1;
+      if ((deltaY < 0 && !atTop) || (deltaY > 0 && !atBottom)) return;
       event.preventDefault();
       window.scrollBy({ top: deltaY, behavior: "auto" });
     },

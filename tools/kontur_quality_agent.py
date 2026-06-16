@@ -271,8 +271,14 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         (
             "Mobile load stability scenario",
             "Mobile startup must stay light, recover from stale PWA cache after deploys, and serve a Huawei-compatible frontend bundle.",
-            ["g2-logo-192.png", "app.compat.js?v=20260615-ux-today-status", "controllerchange", "registration.update", "SKIP_WAITING", "stroitelnyi-kontur-20260615-ux-today-status"],
+            ["g2-logo-192.png", "app.compat.js?v=20260616-wheel-scroll", "controllerchange", "registration.update", "SKIP_WAITING", "stroitelnyi-kontur-20260616-wheel-scroll"],
             "Keep the startup logo lightweight, preserve service-worker auto-update handling, and serve the compatibility bundle so phones do not stay stuck on stale cached app shells.",
+        ),
+        (
+            "Mouse wheel page scroll scenario",
+            "Desktop mouse wheel scrolling must stay native on normal cards and only bridge from an inner scroll area to the page when that inner area is already at its edge.",
+            ["nearestScrollableElement", "bindWheelPageScroll", "window.scrollBy", "event.preventDefault()", "event.target.closest?.(\"input, textarea, select, dialog\")"],
+            "Do not block wheel events over ordinary cards, buttons, or links; the browser should handle normal page scrolling by default.",
         ),
         (
             "Mobile pull refresh and loading indicator scenario",

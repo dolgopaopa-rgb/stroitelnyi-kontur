@@ -1,8 +1,8 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260615-ux-today-status";
+const CACHE_NAME = "stroitelnyi-kontur-20260616-wheel-scroll";
 const CORE_ASSETS = [
   "/",
-  "/static/styles.css?v=20260615-ux-today-status",
-  "/static/app.compat.js?v=20260615-ux-today-status",
+  "/static/styles.css?v=20260616-wheel-scroll",
+  "/static/app.compat.js?v=20260616-wheel-scroll",
   "/static/manifest.webmanifest?v=20260611-android-pwa",
   "/static/assets/g2-logo-192.png",
   "/static/assets/g2-logo-512.png"

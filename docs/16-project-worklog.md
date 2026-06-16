@@ -1437,6 +1437,38 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 - `tools/kontur_quality_agent.py`
 - `docs/16-project-worklog.md`
 
+### 2026-06-16: мягкая прокрутка колесиком мыши
+
+**Запрос.** При просмотре страниц плохо работала прокрутка колесиком мыши, хотя правый scrollbar прокручивал страницу нормально.
+
+**Причина.** Ранее был добавлен fallback-обработчик `wheel`, который должен был передавать прокрутку странице, если курсор находится над внутренним блоком. На практике он слишком широко перехватывал колесико: над обычными карточками, кнопками и ссылками браузер не всегда успевал отработать нативную прокрутку, из-за чего появлялось ощущение “залипания”.
+
+**Решение.**
+
+- Старый поиск `canScrollElementVertically` заменён на `nearestScrollableElement`: теперь код сначала ищет ближайшую действительно прокручиваемую внутреннюю область.
+- Колесико больше не перехватывается над обычными карточками, кнопками и ссылками. Нативная прокрутка страницы остаётся основной.
+- Ручная передача прокрутки на страницу включается только когда курсор внутри внутреннего scroll-блока, этот блок уже дошёл до верхней/нижней границы, а сама страница ещё может скроллиться.
+- Версия фронтенда и service worker поднята до `20260616-wheel-scroll`, чтобы браузеры и PWA получили свежий `app.compat.js`.
+- QA-агент получил сценарий `Mouse wheel page scroll scenario`.
+
+**Проверки.**
+
+- `python -m py_compile app/server.py app/database.py tools/kontur_quality_agent.py` - успешно.
+- `node --check app/static/app.js` через bundled Node - успешно.
+- `powershell -ExecutionPolicy Bypass -File tools/build-web-compat.ps1` - успешно.
+- `node --check app/static/app.compat.js` через bundled Node - успешно.
+- `python tools/kontur_quality_agent.py` - 44 OK, 0 WARN, 0 FAIL.
+- В Browser runtime локально проверена прокрутка страницы колесом/scroll-событием на уменьшенном viewport: `scrollTop` изменился с `0` до `193`, ошибок в консоли нет.
+
+**Изменённые файлы.**
+
+- `app/static/app.js`
+- `app/static/app.compat.js`
+- `app/static/index.html`
+- `app/static/sw.js`
+- `tools/kontur_quality_agent.py`
+- `docs/16-project-worklog.md`
+
 ### Объекты: проектная документация, вводные менеджера и история заявок материалов
 
 **Запрос.** В работу из MAX были отправлены сообщения Андрея и Артёма:
