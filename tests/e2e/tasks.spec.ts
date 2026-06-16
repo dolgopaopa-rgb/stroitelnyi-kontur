@@ -22,6 +22,7 @@ test("task cards have separated type/status/priority badges when tasks exist", a
     const priorityText = (await priorityBadge.innerText()).trim();
     expect(titleText).not.toContain(statusText);
     expect(titleText).not.toContain(priorityText);
+    expect(priorityText).not.toBe("normal");
 
     const sameContainer = await statusBadge.evaluate((node) => Boolean(node.closest(".task-summary-title")));
     expect(sameContainer).toBe(false);

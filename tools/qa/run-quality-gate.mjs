@@ -313,24 +313,25 @@ async function createAuditLoginUrl() {
 }
 
 async function runReadonly(results, playwright) {
-  const { browser, page } = await preparePage(playwright);
+  const executablePath = findBrowserExecutable();
+  const browser = await playwright.chromium.launch({
+    headless: true,
+    executablePath: executablePath || undefined,
+    channel: executablePath ? undefined : process.env.PLAYWRIGHT_CHANNEL || "chrome",
+  });
+  const context = await browser.newContext({ viewport: { width: 1366, height: 900 }, ignoreHTTPSErrors: true });
+  const page = await context.newPage();
   try {
     const loginUrl = await createAuditLoginUrl();
     await page.goto(loginUrl, { waitUntil: "domcontentloaded" });
-    await page.waitForTimeout(1300);
-    const diagnostic = await page.locator("body").innerText().catch(() => "");
-    const sessionCreated = (diagnostic.includes("session_created") && diagnostic.includes("true")) || (page.url().includes("audit=1") && !page.url().includes("/login"));
-    add(results, "Read-only Safety QA Agent", "Audit login diagnostic", sessionCreated ? "OK" : "FAIL", diagnostic.slice(0, 500), sessionCreated ? "normal" : "blocker");
-    if (!page.url().includes("audit=1")) {
-      const openLink = page.locator("#auditOpenLink").first();
-      if (await openLink.count()) {
-        await openLink.click();
-        await page.waitForTimeout(900);
-      }
-    }
+    await page.waitForURL((url) => url.href.includes("audit=1") || url.pathname.includes("/login"), { timeout: 7000 }).catch(() => {});
+    const reachedAuditApp = page.url().includes("audit=1") && !page.url().includes("/login");
+    add(results, "Read-only Safety QA Agent", "Audit login redirects to app", reachedAuditApp ? "OK" : "FAIL", `href=${page.url()}`, reachedAuditApp ? "normal" : "blocker");
     const cookies = await page.context().cookies(baseUrl);
     const hasSessionCookie = cookies.some((cookie) => cookie.name === "kontur_session" && cookie.path === "/");
     add(results, "Read-only Safety QA Agent", "Audit cookie is set for app path", hasSessionCookie ? "OK" : "FAIL", `kontur_session=${hasSessionCookie}`, hasSessionCookie ? "normal" : "blocker");
+    const todayVisible = await page.locator('[data-testid="today-page"]').waitFor({ state: "visible", timeout: 6000 }).then(() => true).catch(() => false);
+    add(results, "Read-only Safety QA Agent", "Audit today page is visible", todayVisible ? "OK" : "FAIL", `today-page=${todayVisible}`, todayVisible ? "normal" : "blocker");
     const sessionCheck = await page.evaluate(async () => {
       const response = await fetch("/api/session", { credentials: "same-origin", cache: "no-store" });
       const text = await response.text();
@@ -355,15 +356,22 @@ async function runReadonly(results, playwright) {
       `status=${sessionCheck.status}; role=${sessionCheck.payload?.role || "unknown"}; href=${sessionCheck.href}; loginForm=${sessionCheck.hasLoginForm}`,
       actualAccessOk ? "normal" : "blocker",
     );
-    const postStatus = await page.evaluate(async () => {
-      const response = await fetch("/api/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-      return response.status;
+    const writeStatuses = await page.evaluate(async () => {
+      const methods = ["POST", "PUT", "PATCH", "DELETE"];
+      const entries = [];
+      for (const method of methods) {
+        const response = await fetch("/api/tasks", { method, headers: { "Content-Type": "application/json" }, body: method === "DELETE" ? undefined : "{}" });
+        entries.push([method, response.status]);
+      }
+      return Object.fromEntries(entries);
     });
-    add(results, "Read-only Safety QA Agent", "Audit write methods return 403", postStatus === 403 ? "OK" : "FAIL", `POST /api/tasks -> ${postStatus}`, postStatus === 403 ? "normal" : "blocker");
+    const writeMethodsOk = Object.values(writeStatuses).every((status) => status === 403);
+    add(results, "Read-only Safety QA Agent", "Audit write methods return 403", writeMethodsOk ? "OK" : "FAIL", JSON.stringify(writeStatuses), writeMethodsOk ? "normal" : "blocker");
     const sensitiveText = await page.evaluate(() => document.body.innerText || "");
     const leaks = [/\+7[-\s]?\d{3}/, /@/, /банк/i].filter((pattern) => pattern.test(sensitiveText)).length;
     add(results, "Read-only Safety QA Agent", "Sensitive data is hidden in auditor view", leaks === 0 ? "OK" : "WARN", `sensitive-patterns=${leaks}`);
   } finally {
+    await context.close().catch(() => {});
     await browser.close().catch(() => {});
   }
 }

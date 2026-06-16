@@ -3423,7 +3423,13 @@ class AppHandler(BaseHTTPRequestHandler):
 
         audit_login = re.match(r"^/ai-audit-login/([^/]+)$", path)
         if audit_login:
-            self.handle_ai_audit_login(unquote(audit_login.group(1)))
+            query = parse_qs(parsed.query)
+            diagnostic_mode = str((query.get("diagnostic") or [""])[0]).lower() in {"1", "true", "yes"}
+            self.handle_ai_audit_login(unquote(audit_login.group(1)), diagnostic=diagnostic_mode)
+            return
+        audit_app = re.match(r"^/ai-audit-app/([^/]+)$", path)
+        if audit_app:
+            self.handle_ai_audit_login(unquote(audit_app.group(1)))
             return
         audit_snapshot = re.match(r"^/ai-audit-snapshot/([^/]+)$", path)
         if audit_snapshot:
@@ -3673,24 +3679,29 @@ class AppHandler(BaseHTTPRequestHandler):
             cookie=expired_session_cookie(self),
         )
 
-    def handle_ai_audit_login(self, raw_token: str) -> None:
+    def handle_ai_audit_login(self, raw_token: str, *, diagnostic: bool = False) -> None:
         with connect() as db:
-            diagnostic = audit_token_diagnostic(db, raw_token)
+            diagnostic_payload = audit_token_diagnostic(db, raw_token)
             token_row = validate_audit_token(db, raw_token, consume=True)
         if not token_row:
-            self.audit_invalid_redirect(diagnostic)
+            self.audit_invalid_redirect(diagnostic_payload)
             return
         account = audit_account_from_token_row(token_row)
         self._access_account_checked = True
         self._access_account = account
         self._issue_session_cookie = False
-        diagnostic["used_count"] = int(diagnostic.get("used_count") or 0) + 1
-        self.audit_login_diagnostic_page(
-            diagnostic,
-            session_created=True,
-            redirect_target="/?view=today&audit=1",
-            cookie=session_cookie_header(self, account, force_secure=session_cookie_secure(self)),
-        )
+        diagnostic_payload["used_count"] = int(diagnostic_payload.get("used_count") or 0) + 1
+        redirect_target = "/?view=today&audit=1"
+        cookie = session_cookie_header(self, account, force_secure=session_cookie_secure(self))
+        if diagnostic:
+            self.audit_login_diagnostic_page(
+                diagnostic_payload,
+                session_created=True,
+                redirect_target=redirect_target,
+                cookie=cookie,
+            )
+            return
+        redirect_response(self, redirect_target, status=302, cookie=cookie)
 
     def handle_ai_audit_snapshot(self, raw_token: str) -> None:
         with connect() as db:
@@ -3941,13 +3952,28 @@ class AppHandler(BaseHTTPRequestHandler):
             </article>
             """
 
+        def short_text(value: object, limit: int = 80) -> str:
+            text = snapshot_clean_text(value, status_map)
+            if len(text) <= limit:
+                return text
+            return text[: max(0, limit - 1)].rstrip() + "…"
+
+        def task_priority_badge(value: object) -> str:
+            priority = str(value or "normal").strip() or "normal"
+            return badge(label(status_map, priority, "Обычный"), status_level(priority))
+
         def task_card(task: dict) -> str:
+            full_title = snapshot_clean_text(task.get("title") or "Задача", status_map)
+            title = short_text(full_title or "Задача", 80)
+            description = snapshot_clean_text(task.get("description") or "", status_map)
+            if not description and title != full_title:
+                description = full_title
             return f"""
             <article class="sample-row task-card-snapshot">
-              <div class="task-card-top">{type_badge(task.get("task_type") or "task")}<strong>{e(task.get("title") or "Задача")}</strong></div>
+              <div class="task-card-top">{type_badge(task.get("task_type") or "task")}<strong>{e(title)}</strong></div>
               <div class="muted">{e(task.get("project_title") or "Объект не указан")} · ответственный: {e(task.get("assignee_name") or "не назначен")}</div>
-              <div class="chips">{status_badge(task.get("status"))}{badge(task.get("priority") or "Обычный", status_level(task.get("priority") or ""))}{badge(task.get("due_date") or "без срока", "danger" if snapshot_task_is_overdue(task) else "neutral")}</div>
-              <p class="short-description">{e(task.get("description") or "")}</p>
+              <div class="chips">{status_badge(task.get("status"))}{task_priority_badge(task.get("priority"))}{badge(task.get("due_date") or "без срока", "danger" if snapshot_task_is_overdue(task) else "neutral")}</div>
+              <p class="short-description">{e(description)}</p>
             </article>
             """
 
@@ -4078,16 +4104,38 @@ class AppHandler(BaseHTTPRequestHandler):
                 group["rows"].append(row)
             return sorted(grouped.values(), key=lambda row: str(row.get("created_at") or ""), reverse=True)
 
+        def signal_preview_rows(items: list[dict]) -> tuple[list[str], int]:
+            grouped: dict[str, dict] = {}
+            order: list[str] = []
+            for item in items:
+                title = snapshot_clean_text(item.get("title") or "Событие", status_map)
+                text = snapshot_clean_text(item.get("text") or "", status_map)
+                key = f"{title}\n{text}"
+                if key not in grouped:
+                    grouped[key] = {"title": title, "text": text, "count": 0}
+                    order.append(key)
+                grouped[key]["count"] += 1
+            rendered: list[str] = []
+            hidden_positions = 0
+            for key in order[:3]:
+                entry = grouped[key]
+                count = int(entry["count"] or 1)
+                suffix = f" — {count} позиций" if count > 1 else ""
+                text = f": {entry['text']}" if entry["text"] else ""
+                rendered.append(f"{entry['title']}{suffix}{text}")
+            for key in order[3:]:
+                hidden_positions += int(grouped[key]["count"] or 1)
+            return rendered, hidden_positions
+
         def signal_card(row: dict) -> str:
             items = row.get("rows") or [row]
-            preview = items[:3]
-            rest = max(0, len(items) - len(preview))
+            preview, rest = signal_preview_rows(items)
             project_title = row.get("project_title") or "Без объекта"
             return f"""
             <article class="sample-row">
               <div class="row-head"><strong>[{e(row.get("signal_type") or "Сигнал")}] {e(project_title)}</strong>{badge(f"{len(items)} позиций", "blue" if len(items) > 1 else "neutral")}</div>
               <div class="muted">создано {e(row.get("signal_day") or row.get("created_at") or "без даты")}</div>
-              <div class="signal-preview">{''.join(f'<span>{e(item.get("title") or "Событие")}: {e(item.get("text") or "")}</span>' for item in preview)}{f'<span class="muted">ещё {rest} позиций</span>' if rest else ''}</div>
+              <div class="signal-preview">{''.join(f'<span>{e(item)}</span>' for item in preview)}{f'<span class="muted">ещё {rest} позиций</span>' if rest else ''}</div>
             </article>
             """
 

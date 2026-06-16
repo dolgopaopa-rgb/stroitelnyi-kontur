@@ -11,7 +11,14 @@ for (const viewport of [
     await page.setViewportSize(viewport);
     await openApp(page, "/today");
     await expect(page.locator('[data-testid="mobile-bottom-nav"]')).toBeVisible();
-    const horizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 4);
-    expect(horizontalOverflow).toBeFalsy();
+    await expect
+      .poll(async () => {
+        try {
+          return await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 4);
+        } catch {
+          return true;
+        }
+      })
+      .toBeFalsy();
   });
 }

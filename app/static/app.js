@@ -230,6 +230,8 @@ const statusLabelMap = {
   quality_problem: "Проблема качества",
   no_photo_report: "Нет фотоотчёта",
   material_under_risk: "Материал под риском",
+  normal: "Обычный",
+  low: "Низкий",
   medium: "Средняя",
   high: "Высокая",
   critical: "Критичная",
