@@ -869,7 +869,8 @@ function mapLink(address, mapsUrl, label = "Открыть в Яндекс.Ка�
 function documentTypeKey(input) {
   const doc = typeof input === "object" && input ? input : { type: input };
   const rawType = String(doc.type || "").trim();
-  if (rawType && rawType !== "documents") {
+  const genericTypes = new Set(["", "document", "documents", "other"]);
+  if (rawType && !genericTypes.has(rawType)) {
     if (rawType === "project_documentation") return "project";
     if (rawType === "smetter_materials" || rawType === "smetter_work_task" || rawType === "variation_estimate") return "estimate";
     if (rawType === "contract" || rawType === "additional_agreement") return "contract";
@@ -878,7 +879,6 @@ function documentTypeKey(input) {
     if (rawType === "photo_report" || rawType === "object_remark_photo" || rawType === "media" || rawType === "photo_video") return "photo_video";
     if (rawType === "variation_attachment" || rawType === "extra_work_attachment") return "extra_work_attachment";
     if (rawType === "service_file" || rawType === "service_screenshot") return "service_screenshot";
-    if (rawType === "other") return "other";
     if (statusLabelMap[rawType]) return rawType;
   }
   const name = `${doc.title || ""} ${doc.file_name || ""}`.toLowerCase();
@@ -893,7 +893,7 @@ function documentTypeKey(input) {
   if (/\bакт\b|кс-?2|кс-?3/.test(name)) return "act";
   if (/сч[её]т|invoice/.test(name)) return "invoice";
   if (/скрин|служеб|интерфейс|feedback|ошибка|экран|screenshot/.test(name)) return "service_screenshot";
-  return rawType ? "other" : "unclassified";
+  return genericTypes.has(rawType) ? "unclassified" : "other";
 }
 
 function documentType(input) {
@@ -907,6 +907,8 @@ function documentTypeLevel(input) {
 function documentNeedsClassification(doc) {
   return documentTypeKey(doc) === "unclassified";
 }
+
+window.__konturDocumentTypeKey = documentTypeKey;
 
 function isBrokenText(value) {
   const text = String(value || "").trim();
@@ -3513,7 +3515,8 @@ function dedupeSignals(rows = []) {
   rows.forEach((row) => {
     const day = dateOnly(row.created_at) || "без даты";
     const type = signalTypeKey(row);
-    const key = `${day}:${row.project_id || "general"}:${type}`;
+    const sourceId = row.related_id || `${row.title || ""}:${row.text || ""}`;
+    const key = `${row.project_id || "general"}:${type}:${day}:${row.related_type || ""}:${sourceId}`;
     if (!map.has(key)) {
       map.set(key, {
         ...row,

@@ -41,3 +41,5 @@ qa-artifacts/latest/videos/
 qa-artifacts/latest/playwright-report/
 qa-artifacts/latest/playwright-output/
 qa-artifacts/latest/playwright-results.json
+qa-artifacts/latest/qa-report.json
+qa-artifacts/latest/qa-report.md

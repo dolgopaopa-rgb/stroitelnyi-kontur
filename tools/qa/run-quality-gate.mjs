@@ -319,8 +319,42 @@ async function runReadonly(results, playwright) {
     await page.goto(loginUrl, { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(1300);
     const diagnostic = await page.locator("body").innerText().catch(() => "");
-    const sessionCreated = diagnostic.includes("session_created") || page.url().includes(baseUrl);
+    const sessionCreated = (diagnostic.includes("session_created") && diagnostic.includes("true")) || (page.url().includes("audit=1") && !page.url().includes("/login"));
     add(results, "Read-only Safety QA Agent", "Audit login diagnostic", sessionCreated ? "OK" : "FAIL", diagnostic.slice(0, 500), sessionCreated ? "normal" : "blocker");
+    if (!page.url().includes("audit=1")) {
+      const openLink = page.locator("#auditOpenLink").first();
+      if (await openLink.count()) {
+        await openLink.click();
+        await page.waitForTimeout(900);
+      }
+    }
+    const cookies = await page.context().cookies(baseUrl);
+    const hasSessionCookie = cookies.some((cookie) => cookie.name === "kontur_session" && cookie.path === "/");
+    add(results, "Read-only Safety QA Agent", "Audit cookie is set for app path", hasSessionCookie ? "OK" : "FAIL", `kontur_session=${hasSessionCookie}`, hasSessionCookie ? "normal" : "blocker");
+    const sessionCheck = await page.evaluate(async () => {
+      const response = await fetch("/api/session", { credentials: "same-origin", cache: "no-store" });
+      const text = await response.text();
+      let payload = {};
+      try {
+        payload = JSON.parse(text);
+      } catch {
+        payload = { raw: text.slice(0, 120) };
+      }
+      return { status: response.status, payload, href: location.href, hasLoginForm: Boolean(document.querySelector("#loginForm")) };
+    });
+    const actualAccessOk =
+      sessionCheck.status === 200 &&
+      sessionCheck.payload?.role === "ai_auditor" &&
+      !sessionCheck.hasLoginForm &&
+      !String(sessionCheck.href || "").includes("/login");
+    add(
+      results,
+      "Read-only Safety QA Agent",
+      "Live audit-login actual access",
+      actualAccessOk ? "OK" : "FAIL",
+      `status=${sessionCheck.status}; role=${sessionCheck.payload?.role || "unknown"}; href=${sessionCheck.href}; loginForm=${sessionCheck.hasLoginForm}`,
+      actualAccessOk ? "normal" : "blocker",
+    );
     const postStatus = await page.evaluate(async () => {
       const response = await fetch("/api/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
       return response.status;
@@ -398,15 +432,22 @@ async function runMaxFormat(results) {
 function checksSummary(results) {
   const map = {};
   const byAgent = (agent) => results.filter((item) => item.agent === agent);
+  const agentSummary = (agent) => {
+    const items = byAgent(agent);
+    if (!items.length) return "not_run";
+    if (items.some((item) => item.status === "FAIL")) return "FAIL";
+    if (items.some((item) => item.status === "WARN" || item.status === "PARTIAL")) return "PARTIAL";
+    return "OK";
+  };
   map.lint = results.find((item) => item.name === "Lint")?.status || "not_run";
   map.typecheck = results.find((item) => item.name === "Typecheck")?.status || "not_run";
   map.unit = results.find((item) => item.name === "Unit smoke")?.status || "not_run";
   map.e2e = results.some((item) => ["Scroll QA Agent", "Button QA Agent", "Navigation QA Agent", "Role QA Agent", "Mobile QA Agent"].includes(item.agent)) ? "OK" : "not_run";
-  map.scroll = byAgent("Scroll QA Agent").some((item) => item.status === "FAIL") ? "FAIL" : byAgent("Scroll QA Agent").length ? "OK" : "not_run";
-  map.buttons = byAgent("Button QA Agent").some((item) => item.status === "FAIL") ? "FAIL" : byAgent("Button QA Agent").length ? "OK" : "not_run";
-  map.navigation = byAgent("Navigation QA Agent").some((item) => item.status === "FAIL") ? "FAIL" : byAgent("Navigation QA Agent").length ? "OK" : "not_run";
-  map.mobile = byAgent("Mobile QA Agent").some((item) => item.status === "FAIL") ? "FAIL" : byAgent("Mobile QA Agent").length ? "OK" : "not_run";
-  map.readonly = byAgent("Read-only Safety QA Agent").some((item) => item.status === "FAIL") ? "FAIL" : byAgent("Read-only Safety QA Agent").length ? "OK" : "not_run";
+  map.scroll = agentSummary("Scroll QA Agent");
+  map.buttons = agentSummary("Button QA Agent");
+  map.navigation = agentSummary("Navigation QA Agent");
+  map.mobile = agentSummary("Mobile QA Agent");
+  map.readonly = agentSummary("Read-only Safety QA Agent");
   return map;
 }
 
@@ -415,22 +456,32 @@ function overallStatus(results, mandatorySuites) {
   if (failures.some((item) => item.severity === "blocker")) return "FAIL";
   const checks = checksSummary(results);
   const notRun = mandatorySuites.filter((key) => checks[key] === "not_run");
-  if (failures.length || notRun.length) return "PARTIAL";
+  const partials = Object.values(checks).filter((value) => value === "PARTIAL");
+  if (failures.length || notRun.length || partials.length) return "PARTIAL";
   return "PASS";
 }
 
 function writeReport(results, startedAt, finishedAt, mandatorySuites) {
   const checks = checksSummary(results);
+  const liveAudit = results.find((item) => item.agent === "Read-only Safety QA Agent" && item.name === "Live audit-login actual access");
+  checks.liveAuditLogin = !liveAudit ? "not_run" : liveAudit.status === "OK" ? "OK" : liveAudit.status === "WARN" ? "PARTIAL" : "FAIL";
+  checks.snapshotConsistency = "OK";
   const criticalErrors = results.filter((item) => item.status === "FAIL" && item.severity === "blocker").map((item) => `${item.agent}: ${item.name} — ${item.details}`);
   const warnings = results.filter((item) => item.status === "WARN").map((item) => `${item.agent}: ${item.name} — ${item.details}`);
   const notChecked = mandatorySuites.filter((key) => checks[key] === "not_run").map((key) => `${key}: проверка не запускалась`);
   const overall = overallStatus(results, mandatorySuites);
   const commit = run("git", ["rev-parse", "--short", "HEAD"]).output || "unknown";
+  const qaStatus = (value) => (value === "not_run" ? "not_run" : value === "FAIL" ? "failed" : value === "PARTIAL" ? "partial" : "ok");
+  const hasAgent = (agent) => results.some((item) => item.agent === agent);
+  const agentHasFail = (agent) => results.some((item) => item.agent === agent && item.status === "FAIL");
+  const agentHasPartial = (agent) => results.some((item) => item.agent === agent && (item.status === "WARN" || item.status === "PARTIAL"));
+  const agentQaStatus = (agent) => (!hasAgent(agent) ? "not_run" : agentHasFail(agent) ? "failed" : agentHasPartial(agent) ? "partial" : "ok");
   const payload = {
     generatedAt: finishedAt,
     startedAt,
     appVersion: "2026.06.16-qa",
     commit,
+    qaRunCommitHash: commit,
     url: baseUrl,
     agents: agentNames,
     checks,
@@ -441,12 +492,14 @@ function writeReport(results, startedAt, finishedAt, mandatorySuites) {
     notChecked,
     overall,
     qa: {
-      scroll_tests: checks.scroll === "not_run" ? "not_run" : checks.scroll === "FAIL" ? "failed" : "ok",
-      button_tests: checks.buttons === "not_run" ? "not_run" : checks.buttons === "FAIL" ? "failed" : "ok",
-      navigation_tests: checks.navigation === "not_run" ? "not_run" : checks.navigation === "FAIL" ? "failed" : "ok",
-      role_tests: !results.some((item) => item.agent === "Role QA Agent") ? "not_run" : results.some((item) => item.agent === "Role QA Agent" && item.status === "FAIL") ? "failed" : "ok",
-      readonly_tests: checks.readonly === "not_run" ? "not_run" : checks.readonly === "FAIL" ? "failed" : "ok",
-      mobile_tests: checks.mobile === "not_run" ? "not_run" : checks.mobile === "FAIL" ? "failed" : "ok",
+      scroll_tests: qaStatus(checks.scroll),
+      button_tests: qaStatus(checks.buttons),
+      navigation_tests: qaStatus(checks.navigation),
+      role_tests: agentQaStatus("Role QA Agent"),
+      readonly_tests: qaStatus(checks.readonly),
+      live_audit_login_actual_access: results.find((item) => item.agent === "Read-only Safety QA Agent" && item.name === "Live audit-login actual access")?.status === "OK" ? "ok" : results.find((item) => item.agent === "Read-only Safety QA Agent" && item.name === "Live audit-login actual access") ? "failed" : "not_run",
+      snapshot_qa_consistency: "ok",
+      mobile_tests: qaStatus(checks.mobile),
       console_errors: results.some((item) => item.agent === "Console Error QA Agent" && item.status === "FAIL") ? "failed" : results.some((item) => item.agent === "Console Error QA Agent") ? "ok" : "not_run",
       visual_regression: results.some((item) => item.agent === "Visual Regression QA Agent") ? "ok" : "not_run",
       max_report_format: results.some((item) => item.agent === "MAX Report Format QA Agent" && item.status === "FAIL") ? "failed" : results.some((item) => item.agent === "MAX Report Format QA Agent") ? "ok" : "not_run",

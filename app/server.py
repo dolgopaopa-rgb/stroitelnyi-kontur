@@ -1572,6 +1572,10 @@ def frontend_asset_version() -> str:
     return os.environ.get("APP_VERSION", "").strip() or "unknown"
 
 
+def app_version() -> str:
+    return os.environ.get("APP_VERSION", "").strip() or frontend_asset_version()
+
+
 def current_commit_hash() -> str:
     configured = os.environ.get("APP_COMMIT_SHA", "").strip()
     if configured:
@@ -1589,6 +1593,28 @@ def current_commit_hash() -> str:
     except Exception:
         return ""
     return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def app_environment(handler: BaseHTTPRequestHandler | None = None) -> str:
+    configured = os.environ.get("APP_ENVIRONMENT", "").strip()
+    if configured:
+        return configured
+    if handler and session_cookie_secure(handler):
+        return "production"
+    return "local"
+
+
+def app_metadata(handler: BaseHTTPRequestHandler | None = None) -> dict:
+    commit_hash = current_commit_hash() or "unknown"
+    build_time = os.environ.get("APP_BUILD_TIME", "").strip() or "unknown"
+    deployed_at = os.environ.get("APP_DEPLOYED_AT", "").strip() or build_time
+    return {
+        "appVersion": app_version(),
+        "commitHash": commit_hash,
+        "buildTime": build_time,
+        "deployedAt": deployed_at,
+        "environment": app_environment(handler),
+    }
 
 
 def frontend_label_maps() -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
@@ -1638,9 +1664,25 @@ def latest_qa_report() -> dict:
 def qa_snapshot_status(report: dict, key: str) -> str:
     qa = report.get("qa") if isinstance(report.get("qa"), dict) else {}
     value = str(qa.get(key) or "").strip()
-    if value in {"ok", "failed", "not_run"}:
+    if value in {"ok", "failed", "partial", "not_run"}:
         return value
     return "not_run"
+
+
+def qa_report_overall_for_app(report: dict, current_commit: str) -> str:
+    if not report:
+        return "not_run"
+    overall = str(report.get("overall") or "not_run").strip() or "not_run"
+    qa_commit = str(report.get("qaRunCommitHash") or report.get("commit") or "").strip()
+    if current_commit and qa_commit and qa_commit != current_commit:
+        return "PARTIAL"
+    qa = report.get("qa") if isinstance(report.get("qa"), dict) else {}
+    values = {str(value or "") for value in qa.values()}
+    if "failed" in values:
+        return "FAIL"
+    if "partial" in values or "not_run" in values:
+        return "PARTIAL"
+    return overall if overall in {"PASS", "PARTIAL", "FAIL"} else "PARTIAL"
 
 
 def snapshot_label(labels: dict[str, str], value: object, fallback: str = "Не задано") -> str:
@@ -3345,7 +3387,7 @@ class AppHandler(BaseHTTPRequestHandler):
     def do_HEAD(self) -> None:
         parsed = urlparse(self.path)
         path = parsed.path
-        if path != "/health" and not is_authorized(self):
+        if path not in {"/health", "/version"} and not is_authorized(self):
             if path.startswith("/api/"):
                 self.send_response(401)
                 self.send_header("Cache-Control", "no-store")
@@ -3356,6 +3398,11 @@ class AppHandler(BaseHTTPRequestHandler):
                 redirect_response(self, login_location(next_path))
             return
         if path == "/health":
+            self.send_response(200)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        if path == "/version":
             self.send_response(200)
             self.send_header("Content-Length", "0")
             self.end_headers()
@@ -3397,7 +3444,7 @@ class AppHandler(BaseHTTPRequestHandler):
         if path.startswith("/static/"):
             self.serve_static(path.replace("/static/", "", 1))
             return
-        if path != "/health" and not is_authorized(self):
+        if path not in {"/health", "/version"} and not is_authorized(self):
             if path.startswith("/api/"):
                 api_auth_required_response(self)
             else:
@@ -3426,6 +3473,9 @@ class AppHandler(BaseHTTPRequestHandler):
             return
         if path == "/health":
             json_response(self, {"status": "ok"})
+            return
+        if path == "/version":
+            json_response(self, app_metadata(self))
             return
         if path == "/api/material-requests/export":
             self.serve_material_requests_export(parse_qs(parsed.query))
@@ -3547,14 +3597,16 @@ class AppHandler(BaseHTTPRequestHandler):
         valid = bool(diagnostic.get("valid"))
         title = "AI-аудит: вход разрешён" if valid and session_created else "AI-аудит: вход не выполнен"
         reason = diagnostic.get("reason") or ("OK" if valid else "Причина не указана")
-        meta_refresh = f'<meta http-equiv="refresh" content="1; url={html.escape(redirect_target, quote=True)}" />' if valid and session_created else ""
+        redirect_json = json.dumps(redirect_target, ensure_ascii=False)
+        cookie_secure = bool(cookie and "; Secure" in cookie)
+        cookie_path = "/" if cookie and "Path=/" in cookie else "не задан"
+        cookie_samesite = "Lax" if cookie and "SameSite=Lax" in cookie else "не задан"
         body = f"""<!doctype html>
         <html lang="ru">
         <head>
           <meta charset="utf-8" />
           <meta name="viewport" content="width=device-width, initial-scale=1" />
           <meta name="robots" content="noindex" />
-          {meta_refresh}
           <title>{html.escape(title)}</title>
           <style>
             body {{ margin:0; min-height:100vh; display:grid; place-items:center; background:#f4f6f8; font-family:Segoe UI, Arial, sans-serif; color:#142127; }}
@@ -3577,9 +3629,37 @@ class AppHandler(BaseHTTPRequestHandler):
               <div class="row"><span>expires_at</span><strong>{html.escape(str(diagnostic.get('expires_at') or 'не задан'))}</strong></div>
               <div class="row"><span>uses_left</span><strong>{html.escape(str(diagnostic.get('uses_left') or 0))}</strong></div>
               <div class="row"><span>session_created</span><strong>{'true' if session_created else 'false'}</strong></div>
+              <div class="row"><span>cookie_path</span><strong>{html.escape(cookie_path)}</strong></div>
+              <div class="row"><span>cookie_secure</span><strong>{'true' if cookie_secure else 'false'}</strong></div>
+              <div class="row"><span>cookie_samesite</span><strong>{html.escape(cookie_samesite)}</strong></div>
+              <div class="row"><span>external_browser_cookie_check</span><strong id="cookieCheck">{'checking' if session_created else 'not_started'}</strong></div>
               <div class="row"><span>redirect_target</span><strong>{html.escape(redirect_target if session_created else '/login')}</strong></div>
             </div>
-            {'<a href="' + html.escape(redirect_target, quote=True) + '">Открыть приложение в режиме аудита</a>' if session_created else '<a href="/login?audit_error=invalid">Перейти на вход</a>'}
+            {'<a id="auditOpenLink" href="' + html.escape(redirect_target, quote=True) + '">Открыть приложение в режиме аудита</a>' if session_created else '<a href="/login?audit_error=invalid">Перейти на вход</a>'}
+            {f'''<script>
+              (async () => {{
+                const check = document.querySelector("#cookieCheck");
+                const link = document.querySelector("#auditOpenLink");
+                const redirectTarget = {redirect_json};
+                try {{
+                  const response = await fetch("/api/session", {{ credentials: "same-origin", cache: "no-store" }});
+                  const payload = response.ok ? await response.json() : {{}};
+                  if (response.ok && payload.role === "ai_auditor") {{
+                    check.textContent = "ok";
+                    check.style.color = "#287347";
+                    if (link) link.href = redirectTarget;
+                    window.setTimeout(() => window.location.replace(redirectTarget), 650);
+                  }} else {{
+                    check.textContent = "failed";
+                    check.style.color = "#b94646";
+                  }}
+                }} catch (error) {{
+                  check.textContent = "failed";
+                  check.style.color = "#b94646";
+                }}
+              }})();
+            </script>
+            <noscript><p class="muted">external_browser_cookie_check не выполнен: JavaScript отключён. Нажмите кнопку вручную.</p></noscript>''' if session_created else ''}
           </main>
         </body>
         </html>"""
@@ -3730,15 +3810,16 @@ class AppHandler(BaseHTTPRequestHandler):
         status_map, role_map, type_map = frontend_label_maps()
         feature_flags = snapshot_feature_flags()
         generated_at = datetime.now().astimezone().isoformat(timespec="seconds")
-        app_version = frontend_asset_version()
-        commit_hash = current_commit_hash()
+        metadata = app_metadata(self)
+        app_version = str(metadata["appVersion"])
+        commit_hash = str(metadata["commitHash"])
         qa_report = latest_qa_report()
         qa_checks = qa_report.get("checks") if isinstance(qa_report.get("checks"), dict) else {}
-        qa_overall = str(qa_report.get("overall") or "not_run")
+        qa_overall = qa_report_overall_for_app(qa_report, commit_hash)
         qa_generated_at = str(qa_report.get("generatedAt") or "not_run")
         qa_app_version = str(qa_report.get("appVersion") or app_version or "unknown")
-        qa_commit = str(qa_report.get("commit") or commit_hash or "unknown")
-        qa_environment = "production" if session_cookie_secure(self) else "local"
+        qa_commit = str(qa_report.get("qaRunCommitHash") or qa_report.get("commit") or commit_hash or "unknown")
+        qa_environment = str(metadata["environment"])
         token_uses_left = "без лимита" if int(token_row.get("unlimited_until_expiry") or 0) == 1 else max(0, int(token_row.get("max_uses") or 0) - int(token_row.get("used_count") or 0))
 
         def e(value: object) -> str:
@@ -3799,7 +3880,7 @@ class AppHandler(BaseHTTPRequestHandler):
 
         def qa_row(key: str, title: str) -> str:
             value = qa_snapshot_status(qa_report, key)
-            level = "success" if value == "ok" else "danger" if value == "failed" else "neutral"
+            level = "success" if value == "ok" else "danger" if value == "failed" else "warning" if value == "partial" else "neutral"
             return f'<div class="meta-row"><span><code>{e(key)}</code> {e(title)}</span>{badge(value, level)}</div>'
 
         def project_tasks(project_id: int) -> list[dict]:
@@ -3862,10 +3943,10 @@ class AppHandler(BaseHTTPRequestHandler):
 
         def task_card(task: dict) -> str:
             return f"""
-            <article class="sample-row">
-              <div class="row-head"><span>{type_badge(task.get("task_type") or "task")} <strong>{e(task.get("title") or "Задача")}</strong></span>{status_badge(task.get("status"))}</div>
+            <article class="sample-row task-card-snapshot">
+              <div class="task-card-top">{type_badge(task.get("task_type") or "task")}<strong>{e(task.get("title") or "Задача")}</strong></div>
               <div class="muted">{e(task.get("project_title") or "Объект не указан")} · ответственный: {e(task.get("assignee_name") or "не назначен")}</div>
-              <div class="chips">{badge(task.get("due_date") or "без срока", "danger" if snapshot_task_is_overdue(task) else "neutral")}</div>
+              <div class="chips">{status_badge(task.get("status"))}{badge(task.get("priority") or "Обычный", status_level(task.get("priority") or ""))}{badge(task.get("due_date") or "без срока", "danger" if snapshot_task_is_overdue(task) else "neutral")}</div>
               <p class="short-description">{e(task.get("description") or "")}</p>
             </article>
             """
@@ -3883,6 +3964,7 @@ class AppHandler(BaseHTTPRequestHandler):
 
         def snapshot_document_type(row: dict) -> str:
             raw = str(row.get("type") or "").strip()
+            generic_types = {"", "document", "documents", "other"}
             if raw == "project_documentation":
                 return "project"
             if raw in {"smetter_materials", "smetter_work_task", "variation_estimate"}:
@@ -3897,7 +3979,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 return "extra_work_attachment"
             if raw == "service_file":
                 return "service_screenshot"
-            if raw in {"invoice", "photo_video", "extra_work_attachment", "service_screenshot", "other"}:
+            if raw in {"invoice", "photo_video", "extra_work_attachment", "service_screenshot"}:
                 return raw
             name = f"{row.get('title') or ''} {row.get('file_name') or ''}".lower()
             mime = str(row.get("mime_type") or "").lower()
@@ -3920,7 +4002,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 return "invoice"
             if re.search(r"скрин|служеб|интерфейс|feedback", name):
                 return "service_screenshot"
-            return "unclassified" if not raw else "other"
+            return "unclassified" if raw in generic_types else "other"
 
         def document_card(row: dict) -> str:
             return f"""
@@ -3954,6 +4036,58 @@ class AppHandler(BaseHTTPRequestHandler):
             <article class="sample-row">
               <div class="row-head"><strong>{e(row.get("sender_name") or "Автор скрыт")}</strong>{status_badge(row.get("status"))}</div>
               <p>{e(row.get("text") or "Без текста")}</p>
+            </article>
+            """
+
+        def snapshot_signal_type(row: dict) -> str:
+            title = str(row.get("title") or "").lower()
+            if re.search(r"материал|закуп|заявк", title):
+                return "материалы вне основной сметы"
+            if "просроч" in title:
+                return "просроченная задача"
+            if "возвращ" in title:
+                return "возвращённая задача"
+            if "фото" in title:
+                return "нет фотоотчёта"
+            if re.search(r"допработ|отклон", title):
+                return "новая допработа"
+            if "смет" in title:
+                return "нужна проверка сметчика"
+            if "ответствен" in title:
+                return "нет ответственного"
+            if "срок" in title:
+                return "задача без срока"
+            return str(row.get("related_type") or row.get("title") or "сигнал")
+
+        def snapshot_dedupe_signals(items: list[dict]) -> list[dict]:
+            grouped: dict[str, dict] = {}
+            for row in items:
+                day = str(row.get("created_at") or "")[:10] or "без даты"
+                signal_type = snapshot_signal_type(row)
+                source_id = row.get("related_id") or f"{row.get('title') or ''}:{row.get('text') or ''}"
+                key = f"{row.get('project_id') or 'general'}:{signal_type}:{day}:{row.get('related_type') or ''}:{source_id}"
+                group = grouped.setdefault(
+                    key,
+                    {
+                        **row,
+                        "signal_type": signal_type,
+                        "signal_day": day,
+                        "rows": [],
+                    },
+                )
+                group["rows"].append(row)
+            return sorted(grouped.values(), key=lambda row: str(row.get("created_at") or ""), reverse=True)
+
+        def signal_card(row: dict) -> str:
+            items = row.get("rows") or [row]
+            preview = items[:3]
+            rest = max(0, len(items) - len(preview))
+            project_title = row.get("project_title") or "Без объекта"
+            return f"""
+            <article class="sample-row">
+              <div class="row-head"><strong>[{e(row.get("signal_type") or "Сигнал")}] {e(project_title)}</strong>{badge(f"{len(items)} позиций", "blue" if len(items) > 1 else "neutral")}</div>
+              <div class="muted">создано {e(row.get("signal_day") or row.get("created_at") or "без даты")}</div>
+              <div class="signal-preview">{''.join(f'<span>{e(item.get("title") or "Событие")}: {e(item.get("text") or "")}</span>' for item in preview)}{f'<span class="muted">ещё {rest} позиций</span>' if rest else ''}</div>
             </article>
             """
 
@@ -4041,7 +4175,8 @@ class AppHandler(BaseHTTPRequestHandler):
         photo_body = rows(photo_rows, photo_card, "Фотоотчётов пока нет")
         remark_body = rows(remark_rows, remark_card, "Замечаний по объектам пока нет")
         feedback_body = rows(feedback_rows, feedback_card)
-        notification_body = rows(notification_rows, lambda row: f'<article class="sample-row"><div class="row-head"><strong>{e(row.get("title") or "Событие")}</strong>{badge(row.get("created_at") or "")}</div><p>{e(row.get("text") or "")}</p></article>', "Событий пока нет")
+        grouped_notifications = snapshot_dedupe_signals(notification_rows)
+        notification_body = rows(grouped_notifications, signal_card, "Событий пока нет")
         settings_body = rows(user_rows, user_card)
 
         role_variants = [
@@ -4075,7 +4210,7 @@ class AppHandler(BaseHTTPRequestHandler):
             "object_issues_entity": "ok" if feature_flags.get("object_issues_entity") else "missing",
             "feedback_split": "ok" if "object_remarksView" in index_snapshot and "feedbackView" in index_snapshot else "missing",
             "document_classification": "ok" if "documentTypeKey" in app_js_snapshot and "classification-notice" in app_js_snapshot else "missing",
-            "live_audit_login": "ok" if "ai-audit-login" in server_snapshot else "missing",
+            "live_audit_login": qa_snapshot_status(qa_report, "live_audit_login_actual_access"),
         }
         first_tz_body = "".join(
             f'<div class="meta-row"><span><code>{e(key)}</code></span><strong>{e(value)}</strong></div>'
@@ -4091,7 +4226,7 @@ class AppHandler(BaseHTTPRequestHandler):
             "document_classification_rules": "ok" if "photo_video" in app_js_snapshot and "service_screenshot" in app_js_snapshot and "knowledgeClassificationOnly" in app_js_snapshot else "partial",
             "mobile_quick_actions": "ok" if "mobileQuickActionsForRole" in app_js_snapshot and "mobile-bottom-nav" in index_snapshot else "missing",
             "empty_states": "ok" if "renderPhotoEmptyState" in app_js_snapshot and "renderRemarkEmptyState" in app_js_snapshot and "empty-state" in app_js_snapshot else "partial",
-            "live_audit_login": "ok" if "audit_login_diagnostic_page" in server_snapshot and "session_created" in server_snapshot else "partial",
+            "live_audit_login": qa_snapshot_status(qa_report, "live_audit_login_actual_access"),
         }
         stage3_body = "".join(
             f'<div class="meta-row"><span><code>{e(key)}</code></span><strong>{e(value)}</strong></div>'
@@ -4145,6 +4280,8 @@ class AppHandler(BaseHTTPRequestHandler):
           <div class="meta-row"><span>generatedAt</span><strong>{e(qa_generated_at)}</strong></div>
           <div class="meta-row"><span>appVersion</span><strong>{e(qa_app_version)}</strong></div>
           <div class="meta-row"><span>commitHash</span><strong>{e(qa_commit)}</strong></div>
+          <div class="meta-row"><span>buildTime</span><strong>{e(metadata["buildTime"])}</strong></div>
+          <div class="meta-row"><span>deployedAt</span><strong>{e(metadata["deployedAt"])}</strong></div>
           <div class="meta-row"><span>environment</span><strong>{e(qa_environment)}</strong></div>
           <div class="meta-row"><span>audit user role</span><strong>{e(label(role_map, account.get("role"), "ИИ-аудитор"))}</strong></div>
           <div class="meta-row"><span>token expires_at</span><strong>{e(token_row.get("expires_at") or "не задан")}</strong></div>
@@ -4157,6 +4294,8 @@ class AppHandler(BaseHTTPRequestHandler):
           {qa_row("navigation_tests", "Навигация")}
           {qa_row("role_tests", "Роли")}
           {qa_row("readonly_tests", "Read-only аудит")}
+          {qa_row("live_audit_login_actual_access", "Live audit-login actual access")}
+          {qa_row("snapshot_qa_consistency", "Snapshot QA consistency")}
           {qa_row("mobile_tests", "Мобильная версия")}
           {qa_row("console_errors", "Ошибки консоли")}
           {qa_row("visual_regression", "Визуальная проверка")}
@@ -4167,7 +4306,9 @@ class AppHandler(BaseHTTPRequestHandler):
         <section class="meta-panel">
           <div class="meta-row"><span>generatedAt</span><strong>{e(generated_at)}</strong></div>
           <div class="meta-row"><span>appVersion</span><strong>{e(app_version)}</strong></div>
-          <div class="meta-row"><span>commitHash</span><strong>{e(commit_hash or "не доступен в контейнере")}</strong></div>
+          <div class="meta-row"><span>commitHash</span><strong>{e(commit_hash)}</strong></div>
+          <div class="meta-row"><span>buildTime</span><strong>{e(metadata["buildTime"])}</strong></div>
+          <div class="meta-row"><span>deployedAt</span><strong>{e(metadata["deployedAt"])}</strong></div>
           <div class="meta-row"><span>environment</span><strong>{e(qa_environment)}</strong></div>
           <div class="meta-row"><span>audit user role</span><strong>{e(label(role_map, account.get("role"), "ИИ-аудитор"))}</strong></div>
           <div class="meta-row"><span>token expires_at</span><strong>{e(token_row.get("expires_at") or "не задан")}</strong></div>
@@ -4210,6 +4351,7 @@ class AppHandler(BaseHTTPRequestHandler):
             .snapshot-render {{ display:grid; gap:8px; min-height:96px; }}
             .sample-row {{ border:1px solid var(--line); border-radius:7px; padding:10px; background:#fbfcfc; line-height:1.35; }}
             .row-head {{ display:flex; align-items:flex-start; justify-content:space-between; gap:8px; margin-bottom:6px; }}
+            .task-card-top {{ display:grid; grid-template-columns:auto 1fr; align-items:start; gap:8px; margin-bottom:6px; }}
             .metrics, .metric-grid {{ display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }}
             .metric-grid {{ display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); }}
             .metric {{ border:1px solid var(--line); border-radius:7px; padding:8px; background:#fbfcfc; }}
@@ -4221,6 +4363,7 @@ class AppHandler(BaseHTTPRequestHandler):
             .attention-mini {{ display:grid; gap:6px; margin-top:8px; padding-top:8px; border-top:1px solid var(--line); }}
             .decision-row .row-head strong {{ line-height:1.35; }}
             .short-description {{ color:var(--muted); margin:6px 0 0; line-height:1.35; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }}
+            .signal-preview {{ display:grid; gap:4px; color:var(--muted); font-size:13px; margin-top:6px; }}
             .empty-demo {{ background:#f7fbfb; border-style:dashed; }}
             .meta-panel {{ background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:12px; display:grid; gap:8px; }}
             .meta-row {{ display:grid; grid-template-columns:1fr auto; gap:10px; align-items:center; border-bottom:1px solid #eef2f4; padding-bottom:7px; }}

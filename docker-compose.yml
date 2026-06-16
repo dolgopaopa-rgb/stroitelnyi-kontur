@@ -1,6 +1,10 @@
 services:
   app:
-    build: .
+    build:
+      context: .
+      args:
+        APP_COMMIT_SHA: ${APP_COMMIT_SHA:-}
+        APP_BUILD_TIME: ${APP_BUILD_TIME:-}
     restart: unless-stopped
     environment:
       HOST: 0.0.0.0
@@ -12,6 +16,10 @@ services:
       APP_ACCESS_ACCOUNTS: ${APP_ACCESS_ACCOUNTS:-}
       APP_SESSION_SECRET: ${APP_SESSION_SECRET:-}
       APP_SESSION_TTL_SECONDS: ${APP_SESSION_TTL_SECONDS:-7776000}
+      APP_COMMIT_SHA: ${APP_COMMIT_SHA:-}
+      APP_BUILD_TIME: ${APP_BUILD_TIME:-}
+      APP_DEPLOYED_AT: ${APP_DEPLOYED_AT:-}
+      APP_ENVIRONMENT: ${APP_ENVIRONMENT:-production}
       STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
       YANDEX_DISK_TOKEN: ${YANDEX_DISK_TOKEN:-}
       YANDEX_DISK_ROOT: ${YANDEX_DISK_ROOT:-/Stroitelnyi kontur}
@@ -21,6 +29,7 @@ services:
     volumes:
       - app_data:/data
       - ./data/backups:/backups
+      - ./qa-artifacts:/srv/stroitelnyi-kontur/qa-artifacts
     expose:
       - "8765"
     healthcheck:

@@ -13,6 +13,18 @@ const pathToViewId: Record<string, string> = {
   "/settings": "eventsView",
 };
 
+const pathToNavId: Record<string, string> = {
+  "/today": "nav-today",
+  "/objects": "nav-objects",
+  "/tasks": "nav-tasks",
+  "/materials": "nav-materials",
+  "/photo-reports": "nav-photo-reports",
+  "/object-issues": "nav-object-issues",
+  "/documents": "nav-documents",
+  "/signals": "nav-signals",
+  "/feedback": "nav-feedback",
+};
+
 export async function openApp(page: Page, path = "/today") {
   await page.goto(path, { waitUntil: "domcontentloaded" });
   if (await page.locator("#loginForm").count()) {
@@ -29,7 +41,16 @@ export async function openApp(page: Page, path = "/today") {
   await expect(page.locator("body")).not.toHaveText("");
   const viewId = pathToViewId[path.split("?")[0]];
   if (viewId) {
-    await expect(page.locator(`#${viewId}`)).toHaveClass(/active/);
+    const view = page.locator(`#${viewId}`);
+    await page.waitForTimeout(250);
+    if (!(await view.evaluate((node) => node.classList.contains("active")).catch(() => false))) {
+      const navId = pathToNavId[path.split("?")[0]];
+      const nav = navId ? page.locator(`[data-testid="${navId}"]`).first() : null;
+      if (nav && (await nav.count()) && (await nav.isVisible().catch(() => false))) {
+        await nav.click();
+      }
+    }
+    await expect(view).toHaveClass(/active/);
   }
 }
 

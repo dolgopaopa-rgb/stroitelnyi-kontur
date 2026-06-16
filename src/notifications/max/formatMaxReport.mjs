@@ -38,7 +38,7 @@ export function formatMaxReport(input = {}) {
   const result = input.result || input.overall || "PARTIAL";
 
   return [
-    "**✅ Строительный контур — отчёт по задаче**",
+    input.heading || "**✅ Строительный контур — отчёт по QA-доработке**",
     "",
     "**📌 Задача**",
     input.task || "Кратко: выполнена доработка приложения.",
@@ -57,6 +57,8 @@ export function formatMaxReport(input = {}) {
       checkLine("Navigation QA", checks.navigation),
       checkLine("Mobile QA", checks.mobile),
       checkLine("Read-only QA", checks.readonly),
+      checkLine("Live audit-login actual access", checks.liveAuditLogin || checks.live_audit_login_actual_access),
+      checkLine("Snapshot QA consistency", checks.snapshotConsistency || checks.snapshot_qa_consistency),
     ].join("\n"),
     "",
     "**🐞 Найденные проблемы**",
