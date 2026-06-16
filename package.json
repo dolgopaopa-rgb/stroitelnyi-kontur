@@ -1,0 +1,23 @@
+{
+  "name": "stroitelnyi-kontur",
+  "version": "2026.06.16-qa",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "node tools/qa/run-quality-gate.mjs --suite lint",
+    "typecheck": "node tools/qa/run-quality-gate.mjs --suite typecheck",
+    "test": "node tools/qa/run-quality-gate.mjs --suite unit",
+    "test:qa": "node tools/qa/run-quality-gate.mjs --suite all",
+    "test:qa:smoke": "node tools/qa/run-quality-gate.mjs --suite smoke",
+    "test:qa:e2e": "playwright test",
+    "test:qa:scroll": "node tools/qa/run-quality-gate.mjs --suite scroll",
+    "test:qa:buttons": "node tools/qa/run-quality-gate.mjs --suite buttons",
+    "test:qa:mobile": "node tools/qa/run-quality-gate.mjs --suite mobile",
+    "test:qa:readonly": "node tools/qa/run-quality-gate.mjs --suite readonly",
+    "test:qa:report": "node tools/qa/run-quality-gate.mjs --suite report"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.60.0",
+    "playwright": "1.60.0"
+  }
+}

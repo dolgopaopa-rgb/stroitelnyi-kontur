@@ -1,0 +1,590 @@
+{
+  "generatedAt": "2026-06-16T14:21:58.129Z",
+  "startedAt": "2026-06-16T14:21:21.486Z",
+  "appVersion": "2026.06.16-qa",
+  "commit": "958634f",
+  "url": "http://127.0.0.1:8891",
+  "agents": [
+    "QA Orchestrator Agent",
+    "Scroll QA Agent",
+    "Button QA Agent",
+    "Navigation QA Agent",
+    "Role QA Agent",
+    "Read-only Safety QA Agent",
+    "UX Sanity QA Agent",
+    "Mobile QA Agent",
+    "Console Error QA Agent",
+    "Visual Regression QA Agent",
+    "MAX Report Format QA Agent"
+  ],
+  "checks": {
+    "lint": "OK",
+    "typecheck": "OK",
+    "unit": "OK",
+    "e2e": "OK",
+    "scroll": "OK",
+    "buttons": "OK",
+    "navigation": "OK",
+    "mobile": "OK",
+    "readonly": "OK"
+  },
+  "results": [
+    {
+      "agent": "QA Orchestrator Agent",
+      "name": "Lint",
+      "status": "OK",
+      "details": "{\n  \"overall\": \"PASS\",\n  \"checks\": [\n    {\n      \"name\": \"Python syntax\",\n      \"status\": \"OK\",\n      \"details\": \"ok\"\n    },\n    {\n      \"name\": \"JS syntax app/static/app.js\",\n      \"status\": \"OK\",\n      \"details\": \"ok\"\n    },\n    {\n      \"name\": \"JS syntax app/static/app.compat.js\",\n      \"status\": \"OK\",\n      \"details\": \"ok\"\n    },\n    {\n      \"name\": \"JS syntax src/notifications/max/formatMaxReport.mjs\",\n      \"status\": \"OK\",\n      \"details\": \"ok\"\n    },\n    {\n      \"name\": \"JS syntax tools/qa/run-quality-gate.mjs\",\n      \"status\": \"OK\",\n      \"details\": \"ok\"\n    },\n    {\n      \"name\": \"JS syntax tools/qa/max-report-cli.mjs\",\n      \"status\": \"OK\",\n      \"details\": \"ok\"\n    }\n  ]\n}",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "QA Orchestrator Agent",
+      "name": "Typecheck",
+      "status": "OK",
+      "details": "JS syntax is valid.",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "QA Orchestrator Agent",
+      "name": "Unit smoke",
+      "status": "OK",
+      "details": "db ok",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "QA Orchestrator Agent",
+      "name": "No white screen",
+      "status": "OK",
+      "details": "Visible text length: 1785",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "QA Orchestrator Agent",
+      "name": "No endless loader",
+      "status": "OK",
+      "details": "Loader nodes: 0",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Scroll QA Agent",
+      "name": "Wheel scroll: today",
+      "status": "OK",
+      "details": "scrollable=true; moved=true",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Scroll QA Agent",
+      "name": "Wheel scroll: projects",
+      "status": "OK",
+      "details": "scrollable=false; moved=false",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Scroll QA Agent",
+      "name": "Wheel scroll: tasks",
+      "status": "OK",
+      "details": "scrollable=false; moved=false",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Scroll QA Agent",
+      "name": "Wheel scroll: materials",
+      "status": "OK",
+      "details": "scrollable=true; moved=true",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Scroll QA Agent",
+      "name": "Wheel scroll: photos",
+      "status": "OK",
+      "details": "scrollable=false; moved=false",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Scroll QA Agent",
+      "name": "Wheel scroll: object_remarks",
+      "status": "OK",
+      "details": "scrollable=false; moved=false",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Scroll QA Agent",
+      "name": "Wheel scroll: documents",
+      "status": "OK",
+      "details": "scrollable=false; moved=false",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Scroll QA Agent",
+      "name": "Wheel scroll: dashboard",
+      "status": "OK",
+      "details": "scrollable=false; moved=false",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Scroll QA Agent",
+      "name": "Wheel scroll: feedback",
+      "status": "OK",
+      "details": "scrollable=true; moved=true",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Scroll QA Agent",
+      "name": "Scroll not locked after checks",
+      "status": "OK",
+      "details": "overflow locked=false",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Button QA Agent",
+      "name": "Open objects",
+      "status": "OK",
+      "details": "before=Сегодня; after=Объекты",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Button QA Agent",
+      "name": "Open tasks",
+      "status": "OK",
+      "details": "before=Объекты; after=Задачи",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Button QA Agent",
+      "name": "Open materials",
+      "status": "OK",
+      "details": "before=Задачи; after=Материалы",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Button QA Agent",
+      "name": "Open documents",
+      "status": "OK",
+      "details": "before=Материалы; after=База знаний",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Button QA Agent",
+      "name": "Open feedback",
+      "status": "OK",
+      "details": "before=База знаний; after=Обратная связь по программе",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Button QA Agent",
+      "name": "Mobile + opens actions",
+      "status": "OK",
+      "details": "actions=5",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Navigation QA Agent",
+      "name": "Route /today",
+      "status": "OK",
+      "details": "url=http://127.0.0.1:8891/today; text=1785",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Navigation QA Agent",
+      "name": "Route /objects",
+      "status": "OK",
+      "details": "url=http://127.0.0.1:8891/objects; text=571",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Navigation QA Agent",
+      "name": "Route /tasks",
+      "status": "OK",
+      "details": "url=http://127.0.0.1:8891/tasks; text=707",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Navigation QA Agent",
+      "name": "Route /materials",
+      "status": "OK",
+      "details": "url=http://127.0.0.1:8891/materials; text=1914",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Navigation QA Agent",
+      "name": "Route /photo-reports",
+      "status": "OK",
+      "details": "url=http://127.0.0.1:8891/photo-reports; text=770",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Navigation QA Agent",
+      "name": "Route /object-issues",
+      "status": "OK",
+      "details": "url=http://127.0.0.1:8891/object-issues; text=866",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Navigation QA Agent",
+      "name": "Route /documents",
+      "status": "OK",
+      "details": "url=http://127.0.0.1:8891/documents; text=668",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Navigation QA Agent",
+      "name": "Route /signals",
+      "status": "OK",
+      "details": "url=http://127.0.0.1:8891/signals; text=1082",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Navigation QA Agent",
+      "name": "Route /feedback",
+      "status": "OK",
+      "details": "url=http://127.0.0.1:8891/feedback; text=1860",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Navigation QA Agent",
+      "name": "Route /settings",
+      "status": "OK",
+      "details": "url=http://127.0.0.1:8891/settings; text=5287",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Navigation QA Agent",
+      "name": "Browser Back does not break app",
+      "status": "OK",
+      "details": "url=http://127.0.0.1:8891/feedback",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Role QA Agent",
+      "name": "owner: nav-objects",
+      "status": "OK",
+      "details": "visible=true",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Role QA Agent",
+      "name": "owner: nav-tasks",
+      "status": "OK",
+      "details": "visible=true",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Role QA Agent",
+      "name": "owner: nav-materials",
+      "status": "OK",
+      "details": "visible=true",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Role QA Agent",
+      "name": "construction_manager: nav-objects",
+      "status": "OK",
+      "details": "visible=true",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Role QA Agent",
+      "name": "construction_manager: nav-tasks",
+      "status": "OK",
+      "details": "visible=true",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Role QA Agent",
+      "name": "construction_manager: nav-materials",
+      "status": "OK",
+      "details": "visible=true",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Role QA Agent",
+      "name": "foreman:7: nav-tasks",
+      "status": "OK",
+      "details": "visible=true",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Role QA Agent",
+      "name": "foreman:7: nav-materials",
+      "status": "OK",
+      "details": "visible=true",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Role QA Agent",
+      "name": "foreman:7: nav-documents",
+      "status": "OK",
+      "details": "visible=true",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Role QA Agent",
+      "name": "master: nav-tasks",
+      "status": "OK",
+      "details": "visible=true",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Role QA Agent",
+      "name": "master: nav-photo-reports",
+      "status": "OK",
+      "details": "visible=true",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Role QA Agent",
+      "name": "procurement_manager: nav-materials",
+      "status": "OK",
+      "details": "visible=true",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Role QA Agent",
+      "name": "procurement_manager: nav-objects",
+      "status": "OK",
+      "details": "visible=true",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Role QA Agent",
+      "name": "estimator: nav-estimates",
+      "status": "OK",
+      "details": "visible=true",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Role QA Agent",
+      "name": "estimator: nav-materials",
+      "status": "OK",
+      "details": "visible=true",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Read-only Safety QA Agent",
+      "name": "Audit login diagnostic",
+      "status": "OK",
+      "details": "Строительный контур\n◉\nСегодня\n⌂\nСигналы\n▦\nОбъекты\n≋\nСметы\n✓\nЗадачи\n▤\nРаботы\n◫\nМатериалы\n＋\nДопработы\n!\nЗамечания\n▣\nФотоотчёты\n⌖\nЛокации\n◧\nБаза знаний\n✉\nОбратная связь по программе\n◷\nЖурнал\nСегодня\nВыйти\nРуководитель компании\nГде горит и где нужно моё решение?\n\nПоказываем просрочки, блокеры, материалы под риском и объекты с проблемами по всей компании.\n\nПосмотреть сигналы\nПроблемные объекты\nОткрыть задачи\nЗадачи и решения на сегодня\nОткрыть задачи\nНа сегодня задач нет\n\nПроверьте просроченные или о",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Read-only Safety QA Agent",
+      "name": "Audit write methods return 403",
+      "status": "OK",
+      "details": "POST /api/tasks -> 403",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Read-only Safety QA Agent",
+      "name": "Sensitive data is hidden in auditor view",
+      "status": "OK",
+      "details": "sensitive-patterns=0",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Mobile QA Agent",
+      "name": "Viewport 390x844",
+      "status": "OK",
+      "details": "nav=true; horizontalOverflow=false; actions=5",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Mobile QA Agent",
+      "name": "Viewport 375x812",
+      "status": "OK",
+      "details": "nav=true; horizontalOverflow=false; actions=5",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Mobile QA Agent",
+      "name": "Viewport 430x932",
+      "status": "OK",
+      "details": "nav=true; horizontalOverflow=false; actions=5",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Mobile QA Agent",
+      "name": "Viewport 768x1024",
+      "status": "OK",
+      "details": "nav=true; horizontalOverflow=false; actions=5",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "UX Sanity QA Agent",
+      "name": "No technical enum values in visible UI",
+      "status": "OK",
+      "details": "none",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "UX Sanity QA Agent",
+      "name": "Task card has separated badges",
+      "status": "OK",
+      "details": "cards=0; badges=0",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "UX Sanity QA Agent",
+      "name": "Today screen shows concrete attention block",
+      "status": "OK",
+      "details": "length=499",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "Visual Regression QA Agent",
+      "name": "Screenshot today",
+      "status": "OK",
+      "details": "text=1681",
+      "severity": "normal",
+      "screenshot": "C:\\Users\\seven\\Documents\\Codex\\2026-04-25\\new-chat\\qa-artifacts\\latest\\screenshots\\today.png"
+    },
+    {
+      "agent": "Visual Regression QA Agent",
+      "name": "Screenshot projects",
+      "status": "OK",
+      "details": "text=496",
+      "severity": "normal",
+      "screenshot": "C:\\Users\\seven\\Documents\\Codex\\2026-04-25\\new-chat\\qa-artifacts\\latest\\screenshots\\projects.png"
+    },
+    {
+      "agent": "Visual Regression QA Agent",
+      "name": "Screenshot tasks",
+      "status": "OK",
+      "details": "text=632",
+      "severity": "normal",
+      "screenshot": "C:\\Users\\seven\\Documents\\Codex\\2026-04-25\\new-chat\\qa-artifacts\\latest\\screenshots\\tasks.png"
+    },
+    {
+      "agent": "Visual Regression QA Agent",
+      "name": "Screenshot materials",
+      "status": "OK",
+      "details": "text=1817",
+      "severity": "normal",
+      "screenshot": "C:\\Users\\seven\\Documents\\Codex\\2026-04-25\\new-chat\\qa-artifacts\\latest\\screenshots\\materials.png"
+    },
+    {
+      "agent": "Visual Regression QA Agent",
+      "name": "Screenshot documents",
+      "status": "OK",
+      "details": "text=491",
+      "severity": "normal",
+      "screenshot": "C:\\Users\\seven\\Documents\\Codex\\2026-04-25\\new-chat\\qa-artifacts\\latest\\screenshots\\documents.png"
+    },
+    {
+      "agent": "Console Error QA Agent",
+      "name": "Browser console",
+      "status": "OK",
+      "details": "No console/page/request errors.",
+      "severity": "normal",
+      "screenshot": ""
+    },
+    {
+      "agent": "MAX Report Format QA Agent",
+      "name": "MAX report template",
+      "status": "OK",
+      "details": "{\"ok\":true,\"missing\":[],\"hasSectionBreaks\":true,\"hasLongSingleParagraph\":false}",
+      "severity": "normal",
+      "screenshot": ""
+    }
+  ],
+  "criticalErrors": [],
+  "warnings": [],
+  "fixed": [],
+  "notChecked": [],
+  "overall": "PASS",
+  "qa": {
+    "scroll_tests": "ok",
+    "button_tests": "ok",
+    "navigation_tests": "ok",
+    "role_tests": "ok",
+    "readonly_tests": "ok",
+    "mobile_tests": "ok",
+    "console_errors": "ok",
+    "visual_regression": "ok",
+    "max_report_format": "ok"
+  },
+  "maxReport": {
+    "task": "Внедрить постоянный QA-контур проекта.",
+    "done": [
+      "Добавлены постоянные QA-агенты и quality gate.",
+      "Добавлены проверки прокрутки, кнопок, навигации, ролей, мобильной версии и read-only режима.",
+      "Добавлен единый формат отчёта для MAX."
+    ],
+    "checks": {
+      "lint": "OK",
+      "typecheck": "OK",
+      "unit": "OK",
+      "e2e": "OK",
+      "scroll": "OK",
+      "buttons": "OK",
+      "navigation": "OK",
+      "mobile": "OK",
+      "readonly": "OK"
+    },
+    "problems": [],
+    "notChecked": [],
+    "artifacts": [
+      "qa-artifacts/latest/qa-report.md",
+      "qa-artifacts/latest/qa-report.json",
+      "qa-artifacts/latest/screenshots",
+      "ai-audit-snapshot"
+    ],
+    "result": "PASS",
+    "nextStep": "Использовать QA-контур перед каждой следующей доработкой."
+  }
+}

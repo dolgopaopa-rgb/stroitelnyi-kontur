@@ -1,6 +1,18 @@
 const initialRoute = new URLSearchParams(window.location.search);
 const initialProjectId = Number(initialRoute.get("project") || 0) || null;
-const pathView = window.location.pathname === "/today" ? "today" : "";
+const routeViewMap = {
+  "/today": "today",
+  "/objects": "projects",
+  "/tasks": "tasks",
+  "/materials": "materials",
+  "/photo-reports": "photos",
+  "/object-issues": "object_remarks",
+  "/documents": "documents",
+  "/signals": "dashboard",
+  "/feedback": "feedback",
+  "/settings": "events",
+};
+const pathView = routeViewMap[window.location.pathname] || "";
 
 const state = {
   view: initialRoute.get("view") || pathView || localStorage.getItem("currentView") || "today",
@@ -3762,7 +3774,7 @@ async function renderProjects() {
     ? projects
         .map(
           (project) => `
-          <div class="row clickable" data-open-project="${project.id}">
+          <div class="row clickable" data-open-project="${project.id}" data-testid="object-card">
             <div class="row-grid project-list-card">
               <div class="project-card-main">
                 <strong>${project.title}</strong>
@@ -3987,13 +3999,13 @@ function renderProjectAttention(project) {
   const items = projectAttentionItems(project);
   if (!items.length) {
     return `
-      <section class="project-attention">
+      <section class="project-attention" data-testid="object-attention-block">
         <strong>Что требует внимания</strong>
         <p class="muted">Просрочек, блокеров, возвращённых задач и проблемных материалов не найдено.</p>
       </section>`;
   }
   return `
-    <section class="project-attention">
+    <section class="project-attention" data-testid="object-attention-block">
       <strong>Что требует внимания</strong>
       <div class="project-attention-list">
         ${items
@@ -4018,7 +4030,7 @@ function renderProjectQuickActions() {
     ['data-project-tab="documents"', "Открыть документы"],
   ];
   return `
-    <section class="project-quick-actions">
+    <section class="project-quick-actions" data-testid="object-actions">
       <strong>Ближайшие действия</strong>
       <div class="project-action-list">
         ${actions.map(([attrs, title]) => `<button class="secondary tiny" type="button" ${attrs}>${title}</button>`).join("")}
@@ -4064,9 +4076,9 @@ function renderProjectTaskList(tasks = []) {
 function renderCompactTaskRow(task) {
   const description = taskDisplayDescription(task);
   return `
-    <button class="row clickable compact-task-card" type="button" data-open-task="${task.id}">
+    <button class="row clickable compact-task-card" type="button" data-open-task="${task.id}" data-testid="task-card">
       <div class="compact-task-title">
-        ${pill(taskTypeLabel(task), taskTypeLevel(task))}
+        <span data-testid="task-type-badge">${pill(taskTypeLabel(task), taskTypeLevel(task))}</span>
         <strong>${escapeHtml(taskDisplayTitle(task))}</strong>
       </div>
       <div class="compact-task-meta">
@@ -4076,8 +4088,8 @@ function renderCompactTaskRow(task) {
       </div>
       ${description ? `<p class="task-description-clamp">${escapeHtml(description)}</p>` : ""}
       <div class="stack-line">
-        ${pill(statusLabel(task.status), taskStatusLevel(task.status))}
-        ${pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority))}
+        <span data-testid="task-status-badge">${pill(statusLabel(task.status), taskStatusLevel(task.status))}</span>
+        <span data-testid="task-priority-badge">${pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority))}</span>
       </div>
     </button>`;
 }
@@ -4553,13 +4565,13 @@ async function renderTasks() {
           const lastComment = latestTaskComment(task);
           const taskKey = `task:${task.id}`;
           return `
-            <details class="row task-row task-collapsible" data-collapsible-key="${escapeAttr(taskKey)}"${openAttrForKey(taskKey)}>
+            <details class="row task-row task-collapsible" data-collapsible-key="${escapeAttr(taskKey)}"${openAttrForKey(taskKey)} data-testid="task-card">
               <summary class="task-summary">
                 <span class="task-summary-main">
-                  <span class="task-summary-title">${pill(taskTypeLabel(task), taskTypeLevel(task))}<strong>${escapeHtml(taskDisplayTitle(task))}</strong></span>
+                  <span class="task-summary-title"><span data-testid="task-type-badge">${pill(taskTypeLabel(task), taskTypeLevel(task))}</span><strong>${escapeHtml(taskDisplayTitle(task))}</strong></span>
                   <span class="task-summary-meta">${escapeHtml(task.project_title || "объект не указан")} · ${escapeHtml(task.assignee_name || "ответственный не назначен")} · ${task.due_date ? formatDateRu(task.due_date) : "без срока"}</span>
                   ${taskDisplayDescription(task) ? `<span class="task-description-clamp">${escapeHtml(taskDisplayDescription(task))}</span>` : ""}
-                  <span class="stack-line">${pill(label(task.status), taskStatusLevel(task.status))}${pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority))}</span>
+                  <span class="stack-line"><span data-testid="task-status-badge">${pill(label(task.status), taskStatusLevel(task.status))}</span><span data-testid="task-priority-badge">${pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority))}</span></span>
                 </span>
               </summary>
               <div class="task-row-body">
@@ -5004,7 +5016,7 @@ async function renderMaterials() {
     const responsible = batch.procurement_name || "Снабжение";
     const firstItem = materialActiveItems(batch)[0] || {};
     return `
-      <button class="row clickable material-request-row material-batch-row" type="button" data-open-material-batch="${batch.key}">
+      <button class="row clickable material-request-row material-batch-row" type="button" data-open-material-batch="${batch.key}" data-testid="material-card">
         <div class="material-main">
           <strong>${escapeHtml(firstItem.title || materialBatchTitle(batch, currentRoleBase() === "procurement_manager"))}</strong>
           <div class="material-card-grid">
@@ -6182,12 +6194,16 @@ function bindWheelPageScroll() {
     "wheel",
     (event) => {
       if (event.defaultPrevented || hasOpenDialog()) return;
-      if (event.target.closest?.("input, textarea, select, dialog")) return;
+      if (event.target.closest?.("dialog")) return;
       if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
       const deltaY = normalizedWheelDeltaY(event);
       if (!deltaY || !canScrollPageVertically(deltaY)) return;
       const scrollable = nearestScrollableElement(event.target);
-      if (!scrollable) return;
+      if (!scrollable) {
+        event.preventDefault();
+        window.scrollBy({ top: deltaY, behavior: "auto" });
+        return;
+      }
       const atTop = scrollable.scrollTop <= 0;
       const atBottom = scrollable.scrollTop + scrollable.clientHeight >= scrollable.scrollHeight - 1;
       if ((deltaY < 0 && !atTop) || (deltaY > 0 && !atBottom)) return;

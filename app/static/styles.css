@@ -4584,7 +4584,7 @@ textarea {
   }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 820px) {
   body {
     font-size: 14px;
   }

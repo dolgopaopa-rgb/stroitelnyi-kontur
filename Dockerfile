@@ -13,6 +13,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
 COPY tools ./tools
+COPY src ./src
+COPY tests ./tests
+COPY qa-artifacts ./qa-artifacts
+COPY CODEX_RULES.md package.json playwright.config.ts ./
 
 EXPOSE 8765
 

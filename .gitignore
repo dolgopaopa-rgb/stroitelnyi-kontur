@@ -12,6 +12,7 @@ app/construction.db
 !.env.example
 .venv/
 venv/
+.codex-remote-attachments/
 
 data/
 backups/
@@ -31,3 +32,12 @@ mobile/android/.gradle/
 mobile/android/local.properties
 mobile/android/build/
 mobile/android/app/build/
+
+# QA generated heavy artifacts
+node_modules/
+qa-artifacts/latest/screenshots/
+qa-artifacts/latest/traces/
+qa-artifacts/latest/videos/
+qa-artifacts/latest/playwright-report/
+qa-artifacts/latest/playwright-output/
+qa-artifacts/latest/playwright-results.json

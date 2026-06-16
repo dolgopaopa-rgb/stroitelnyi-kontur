@@ -37,6 +37,13 @@ SESSION_COOKIE_NAME = "kontur_session"
 SESSION_TTL_SECONDS = int(os.environ.get("APP_SESSION_TTL_SECONDS", str(90 * 24 * 60 * 60)) or 0)
 
 
+def write_response_body(handler: BaseHTTPRequestHandler, body: bytes) -> None:
+    try:
+        handler.wfile.write(body)
+    except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+        pass
+
+
 def json_response(handler: BaseHTTPRequestHandler, payload: object, status: int = 200) -> None:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     handler.send_response(status)
@@ -46,7 +53,7 @@ def json_response(handler: BaseHTTPRequestHandler, payload: object, status: int 
     maybe_send_session_cookie(handler)
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
-    handler.wfile.write(body)
+    write_response_body(handler, body)
 
 
 def html_response(handler: BaseHTTPRequestHandler, body: str, status: int = 200, cookie: str | None = None) -> None:
@@ -61,7 +68,7 @@ def html_response(handler: BaseHTTPRequestHandler, body: str, status: int = 200,
         maybe_send_session_cookie(handler)
     handler.send_header("Content-Length", str(len(raw)))
     handler.end_headers()
-    handler.wfile.write(raw)
+    write_response_body(handler, raw)
 
 
 def redirect_response(handler: BaseHTTPRequestHandler, location: str, status: int = 303, cookie: str | None = None) -> None:
@@ -85,7 +92,7 @@ def api_auth_required_response(handler: BaseHTTPRequestHandler) -> None:
         handler.send_header("Set-Cookie", expired_session_cookie(handler))
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
-    handler.wfile.write(body)
+    write_response_body(handler, body)
 
 
 def safe_next_path(value: str) -> str:
@@ -130,7 +137,7 @@ def logout_response(handler: BaseHTTPRequestHandler) -> None:
     body = "Вы вышли из Контура. Закройте вкладку или войдите заново.".encode("utf-8")
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
-    handler.wfile.write(body)
+    write_response_body(handler, body)
 
 
 def basic_auth_pair(handler: BaseHTTPRequestHandler) -> tuple[str, str] | None:
@@ -1614,6 +1621,26 @@ def snapshot_feature_flags() -> dict[str, bool]:
         "photo_reports_entity": "CREATE TABLE IF NOT EXISTS photo_reports" in database_text and "photo_reports_payload" in server_text,
         "object_issues_entity": "CREATE TABLE IF NOT EXISTS object_remarks" in database_text and "object_remarks_payload" in server_text,
     }
+
+
+def latest_qa_report() -> dict:
+    report_path = APP_DIR.parent / "qa-artifacts" / "latest" / "qa-report.json"
+    if not report_path.exists():
+        return {}
+    try:
+        with report_path.open("r", encoding="utf-8") as file:
+            payload = json.load(file)
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def qa_snapshot_status(report: dict, key: str) -> str:
+    qa = report.get("qa") if isinstance(report.get("qa"), dict) else {}
+    value = str(qa.get(key) or "").strip()
+    if value in {"ok", "failed", "not_run"}:
+        return value
+    return "not_run"
 
 
 def snapshot_label(labels: dict[str, str], value: object, fallback: str = "Не задано") -> str:
@@ -3377,7 +3404,24 @@ class AppHandler(BaseHTTPRequestHandler):
                 next_path = path + (f"?{parsed.query}" if parsed.query else "")
                 redirect_response(self, login_location(next_path))
             return
-        if path in {"/", "/today"}:
+        spa_routes = {
+            "/",
+            "/today",
+            "/objects",
+            "/tasks",
+            "/materials",
+            "/photo-reports",
+            "/object-issues",
+            "/documents",
+            "/signals",
+            "/feedback",
+            "/settings",
+            "/estimates",
+            "/works",
+            "/variations",
+            "/locations",
+        }
+        if path in spa_routes:
             self.serve_static("index.html")
             return
         if path == "/health":
@@ -3485,7 +3529,7 @@ class AppHandler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "no-cache")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(body)
+        write_response_body(self, body)
 
     def handle_login(self, data: dict) -> None:
         login = str(data.get("login") or data.get("username") or "").strip()
@@ -3565,7 +3609,7 @@ class AppHandler(BaseHTTPRequestHandler):
             diagnostic,
             session_created=True,
             redirect_target="/?view=today&audit=1",
-            cookie=session_cookie_header(self, account, force_secure=True),
+            cookie=session_cookie_header(self, account, force_secure=session_cookie_secure(self)),
         )
 
     def handle_ai_audit_snapshot(self, raw_token: str) -> None:
@@ -3688,6 +3732,14 @@ class AppHandler(BaseHTTPRequestHandler):
         generated_at = datetime.now().astimezone().isoformat(timespec="seconds")
         app_version = frontend_asset_version()
         commit_hash = current_commit_hash()
+        qa_report = latest_qa_report()
+        qa_checks = qa_report.get("checks") if isinstance(qa_report.get("checks"), dict) else {}
+        qa_overall = str(qa_report.get("overall") or "not_run")
+        qa_generated_at = str(qa_report.get("generatedAt") or "not_run")
+        qa_app_version = str(qa_report.get("appVersion") or app_version or "unknown")
+        qa_commit = str(qa_report.get("commit") or commit_hash or "unknown")
+        qa_environment = "production" if session_cookie_secure(self) else "local"
+        token_uses_left = "без лимита" if int(token_row.get("unlimited_until_expiry") or 0) == 1 else max(0, int(token_row.get("max_uses") or 0) - int(token_row.get("used_count") or 0))
 
         def e(value: object) -> str:
             return html.escape(snapshot_clean_text(value, status_map), quote=True)
@@ -3744,6 +3796,11 @@ class AppHandler(BaseHTTPRequestHandler):
             value = "true" if enabled else "false"
             missing = "" if enabled else f'<small class="missing">Фича не внедрена: {e(name)}</small>'
             return f'<div class="meta-row"><span><code>{e(name)}</code></span><strong>{value}</strong>{missing}</div>'
+
+        def qa_row(key: str, title: str) -> str:
+            value = qa_snapshot_status(qa_report, key)
+            level = "success" if value == "ok" else "danger" if value == "failed" else "neutral"
+            return f'<div class="meta-row"><span><code>{e(key)}</code> {e(title)}</span>{badge(value, level)}</div>'
 
         def project_tasks(project_id: int) -> list[dict]:
             return [task for task in task_rows if int(task.get("project_id") or 0) == project_id]
@@ -4083,11 +4140,38 @@ class AppHandler(BaseHTTPRequestHandler):
           <p class="muted">Кнопка “+” открывает быстрые действия по роли: фото, задача, замечание, материал или проблема.</p>
         </article>
         """
+        qa_body = f"""
+        <section class="meta-panel">
+          <div class="meta-row"><span>generatedAt</span><strong>{e(qa_generated_at)}</strong></div>
+          <div class="meta-row"><span>appVersion</span><strong>{e(qa_app_version)}</strong></div>
+          <div class="meta-row"><span>commitHash</span><strong>{e(qa_commit)}</strong></div>
+          <div class="meta-row"><span>environment</span><strong>{e(qa_environment)}</strong></div>
+          <div class="meta-row"><span>audit user role</span><strong>{e(label(role_map, account.get("role"), "ИИ-аудитор"))}</strong></div>
+          <div class="meta-row"><span>token expires_at</span><strong>{e(token_row.get("expires_at") or "не задан")}</strong></div>
+          <div class="meta-row"><span>uses_left</span><strong>{e(token_uses_left)}</strong></div>
+          <div class="meta-row"><span>QA status</span>{badge(qa_overall, "success" if qa_overall == "PASS" else "danger" if qa_overall == "FAIL" else "warning" if qa_overall == "PARTIAL" else "neutral")}</div>
+        </section>
+        <section class="meta-panel">
+          {qa_row("scroll_tests", "Прокрутка")}
+          {qa_row("button_tests", "Кнопки")}
+          {qa_row("navigation_tests", "Навигация")}
+          {qa_row("role_tests", "Роли")}
+          {qa_row("readonly_tests", "Read-only аудит")}
+          {qa_row("mobile_tests", "Мобильная версия")}
+          {qa_row("console_errors", "Ошибки консоли")}
+          {qa_row("visual_regression", "Визуальная проверка")}
+          {qa_row("max_report_format", "Формат MAX-отчёта")}
+        </section>
+        """
         metadata_body = f"""
         <section class="meta-panel">
           <div class="meta-row"><span>generatedAt</span><strong>{e(generated_at)}</strong></div>
           <div class="meta-row"><span>appVersion</span><strong>{e(app_version)}</strong></div>
           <div class="meta-row"><span>commitHash</span><strong>{e(commit_hash or "не доступен в контейнере")}</strong></div>
+          <div class="meta-row"><span>environment</span><strong>{e(qa_environment)}</strong></div>
+          <div class="meta-row"><span>audit user role</span><strong>{e(label(role_map, account.get("role"), "ИИ-аудитор"))}</strong></div>
+          <div class="meta-row"><span>token expires_at</span><strong>{e(token_row.get("expires_at") or "не задан")}</strong></div>
+          <div class="meta-row"><span>uses_left</span><strong>{e(token_uses_left)}</strong></div>
         </section>
         <section class="meta-panel">
           <h2>UX-фичи</h2>
@@ -4156,6 +4240,7 @@ class AppHandler(BaseHTTPRequestHandler):
             <p class="lead">Эта страница показывает основные экраны приложения в статичном виде. Примеры данных обезличены: телефоны, e-mail, адреса, договоры, файлы и финансовые суммы скрыты.</p>
             <div class="top-grid">{metadata_body}</div>
             <div class="grid">
+              {block("QA-проверки", ["Открыть qa-report", "Посмотреть скриншоты", "Разобрать FAIL/PARTIAL"], ["Фактический прогон", "Quality gate", "Без фальшивого ok"], qa_body)}
               {block("Проверка первого ТЗ", ["Сверить контракт", "Найти частичные пункты"], ["UX-контракт", "Аудит", "Статусы"], first_tz_body)}
               {block("Проверка этапа 3", ["Сверить ролевые сценарии", "Проверить мобильный UX", "Проверить блокеры"], ["Роли", "Сигналы", "Блокеры", "Мобильный UX"], stage3_body)}
               {block("1. Сегодня", ["Открыть задачи", "Открыть материалы", "Открыть фотоотчёты"], ["Мои задачи", "Требует решения", "Активные объекты"], today_body)}
@@ -4317,7 +4402,7 @@ class AppHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{quote(file_name)}")
         self.end_headers()
-        self.wfile.write(body)
+        write_response_body(self, body)
 
     def variation_detail_payload(self, db, variation_id: int) -> dict | None:
         variation = db.execute(
@@ -4407,7 +4492,7 @@ class AppHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{quote(file_name)}")
         self.end_headers()
-        self.wfile.write(body)
+        write_response_body(self, body)
 
     def serve_work_items_print(self, query: dict[str, list[str]]) -> None:
         if is_ai_auditor_account(current_access_account(self)):
@@ -4445,7 +4530,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(body)
+        write_response_body(self, body)
 
     def handle_api_get(self, path: str, query: dict[str, list[str]]) -> None:
         with connect() as db:

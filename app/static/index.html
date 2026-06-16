@@ -15,7 +15,7 @@
     <link rel="stylesheet" href="/static/styles.css?v=20260616-role-today" />
   </head>
   <body>
-    <div class="app">
+    <div class="app" data-testid="qa-scroll-root">
       <aside class="sidebar">
         <div class="brand">
           <img class="brand-mark" src="/static/assets/g2-logo-192.png" alt="" />
@@ -24,24 +24,24 @@
           </div>
         </div>
         <nav class="nav">
-          <button class="nav-button active" data-view="today"><span class="nav-icon">◉</span><span>Сегодня</span></button>
-          <button class="nav-button" data-view="dashboard"><span class="nav-icon">⌂</span><span>Сигналы</span></button>
-          <button class="nav-button" data-view="projects"><span class="nav-icon">▦</span><span>Объекты</span></button>
-          <button class="nav-button" data-view="estimates"><span class="nav-icon">≋</span><span>Сметы</span></button>
-          <button class="nav-button" data-view="tasks"><span class="nav-icon">✓</span><span>Задачи</span></button>
-          <button class="nav-button" data-view="works"><span class="nav-icon">▤</span><span>Работы</span></button>
-          <button class="nav-button" data-view="materials"><span class="nav-icon">◫</span><span>Материалы</span></button>
-          <button class="nav-button" data-view="variations"><span class="nav-icon">＋</span><span>Допработы</span></button>
-          <button class="nav-button" data-view="object_remarks"><span class="nav-icon">!</span><span>Замечания</span></button>
-          <button class="nav-button" data-view="photos"><span class="nav-icon">▣</span><span>Фотоотчёты</span></button>
-          <button class="nav-button" data-view="locations"><span class="nav-icon">⌖</span><span>Локации</span></button>
-          <button class="nav-button" data-view="documents"><span class="nav-icon">◧</span><span>База знаний</span></button>
-          <button class="nav-button" data-view="feedback"><span class="nav-icon">✉</span><span>Обратная связь по программе</span></button>
+          <button class="nav-button active" data-view="today" data-testid="nav-today"><span class="nav-icon">◉</span><span>Сегодня</span></button>
+          <button class="nav-button" data-view="dashboard" data-testid="nav-signals"><span class="nav-icon">⌂</span><span>Сигналы</span></button>
+          <button class="nav-button" data-view="projects" data-testid="nav-objects"><span class="nav-icon">▦</span><span>Объекты</span></button>
+          <button class="nav-button" data-view="estimates" data-testid="nav-estimates"><span class="nav-icon">≋</span><span>Сметы</span></button>
+          <button class="nav-button" data-view="tasks" data-testid="nav-tasks"><span class="nav-icon">✓</span><span>Задачи</span></button>
+          <button class="nav-button" data-view="works" data-testid="nav-works"><span class="nav-icon">▤</span><span>Работы</span></button>
+          <button class="nav-button" data-view="materials" data-testid="nav-materials"><span class="nav-icon">◫</span><span>Материалы</span></button>
+          <button class="nav-button" data-view="variations" data-testid="nav-variations"><span class="nav-icon">＋</span><span>Допработы</span></button>
+          <button class="nav-button" data-view="object_remarks" data-testid="nav-object-issues"><span class="nav-icon">!</span><span>Замечания</span></button>
+          <button class="nav-button" data-view="photos" data-testid="nav-photo-reports"><span class="nav-icon">▣</span><span>Фотоотчёты</span></button>
+          <button class="nav-button" data-view="locations" data-testid="nav-locations"><span class="nav-icon">⌖</span><span>Локации</span></button>
+          <button class="nav-button" data-view="documents" data-testid="nav-documents"><span class="nav-icon">◧</span><span>База знаний</span></button>
+          <button class="nav-button" data-view="feedback" data-testid="nav-feedback"><span class="nav-icon">✉</span><span>Обратная связь по программе</span></button>
           <button class="nav-button" data-view="events"><span class="nav-icon">◷</span><span>Журнал</span></button>
         </nav>
       </aside>
 
-      <main class="main">
+      <main class="main" data-testid="qa-main-content">
         <header class="topbar">
           <div>
             <h1 id="pageTitle">Сегодня</h1>
@@ -70,7 +70,7 @@
           </div>
         </header>
 
-        <section class="view active" id="todayView">
+        <section class="view active" id="todayView" data-testid="today-page">
           <section class="today-role-panel">
             <div>
               <span class="eyebrow" id="todayRoleLabel">Рабочий день</span>
@@ -85,13 +85,13 @@
                 <h2 id="todayTasksTitle">Мои задачи на сегодня</h2>
                 <button class="link-button" data-view-target="tasks">Открыть задачи</button>
               </div>
-              <div class="list" id="todayTasks"></div>
+              <div class="list" id="todayTasks" data-testid="today-overdue-list"></div>
             </section>
             <section class="panel today-focus-panel">
               <div class="panel-head">
                 <h2 id="todayAttentionTitle">Требует решения</h2>
               </div>
-              <div class="list" id="todayAttention"></div>
+              <div class="list" id="todayAttention" data-testid="today-attention-list"></div>
             </section>
             <section class="panel">
               <div class="panel-head">
@@ -118,7 +118,7 @@
                 <h2>Объекты без фотоотчёта сегодня</h2>
                 <button class="link-button" data-view-target="photos">Фотоотчёты</button>
               </div>
-              <div class="list" id="todayNoPhoto"></div>
+              <div class="list" id="todayNoPhoto" data-testid="today-no-photo-report-list"></div>
             </section>
           </div>
         </section>
@@ -175,7 +175,7 @@
               </div>
               <div class="table" id="projectRows"></div>
             </section>
-            <section class="panel detail" id="projectDetail">
+            <section class="panel detail" id="projectDetail" data-testid="object-card">
               <p class="muted">Выберите объект слева.</p>
             </section>
           </div>
@@ -187,7 +187,7 @@
               <h2>Задачи</h2>
               <button class="primary" id="newTaskButton">Добавить задачу</button>
             </div>
-            <div id="taskStats"></div>
+              <div id="taskStats" data-testid="task-status-tabs"></div>
             <div class="task-workspace">
               <section class="task-object-panel">
                 <h3>Объекты</h3>
@@ -212,7 +212,7 @@
           </div>
         </section>
 
-        <section class="view" id="materialsView">
+        <section class="view" id="materialsView" data-testid="materials-pipeline">
           <div class="layout-two materials-layout">
             <section class="panel materials-list-panel">
               <div class="panel-head">
@@ -226,7 +226,7 @@
                 </div>
                 <button class="secondary" id="exportCompletedMaterialsButton" type="button">Выгрузить выполненные</button>
               </div>
-              <div class="material-pipeline-tabs" role="tablist" aria-label="Статус материалов">
+              <div class="material-pipeline-tabs" role="tablist" aria-label="Статус материалов" data-testid="material-status-tabs">
                 <button class="pipeline-filter active" type="button" data-material-pipeline-filter="all">Все</button>
                 <button class="pipeline-filter" type="button" data-material-pipeline-filter="need_approval">Нужно согласовать</button>
                 <button class="pipeline-filter" type="button" data-material-pipeline-filter="agreed">Согласовано</button>
@@ -465,10 +465,10 @@
       </main>
     </div>
 
-    <nav class="mobile-bottom-nav" aria-label="Мобильное меню">
+    <nav class="mobile-bottom-nav" aria-label="Мобильное меню" data-testid="mobile-bottom-nav">
       <button type="button" data-view-target="today"><span>⌂</span>Сегодня</button>
       <button type="button" data-view-target="projects"><span>▦</span>Объекты</button>
-      <button class="mobile-plus" type="button" id="mobileQuickActionToggle"><span>+</span></button>
+      <button class="mobile-plus" type="button" id="mobileQuickActionToggle" data-testid="mobile-plus-button"><span>+</span></button>
       <button type="button" data-view-target="dashboard"><span>◈</span>Уведомления</button>
       <button type="button" id="mobileProfileButton"><span>◉</span>Я</button>
     </nav>
@@ -478,7 +478,7 @@
           <h2>Быстрое действие</h2>
           <button class="icon" type="button" id="mobileQuickActionClose">×</button>
         </div>
-        <div class="mobile-quick-actions" id="mobileQuickActions"></div>
+        <div class="mobile-quick-actions" id="mobileQuickActions" data-testid="mobile-quick-actions"></div>
       </div>
     </div>
 
