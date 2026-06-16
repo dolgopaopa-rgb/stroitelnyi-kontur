@@ -11,6 +11,7 @@ import mimetypes
 import os
 import re
 import shutil
+import subprocess
 import threading
 import time
 import zipfile
@@ -1442,6 +1443,173 @@ def project_archive_blockers(db, project_id: int) -> list[str]:
     if open_variations:
         blockers.append(f"допработы/отклонения без решения: {open_variations}")
     return blockers
+
+
+SNAPSHOT_FORBIDDEN_ENUMS = {
+    "in_progress",
+    "new",
+    "returned",
+    "accepted",
+    "additional_work",
+    "active",
+    "owner",
+    "construction_manager",
+    "procurement_manager",
+    "estimator",
+}
+
+SNAPSHOT_ROLE_KEYS = {
+    "owner",
+    "construction_manager",
+    "finance_director",
+    "accountant",
+    "sales_manager",
+    "foreman",
+    "procurement_manager",
+    "estimator",
+    "technical_supervisor",
+    "ai_auditor",
+}
+
+SNAPSHOT_TYPE_KEYS = {
+    "main_estimate",
+    "main_estimate_overspend",
+    "additional_work",
+    "additional_agreement",
+    "material_replacement",
+    "over_budget_cost",
+    "internal_error_or_loss",
+    "company_cost",
+    "rework",
+    "contract",
+    "variation_estimate",
+    "act",
+    "ks_2",
+    "ks_3",
+    "smetter_materials",
+    "smetter_work_task",
+    "project_documentation",
+    "detail_node",
+    "regulation",
+    "standard",
+    "instruction",
+    "other",
+    "photo_report",
+    "object_remark",
+    "object_remark_photo",
+    "task",
+    "question",
+    "remark",
+    "photo",
+    "material",
+    "decision",
+}
+
+
+def frontend_asset_version() -> str:
+    index_path = STATIC_DIR / "index.html"
+    if not index_path.exists():
+        return os.environ.get("APP_VERSION", "").strip() or "unknown"
+    index_html = index_path.read_text(encoding="utf-8", errors="replace")
+    match = re.search(r'app(?:\.compat)?\.js\?v=([^"]+)', index_html)
+    if match:
+        return match.group(1)
+    return os.environ.get("APP_VERSION", "").strip() or "unknown"
+
+
+def current_commit_hash() -> str:
+    configured = os.environ.get("APP_COMMIT_SHA", "").strip()
+    if configured:
+        return configured[:12]
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short=12", "HEAD"],
+            cwd=str(APP_DIR.parent),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=2,
+            check=False,
+        )
+    except Exception:
+        return ""
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def frontend_label_maps() -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+    app_js_path = STATIC_DIR / "app.js"
+    if not app_js_path.exists():
+        return {}, {}, {}
+    app_js = app_js_path.read_text(encoding="utf-8", errors="replace")
+    match = re.search(r"const\s+statusLabelMap\s*=\s*\{(?P<body>.*?)\n\};", app_js, re.S)
+    if not match:
+        return {}, {}, {}
+    status_map = {
+        key: value
+        for key, value in re.findall(r'^\s*([A-Za-z0-9_]+):\s*"([^"]*)"', match.group("body"), re.M)
+    }
+    role_map = {key: status_map[key] for key in SNAPSHOT_ROLE_KEYS if key in status_map}
+    type_map = {key: status_map[key] for key in SNAPSHOT_TYPE_KEYS if key in status_map}
+    return status_map, role_map, type_map
+
+
+def snapshot_feature_flags() -> dict[str, bool]:
+    app_js = (STATIC_DIR / "app.js").read_text(encoding="utf-8", errors="replace") if (STATIC_DIR / "app.js").exists() else ""
+    index_html = (STATIC_DIR / "index.html").read_text(encoding="utf-8", errors="replace") if (STATIC_DIR / "index.html").exists() else ""
+    database_text = (APP_DIR / "database.py").read_text(encoding="utf-8", errors="replace") if (APP_DIR / "database.py").exists() else ""
+    server_text = Path(__file__).read_text(encoding="utf-8", errors="replace")
+    status_map, role_map, type_map = frontend_label_maps()
+    return {
+        "human_status_labels": bool(status_map and role_map and type_map and "statusLabel(value)" in app_js),
+        "today_screen": "id=\"todayView\"" in index_html and "function renderToday" in app_js,
+        "object_attention_block": "projectAttentionItems" in app_js and "Что требует внимания" in app_js,
+        "photo_reports_entity": "CREATE TABLE IF NOT EXISTS photo_reports" in database_text and "photo_reports_payload" in server_text,
+        "object_issues_entity": "CREATE TABLE IF NOT EXISTS object_remarks" in database_text and "object_remarks_payload" in server_text,
+    }
+
+
+def snapshot_label(labels: dict[str, str], value: object, fallback: str = "Не задано") -> str:
+    key = str(value or "").strip()
+    return labels.get(key) or fallback
+
+
+def snapshot_clean_text(value: object, status_map: dict[str, str]) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    for key in sorted(SNAPSHOT_FORBIDDEN_ENUMS, key=len, reverse=True):
+        replacement = status_map.get(key, "служебный статус")
+        text = re.sub(rf"(?<![A-Za-z0-9_]){re.escape(key)}(?![A-Za-z0-9_])", replacement, text)
+    return text
+
+
+def snapshot_material_pipeline_status(row: dict) -> str:
+    status = str(row.get("batch_status") or row.get("status") or row.get("procurement_status") or "")
+    receipt_status = str(row.get("receipt_status") or "")
+    if status in {"receipt_issue", "returned", "revision_requested"} or receipt_status == "problem":
+        return "problem"
+    if status in {"archived", "closed"}:
+        return "closed"
+    if status == "received" or receipt_status == "ok":
+        return "on_site"
+    if status in {"delivery_confirmed", "delivery_scheduled"}:
+        return "in_transit"
+    if status in {"ordered", "delivery"}:
+        return "ordered"
+    if status in {"in_work", "approved", "agreed"}:
+        return "agreed"
+    return "need_approval"
+
+
+def snapshot_task_is_open(row: dict) -> bool:
+    return str(row.get("status") or "") not in {"accepted", "closed", "archived"}
+
+
+def snapshot_task_is_overdue(row: dict) -> bool:
+    due_date = str(row.get("due_date") or "")
+    if not due_date or str(row.get("status") or "") in {"accepted", "returned", "closed", "archived"}:
+        return False
+    return due_date < date.today().isoformat()
 
 
 def attach_task_events(db, tasks: list[dict]) -> list[dict]:
@@ -2965,6 +3133,12 @@ class AppHandler(BaseHTTPRequestHandler):
                 self.audit_invalid_redirect()
                 return
             account = audit_account_from_token_row(token_row)
+            summary = {
+                "projects": db.execute("SELECT COUNT(*) AS count FROM projects WHERE status != 'archived' AND COALESCE(bitrix_ref, '') != '__knowledge_base__'").fetchone()["count"],
+                "task_waiting": db.execute("SELECT COUNT(*) AS count FROM tasks t JOIN projects p ON p.id = t.project_id WHERE p.status != 'archived' AND t.status = 'completed_pending_acceptance'").fetchone()["count"],
+                "task_returned": db.execute("SELECT COUNT(*) AS count FROM tasks t JOIN projects p ON p.id = t.project_id WHERE p.status != 'archived' AND t.status = 'returned'").fetchone()["count"],
+                "estimate_jobs_open": db.execute("SELECT COUNT(*) AS count FROM estimate_jobs WHERE status IN ('estimate_new', 'estimate_in_work', 'estimate_returned', 'estimate_question')").fetchone()["count"],
+            }
             project_rows = rows_to_dicts(
                 db.execute(
                     """
@@ -2985,6 +3159,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 ).fetchall()
             )
             project_rows = [sanitize_project_for_account(row, account) for row in project_rows]
+            project_ids = [int(row["id"]) for row in project_rows]
             task_rows = rows_to_dicts(
                 db.execute(
                     """
@@ -3005,7 +3180,11 @@ class AppHandler(BaseHTTPRequestHandler):
             material_rows = rows_to_dicts(
                 db.execute(
                     """
-                    SELECT m.*, p.title AS project_title, b.status AS batch_status, b.delivery_urgency AS batch_delivery_urgency
+                    SELECT m.*, p.title AS project_title, b.status AS batch_status,
+                           b.delivery_urgency AS batch_delivery_urgency,
+                           b.receipt_status AS receipt_status,
+                           b.actual_purchase_amount AS actual_purchase_amount,
+                           m.total_amount AS batch_total_amount
                     FROM material_requests m
                     JOIN projects p ON p.id = m.project_id
                     LEFT JOIN material_request_batches b ON b.id = m.batch_id
@@ -3015,6 +3194,8 @@ class AppHandler(BaseHTTPRequestHandler):
                 ).fetchall()
             )
             material_rows = sanitize_material_rows_for_account(material_rows, account)
+            photo_rows = sanitize_documents_for_account(photo_reports_payload(db, account), account)
+            remark_rows = object_remarks_payload(db, account)
             document_rows = sanitize_documents_for_account(
                 rows_to_dicts(
                     db.execute(
@@ -3025,6 +3206,20 @@ class AppHandler(BaseHTTPRequestHandler):
                         WHERE COALESCE(d.related_type, 'project') != 'knowledge_base'
                         ORDER BY d.created_at DESC
                         LIMIT 4
+                        """
+                    ).fetchall()
+                ),
+                account,
+            )
+            notification_rows = sanitize_notifications_for_account(
+                rows_to_dicts(
+                    db.execute(
+                        """
+                        SELECT n.*, p.title AS project_title
+                        FROM notifications n
+                        LEFT JOIN projects p ON p.id = n.project_id
+                        ORDER BY n.created_at DESC, n.id DESC
+                        LIMIT 5
                         """
                     ).fetchall()
                 ),
@@ -3045,20 +3240,46 @@ class AppHandler(BaseHTTPRequestHandler):
             )
             user_rows = sanitize_users_for_account(rows_to_dicts(db.execute("SELECT * FROM users WHERE is_active = 1 ORDER BY id LIMIT 6").fetchall()), account)
 
+        status_map, role_map, type_map = frontend_label_maps()
+        feature_flags = snapshot_feature_flags()
+        generated_at = datetime.now().astimezone().isoformat(timespec="seconds")
+        app_version = frontend_asset_version()
+        commit_hash = current_commit_hash()
+
         def e(value: object) -> str:
-            return html.escape(str(value or ""), quote=True)
+            return html.escape(snapshot_clean_text(value, status_map), quote=True)
+
+        def label(mapping: dict[str, str], value: object, fallback: str = "Не задано") -> str:
+            return snapshot_label(mapping, value, fallback)
+
+        def status_level(value: object) -> str:
+            key = str(value or "")
+            if key in {"overdue", "danger", "problem", "returned", "revision_requested", "rejected", "receipt_issue"}:
+                return "danger"
+            if key in {"warning", "review", "completed_pending_acceptance", "estimate_question", "estimate_returned", "submitted_to_construction", "decision_required", "need_approval", "estimate_hold", "new", "feedback_new"}:
+                return "warning"
+            if key in {"success", "accepted", "approved", "closed", "completed", "received", "on_site", "agreed", "done", "feedback_done", "estimate_done"}:
+                return "success"
+            if key in {"blue", "in_progress", "in_progress_task", "ordered", "in_transit", "delivery_scheduled", "delivery_confirmed", "estimate_in_work", "in_review", "active", "in_work", "feedback_in_work"}:
+                return "blue"
+            return "neutral"
+
+        def badge(text: object, level: str = "neutral") -> str:
+            return f'<span class="badge {e(level)}">{e(text)}</span>'
+
+        def status_badge(value: object) -> str:
+            return badge(label(status_map, value), status_level(value))
+
+        def type_badge(value: object) -> str:
+            return badge(label(type_map, value, "Тип не задан"), "neutral")
 
         def chips(items: list[str]) -> str:
-            return "".join(f'<span class="chip">{e(item)}</span>' for item in items)
+            return "".join(f'<span class="chip">{e(item)}</span>' for item in items if str(item or "").strip())
 
-        def rows(items: list[dict], fields: list[str], empty: str = "Примеров пока нет") -> str:
+        def rows(items: list[dict], renderer, empty: str = "Примеров пока нет") -> str:
             if not items:
                 return f'<p class="muted">{e(empty)}</p>'
-            rendered = []
-            for item in items:
-                values = [e(item.get(field)) for field in fields if item.get(field) not in (None, "")]
-                rendered.append(f'<div class="sample-row">{" · ".join(values) or e(empty)}</div>')
-            return "".join(rendered)
+            return "".join(renderer(item) for item in items)
 
         def block(title: str, actions: list[str], visible: list[str], body: str, mobile: bool = False) -> str:
             device_class = " phone-frame" if mobile else ""
@@ -3076,12 +3297,200 @@ class AppHandler(BaseHTTPRequestHandler):
             </section>
             """
 
-        project_body = rows(project_rows, ["title", "status", "foreman_name"])
-        task_body = rows(task_rows, ["title", "project_title", "status", "due_date"])
-        material_body = rows(material_rows, ["title", "project_title", "basis_type", "procurement_status"])
-        document_body = rows(document_rows, ["title", "type", "status"])
-        feedback_body = rows(feedback_rows, ["sender_name", "text", "status"])
-        settings_body = rows(user_rows, ["name", "role"])
+        def feature_row(name: str, enabled: bool) -> str:
+            value = "true" if enabled else "false"
+            missing = "" if enabled else f'<small class="missing">Фича не внедрена: {e(name)}</small>'
+            return f'<div class="meta-row"><span><code>{e(name)}</code></span><strong>{value}</strong>{missing}</div>'
+
+        def project_tasks(project_id: int) -> list[dict]:
+            return [task for task in task_rows if int(task.get("project_id") or 0) == project_id]
+
+        def project_materials(project_id: int) -> list[dict]:
+            return [row for row in material_rows if int(row.get("project_id") or 0) == project_id]
+
+        def latest_photo_date(project_id: int) -> str:
+            dates = [str(row.get("report_date") or row.get("created_at") or "")[:10] for row in photo_rows if int(row.get("project_id") or 0) == project_id]
+            return sorted([item for item in dates if item])[-1] if dates else ""
+
+        def material_is_risky(row: dict) -> bool:
+            pipeline = snapshot_material_pipeline_status(row)
+            actual = float(row.get("actual_purchase_amount") or 0)
+            planned = float(row.get("batch_total_amount") or row.get("total_amount") or 0)
+            return pipeline == "problem" or str(row.get("batch_status") or row.get("status") or "") in {"returned", "revision_requested"} or str(row.get("batch_delivery_urgency") or "") == "urgent" or (actual > planned > 0)
+
+        def project_attention(project: dict) -> list[tuple[str, int, str]]:
+            pid = int(project.get("id") or 0)
+            tasks = project_tasks(pid)
+            materials = project_materials(pid)
+            remarks = [row for row in remark_rows if int(row.get("project_id") or 0) == pid]
+            items: list[tuple[str, int, str]] = []
+            overdue = [task for task in tasks if snapshot_task_is_overdue(task)]
+            returned = [task for task in tasks if str(task.get("status") or "") == "returned"]
+            risky = [row for row in materials if material_is_risky(row)]
+            open_remarks = [row for row in remarks if str(row.get("status") or "") not in {"accepted", "closed"}]
+            if overdue:
+                items.append(("Просроченные задачи", len(overdue), "danger"))
+            if returned:
+                items.append(("Возвращённые задачи", len(returned), "warning"))
+            if risky:
+                items.append(("Материалы с проблемами", len(risky), "danger"))
+            if open_remarks:
+                items.append(("Незакрытые замечания", len(open_remarks), "warning"))
+            return items
+
+        def project_card(project: dict) -> str:
+            pid = int(project.get("id") or 0)
+            tasks = project_tasks(pid)
+            materials = project_materials(pid)
+            open_tasks = [task for task in tasks if snapshot_task_is_open(task)]
+            overdue = [task for task in tasks if snapshot_task_is_overdue(task)]
+            risky = [row for row in materials if material_is_risky(row)]
+            attention = project_attention(project)
+            return f"""
+            <article class="sample-row">
+              <div class="row-head"><strong>{e(project.get("title") or "Объект")}</strong>{status_badge(project.get("status"))}</div>
+              <div class="muted">Ответственный: {e(project.get("foreman_name") or "прораб не назначен")} · этап: {e(label(status_map, project.get("stage") or project.get("status")))}</div>
+              <div class="metrics">
+                {badge(f"открытые задачи: {len(open_tasks)}", "blue" if open_tasks else "neutral")}
+                {badge(f"просрочено: {len(overdue)}", "danger" if overdue else "neutral")}
+                {badge(f"материалы под риском: {len(risky)}", "warning" if risky else "neutral")}
+              </div>
+              <div class="muted">последний фотоотчёт: {e(latest_photo_date(pid) or "не найден")}</div>
+              <div class="attention-mini"><strong>Что требует внимания</strong>{chips([f"{title}: {count}" for title, count, _ in attention]) or '<span class="muted">Критичных сигналов нет</span>'}</div>
+            </article>
+            """
+
+        def task_card(task: dict) -> str:
+            return f"""
+            <article class="sample-row">
+              <div class="row-head"><strong>{e(task.get("title") or "Задача")}</strong>{status_badge(task.get("status"))}</div>
+              <div class="chips">{type_badge(task.get("task_type") or "task")}{badge(task.get("due_date") or "без срока", "danger" if snapshot_task_is_overdue(task) else "neutral")}</div>
+              <div class="muted">{e(task.get("project_title") or "Объект не указан")} · ответственный: {e(task.get("assignee_name") or "не назначен")}</div>
+            </article>
+            """
+
+        def material_card(row: dict) -> str:
+            pipeline = snapshot_material_pipeline_status(row)
+            urgent = str(row.get("batch_delivery_urgency") or "") == "urgent"
+            return f"""
+            <article class="sample-row">
+              <div class="row-head"><strong>{e(row.get("title") or "Материал")}</strong>{status_badge(pipeline)}</div>
+              <div class="chips">{type_badge(row.get("basis_type"))}{badge("Срочно", "danger") if urgent else ""}</div>
+              <div class="muted">{e(row.get("project_title") or "Объект не указан")} · количество: {e(row.get("requested_quantity") or row.get("quantity") or "не задано")}</div>
+            </article>
+            """
+
+        def document_card(row: dict) -> str:
+            return f"""
+            <article class="sample-row">
+              <div class="row-head"><strong>{e(row.get("title") or row.get("file_name") or "Документ")}</strong>{type_badge(row.get("type"))}</div>
+              <div class="muted">{e(row.get("project_title") or "без объекта")} · файл скрыт в режиме аудита</div>
+            </article>
+            """
+
+        def photo_card(row: dict) -> str:
+            attachments = row.get("attachments") or []
+            return f"""
+            <article class="sample-row">
+              <div class="row-head"><strong>{e(row.get("project_title") or "Фотоотчёт")}</strong>{status_badge(row.get("review_status") or "review")}</div>
+              <div class="chips">{type_badge("photo_report")}{badge(f"файлов: {len(attachments)}", "blue" if attachments else "neutral")}</div>
+              <div class="muted">дата: {e(row.get("report_date") or row.get("created_at") or "не задана")} · автор: {e(row.get("author_name") or "не указан")}</div>
+            </article>
+            """
+
+        def remark_card(row: dict) -> str:
+            return f"""
+            <article class="sample-row">
+              <div class="row-head"><strong>{e(row.get("description") or "Замечание")}</strong>{status_badge(row.get("status"))}</div>
+              <div class="chips">{type_badge("object_remark")}{badge(row.get("due_date") or "без срока", "neutral")}</div>
+              <div class="muted">{e(row.get("project_title") or "Объект не указан")} · ответственный: {e(row.get("responsible_name") or "не назначен")}</div>
+            </article>
+            """
+
+        def feedback_card(row: dict) -> str:
+            return f"""
+            <article class="sample-row">
+              <div class="row-head"><strong>{e(row.get("sender_name") or "Автор скрыт")}</strong>{status_badge(row.get("status"))}</div>
+              <p>{e(row.get("text") or "Без текста")}</p>
+            </article>
+            """
+
+        def user_card(row: dict) -> str:
+            return f"""
+            <article class="sample-row">
+              <div class="row-head"><strong>{e(row.get("name") or "Сотрудник")}</strong>{badge(label(role_map, row.get("role"), "Роль скрыта"))}</div>
+              <div class="muted">контакты скрыты в режиме аудита</div>
+            </article>
+            """
+
+        today = date.today().isoformat()
+        today_tasks = [task for task in task_rows if snapshot_task_is_open(task) and str(task.get("due_date") or "") == today]
+        overdue_tasks = [task for task in task_rows if snapshot_task_is_overdue(task)]
+        returned_tasks = [task for task in task_rows if str(task.get("status") or "") == "returned"]
+        waiting_tasks = [task for task in task_rows if str(task.get("status") or "") == "completed_pending_acceptance"]
+        risky_materials = [row for row in material_rows if material_is_risky(row)]
+        no_photo_projects = [project for project in project_rows if int(project.get("id") or 0) not in {int(row.get("project_id") or 0) for row in photo_rows if str(row.get("report_date") or row.get("created_at") or "")[:10] == today}]
+
+        today_body = f"""
+        <div class="metric-grid">
+          <div class="metric"><span>Мои задачи сегодня</span><strong>{len(today_tasks)}</strong></div>
+          <div class="metric danger"><span>Просрочено</span><strong>{len(overdue_tasks)}</strong></div>
+          <div class="metric warning"><span>Возвращено</span><strong>{len(returned_tasks)}</strong></div>
+          <div class="metric blue"><span>Ждут проверки</span><strong>{len(waiting_tasks)}</strong></div>
+          <div class="metric warning"><span>Материалы под риском</span><strong>{len(risky_materials)}</strong></div>
+          <div class="metric"><span>Без фотоотчёта сегодня</span><strong>{len(no_photo_projects)}</strong></div>
+        </div>
+        <h3>Требует решения</h3>
+        <div class="chips">
+          {badge(f"просроченные задачи: {len(overdue_tasks)}", "danger" if overdue_tasks else "neutral")}
+          {badge(f"возвращённые задачи: {len(returned_tasks)}", "warning" if returned_tasks else "neutral")}
+          {badge(f"материалы с проблемами: {len(risky_materials)}", "danger" if risky_materials else "neutral")}
+        </div>
+        <h3>Активные объекты</h3>
+        {rows(project_rows[:3], project_card, "Активных объектов пока нет")}
+        """
+
+        project_body = rows(project_rows, project_card)
+        task_body = rows(task_rows, task_card)
+        material_body = rows(material_rows, material_card)
+        document_body = rows(document_rows, document_card)
+        photo_body = rows(photo_rows, photo_card, "Фотоотчётов пока нет")
+        remark_body = rows(remark_rows, remark_card, "Замечаний по объектам пока нет")
+        feedback_body = rows(feedback_rows, feedback_card)
+        notification_body = rows(notification_rows, lambda row: f'<article class="sample-row"><div class="row-head"><strong>{e(row.get("title") or "Событие")}</strong>{badge(row.get("created_at") or "")}</div><p>{e(row.get("text") or "")}</p></article>', "Событий пока нет")
+        settings_body = rows(user_rows, user_card)
+
+        role_variants = [
+            ("Руководитель", label(role_map, "owner", "Ген.директор"), ["Все разделы", "Контроль сроков", "Удаление из архива"], ["Сводка", "Объекты", "Задачи", "Финансы"]),
+            ("Руководитель проекта", label(role_map, "construction_manager", "Рук. по строительству"), ["Приём объекта", "Назначение ответственных", "Возврат на доработку"], ["Объекты", "Задачи", "Работы", "Материалы"]),
+            ("Прораб", label(role_map, "foreman", "Прораб"), ["Задачи", "Работы", "Материалы", "Фотоотчёты"], ["Назначенные объекты", "Заявки", "Проектные файлы"]),
+            ("Мастер", "Полевой исполнитель", ["Видит свои задачи", "Смотрит работы", "Передаёт фото"], ["Задачи", "Работы", "Материалы"]),
+            ("Снабжение", label(role_map, "procurement_manager", "Снабжение"), ["Приём заявок", "Доставка", "Проблемы по материалам"], ["Материалы", "Локации", "Файлы проекта"]),
+        ]
+        roles_body = "".join(
+            f"""
+            <article class="sample-row">
+              <div class="row-head"><strong>{e(title)}</strong>{badge(subtitle)}</div>
+              <div><strong>Основные действия:</strong><div class="chips">{chips(actions)}</div></div>
+              <div><strong>Видит:</strong><div class="chips">{chips(visible)}</div></div>
+            </article>
+            """
+            for title, subtitle, actions, visible in role_variants
+        )
+
+        feature_body = "".join(feature_row(key, value) for key, value in feature_flags.items())
+        metadata_body = f"""
+        <section class="meta-panel">
+          <div class="meta-row"><span>generatedAt</span><strong>{e(generated_at)}</strong></div>
+          <div class="meta-row"><span>appVersion</span><strong>{e(app_version)}</strong></div>
+          <div class="meta-row"><span>commitHash</span><strong>{e(commit_hash or "не доступен в контейнере")}</strong></div>
+        </section>
+        <section class="meta-panel">
+          <h2>UX-фичи</h2>
+          {feature_body}
+        </section>
+        """
+
         html_body = f"""<!doctype html>
         <html lang="ru">
         <head>
@@ -3090,26 +3499,47 @@ class AppHandler(BaseHTTPRequestHandler):
           <meta name="robots" content="noindex" />
           <title>AI UX-аудит - Строительный контур</title>
           <style>
-            :root {{ --bg:#f4f6f8; --surface:#fff; --line:#d8e0e4; --text:#142127; --muted:#66737c; --brand:#226f68; --soft:#eef5f3; }}
+            :root {{ --bg:#f4f6f8; --surface:#fff; --line:#d8e0e4; --text:#142127; --muted:#66737c; --brand:#226f68; --soft:#eef5f3; --danger:#b94646; --warning:#a56a09; --blue:#2f6da8; --success:#287347; }}
             * {{ box-sizing:border-box; }}
             body {{ margin:0; background:var(--bg); color:var(--text); font-family:Segoe UI, Arial, sans-serif; }}
             main {{ width:min(1180px, 100%); margin:0 auto; padding:24px; }}
             h1 {{ margin:0 0 8px; font-size:28px; }}
+            h3 {{ margin:10px 0 4px; font-size:15px; }}
             .lead {{ color:var(--muted); margin:0 0 22px; max-width:820px; line-height:1.45; }}
             .grid {{ display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:14px; }}
+            .top-grid {{ display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px; }}
             .snapshot-block {{ background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:16px; min-height:240px; }}
             .snapshot-block header {{ display:grid; gap:8px; border-bottom:1px solid var(--line); padding-bottom:12px; margin-bottom:12px; }}
             h2 {{ margin:0; font-size:18px; }}
             .chips {{ display:flex; flex-wrap:wrap; gap:6px; }}
             .chip {{ display:inline-flex; align-items:center; min-height:24px; padding:3px 8px; border-radius:999px; background:var(--soft); color:#15544e; font-size:12px; }}
-            .actions .chip {{ background:#f7f1df; color:#70510d; }}
+            .snapshot-actions .chip {{ background:#f7f1df; color:#70510d; }}
+            .badge {{ display:inline-flex; align-items:center; min-height:24px; padding:3px 8px; border-radius:999px; background:#edf2f4; color:#39464d; font-size:12px; white-space:nowrap; }}
+            .badge.danger {{ background:#f8e8e8; color:var(--danger); }}
+            .badge.warning {{ background:#fff3d8; color:var(--warning); }}
+            .badge.success {{ background:#e6f5eb; color:var(--success); }}
+            .badge.blue {{ background:#e8f1fb; color:var(--blue); }}
             .snapshot-render {{ display:grid; gap:8px; min-height:96px; }}
             .sample-row {{ border:1px solid var(--line); border-radius:7px; padding:10px; background:#fbfcfc; line-height:1.35; }}
+            .row-head {{ display:flex; align-items:flex-start; justify-content:space-between; gap:8px; margin-bottom:6px; }}
+            .metrics, .metric-grid {{ display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }}
+            .metric-grid {{ display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); }}
+            .metric {{ border:1px solid var(--line); border-radius:7px; padding:8px; background:#fbfcfc; }}
+            .metric span {{ display:block; color:var(--muted); font-size:12px; }}
+            .metric strong {{ font-size:22px; }}
+            .metric.danger strong {{ color:var(--danger); }}
+            .metric.warning strong {{ color:var(--warning); }}
+            .metric.blue strong {{ color:var(--blue); }}
+            .attention-mini {{ display:grid; gap:6px; margin-top:8px; padding-top:8px; border-top:1px solid var(--line); }}
+            .meta-panel {{ background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:12px; display:grid; gap:8px; }}
+            .meta-row {{ display:grid; grid-template-columns:1fr auto; gap:10px; align-items:center; border-bottom:1px solid #eef2f4; padding-bottom:7px; }}
+            .meta-row:last-child {{ border-bottom:0; padding-bottom:0; }}
+            .missing {{ grid-column:1 / -1; color:var(--danger); }}
             footer {{ margin-top:14px; display:grid; gap:8px; }}
             .muted {{ color:var(--muted); }}
             .phone-frame {{ max-width:360px; justify-self:center; border-color:#172026; box-shadow:0 10px 28px rgba(20,33,39,.16); }}
             .banner {{ background:#132126; color:white; border-radius:8px; padding:14px 16px; margin-bottom:16px; }}
-            @media (max-width: 820px) {{ .grid {{ grid-template-columns:1fr; }} main {{ padding:14px; }} }}
+            @media (max-width: 820px) {{ .grid, .top-grid, .metric-grid {{ grid-template-columns:1fr; }} main {{ padding:14px; }} }}
           </style>
         </head>
         <body>
@@ -3117,24 +3547,33 @@ class AppHandler(BaseHTTPRequestHandler):
             <div class="banner">Режим UX-аудита: данные обезличены, скачивание файлов и любые изменения запрещены.</div>
             <h1>Строительный контур - snapshot для UX-аудита</h1>
             <p class="lead">Эта страница показывает основные экраны приложения в статичном виде. Примеры данных обезличены: телефоны, e-mail, адреса, договоры, файлы и финансовые суммы скрыты.</p>
+            <div class="top-grid">{metadata_body}</div>
             <div class="grid">
-              {block("1. Главная", ["Открыть объекты", "Открыть задачи", "Посмотреть уведомления"], ["Рабочий стол", "Сигналы", "Задачи"], project_body)}
-              {block("2. Список объектов", ["Выбрать объект", "Открыть карточку", "Перейти к задачам"], ["Объекты", "Статусы", "Прораб"], project_body)}
-              {block("3. Карточка объекта", ["Переключать вкладки", "Смотреть документы", "Смотреть историю"], ["Обзор", "Работы", "Материалы", "История"], project_body)}
-              {block("4. Задачи", ["Развернуть задачу", "Посмотреть комментарии", "Открыть детали"], ["Статусы", "Ответственные", "Сроки"], task_body)}
-              {block("5. Материалы / заявки", ["Открыть заявку", "Посмотреть статус", "Посмотреть основание"], ["Заявки", "Снабжение", "Материалы"], material_body)}
-              {block("6. Фотоотчёты", ["Открыть карточку вложения", "Посмотреть тип файла"], ["Документы", "Фото", "История"], document_body)}
-              {block("7. Замечания", ["Фильтровать", "Открыть сообщение", "Смотреть статус"], ["Обратная связь", "MAX", "Статусы"], feedback_body)}
-              {block("8. Документы", ["Открыть папку", "Посмотреть список", "Проверить группировку"], ["База знаний", "Папки", "Файлы"], document_body)}
-              {block("9. Отчёты", ["Смотреть реестры", "Оценить навигацию"], ["Сметы", "Материалы", "Допработы"], material_body)}
-              {block("10. Настройки", ["Оценить структуру ролей", "Смотреть список участников"], ["Роли", "Уведомления", "MAX"], settings_body)}
-              {block("11. Мобильный вид главной", ["Прокрутить", "Потянуть для обновления", "Открыть нижнее меню"], ["Мобильная навигация", "Карточки", "Сигналы"], project_body, mobile=True)}
-              {block("12. Мобильный вид карточки объекта", ["Развернуть раздел", "Свернуть раздел", "Перейти к задачам"], ["Обзор", "Вкладки", "Документы"], project_body, mobile=True)}
-              {block("13. Мобильный вид задачи", ["Развернуть задачу", "Свернуть задачу", "Посмотреть комментарии"], ["Задачи", "Комментарии", "Статусы"], task_body, mobile=True)}
+              {block("1. Сегодня", ["Открыть задачи", "Открыть материалы", "Открыть фотоотчёты"], ["Мои задачи", "Требует решения", "Активные объекты"], today_body)}
+              {block("2. Ролевые варианты", ["Сравнить видимость", "Проверить ограничения", "Оценить сценарий роли"], ["Роли", "Доступы", "Сценарии"], roles_body)}
+              {block("3. Рабочий стол", ["Открыть объекты", "Открыть задачи", "Посмотреть события"], ["Сигналы", "Сводка", "Задачи"], notification_body)}
+              {block("4. Список объектов", ["Выбрать объект", "Открыть карточку", "Перейти к задачам"], ["Объекты", "Статусы", "Прораб"], project_body)}
+              {block("5. Карточка объекта", ["Переключать вкладки", "Смотреть документы", "Смотреть историю"], ["Обзор", "Задачи", "Материалы", "Фото", "Замечания", "Документы", "История", "Финансы"], project_body)}
+              {block("6. Задачи", ["Развернуть задачу", "Свернуть задачу", "Посмотреть комментарии"], ["Тип", "Ответственный", "Срок", "Статус"], task_body)}
+              {block("7. Материалы / заявки", ["Открыть заявку", "Посмотреть статус", "Посмотреть основание"], ["Заявки", "Снабжение", "Материалы"], material_body)}
+              {block("8. Фотоотчёты", ["Открыть карточку отчёта", "Посмотреть вложения", "Проверить статус"], ["Фотоотчёты", "Файлы", "Проверка"], photo_body)}
+              {block("9. Замечания по объектам", ["Открыть замечание", "Проверить фото до/после", "Посмотреть ответственного"], ["Объект", "Зона", "Срок", "Проверка"], remark_body)}
+              {block("10. Документы", ["Открыть папку", "Посмотреть список", "Проверить группировку"], ["База знаний", "Папки", "Файлы"], document_body)}
+              {block("11. Обратная связь по программе", ["Фильтровать", "Открыть сообщение", "Смотреть статус"], ["MAX", "Комментарии", "Статусы"], feedback_body)}
+              {block("12. Настройки", ["Оценить структуру ролей", "Смотреть список участников"], ["Роли", "Уведомления", "MAX"], settings_body)}
+              {block("13. Мобильный вид главной", ["Прокрутить", "Потянуть для обновления", "Открыть нижнее меню"], ["Мобильная навигация", "Карточки", "Сигналы"], today_body, mobile=True)}
+              {block("14. Мобильный вид карточки объекта", ["Развернуть раздел", "Свернуть раздел", "Перейти к задачам"], ["Обзор", "Вкладки", "Документы"], project_body, mobile=True)}
+              {block("15. Мобильный вид задачи", ["Развернуть задачу", "Свернуть задачу", "Посмотреть комментарии"], ["Задачи", "Комментарии", "Статусы"], task_body, mobile=True)}
             </div>
           </main>
         </body>
         </html>"""
+        for forbidden in SNAPSHOT_FORBIDDEN_ENUMS:
+            html_body = re.sub(
+                rf"(?<![A-Za-z0-9_]){re.escape(forbidden)}(?![A-Za-z0-9_])",
+                status_map.get(forbidden, "служебный статус"),
+                html_body,
+            )
         html_response(self, html_body)
 
     def serve_document_download(self, document_id: int) -> None:

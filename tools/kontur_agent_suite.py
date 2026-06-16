@@ -443,6 +443,23 @@ def agent_ux_design(checks: list[AgentCheck]) -> None:
     else:
         add(checks, agent, "Экран Сегодня", "WARN", "Не найден полный экран Сегодня.", "Проверить /today и блоки внимания.")
 
+    server_text = read_text("app/server.py")
+    snapshot_contract = [
+        "generatedAt",
+        "appVersion",
+        "human_status_labels",
+        "today_screen",
+        "object_attention_block",
+        "photo_reports_entity",
+        "object_issues_entity",
+        "frontend_label_maps",
+        "SNAPSHOT_FORBIDDEN_ENUMS",
+    ]
+    if has_all(server_text, snapshot_contract):
+        add(checks, agent, "AI audit snapshot UX", "OK", "Snapshot содержит метаданные, UX-фичи и использует карты подписей живого интерфейса.")
+    else:
+        add(checks, agent, "AI audit snapshot UX", "WARN", "Snapshot может отставать от актуального UX.", "Проверить /ai-audit-snapshot/:token и список UX-фич.")
+
     if has_all(app_text, ["toggle", "expanded", "collapsed"]) or has_all(styles, ["details", "summary"]):
         add(checks, agent, "Сворачивание длинных блоков", "OK", "В коде есть контракты раскрытия/сворачивания.")
     else:

@@ -1469,6 +1469,38 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 - `README.md`
 - `docs/16-project-worklog.md`
 
+### 2026-06-16: актуальный UX snapshot для ИИ-аудита
+
+**Запрос.** Обновить `/ai-audit-snapshot/:token`, чтобы UX-аудитор видел актуальный интерфейс после последних доработок: человекочитаемые статусы, экран "Сегодня", блоки внимания, фотоотчеты, замечания по объектам и ролевые варианты без технических enum.
+
+**Решение.**
+
+- Snapshot теперь читает `statusLabelMap` из живого `app/static/app.js` и на его основе формирует карты ролей и типов. Это снижает риск расхождения snapshot с реальным интерфейсом.
+- В начало snapshot добавлены `generatedAt`, `appVersion`, `commitHash` и список UX-фич: `human_status_labels`, `today_screen`, `object_attention_block`, `photo_reports_entity`, `object_issues_entity`.
+- Добавлена защита от вывода технических enum в HTML snapshot: `in_progress`, `new`, `returned`, `accepted`, `additional_work`, `active`, `owner`, `construction_manager`, `procurement_manager`, `estimator`.
+- Snapshot теперь показывает экран "Сегодня" с задачами, просрочками, возвращенными задачами, материалами под риском, объектами без фотоотчета и активными объектами.
+- Добавлены ролевые варианты: Руководитель, Руководитель проекта, Прораб, Мастер, Снабжение.
+- Карточка объекта в snapshot показывает новую верхнюю логику: статус, ответственного, этап, ближайшие сигналы, последний фотоотчет и блок "Что требует внимания".
+- Фотоотчеты и замечания по объектам вынесены в отдельные блоки snapshot.
+- Совет агентов получил проверку `AI audit snapshot UX`.
+
+**Проверки.**
+
+- `python -m py_compile app\server.py tools\kontur_agent_suite.py tools\kontur_quality_agent.py` - успешно.
+- `node --check app\static\app.js` - успешно.
+- `node --check app\static\app.compat.js` - успешно.
+- `node --check app\static\sw.js` - успешно.
+- Локальный HTTP-тест `/ai-audit-snapshot/:token` - HTTP 200, обязательные блоки найдены, запрещенные enum в HTML не найдены.
+- `python tools\kontur_agent_suite.py --url https://kontur.derevgroup.ru --report-dir docs\agent-reports` - 39 OK, 0 WARN, 0 FAIL, 1 INFO без закрытых учетных данных для API smoke.
+
+**Измененные файлы.**
+
+- `app/server.py`
+- `tools/kontur_agent_suite.py`
+- `docs/agent-reports/latest.md`
+- `docs/agent-reports/suite-20260616-081129.md`
+- `docs/16-project-worklog.md`
+
 ### 2026-06-16: мягкая прокрутка колесиком мыши
 
 **Запрос.** При просмотре страниц плохо работала прокрутка колесиком мыши, хотя правый scrollbar прокручивал страницу нормально.
