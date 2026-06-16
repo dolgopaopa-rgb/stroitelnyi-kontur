@@ -356,6 +356,14 @@ async function runReadonly(results, playwright) {
       `status=${sessionCheck.status}; role=${sessionCheck.payload?.role || "unknown"}; href=${sessionCheck.href}; loginForm=${sessionCheck.hasLoginForm}`,
       actualAccessOk ? "normal" : "blocker",
     );
+    add(
+      results,
+      "Read-only Safety QA Agent",
+      "External cookie-limited viewer",
+      "WARN",
+      "unsupported: audit-login requires the client to keep a Secure HttpOnly SameSite=Lax session cookie. Use a full browser link or the read-only snapshot for cookieless AI viewers.",
+      "normal",
+    );
     const writeStatuses = await page.evaluate(async () => {
       const methods = ["POST", "PUT", "PATCH", "DELETE"];
       const entries = [];
@@ -473,6 +481,8 @@ function writeReport(results, startedAt, finishedAt, mandatorySuites) {
   const checks = checksSummary(results);
   const liveAudit = results.find((item) => item.agent === "Read-only Safety QA Agent" && item.name === "Live audit-login actual access");
   checks.liveAuditLogin = !liveAudit ? "not_run" : liveAudit.status === "OK" ? "OK" : liveAudit.status === "WARN" ? "PARTIAL" : "FAIL";
+  const externalCookieless = results.find((item) => item.agent === "Read-only Safety QA Agent" && item.name === "External cookie-limited viewer");
+  checks.externalCookielessViewer = !externalCookieless ? "not_run" : externalCookieless.status === "OK" ? "OK" : externalCookieless.status === "FAIL" ? "FAIL" : "PARTIAL";
   checks.snapshotConsistency = "OK";
   const criticalErrors = results.filter((item) => item.status === "FAIL" && item.severity === "blocker").map((item) => `${item.agent}: ${item.name} — ${item.details}`);
   const warnings = results.filter((item) => item.status === "WARN").map((item) => `${item.agent}: ${item.name} — ${item.details}`);
@@ -505,7 +515,9 @@ function writeReport(results, startedAt, finishedAt, mandatorySuites) {
       navigation_tests: qaStatus(checks.navigation),
       role_tests: agentQaStatus("Role QA Agent"),
       readonly_tests: qaStatus(checks.readonly),
+      actual_playwright_login: results.find((item) => item.agent === "Read-only Safety QA Agent" && item.name === "Live audit-login actual access")?.status === "OK" ? "ok" : results.find((item) => item.agent === "Read-only Safety QA Agent" && item.name === "Live audit-login actual access") ? "failed" : "not_run",
       live_audit_login_actual_access: results.find((item) => item.agent === "Read-only Safety QA Agent" && item.name === "Live audit-login actual access")?.status === "OK" ? "ok" : results.find((item) => item.agent === "Read-only Safety QA Agent" && item.name === "Live audit-login actual access") ? "failed" : "not_run",
+      external_cookieless_viewer: results.find((item) => item.agent === "Read-only Safety QA Agent" && item.name === "External cookie-limited viewer") ? "partial" : "not_run",
       snapshot_qa_consistency: "ok",
       mobile_tests: qaStatus(checks.mobile),
       console_errors: results.some((item) => item.agent === "Console Error QA Agent" && item.status === "FAIL") ? "failed" : results.some((item) => item.agent === "Console Error QA Agent") ? "ok" : "not_run",

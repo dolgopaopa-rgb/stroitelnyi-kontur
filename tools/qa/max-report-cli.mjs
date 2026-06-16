@@ -33,6 +33,24 @@ const presets = {
     ],
     nextStep: "Можно отдавать внешний read-only доступ аудитору и продолжать UX-доработки уже под контролем QA.",
   },
+  "qa-consistency-audit-status": {
+    task: "Сверили commitHash, уточнили статус внешнего audit-login и убрали повторяющиеся сигналы.",
+    done: [
+      "Snapshot теперь показывает productionCommitHash и qaRunCommitHash отдельно.",
+      "Read-only QA разделён на Playwright fresh browser context и внешний cookie-limited viewer.",
+      "Внешний просмотрщик без cookie/session помечается как PARTIAL / unsupported с понятной причиной.",
+      "Сигналы по одинаковым событиям больше не повторяют один и тот же текст подряд.",
+      "Добавлен тест группировки сигналов на четыре одинаковых уведомления.",
+    ],
+    artifacts: [
+      "qa-report.md обновлён",
+      "snapshot показывает текущий production commitHash",
+      "/version показывает текущую production-версию",
+      "live audit-login в свежем браузере проверен",
+      "external cookie-limited viewer зафиксирован как PARTIAL / unsupported",
+    ],
+    nextStep: "Для внешнего AI-аудитора использовать snapshot или полноценный браузер с cookie; cookieless-просмотрщик потребует отдельного режима.",
+  },
 };
 
 const summary = report.maxReport || {

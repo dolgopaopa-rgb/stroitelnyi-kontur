@@ -75,6 +75,7 @@ export function formatMaxReport(input = {}) {
       checkLine("Mobile QA", checks.mobile),
       checkLine("Read-only QA", checks.readonly),
       checkLine("Live audit-login actual access", checks.liveAuditLogin || checks.live_audit_login_actual_access),
+      checkLine("External cookie-limited viewer", checks.externalCookielessViewer || checks.external_cookieless_viewer),
       checkLine("Snapshot QA consistency", checks.snapshotConsistency || checks.snapshot_qa_consistency),
     ].join("\n"),
     "",

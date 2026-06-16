@@ -2796,12 +2796,40 @@
     if (/срок/.test(title)) return "задача без срока";
     return row.related_type || row.title || "сигнал";
   }
+  function normalizeSignalPreviewText(row) {
+    const title = String(row.title || "Событие").trim();
+    let text = String(row.text || "").trim();
+    if (text.toLowerCase().startsWith(title.toLowerCase())) {
+      text = text.slice(title.length).replace(/^[:\s\-—.]+/, "").trim();
+    }
+    return text || title;
+  }
+  function signalPreviewEntries(items = []) {
+    const groups = /* @__PURE__ */ new Map();
+    items.forEach((row) => {
+      const text = normalizeSignalPreviewText(row);
+      if (!groups.has(text)) groups.set(text, { text, count: 0 });
+      groups.get(text).count += 1;
+    });
+    const entries = [...groups.values()];
+    const visible = entries.slice(0, 3).map((entry) => entry.text);
+    let hidden = 0;
+    entries.slice(0, 3).forEach((entry) => {
+      hidden += Math.max(0, entry.count - 1);
+    });
+    entries.slice(3).forEach((entry) => {
+      hidden += entry.count;
+    });
+    return { visible, hidden };
+  }
+  window.__konturDedupeSignals = dedupeSignals;
+  window.__konturSignalPreviewEntries = signalPreviewEntries;
   function dedupeSignals(rows = []) {
     const map = /* @__PURE__ */ new Map();
     rows.forEach((row) => {
       const day = dateOnly(row.created_at) || "без даты";
       const type = signalTypeKey(row);
-      const sourceId = row.related_id || "".concat(row.title || "", ":").concat(row.text || "");
+      const sourceId = normalizeSignalPreviewText(row).toLowerCase();
       const key = "".concat(row.project_id || "general", ":").concat(type, ":").concat(day, ":").concat(row.related_type || "", ":").concat(sourceId);
       if (!map.has(key)) {
         map.set(key, __spreadProps(__spreadValues({}, row), {
@@ -2826,9 +2854,8 @@
   function renderSignalRow(signal) {
     const items = signal.rows || [signal];
     const first = items[0] || signal;
-    const preview = items.slice(0, 3);
-    const rest = Math.max(0, items.length - preview.length);
-    return '\n    <button class="row clickable notification-row signal-row" '.concat(notificationTargetAttrs(first), '>\n      <div class="stack-line">\n        <strong>[').concat(escapeHtml(signal.signal_type || "Сигнал"), "] ").concat(escapeHtml(signal.project_title || "Без объекта"), "</strong>\n        ").concat(pill(statusLabel(signalStatus(signal)), statusLevel(signalStatus(signal))), '\n      </div>\n      <div class="muted">').concat(items.length, " позиций · создано ").concat(formatDateRu(signal.signal_day || signal.created_at), '</div>\n      <div class="signal-preview">\n        ').concat(preview.map((row) => "<span>".concat(escapeHtml(row.title || "Событие"), ": ").concat(escapeHtml(row.text || ""), "</span>")).join(""), "\n        ").concat(rest ? '<span class="muted">ещё '.concat(rest, " позиций</span>") : "", "\n      </div>\n    </button>");
+    const preview = signalPreviewEntries(items);
+    return '\n    <button class="row clickable notification-row signal-row" '.concat(notificationTargetAttrs(first), '>\n      <div class="stack-line">\n        <strong>[').concat(escapeHtml(signal.signal_type || "Сигнал"), "] ").concat(escapeHtml(signal.project_title || "Без объекта"), "</strong>\n        ").concat(pill(statusLabel(signalStatus(signal)), statusLevel(signalStatus(signal))), '\n      </div>\n      <div class="muted">').concat(items.length, " позиций · создано ").concat(formatDateRu(signal.signal_day || signal.created_at), '</div>\n      <div class="signal-preview">\n        ').concat(preview.visible.map((text) => "<span>".concat(escapeHtml(text), "</span>")).join(""), "\n        ").concat(preview.hidden ? '<span class="muted">ещё '.concat(preview.hidden, " позиций</span>") : "", "\n      </div>\n    </button>");
   }
   async function renderNotifications() {
     var _a;

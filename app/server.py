@@ -3619,6 +3619,12 @@ class AppHandler(BaseHTTPRequestHandler):
         cookie_secure = bool(cookie and "; Secure" in cookie)
         cookie_path = "/" if cookie and "Path=/" in cookie else "не задан"
         cookie_samesite = "Lax" if cookie and "SameSite=Lax" in cookie else "не задан"
+        qa_report = latest_qa_report()
+        actual_playwright_login = qa_snapshot_status(qa_report, "actual_playwright_login")
+        if actual_playwright_login == "not_run":
+            actual_playwright_login = qa_snapshot_status(qa_report, "live_audit_login_actual_access")
+        external_cookieless_viewer = qa_snapshot_status(qa_report, "external_cookieless_viewer")
+        external_reason = "Внешний просмотрщик без cookie/session не поддерживает обычную серверную сессию; используйте ссылку в полноценном браузере или snapshot-страницу."
         body = f"""<!doctype html>
         <html lang="ru">
         <head>
@@ -3651,6 +3657,9 @@ class AppHandler(BaseHTTPRequestHandler):
               <div class="row"><span>cookie_secure</span><strong>{'true' if cookie_secure else 'false'}</strong></div>
               <div class="row"><span>cookie_samesite</span><strong>{html.escape(cookie_samesite)}</strong></div>
               <div class="row"><span>external_browser_cookie_check</span><strong id="cookieCheck">{'checking' if session_created else 'not_started'}</strong></div>
+              <div class="row"><span>actual_playwright_login</span><strong>{html.escape(actual_playwright_login)}</strong></div>
+              <div class="row"><span>external_cookieless_viewer</span><strong>{html.escape(external_cookieless_viewer)}</strong></div>
+              <div class="row"><span>reason</span><strong>{html.escape(external_reason)}</strong></div>
               <div class="row"><span>redirect_target</span><strong>{html.escape(redirect_target if session_created else '/login')}</strong></div>
             </div>
             {'<a id="auditOpenLink" href="' + html.escape(redirect_target, quote=True) + '">Открыть приложение в режиме аудита</a>' if session_created else '<a href="/login?audit_error=invalid">Перейти на вход</a>'}
@@ -4102,7 +4111,7 @@ class AppHandler(BaseHTTPRequestHandler):
             for row in items:
                 day = str(row.get("created_at") or "")[:10] or "без даты"
                 signal_type = snapshot_signal_type(row)
-                source_id = row.get("related_id") or f"{row.get('title') or ''}:{row.get('text') or ''}"
+                source_id = snapshot_signal_preview_text(row).lower()
                 key = f"{row.get('project_id') or 'general'}:{signal_type}:{day}:{row.get('related_type') or ''}:{source_id}"
                 group = grouped.setdefault(
                     key,
@@ -4116,15 +4125,21 @@ class AppHandler(BaseHTTPRequestHandler):
                 group["rows"].append(row)
             return sorted(grouped.values(), key=lambda row: str(row.get("created_at") or ""), reverse=True)
 
+        def snapshot_signal_preview_text(row: dict) -> str:
+            title = snapshot_clean_text(row.get("title") or "Событие", status_map)
+            text = snapshot_clean_text(row.get("text") or "", status_map)
+            if text.lower().startswith(title.lower()):
+                text = re.sub(r"^[:\s\-—.]+", "", text[len(title):]).strip()
+            return text or title
+
         def signal_preview_rows(items: list[dict]) -> tuple[list[str], int]:
             grouped: dict[str, dict] = {}
             order: list[str] = []
             for item in items:
-                title = snapshot_clean_text(item.get("title") or "Событие", status_map)
-                text = snapshot_clean_text(item.get("text") or "", status_map)
-                key = f"{title}\n{text}"
+                text = snapshot_signal_preview_text(item)
+                key = text
                 if key not in grouped:
-                    grouped[key] = {"title": title, "text": text, "count": 0}
+                    grouped[key] = {"text": text, "count": 0}
                     order.append(key)
                 grouped[key]["count"] += 1
             rendered: list[str] = []
@@ -4132,9 +4147,8 @@ class AppHandler(BaseHTTPRequestHandler):
             for key in order[:3]:
                 entry = grouped[key]
                 count = int(entry["count"] or 1)
-                suffix = f" — {count} позиций" if count > 1 else ""
-                text = f": {entry['text']}" if entry["text"] else ""
-                rendered.append(f"{entry['title']}{suffix}{text}")
+                rendered.append(str(entry["text"]))
+                hidden_positions += max(0, count - 1)
             for key in order[3:]:
                 hidden_positions += int(grouped[key]["count"] or 1)
             return rendered, hidden_positions
@@ -4340,6 +4354,8 @@ class AppHandler(BaseHTTPRequestHandler):
           <div class="meta-row"><span>generatedAt</span><strong>{e(qa_generated_at)}</strong></div>
           <div class="meta-row"><span>appVersion</span><strong>{e(qa_app_version)}</strong></div>
           <div class="meta-row"><span>commitHash</span><strong>{e(qa_commit)}</strong></div>
+          <div class="meta-row"><span>productionCommitHash</span><strong>{e(commit_hash)}</strong></div>
+          <div class="meta-row"><span>qaRunCommitHash</span><strong>{e(qa_commit)}</strong></div>
           <div class="meta-row"><span>buildTime</span><strong>{e(metadata["buildTime"])}</strong></div>
           <div class="meta-row"><span>deployedAt</span><strong>{e(metadata["deployedAt"])}</strong></div>
           <div class="meta-row"><span>environment</span><strong>{e(qa_environment)}</strong></div>
@@ -4354,7 +4370,10 @@ class AppHandler(BaseHTTPRequestHandler):
           {qa_row("navigation_tests", "Навигация")}
           {qa_row("role_tests", "Роли")}
           {qa_row("readonly_tests", "Read-only аудит")}
+          {qa_row("actual_playwright_login", "Playwright fresh browser context")}
           {qa_row("live_audit_login_actual_access", "Live audit-login actual access")}
+          {qa_row("external_cookieless_viewer", "External cookie-limited viewer")}
+          <div class="meta-row"><span><code>external_cookieless_reason</code></span><strong>Ограниченный просмотрщик без cookie/session не поддерживает обычную серверную сессию; используйте полноценный браузер или snapshot.</strong></div>
           {qa_row("snapshot_qa_consistency", "Snapshot QA consistency")}
           {qa_row("mobile_tests", "Мобильная версия")}
           {qa_row("console_errors", "Ошибки консоли")}
