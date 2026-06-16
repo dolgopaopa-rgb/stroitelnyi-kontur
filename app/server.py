@@ -3942,6 +3942,26 @@ class AppHandler(BaseHTTPRequestHandler):
         def chips(items: list[str]) -> str:
             return "".join(f'<span class="chip">{e(item)}</span>' for item in items if str(item or "").strip())
 
+        def snapshot_plural_ru(count: int, one: str, few: str, many: str) -> str:
+            value = abs(int(count or 0))
+            mod100 = value % 100
+            mod10 = value % 10
+            if 11 <= mod100 <= 14:
+                return many
+            if mod10 == 1:
+                return one
+            if 2 <= mod10 <= 4:
+                return few
+            return many
+
+        def snapshot_positions_label(count: int) -> str:
+            value = int(count or 0)
+            return f"{value} {snapshot_plural_ru(value, 'позиция', 'позиции', 'позиций')}"
+
+        def snapshot_normalize_position_plural_text(value: object) -> str:
+            text = str(value or "")
+            return re.sub(r"\b(\d+)\s+позиций\b", lambda match: snapshot_positions_label(int(match.group(1))), text, flags=re.IGNORECASE)
+
         def rows(items: list[dict], renderer, empty: str = "Примеров пока нет") -> str:
             if not items:
                 return f'<p class="muted">{e(empty)}</p>'
@@ -4041,18 +4061,19 @@ class AppHandler(BaseHTTPRequestHandler):
             priority = str(value or "normal").strip() or "normal"
             return badge(label(status_map, priority, "Обычный"), status_level(priority))
 
-        def task_card(task: dict) -> str:
+        def task_card(task: dict, expanded: bool = False) -> str:
             full_title = snapshot_clean_text(task.get("title") or "Задача", status_map)
             title = short_text(full_title or "Задача", 80)
             description = snapshot_clean_text(task.get("description") or "", status_map)
             if not description and title != full_title:
                 description = full_title
+            body = f'<p class="short-description"><strong>Описание после раскрытия:</strong> {e(description)}</p>' if expanded and description else ""
             return f"""
             <article class="sample-row task-card-snapshot">
               <div class="task-card-top">{type_badge(task.get("task_type") or "task")}<strong>{e(title)}</strong></div>
               <div class="muted">{e(task.get("project_title") or "Объект не указан")} · ответственный: {e(task.get("assignee_name") or "не назначен")}</div>
               <div class="chips">{status_badge(task.get("status"))}{task_priority_badge(task.get("priority"))}{badge(task.get("due_date") or "без срока", "danger" if snapshot_task_is_overdue(task) else "neutral")}</div>
-              <p class="short-description">{e(description)}</p>
+              {body}
             </article>
             """
 
@@ -4188,7 +4209,7 @@ class AppHandler(BaseHTTPRequestHandler):
             text = snapshot_clean_text(row.get("text") or "", status_map)
             if text.lower().startswith(title.lower()):
                 text = re.sub(r"^[:\s\-—.]+", "", text[len(title):]).strip()
-            return text or title
+            return snapshot_normalize_position_plural_text(text or title)
 
         def signal_preview_rows(items: list[dict]) -> tuple[list[str], int]:
             grouped: dict[str, dict] = {}
@@ -4217,9 +4238,9 @@ class AppHandler(BaseHTTPRequestHandler):
             project_title = row.get("project_title") or "Без объекта"
             return f"""
             <article class="sample-row">
-              <div class="row-head"><strong>[{e(row.get("signal_type") or "Сигнал")}] {e(project_title)}</strong>{badge(f"{len(items)} позиций", "blue" if len(items) > 1 else "neutral")}</div>
+              <div class="row-head"><strong>[{e(row.get("signal_type") or "Сигнал")}] {e(project_title)}</strong>{badge(snapshot_positions_label(len(items)), "blue" if len(items) > 1 else "neutral")}</div>
               <div class="muted">создано {e(row.get("signal_day") or row.get("created_at") or "без даты")}</div>
-              <div class="signal-preview">{''.join(f'<span>{e(item)}</span>' for item in preview)}{f'<span class="muted">ещё {rest} позиций</span>' if rest else ''}</div>
+              <div class="signal-preview">{''.join(f'<span>{e(item)}</span>' for item in preview)}{f'<span class="muted">ещё {snapshot_positions_label(rest)}</span>' if rest else ''}</div>
             </article>
             """
 
@@ -4284,8 +4305,45 @@ class AppHandler(BaseHTTPRequestHandler):
         {rows(project_rows[:3], project_card, "Активных объектов пока нет")}
         """
 
-        selected_project_body = project_card(project_rows[0]) if project_rows else '<p class="muted">Пример объекта пока отсутствует</p>'
-        short_task_body = task_card(task_rows[0]) if task_rows else '<p class="muted">Пример задачи пока отсутствует</p>'
+        demo_project = {"id": -1, "title": "Объект #14", "status": "active", "stage": "active", "foreman_name": "Андрей"}
+        demo_task = {
+            "id": -1,
+            "title": "Сделать фотоотчёт по объекту",
+            "description": "Что снять: бытовка, территория, внутри дома, вода, электрощиток, канализация.",
+            "project_title": "Объект #14",
+            "assignee_name": "Андрей",
+            "reviewer_name": "Руководитель строительства",
+            "status": "new",
+            "priority": "high",
+            "due_date": today,
+            "task_type": "photo_report",
+        }
+        demo_material = {
+            "title": "QuickDeck, 10 листов",
+            "project_title": "Объект #14",
+            "requested_quantity": "10",
+            "quantity": "10",
+            "needed_at": today,
+            "batch_delivery_urgency": "urgent",
+            "basis_type": "main_estimate",
+            "status": "ordered",
+        }
+        demo_blocker = {
+            "title": "Нет материала для этапа",
+            "project_title": "Объект #14",
+            "responsible_name": "Снабжение",
+            "due_date": today,
+            "status": "open",
+            "severity": "high",
+            "blocker_type": "no_material",
+        }
+        selected_project_body = project_card(project_rows[0]) if project_rows else project_card(demo_project)
+        short_task_body = f"""
+        <h3>Список задач</h3>
+        {task_card(task_rows[0] if task_rows else demo_task, expanded=False)}
+        <h3>Раскрытая задача</h3>
+        {task_card(task_rows[0] if task_rows else demo_task, expanded=True)}
+        """
         photo_empty_body = f"""
         <article class="sample-row empty-demo">
           <strong>Фотоотчётов пока нет</strong>
@@ -4302,7 +4360,17 @@ class AppHandler(BaseHTTPRequestHandler):
         """
         project_body = rows(project_rows, project_card)
         task_body = rows(task_rows, task_card)
-        material_body = rows(material_rows, material_card)
+        material_pipeline_tabs = ["Все", "Нужно согласовать", "Согласовано", "Заказано", "В пути", "На объекте", "Проблема", "Закрыто"]
+        material_extra_filters = ["Мои", "Срочные", "Без срока", "Тормозит объект", "Вне сметы"]
+        material_body = f"""
+        <article class="sample-row">
+          <strong>Pipeline материалов</strong>
+          <div class="chips">{chips(material_pipeline_tabs)}</div>
+          <div class="muted">Дополнительные фильтры:</div>
+          <div class="chips">{chips(material_extra_filters)}</div>
+        </article>
+        {rows(material_rows or [demo_material], material_card)}
+        """
         document_body = rows(document_rows, document_card)
         photo_body = rows(photo_rows, photo_card, "Фотоотчётов пока нет")
         remark_body = rows(remark_rows, remark_card, "Замечаний по объектам пока нет")
@@ -4312,10 +4380,10 @@ class AppHandler(BaseHTTPRequestHandler):
         settings_body = rows(user_rows, user_card)
 
         role_variants = [
-            ("Руководитель", label(role_map, "owner", "Ген.директор"), ["Все разделы", "Контроль сроков", "Удаление из архива"], ["Сводка", "Объекты", "Задачи", "Финансы"]),
+            ("Руководитель", label(role_map, "owner", "Ген.директор"), ["Проблемы", "Блокеры", "Сроки", "Сигналы", "Решения"], ["Сегодня", "Объекты", "Блокеры", "Сигналы", "Задачи"]),
             ("Руководитель проекта", label(role_map, "construction_manager", "Рук. по строительству"), ["Приём объекта", "Назначение ответственных", "Возврат на доработку"], ["Объекты", "Задачи", "Работы", "Материалы"]),
             ("Прораб", label(role_map, "foreman", "Прораб"), ["Задачи", "Работы", "Материалы", "Фотоотчёты"], ["Назначенные объекты", "Заявки", "Проектные файлы"]),
-            ("Мастер", "Полевой исполнитель", ["Видит свои задачи", "Смотрит работы", "Передаёт фото"], ["Задачи", "Работы", "Материалы"]),
+            ("Мастер", "Полевой исполнитель", ["Что сделать", "Готово", "Добавить фото", "Сообщить проблему", "Комментарий"], ["Сегодня", "Мои задачи", "Фото", "Проблема"]),
             ("Снабжение", label(role_map, "procurement_manager", "Снабжение"), ["Приём заявок", "Доставка", "Проблемы по материалам"], ["Материалы", "Локации", "Файлы проекта"]),
         ]
         roles_body = "".join(
@@ -4367,71 +4435,99 @@ class AppHandler(BaseHTTPRequestHandler):
             "mobile_quick_actions": "ok" if "mobileQuickActionsForRole" in app_js_snapshot and "mobile-bottom-nav" in index_snapshot else "missing",
             "empty_states": "ok" if "renderPhotoEmptyState" in app_js_snapshot and "renderRemarkEmptyState" in app_js_snapshot and "empty-state" in app_js_snapshot else "partial",
             "role_navigation": "ok" if "navLabelsByRole" in app_js_snapshot and "viewAccess" in app_js_snapshot else "partial",
+            "role_today_has_real_cards": "ok" if "role-card-examples" in server_snapshot and "worker-simple-card" in server_snapshot else "partial",
+            "worker_mode_simplified": "ok" if "worker-simple-card" in server_snapshot and "Смотрит работы" not in server_snapshot else "partial",
+            "task_description_collapsed_in_list": "ok" if "TASK_DESCRIPTION_COLLAPSED_IN_LIST = true" in app_js_snapshot else "partial",
+            "signal_pluralization": "ok" if "snapshot_positions_label" in server_snapshot and "positionsLabel" in app_js_snapshot else "partial",
+            "materials_pipeline_tabs_visible": "ok" if all(label in server_snapshot for label in ["Нужно согласовать", "Согласовано", "Заказано", "В пути", "На объекте", "Проблема", "Закрыто"]) else "partial",
+            "mobile_plus_button_separated": "ok" if "mobile-nav-demo" in server_snapshot and "mobile-plus" in ((STATIC_DIR / "styles.css").read_text(encoding="utf-8", errors="replace")) else "partial",
             "live_audit_login": qa_snapshot_status(qa_report, "live_audit_login_actual_access"),
         }
         stage3_body = "".join(
             f'<div class="meta-row"><span><code>{e(key)}</code></span><strong>{e(value)}</strong></div>'
             for key, value in stage3_checks.items()
         )
-        def role_today_sample(role_title: str, question: str, visible: list[str], actions: list[str]) -> str:
+        def role_today_sample(role_title: str, question: str, body: str, actions: list[str]) -> str:
             return f"""
-            <article class="sample-row">
+            <article class="sample-row role-card-examples">
               <div class="row-head"><strong>{e(role_title)}</strong>{badge("Сегодня", "blue")}</div>
               <p><strong>{e(question)}</strong></p>
-              <div><strong>Показывает:</strong><div class="chips">{chips(visible)}</div></div>
+              <div class="snapshot-render">{body}</div>
               <div><strong>Действия:</strong><div class="chips">{chips(actions)}</div></div>
             </article>
             """
 
+        owner_problem_examples = (
+            rows(decision_items[:2] or [{"type": "Блокер", "object": "Объект #14", "title": "Нет материала для этапа", "responsible": "Снабжение", "due": today, "criticality": "Высокая", "level": "danger", "action": "Открыть блокер"}], decision_card)
+            + (blocker_card(blocker_rows[0]) if blocker_rows else blocker_card(demo_blocker))
+        )
+        project_manager_examples = rows(project_rows[:2] or [demo_project], project_card) + rows((today_tasks or task_rows or [demo_task])[:2], task_card)
+        foreman_examples = rows((today_tasks or task_rows or [demo_task])[:2], task_card) + rows((risky_materials or material_rows or [demo_material])[:1], material_card)
+        master_task = task_rows[0] if task_rows else demo_task
+        master_examples = f"""
+        <article class="sample-row worker-simple-card">
+          <div class="row-head"><strong>{e(short_text(master_task.get("title") or "Что сделать", 64))}</strong>{status_badge(master_task.get("status") or "new")}</div>
+          <div class="muted">{e(master_task.get("project_title") or "Объект #14")} · срок: {e(master_task.get("due_date") or today)}</div>
+          <div class="chips">{badge("Готово", "success")}{badge("Добавить фото", "blue")}{badge("Сообщить проблему", "warning")}</div>
+        </article>
+        <article class="sample-row worker-simple-card">
+          <div class="row-head"><strong>Оставить комментарий по месту</strong>{badge("Без срока", "neutral")}</div>
+          <div class="muted">Короткое подтверждение или вопрос руководителю.</div>
+          <div class="chips">{badge("Комментарий", "blue")}</div>
+        </article>
+        """
+        procurement_examples = rows((risky_materials or material_rows or [demo_material])[:3], material_card)
+        estimator_examples = rows((risky_materials or material_rows or [demo_material])[:2], material_card) + (rows(remark_rows[:1], remark_card, "") if remark_rows else '<article class="sample-row"><div class="row-head"><strong>Проверить материал вне сметы</strong><span class="badge warning">Нужно проверить</span></div><div class="muted">Объект #14 · основание: допработа · цена требует проверки</div></article>')
+
         today_owner_body = role_today_sample(
             "Руководитель",
             "Где горит и где нужно моё решение?",
-            ["Требует моего решения", "Просрочки", "Блокеры", "Материалы под риском", "Объекты без фотоотчёта"],
+            owner_problem_examples,
             ["Открыть проблемный объект", "Открыть задачу", "Посмотреть сигналы"],
         )
         today_project_manager_body = role_today_sample(
             "Руководитель проекта",
             "Что происходит на моих объектах?",
-            ["Мои объекты", "Задачи по объектам", "Материалы под риском", "Замечания", "Фотоотчёты"],
+            project_manager_examples,
             ["Открыть объект", "Создать задачу", "Запросить фотоотчёт"],
         )
         today_foreman_body = role_today_sample(
             "Прораб",
             "Что мне сегодня сделать на объекте?",
-            ["Мои объекты", "Мои задачи", "Материалы к получению", "Замечания к закрытию"],
+            foreman_examples,
             ["Добавить фотоотчёт", "Создать заявку", "Отметить выполнено"],
         )
         today_master_body = role_today_sample(
             "Мастер",
             "Что сделать, где сделать, как подтвердить?",
-            ["Что сделать сегодня", "Где сделать", "Срок", "Фото/видео"],
+            master_examples,
             ["Готово", "Сообщить проблему", "Добавить фото"],
         )
         today_procurement_body = role_today_sample(
             "Снабжение",
             "Что купить, куда, когда и что тормозит объект?",
-            ["Новые заявки", "Нужно согласовать", "Заказано", "В пути", "Проблема"],
+            procurement_examples,
             ["Открыть заявку", "Изменить статус", "Добавить поставщика"],
         )
         today_estimator_body = role_today_sample(
             "Сметчик",
             "Что требует проверки по смете и допработам?",
-            ["Материалы вне сметы", "Нет цены", "Цена отличается от сметы", "Допработы на согласовании"],
+            estimator_examples,
             ["Открыть заявку", "Проверить основание", "Вернуть на уточнение"],
         )
 
         signal_group_body = f"""
         <article class="sample-row">
           <div class="row-head"><strong>[Материалы вне основной сметы] {e((project_rows[0] or {}).get("title") if project_rows else "Объект")}</strong>{badge("новый", "warning")}</div>
-          <div class="muted">4 позиции · создано {e(today)}</div>
-          <div class="signal-preview"><span>Материалы по заявке получены прорабом</span><span class="muted">ещё 3 позиции</span></div>
+          <div class="muted">{snapshot_positions_label(4)} · создано {e(today)}</div>
+          <div class="signal-preview"><span>Материалы по заявке получены прорабом</span><span class="muted">ещё {snapshot_positions_label(3)}</span></div>
           <div class="chips">{chips(["Действие: открыть заявку", "Без повторения одинакового текста"])}</div>
         </article>
         """
         blocker_body = rows(blocker_rows, blocker_card, "Блокеров пока нет")
         mobile_menu_body = """
         <article class="sample-row">
-          <div class="chips"><span class="chip">Сегодня</span><span class="chip">Объекты</span><span class="chip">+</span><span class="chip">Уведомления</span><span class="chip">Я</span></div>
+          <div class="mobile-nav-demo"><span>Сегодня</span><span>Объекты</span><strong>+</strong><span>Уведомления</span><span>Я</span></div>
           <p class="muted">Кнопка “+” открывает быстрые действия по роли: фото, задача, замечание, материал или проблема.</p>
         </article>
         """
@@ -4531,6 +4627,8 @@ class AppHandler(BaseHTTPRequestHandler):
             .short-description {{ color:var(--muted); margin:6px 0 0; line-height:1.35; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }}
             .signal-preview {{ display:grid; gap:4px; color:var(--muted); font-size:13px; margin-top:6px; }}
             .empty-demo {{ background:#f7fbfb; border-style:dashed; }}
+            .mobile-nav-demo {{ display:grid; grid-template-columns:1fr 1fr 52px 1fr 1fr; align-items:center; gap:6px; padding:8px; border-radius:18px; background:#142127; color:white; text-align:center; font-size:12px; }}
+            .mobile-nav-demo strong {{ display:grid; place-items:center; width:48px; height:48px; border-radius:50%; background:var(--brand); font-size:26px; justify-self:center; box-shadow:0 6px 18px rgba(0,0,0,.22); }}
             .meta-panel {{ background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:12px; display:grid; gap:8px; }}
             .meta-row {{ display:grid; grid-template-columns:1fr auto; gap:10px; align-items:center; border-bottom:1px solid #eef2f4; padding-bottom:7px; }}
             .meta-row:last-child {{ border-bottom:0; padding-bottom:0; }}
@@ -4567,7 +4665,7 @@ class AppHandler(BaseHTTPRequestHandler):
               {block("13. Карточка объекта", ["Открыть задачи", "Добавить фотоотчёт", "Создать замечание", "Запросить материал", "Открыть документы"], ["Один выбранный объект", "Метрики", "Ближайшие действия"], selected_project_body)}
               {block("14. Задача в коротком формате", ["Развернуть задачу", "Свернуть задачу", "Посмотреть комментарии"], ["Тип", "Ответственный", "Срок", "Статус"], short_task_body)}
               {block("15. Задачи", ["Развернуть задачу", "Свернуть задачу", "Посмотреть комментарии"], ["Тип", "Ответственный", "Срок", "Статус"], task_body)}
-              {block("16. Материалы / заявки", ["Открыть заявку", "Посмотреть статус", "Посмотреть основание"], ["Все", "Мои", "Срочные", "Без срока", "Тормозит объект", "Вне сметы"], material_body)}
+              {block("16. Материалы / заявки", ["Открыть заявку", "Посмотреть статус", "Посмотреть основание"], ["Все", "Нужно согласовать", "Согласовано", "Заказано", "В пути", "На объекте", "Проблема", "Закрыто"], material_body)}
               {block("17. Пример заявки на материал", ["Открыть заявку", "Изменить статус", "Добавить комментарий"], ["Материал", "Срок", "Статус", "Ответственный"], material_body)}
               {block("18. Фотоотчёты", ["Открыть карточку отчёта", "Посмотреть вложения", "Проверить статус"], ["Фотоотчёты", "Файлы", "Проверка"], photo_body)}
               {block("19. Пустое состояние фотоотчётов", ["Открыть объект", "Добавить фотоотчёт"], ["Пустое состояние", "Список объектов"], photo_empty_body)}

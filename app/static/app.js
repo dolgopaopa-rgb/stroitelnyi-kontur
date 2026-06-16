@@ -13,6 +13,7 @@ const routeViewMap = {
   "/settings": "events",
 };
 const pathView = routeViewMap[window.location.pathname] || "";
+const TASK_DESCRIPTION_COLLAPSED_IN_LIST = true;
 
 const state = {
   view: initialRoute.get("view") || pathView || localStorage.getItem("currentView") || "today",
@@ -3373,7 +3374,6 @@ function projectBlockerCount(project, tasks = state.lastTasks || [], materialRow
 }
 
 function renderTodayTaskCard(task) {
-  const description = taskDisplayDescription(task);
   return `
     <button class="row clickable today-task-card" type="button" data-open-task="${task.id}" data-testid="task-card">
       <div class="stack-line">
@@ -3384,7 +3384,6 @@ function renderTodayTaskCard(task) {
       </div>
       <strong class="task-card-title" data-testid="task-title">${escapeHtml(taskDisplayTitle(task))}</strong>
       <div class="muted" data-testid="task-meta">${escapeHtml(task.project_title || "Объект не указан")} · ответственный: ${escapeHtml(task.assignee_name || "не назначен")} · срок: ${task.due_date ? formatDateRu(task.due_date) : "без срока"}</div>
-      ${description ? `<p class="task-description-clamp">${escapeHtml(description)}</p>` : ""}
     </button>`;
 }
 
@@ -3769,7 +3768,11 @@ function normalizeSignalPreviewText(row) {
   if (text.toLowerCase().startsWith(title.toLowerCase())) {
     text = text.slice(title.length).replace(/^[:\s\-—.]+/, "").trim();
   }
-  return text || title;
+  return normalizePositionPluralText(text || title);
+}
+
+function normalizePositionPluralText(text) {
+  return String(text || "").replace(/\b(\d+)\s+позиций\b/gi, (_, count) => positionsLabel(Number(count)));
 }
 
 function signalPreviewEntries(items = []) {
@@ -4373,7 +4376,6 @@ function renderProjectTaskList(tasks = []) {
 }
 
 function renderCompactTaskRow(task) {
-  const description = taskDisplayDescription(task);
   return `
     <button class="row clickable compact-task-card" type="button" data-open-task="${task.id}" data-testid="task-card">
       <div class="compact-task-title">
@@ -4385,7 +4387,6 @@ function renderCompactTaskRow(task) {
         <span>ответственный: ${escapeHtml(task.assignee_name || "не назначен")}</span>
         <span>срок: ${task.due_date ? formatDateRu(task.due_date) : "без срока"}</span>
       </div>
-      ${description ? `<p class="task-description-clamp">${escapeHtml(description)}</p>` : ""}
       <div class="stack-line">
         <span data-testid="task-status-badge">${pill(statusLabel(task.status), taskStatusLevel(task.status))}</span>
         <span data-testid="task-priority-badge">${pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority))}</span>
@@ -4869,7 +4870,6 @@ async function renderTasks() {
                 <span class="task-summary-main">
                   <span class="task-summary-title"><span data-testid="task-type-badge">${pill(taskTypeLabel(task), taskTypeLevel(task))}</span><strong data-testid="task-title">${escapeHtml(taskDisplayTitle(task))}</strong></span>
                   <span class="task-summary-meta" data-testid="task-meta">${escapeHtml(task.project_title || "объект не указан")} · ${escapeHtml(task.assignee_name || "ответственный не назначен")} · ${task.due_date ? formatDateRu(task.due_date) : "без срока"}</span>
-                  ${taskDisplayDescription(task) ? `<span class="task-description-clamp">${escapeHtml(taskDisplayDescription(task))}</span>` : ""}
                   <span class="stack-line"><span data-testid="task-status-badge">${pill(label(task.status), taskStatusLevel(task.status))}</span><span data-testid="task-priority-badge">${pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority))}</span></span>
                 </span>
               </summary>

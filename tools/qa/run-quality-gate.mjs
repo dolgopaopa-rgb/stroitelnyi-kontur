@@ -406,6 +406,8 @@ async function runUx(results, page) {
   const taskMetaCount = await page.locator('[data-testid="task-meta"]').count();
   const taskLayoutOk = taskCardCount === 0 || (taskTitleCount > 0 && taskMetaCount > 0 && badgeCount >= taskCardCount);
   add(results, "UX Sanity QA Agent", "Task card separates title, meta and status", taskLayoutOk ? "OK" : "FAIL", `cards=${taskCardCount}; titles=${taskTitleCount}; meta=${taskMetaCount}; badges=${badgeCount}`, taskLayoutOk ? "normal" : "blocker");
+  const summaryDescriptionCount = await page.locator(".task-summary .task-description-clamp, .today-task-card .task-description-clamp, .compact-task-card .task-description-clamp").count().catch(() => 0);
+  add(results, "UX Sanity QA Agent", "Task descriptions are collapsed in lists", summaryDescriptionCount === 0 ? "OK" : "FAIL", `visible-list-descriptions=${summaryDescriptionCount}`, summaryDescriptionCount === 0 ? "normal" : "blocker");
   await route(page, "today");
   const attention = await page.locator('[data-testid="today-attention-list"]').innerText().catch(() => "");
   add(results, "UX Sanity QA Agent", "Today screen shows concrete attention block", attention.trim().length > 0 ? "OK" : "WARN", `length=${attention.trim().length}`);
@@ -420,6 +422,11 @@ async function runUx(results, page) {
     });
   }).catch(() => false);
   add(results, "UX Sanity QA Agent", "Signals do not repeat identical text consecutively", duplicateSignalText ? "FAIL" : "OK", `duplicate-consecutive=${duplicateSignalText}`, duplicateSignalText ? "blocker" : "normal");
+  const badPluralMatches = await page.evaluate(() => {
+    const text = document.body.innerText || "";
+    return [...text.matchAll(/(?<!ещё[ \u00a0])(?:2|3|4|22|23|24)[ \u00a0]+позиций|ещё[ \u00a0]+(?:2|3|4|22|23|24)[ \u00a0]+позиций/gi)].map((match) => match[0]);
+  }).catch(() => []);
+  add(results, "UX Sanity QA Agent", "Signal pluralization is correct", badPluralMatches.length ? "FAIL" : "OK", `bad-plural=${badPluralMatches.join(" | ") || "none"}`, badPluralMatches.length ? "blocker" : "normal");
   await route(page, "materials");
   const materialTabs = await page.locator('[data-testid="material-status-tabs"]').isVisible().catch(() => false);
   add(results, "UX Sanity QA Agent", "Materials pipeline tabs are visible", materialTabs ? "OK" : "FAIL", `tabs=${materialTabs}`, materialTabs ? "normal" : "blocker");
@@ -440,8 +447,9 @@ async function runMobile(results, playwright) {
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 4);
       await page.locator('[data-testid="mobile-plus-button"]').click().catch(() => {});
       const actions = await page.locator('[data-testid="mobile-quick-actions"] [data-mobile-action]').count().catch(() => 0);
-      const status = navVisible && !overflow && actions > 0 ? "OK" : "FAIL";
-      add(results, "Mobile QA Agent", `Viewport ${viewport.width}x${viewport.height}`, status, `nav=${navVisible}; horizontalOverflow=${overflow}; actions=${actions}`, status === "FAIL" ? "blocker" : "normal");
+      const plusSeparated = await page.locator('[data-testid="mobile-plus-button"].mobile-plus').isVisible().catch(() => false);
+      const status = navVisible && !overflow && actions > 0 && plusSeparated ? "OK" : "FAIL";
+      add(results, "Mobile QA Agent", `Viewport ${viewport.width}x${viewport.height}`, status, `nav=${navVisible}; horizontalOverflow=${overflow}; actions=${actions}; plusSeparated=${plusSeparated}`, status === "FAIL" ? "blocker" : "normal");
     } finally {
       await browser.close().catch(() => {});
     }
@@ -571,6 +579,12 @@ function writeReport(results, startedAt, finishedAt, mandatorySuites) {
       task_card_layout: checkQaStatus("UX Sanity QA Agent", "Task card separates title, meta and status"),
       signals_deduplication: checkQaStatus("UX Sanity QA Agent", "Signals do not repeat identical text consecutively"),
       materials_pipeline: checkQaStatus("UX Sanity QA Agent", "Materials pipeline tabs are visible"),
+      role_today_has_real_cards: agentQaStatus("Role QA Agent"),
+      worker_mode_simplified: checkQaStatus("Role QA Agent", "master: role today panel"),
+      task_description_collapsed_in_list: checkQaStatus("UX Sanity QA Agent", "Task descriptions are collapsed in lists"),
+      signal_pluralization: checkQaStatus("UX Sanity QA Agent", "Signal pluralization is correct"),
+      materials_pipeline_tabs_visible: checkQaStatus("UX Sanity QA Agent", "Materials pipeline tabs are visible"),
+      mobile_plus_button_separated: qaStatus(checks.mobile),
       photo_reports_workflow: results.some((item) => item.agent === "Visual Regression QA Agent" && item.name.includes("photos")) ? "ok" : "partial",
       object_issues_workflow: results.some((item) => item.agent === "Visual Regression QA Agent" && item.name.includes("object_remarks")) ? "ok" : "partial",
       document_classification: results.some((item) => item.agent === "Visual Regression QA Agent" && item.name.includes("documents")) ? "ok" : "partial",
