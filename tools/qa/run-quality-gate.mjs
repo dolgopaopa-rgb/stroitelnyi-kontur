@@ -128,6 +128,10 @@ async function preparePage(playwright, viewport = { width: 1366, height: 900 }) 
     if (message.type() === "error") errors.push(`console.error: ${message.text()}`);
   });
   page.on("pageerror", (error) => errors.push(`pageerror: ${error.message}`));
+  page.on("response", (response) => {
+    const url = response.url();
+    if (response.status() >= 400 && response.status() !== 403) errors.push(`response: ${response.status()} ${url}`);
+  });
   page.on("requestfailed", (request) => {
     const url = request.url();
     if (!url.includes("/api/") && !url.includes("/static/")) return;

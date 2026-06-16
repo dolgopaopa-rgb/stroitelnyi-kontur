@@ -3405,6 +3405,22 @@ class AppHandler(BaseHTTPRequestHandler):
     def do_HEAD(self) -> None:
         parsed = urlparse(self.path)
         path = parsed.path
+        audit_snapshot = re.match(r"^/ai-audit-snapshot/([^/]+)$", path)
+        if audit_snapshot:
+            query = parse_qs(parsed.query)
+            current_commit = str(app_metadata(self).get("commitHash") or "unknown")
+            has_current_version = str((query.get("v") or [""])[0]) == current_commit and bool((query.get("generatedAt") or [""])[0])
+            if not has_current_version:
+                token = quote(unquote(audit_snapshot.group(1)), safe="")
+                generated_at = quote(datetime.now().astimezone().isoformat(timespec="seconds"), safe="")
+                redirect_response(self, f"/ai-audit-snapshot/{token}?v={quote(current_commit, safe='')}&generatedAt={generated_at}", status=302)
+                return
+            self.handle_ai_audit_snapshot(unquote(audit_snapshot.group(1)))
+            return
+        qa_artifact = re.match(r"^/qa-artifacts/latest/(qa-report\.(?:md|json))$", path)
+        if qa_artifact:
+            self.serve_qa_artifact(qa_artifact.group(1))
+            return
         if path not in {"/health", "/version"} and not is_authorized(self):
             if path.startswith("/api/"):
                 self.send_response(401)
