@@ -49,13 +49,16 @@ def json_response(handler: BaseHTTPRequestHandler, payload: object, status: int 
     handler.wfile.write(body)
 
 
-def html_response(handler: BaseHTTPRequestHandler, body: str, status: int = 200) -> None:
+def html_response(handler: BaseHTTPRequestHandler, body: str, status: int = 200, cookie: str | None = None) -> None:
     raw = body.encode("utf-8")
     handler.send_response(status)
     handler.send_header("Content-Type", "text/html; charset=utf-8")
     handler.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
     handler.send_header("Pragma", "no-cache")
-    maybe_send_session_cookie(handler)
+    if cookie:
+        handler.send_header("Set-Cookie", cookie)
+    else:
+        maybe_send_session_cookie(handler)
     handler.send_header("Content-Length", str(len(raw)))
     handler.end_headers()
     handler.wfile.write(raw)
@@ -1470,6 +1473,7 @@ SNAPSHOT_FORBIDDEN_ENUMS = {
     "construction_manager",
     "procurement_manager",
     "estimator",
+    "master",
 }
 
 SNAPSHOT_ROLE_KEYS = {
@@ -1482,6 +1486,7 @@ SNAPSHOT_ROLE_KEYS = {
     "procurement_manager",
     "estimator",
     "technical_supervisor",
+    "master",
     "ai_auditor",
 }
 
@@ -1512,8 +1517,11 @@ SNAPSHOT_TYPE_KEYS = {
     "estimate",
     "invoice",
     "media",
+    "photo_video",
     "variation_attachment",
+    "extra_work_attachment",
     "service_file",
+    "service_screenshot",
     "unclassified",
     "photo_report",
     "object_remark",
@@ -1525,6 +1533,24 @@ SNAPSHOT_TYPE_KEYS = {
     "photo",
     "material",
     "decision",
+    "check",
+    "approval",
+    "open",
+    "waiting_external",
+    "resolved",
+    "closed",
+    "no_material",
+    "waiting_client_decision",
+    "waiting_owner_decision",
+    "waiting_project_documentation",
+    "estimate_not_approved",
+    "subcontractor_problem",
+    "quality_problem",
+    "no_photo_report",
+    "material_under_risk",
+    "medium",
+    "high",
+    "critical",
 }
 
 
@@ -1643,19 +1669,37 @@ def normalize_task_type_value(value: object, title: object = "", description: ob
     text = f"{title or ''} {description or ''} {related_type or ''}".lower()
     if re.search(r"фото\s*отч[её]т|фотоотч[её]т|photo", text):
         return "photo_report"
-    if "?" in text or re.search(r"что\s+думаете|вопрос|уточнить|уточнение", text):
+    if raw == "approval" or re.search(r"согласовать|нужно\s+решение|требует\s+решения|утвердить|одобрить", text):
+        return "approval"
+    if raw == "check" or re.search(r"проверить|принять|контроль|проверка", text):
+        return "check"
+    if "?" in text or re.search(r"что\s+думаете|как\s+лучше|вопрос|уточнить|уточнение", text):
         return "question"
-    if raw == "material" or re.search(r"материал|заявк|снабжен|поставк", text):
+    if raw == "material" or re.search(r"материал|заявк|снабжен|поставк|заказать|купить", text):
         return "material"
     if re.search(r"дефект|замечани|исправ|передел|брак|не\s+принят", text):
         return "issue"
-    if raw in {"task", "question", "decision", "photo_report", "issue", "material"}:
+    if raw in {"task", "question", "decision", "photo_report", "issue", "material", "check", "approval"}:
         return raw
     return "task"
 
 
+def normalize_task_display(row: dict) -> None:
+    title = str(row.get("title") or "")
+    description = str(row.get("description") or "")
+    if title.lower().startswith(("сделать фотоотчёт,", "сделать фотоотчет,")):
+        row["title"] = "Сделать фотоотчёт по объекту"
+        row["description"] = description.strip() or title
+        row["task_type"] = "photo_report"
+        return
+    if len(title) > 80:
+        row["display_title"] = title[:77].rstrip() + "..."
+        row["description"] = description.strip() or title
+
+
 def normalize_task_rows(rows: list[dict]) -> list[dict]:
     for row in rows:
+        normalize_task_display(row)
         row["task_type"] = normalize_task_type_value(
             row.get("task_type"),
             row.get("title"),
@@ -1945,6 +1989,53 @@ def validate_audit_token(db, raw_token: str, *, consume: bool = False) -> dict |
     return payload
 
 
+def audit_token_diagnostic(db, raw_token: str) -> dict:
+    token = str(raw_token or "").strip()
+    if len(token) < 24 or len(token) > 256:
+        return {
+            "valid": False,
+            "reason": "Некорректная длина токена",
+            "expires_at": "",
+            "uses_left": 0,
+        }
+    row = db.execute(
+        """
+        SELECT t.*, u.id AS user_id, u.role AS user_role, u.is_active AS user_is_active
+        FROM audit_tokens t
+        LEFT JOIN users u ON u.id = t.user_id
+        WHERE t.token_hash = ?
+        LIMIT 1
+        """,
+        (audit_token_hash(token),),
+    ).fetchone()
+    if not row:
+        return {"valid": False, "reason": "Токен не найден", "expires_at": "", "uses_left": 0}
+    payload = row_to_dict(row)
+    max_uses = payload.get("max_uses")
+    used_count = int(payload.get("used_count") or 0)
+    unlimited = int(payload.get("unlimited_until_expiry") or 0) == 1
+    uses_left = "без ограничения" if unlimited else max(0, int(max_uses or 0) - used_count)
+    reason = ""
+    if payload.get("revoked_at"):
+        reason = "Токен отозван"
+    elif payload.get("role") != "ai_auditor" or payload.get("user_role") != "ai_auditor":
+        reason = "Токен не относится к роли аудитора"
+    elif not payload.get("user_is_active"):
+        reason = "Пользователь аудитора выключен"
+    elif payload.get("expires_at") and str(payload["expires_at"]) <= datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"):
+        reason = "Токен истёк"
+    elif not unlimited and int(max_uses or 0) <= used_count:
+        reason = "Лимит входов исчерпан"
+    return {
+        "valid": not reason,
+        "reason": reason or "OK",
+        "expires_at": payload.get("expires_at") or "",
+        "uses_left": uses_left,
+        "used_count": used_count,
+        "session_user_id": payload.get("user_id") or 0,
+    }
+
+
 def audit_account_from_token_row(row: dict) -> dict:
     return {
         "login": AI_AUDIT_LOGIN,
@@ -2052,11 +2143,11 @@ def can_view_variations(account: dict | None) -> bool:
 
 
 def can_view_knowledge_base(account: dict | None) -> bool:
-    return account_role(account) in {"owner", "construction_manager", "finance_director", "accountant", "sales_manager", "foreman", "procurement_manager", "estimator", "technical_supervisor", "ai_auditor"}
+    return account_role(account) in {"owner", "construction_manager", "finance_director", "accountant", "sales_manager", "foreman", "master", "procurement_manager", "estimator", "technical_supervisor", "ai_auditor"}
 
 
 def can_manage_object_workflow(account: dict | None) -> bool:
-    return account_role(account) in {"owner", "construction_manager", "foreman", "technical_supervisor"}
+    return account_role(account) in {"owner", "construction_manager", "foreman", "master", "technical_supervisor"}
 
 
 def variation_visible_for_account(variation: dict, account: dict | None) -> bool:
@@ -2086,11 +2177,12 @@ def project_visible_for_account(project: dict, account: dict | None) -> bool:
     role = account_role(account)
     if role == "foreman":
         return int(project.get("foreman_id") or 0) == account_user_id(account)
-    return role in {"owner", "construction_manager", "finance_director", "accountant", "sales_manager", "procurement_manager", "estimator", "technical_supervisor", "ai_auditor"}
+    return role in {"owner", "construction_manager", "finance_director", "accountant", "sales_manager", "master", "procurement_manager", "estimator", "technical_supervisor", "ai_auditor"}
 
 
 DOCUMENT_TYPES_BY_ROLE = {
     "foreman": {"project_documentation", "detail_node", "regulation", "standard", "instruction"},
+    "master": {"project_documentation", "detail_node", "regulation", "standard", "instruction"},
     "procurement_manager": {"smetter_materials", "project_documentation", "variation_attachment", "detail_node", "regulation", "standard", "instruction", "other"},
     "technical_supervisor": {"smetter_materials", "smetter_work_task", "project_documentation", "variation_attachment", "detail_node", "regulation", "standard", "instruction", "other"},
     "estimator": {"main_estimate", "smetter_materials", "smetter_work_task", "project_documentation", "variation_attachment", "variation_estimate", "act", "ks_2", "ks_3", "other"},
@@ -2778,6 +2870,246 @@ def object_remarks_payload(db, account: dict | None, project_id: int | None = No
     return visible_rows
 
 
+def blockers_payload(db, account: dict | None, project_id: int | None = None) -> list[dict]:
+    params: list[object] = []
+    where = "WHERE p.status != 'archived'"
+    if project_id:
+        where += " AND b.project_id = ?"
+        params.append(project_id)
+    manual_rows = rows_to_dicts(
+        db.execute(
+            f"""
+            SELECT b.*, p.title AS project_title, p.foreman_id, p.foreman_id AS project_foreman_id,
+                   responsible.name AS responsible_name, creator.name AS created_by_name
+            FROM blockers b
+            JOIN projects p ON p.id = b.project_id
+            LEFT JOIN users responsible ON responsible.id = b.responsible_user_id
+            LEFT JOIN users creator ON creator.id = b.created_by
+            {where}
+            ORDER BY
+                CASE b.status
+                    WHEN 'open' THEN 1
+                    WHEN 'in_progress' THEN 2
+                    WHEN 'waiting_external' THEN 3
+                    ELSE 4
+                END,
+                b.due_date,
+                b.created_at DESC
+            """,
+            params,
+        ).fetchall()
+    )
+    manual_rows = [row for row in manual_rows if project_visible_for_account(row, account)]
+    rows: list[dict] = []
+    for row in manual_rows:
+        item = dict(row)
+        item["source"] = "manual"
+        rows.append(item)
+
+    task_params: list[object] = []
+    task_where = "WHERE p.status != 'archived' AND t.status NOT IN ('accepted', 'closed', 'archived')"
+    if project_id:
+        task_where += " AND t.project_id = ?"
+        task_params.append(project_id)
+    task_rows = rows_to_dicts(
+        db.execute(
+            f"""
+            SELECT t.id AS linked_task_id, t.project_id, p.title AS project_title,
+                   p.foreman_id, p.foreman_id AS project_foreman_id,
+                   t.title, t.description, t.due_date, t.status, t.priority,
+                   t.assignee_id AS responsible_user_id, assignee.name AS responsible_name,
+                   t.creator_id AS created_by, creator.name AS created_by_name,
+                   t.created_at
+            FROM tasks t
+            JOIN projects p ON p.id = t.project_id
+            LEFT JOIN users assignee ON assignee.id = t.assignee_id
+            LEFT JOIN users creator ON creator.id = t.creator_id
+            {task_where}
+              AND (
+                    t.is_blocker = 1
+                    OR t.status = 'returned'
+                    OR (t.due_date IS NOT NULL AND date(t.due_date) < date('now'))
+                    OR COALESCE(t.due_date, '') = ''
+              )
+            ORDER BY t.due_date, t.created_at DESC
+            LIMIT 80
+            """,
+            task_params,
+        ).fetchall()
+    )
+    for task in task_rows:
+        if not project_visible_for_account(task, account):
+            continue
+        blocker_type = "other"
+        severity = "medium"
+        title = task.get("title") or "Задача требует внимания"
+        if not task.get("due_date"):
+            blocker_type = "other"
+            severity = "low"
+            title = f"Задача без срока: {title}"
+        elif str(task.get("status") or "") == "returned":
+            blocker_type = "quality_problem"
+            severity = "medium"
+            title = f"Возвращена задача: {title}"
+        elif str(task.get("due_date") or "") < date.today().isoformat():
+            blocker_type = "other"
+            severity = "high"
+            title = f"Просрочена задача: {title}"
+        rows.append(
+            {
+                "id": f"task-{task['linked_task_id']}",
+                "source": "task",
+                "project_id": task["project_id"],
+                "project_title": task["project_title"],
+                "title": title,
+                "description": task.get("description") or "",
+                "blocker_type": blocker_type,
+                "responsible_user_id": task.get("responsible_user_id"),
+                "responsible_name": task.get("responsible_name"),
+                "due_date": task.get("due_date"),
+                "severity": severity,
+                "status": "open",
+                "linked_task_id": task.get("linked_task_id"),
+                "linked_material_request_id": None,
+                "linked_issue_id": None,
+                "created_by": task.get("created_by"),
+                "created_by_name": task.get("created_by_name"),
+                "created_at": task.get("created_at"),
+            }
+        )
+
+    material_params: list[object] = []
+    material_where = "WHERE p.status != 'archived'"
+    if project_id:
+        material_where += " AND b.project_id = ?"
+        material_params.append(project_id)
+    material_rows = rows_to_dicts(
+        db.execute(
+            f"""
+            SELECT b.id AS linked_material_request_id, b.project_id, p.title AS project_title,
+                   p.foreman_id, p.foreman_id AS project_foreman_id,
+                   b.needed_at AS due_date, b.status, b.delivery_urgency, b.comment,
+                   b.revision_comment, b.procurement_comment, b.receipt_status,
+                   b.actual_purchase_amount, b.created_at,
+                   creator.id AS created_by, creator.name AS created_by_name,
+                   procurement.id AS responsible_user_id, procurement.name AS responsible_name,
+                   COUNT(m.id) AS items_count,
+                   SUM(CASE WHEN COALESCE(m.change_type, '') != 'removed' THEN COALESCE(m.total_amount, 0) ELSE 0 END) AS planned_amount
+            FROM material_request_batches b
+            JOIN projects p ON p.id = b.project_id
+            LEFT JOIN material_requests m ON m.batch_id = b.id
+            LEFT JOIN users creator ON creator.id = b.creator_id
+            LEFT JOIN users procurement ON procurement.id = p.procurement_manager_id
+            {material_where}
+            GROUP BY b.id
+            HAVING b.is_blocker = 1
+                OR b.status IN ('revision_requested', 'receipt_issue')
+                OR b.delivery_urgency = 'urgent'
+                OR (COALESCE(b.actual_purchase_amount, 0) > COALESCE(planned_amount, 0) AND COALESCE(planned_amount, 0) > 0)
+            ORDER BY b.needed_at, b.created_at DESC
+            LIMIT 80
+            """,
+            material_params,
+        ).fetchall()
+    )
+    for batch in material_rows:
+        if not project_visible_for_account(batch, account):
+            continue
+        status = str(batch.get("status") or "")
+        blocker_type = "no_material"
+        severity = "medium"
+        title = f"Материал тормозит объект: {batch.get('items_count') or 0} позиций"
+        if status == "receipt_issue":
+            blocker_type = "quality_problem"
+            severity = "high"
+            title = "Проблема при приёмке материалов"
+        elif status == "revision_requested":
+            severity = "medium"
+            title = "Заявка на материалы возвращена на уточнение"
+        elif str(batch.get("delivery_urgency") or "") == "urgent":
+            severity = "high"
+            title = "Срочная заявка на материалы"
+        rows.append(
+            {
+                "id": f"material-{batch['linked_material_request_id']}",
+                "source": "material",
+                "project_id": batch["project_id"],
+                "project_title": batch["project_title"],
+                "title": title,
+                "description": batch.get("revision_comment") or batch.get("procurement_comment") or batch.get("comment") or "",
+                "blocker_type": blocker_type,
+                "responsible_user_id": batch.get("responsible_user_id"),
+                "responsible_name": batch.get("responsible_name") or "Снабжение",
+                "due_date": batch.get("due_date"),
+                "severity": severity,
+                "status": "open",
+                "linked_task_id": None,
+                "linked_material_request_id": batch.get("linked_material_request_id"),
+                "linked_issue_id": None,
+                "created_by": batch.get("created_by"),
+                "created_by_name": batch.get("created_by_name"),
+                "created_at": batch.get("created_at"),
+            }
+        )
+
+    remark_params: list[object] = []
+    remark_where = "WHERE p.status != 'archived' AND r.status NOT IN ('accepted', 'closed')"
+    if project_id:
+        remark_where += " AND r.project_id = ?"
+        remark_params.append(project_id)
+    remark_rows = rows_to_dicts(
+        db.execute(
+            f"""
+            SELECT r.id AS linked_issue_id, r.project_id, p.title AS project_title,
+                   p.foreman_id, p.foreman_id AS project_foreman_id,
+                   r.description AS title, r.zone, r.due_date, r.status,
+                   r.responsible_id AS responsible_user_id, responsible.name AS responsible_name,
+                   r.created_by, creator.name AS created_by_name, r.created_at
+            FROM object_remarks r
+            JOIN projects p ON p.id = r.project_id
+            LEFT JOIN users responsible ON responsible.id = r.responsible_id
+            LEFT JOIN users creator ON creator.id = r.created_by
+            {remark_where}
+              AND (
+                    r.is_blocker = 1
+                    OR r.status = 'returned'
+                    OR (r.due_date IS NOT NULL AND date(r.due_date) < date('now'))
+              )
+            ORDER BY r.due_date, r.created_at DESC
+            LIMIT 80
+            """,
+            remark_params,
+        ).fetchall()
+    )
+    for remark in remark_rows:
+        if not project_visible_for_account(remark, account):
+            continue
+        rows.append(
+            {
+                "id": f"issue-{remark['linked_issue_id']}",
+                "source": "issue",
+                "project_id": remark["project_id"],
+                "project_title": remark["project_title"],
+                "title": f"Замечание тормозит объект: {remark.get('title') or 'без описания'}",
+                "description": remark.get("zone") or "",
+                "blocker_type": "quality_problem",
+                "responsible_user_id": remark.get("responsible_user_id"),
+                "responsible_name": remark.get("responsible_name"),
+                "due_date": remark.get("due_date"),
+                "severity": "high" if str(remark.get("due_date") or "") < date.today().isoformat() else "medium",
+                "status": "open",
+                "linked_task_id": None,
+                "linked_material_request_id": None,
+                "linked_issue_id": remark.get("linked_issue_id"),
+                "created_by": remark.get("created_by"),
+                "created_by_name": remark.get("created_by_name"),
+                "created_at": remark.get("created_at"),
+            }
+        )
+
+    return rows
+
+
 def save_estimate_job_file(
     db,
     estimate_job_id: int,
@@ -2960,6 +3292,7 @@ def get_project_detail(project_id: int, account: dict | None = None) -> dict | N
         detail["contracts"] = rows_to_dicts(db.execute("SELECT * FROM contracts WHERE project_id = ? ORDER BY ends_at", (project_id,)).fetchall())
         detail["photo_reports"] = photo_reports_payload(db, account, project_id)
         detail["object_remarks"] = object_remarks_payload(db, account, project_id)
+        detail["blockers"] = blockers_payload(db, account, project_id)
         detail["documents"] = filter_documents_for_account(
             rows_to_dicts(db.execute("SELECT * FROM documents WHERE project_id = ? ORDER BY created_at DESC", (project_id,)).fetchall()),
             account,
@@ -3166,20 +3499,74 @@ class AppHandler(BaseHTTPRequestHandler):
         self._issue_session_cookie = True
         json_response(self, {"ok": True, "redirect": safe_next_path(str(data.get("next") or "/"))})
 
-    def audit_invalid_redirect(self) -> None:
-        redirect_response(self, "/login?audit_error=invalid", cookie=expired_session_cookie(self))
+    def audit_login_diagnostic_page(self, diagnostic: dict, *, session_created: bool, redirect_target: str = "/", cookie: str | None = None, status: int = 200) -> None:
+        valid = bool(diagnostic.get("valid"))
+        title = "AI-аудит: вход разрешён" if valid and session_created else "AI-аудит: вход не выполнен"
+        reason = diagnostic.get("reason") or ("OK" if valid else "Причина не указана")
+        meta_refresh = f'<meta http-equiv="refresh" content="1; url={html.escape(redirect_target, quote=True)}" />' if valid and session_created else ""
+        body = f"""<!doctype html>
+        <html lang="ru">
+        <head>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <meta name="robots" content="noindex" />
+          {meta_refresh}
+          <title>{html.escape(title)}</title>
+          <style>
+            body {{ margin:0; min-height:100vh; display:grid; place-items:center; background:#f4f6f8; font-family:Segoe UI, Arial, sans-serif; color:#142127; }}
+            main {{ width:min(560px, calc(100% - 28px)); background:white; border:1px solid #d8e0e4; border-radius:10px; padding:22px; box-shadow:0 18px 48px rgba(20,33,39,.12); }}
+            h1 {{ margin:0 0 8px; font-size:24px; }}
+            .status {{ display:inline-flex; padding:5px 10px; border-radius:999px; background:{'#e6f5eb' if valid and session_created else '#f8e8e8'}; color:{'#287347' if valid and session_created else '#b94646'}; font-weight:700; }}
+            .grid {{ display:grid; gap:8px; margin:18px 0; }}
+            .row {{ display:grid; grid-template-columns:1fr auto; gap:12px; border-bottom:1px solid #eef2f4; padding-bottom:7px; }}
+            a {{ display:inline-flex; justify-content:center; min-height:40px; align-items:center; border-radius:8px; border:0; padding:0 14px; background:#206f68; color:white; text-decoration:none; font-weight:700; }}
+            .muted {{ color:#66737c; }}
+          </style>
+        </head>
+        <body>
+          <main>
+            <span class="status">{'token valid' if valid else 'token invalid'}</span>
+            <h1>{html.escape(title)}</h1>
+            <p class="muted">Токен в открытом виде не показывается и не записывается в журнал.</p>
+            <div class="grid">
+              <div class="row"><span>reason</span><strong>{html.escape(str(reason))}</strong></div>
+              <div class="row"><span>expires_at</span><strong>{html.escape(str(diagnostic.get('expires_at') or 'не задан'))}</strong></div>
+              <div class="row"><span>uses_left</span><strong>{html.escape(str(diagnostic.get('uses_left') or 0))}</strong></div>
+              <div class="row"><span>session_created</span><strong>{'true' if session_created else 'false'}</strong></div>
+              <div class="row"><span>redirect_target</span><strong>{html.escape(redirect_target if session_created else '/login')}</strong></div>
+            </div>
+            {'<a href="' + html.escape(redirect_target, quote=True) + '">Открыть приложение в режиме аудита</a>' if session_created else '<a href="/login?audit_error=invalid">Перейти на вход</a>'}
+          </main>
+        </body>
+        </html>"""
+        html_response(self, body, status=status, cookie=cookie)
+
+    def audit_invalid_redirect(self, diagnostic: dict | None = None) -> None:
+        self.audit_login_diagnostic_page(
+            diagnostic or {"valid": False, "reason": "Токен невалиден", "expires_at": "", "uses_left": 0},
+            session_created=False,
+            status=401,
+            cookie=expired_session_cookie(self),
+        )
 
     def handle_ai_audit_login(self, raw_token: str) -> None:
         with connect() as db:
+            diagnostic = audit_token_diagnostic(db, raw_token)
             token_row = validate_audit_token(db, raw_token, consume=True)
         if not token_row:
-            self.audit_invalid_redirect()
+            self.audit_invalid_redirect(diagnostic)
             return
         account = audit_account_from_token_row(token_row)
         self._access_account_checked = True
         self._access_account = account
         self._issue_session_cookie = False
-        redirect_response(self, "/", cookie=session_cookie_header(self, account, force_secure=True))
+        diagnostic["used_count"] = int(diagnostic.get("used_count") or 0) + 1
+        self.audit_login_diagnostic_page(
+            diagnostic,
+            session_created=True,
+            redirect_target="/?view=today&audit=1",
+            cookie=session_cookie_header(self, account, force_secure=True),
+        )
 
     def handle_ai_audit_snapshot(self, raw_token: str) -> None:
         with connect() as db:
@@ -3251,6 +3638,7 @@ class AppHandler(BaseHTTPRequestHandler):
             material_rows = sanitize_material_rows_for_account(material_rows, account)
             photo_rows = sanitize_documents_for_account(photo_reports_payload(db, account), account)
             remark_rows = object_remarks_payload(db, account)
+            blocker_rows = blockers_payload(db, account)[:6]
             document_rows = sanitize_documents_for_account(
                 rows_to_dicts(
                     db.execute(
@@ -3309,9 +3697,9 @@ class AppHandler(BaseHTTPRequestHandler):
 
         def status_level(value: object) -> str:
             key = str(value or "")
-            if key in {"overdue", "danger", "problem", "returned", "revision_requested", "rejected", "receipt_issue"}:
+            if key in {"overdue", "danger", "problem", "returned", "revision_requested", "rejected", "receipt_issue", "no_material", "quality_problem", "critical", "high"}:
                 return "danger"
-            if key in {"warning", "review", "completed_pending_acceptance", "estimate_question", "estimate_returned", "submitted_to_construction", "decision_required", "need_approval", "estimate_hold", "new", "feedback_new"}:
+            if key in {"warning", "review", "completed_pending_acceptance", "estimate_question", "estimate_returned", "submitted_to_construction", "decision_required", "need_approval", "estimate_hold", "new", "feedback_new", "open", "waiting_external", "waiting_client_decision", "waiting_owner_decision", "waiting_project_documentation", "estimate_not_approved", "subcontractor_problem", "no_photo_report", "medium", "check", "approval"}:
                 return "warning"
             if key in {"success", "accepted", "approved", "closed", "completed", "received", "on_site", "agreed", "done", "feedback_done", "estimate_done"}:
                 return "success"
@@ -3432,7 +3820,7 @@ class AppHandler(BaseHTTPRequestHandler):
             <article class="sample-row">
               <div class="row-head"><strong>{e(row.get("title") or "Материал")}</strong>{status_badge(pipeline)}</div>
               <div class="chips">{type_badge(row.get("basis_type"))}{badge("Срочно", "danger") if urgent else ""}</div>
-              <div class="muted">{e(row.get("project_title") or "Объект не указан")} · количество: {e(row.get("requested_quantity") or row.get("quantity") or "не задано")}</div>
+              <div class="muted">{e(row.get("project_title") or "Объект не указан")} · количество: {e(row.get("requested_quantity") or row.get("quantity") or "не задано")} · срок: {e(row.get("needed_at") or "без срока")}</div>
             </article>
             """
 
@@ -3446,15 +3834,23 @@ class AppHandler(BaseHTTPRequestHandler):
                 return "contract"
             if raw in {"act", "ks_2", "ks_3"}:
                 return "act"
-            if raw in {"invoice", "media", "variation_attachment", "service_file", "other"}:
+            if raw == "media":
+                return "photo_video"
+            if raw == "variation_attachment":
+                return "extra_work_attachment"
+            if raw == "service_file":
+                return "service_screenshot"
+            if raw in {"invoice", "photo_video", "extra_work_attachment", "service_screenshot", "other"}:
                 return raw
             name = f"{row.get('title') or ''} {row.get('file_name') or ''}".lower()
             mime = str(row.get("mime_type") or "").lower()
             process_type = str(row.get("process_type") or "").lower()
             if process_type.startswith("variation:"):
-                return "variation_attachment"
+                return "extra_work_attachment"
             if mime.startswith("image/") or mime.startswith("video/"):
-                return "media"
+                if re.search(r"кнопка|экран|ошибка|скрин|screenshot|feedback|интерфейс", name):
+                    return "service_screenshot"
+                return "photo_video"
             if re.search(r"проект|узел|решени", name):
                 return "project"
             if re.search(r"смет|задани[ея]\s+на\s+работ|smetter|work_assignment|purchase", name):
@@ -3466,7 +3862,7 @@ class AppHandler(BaseHTTPRequestHandler):
             if re.search(r"сч[её]т|invoice", name):
                 return "invoice"
             if re.search(r"скрин|служеб|интерфейс|feedback", name):
-                return "service_file"
+                return "service_screenshot"
             return "unclassified" if not raw else "other"
 
         def document_card(row: dict) -> str:
@@ -3501,6 +3897,15 @@ class AppHandler(BaseHTTPRequestHandler):
             <article class="sample-row">
               <div class="row-head"><strong>{e(row.get("sender_name") or "Автор скрыт")}</strong>{status_badge(row.get("status"))}</div>
               <p>{e(row.get("text") or "Без текста")}</p>
+            </article>
+            """
+
+        def blocker_card(row: dict) -> str:
+            return f"""
+            <article class="sample-row">
+              <div class="row-head"><strong>{e(row.get("title") or "Блокер объекта")}</strong>{status_badge(row.get("status") or "open")}</div>
+              <div class="chips">{type_badge(row.get("blocker_type") or "other")}{badge(label(status_map, row.get("severity") or "medium"), status_level(row.get("severity") or "medium"))}</div>
+              <div class="muted">{e(row.get("project_title") or "Объект не указан")} · ответственный: {e(row.get("responsible_name") or "не назначен")} · срок: {e(row.get("due_date") or "без срока")}</div>
             </article>
             """
 
@@ -3619,6 +4024,65 @@ class AppHandler(BaseHTTPRequestHandler):
             f'<div class="meta-row"><span><code>{e(key)}</code></span><strong>{e(value)}</strong></div>'
             for key, value in first_tz_checks.items()
         )
+        stage3_checks = {
+            "role_based_today": "ok" if "roleTodayProfile" in app_js_snapshot and "todayRoleQuestion" in index_snapshot else "missing",
+            "task_card_layout": "ok" if all(marker in app_js_snapshot for marker in ["task-summary-title", "task-summary-meta", "task-description-clamp"]) else "partial",
+            "task_type_rules": "ok" if all(marker in app_js_snapshot for marker in ["check", "approval", "inferTaskType"]) else "partial",
+            "signals_deduplication": "ok" if "dedupeSignals" in app_js_snapshot else "missing",
+            "blockers": "ok" if "CREATE TABLE IF NOT EXISTS blockers" in ((APP_DIR / "database.py").read_text(encoding="utf-8", errors="replace")) and "/api/blockers" in server_snapshot else "partial",
+            "materials_filters": "ok" if "data-material-quick-filter" in index_snapshot and "materialBatchMatchesQuickFilter" in app_js_snapshot else "missing",
+            "document_classification_rules": "ok" if "photo_video" in app_js_snapshot and "service_screenshot" in app_js_snapshot and "knowledgeClassificationOnly" in app_js_snapshot else "partial",
+            "mobile_quick_actions": "ok" if "mobileQuickActionsForRole" in app_js_snapshot and "mobile-bottom-nav" in index_snapshot else "missing",
+            "empty_states": "ok" if "renderPhotoEmptyState" in app_js_snapshot and "renderRemarkEmptyState" in app_js_snapshot and "empty-state" in app_js_snapshot else "partial",
+            "live_audit_login": "ok" if "audit_login_diagnostic_page" in server_snapshot and "session_created" in server_snapshot else "partial",
+        }
+        stage3_body = "".join(
+            f'<div class="meta-row"><span><code>{e(key)}</code></span><strong>{e(value)}</strong></div>'
+            for key, value in stage3_checks.items()
+        )
+        def role_today_sample(role_title: str, question: str, visible: list[str], actions: list[str]) -> str:
+            return f"""
+            <article class="sample-row">
+              <div class="row-head"><strong>{e(role_title)}</strong>{badge("Сегодня", "blue")}</div>
+              <p><strong>{e(question)}</strong></p>
+              <div><strong>Показывает:</strong><div class="chips">{chips(visible)}</div></div>
+              <div><strong>Действия:</strong><div class="chips">{chips(actions)}</div></div>
+            </article>
+            """
+
+        today_owner_body = role_today_sample(
+            "Руководитель",
+            "Где горит и где нужно моё решение?",
+            ["Требует моего решения", "Просрочки", "Блокеры", "Материалы под риском", "Объекты без фотоотчёта"],
+            ["Открыть проблемный объект", "Открыть задачу", "Посмотреть сигналы"],
+        )
+        today_foreman_body = role_today_sample(
+            "Прораб",
+            "Что мне сегодня сделать на объекте?",
+            ["Мои объекты", "Мои задачи", "Материалы к получению", "Замечания к закрытию"],
+            ["Добавить фотоотчёт", "Создать заявку", "Отметить выполнено"],
+        )
+        today_master_body = role_today_sample(
+            "Мастер",
+            "Что сделать, где сделать, как подтвердить?",
+            ["Что сделать сегодня", "Где сделать", "Срок", "Фото/видео"],
+            ["Готово", "Сообщить проблему", "Добавить фото"],
+        )
+
+        signal_group_body = f"""
+        <article class="sample-row">
+          <div class="row-head"><strong>[Материалы вне основной сметы] {e((project_rows[0] or {}).get("title") if project_rows else "Объект")}</strong>{badge("новый", "warning")}</div>
+          <div class="muted">27 позиций · создано {e(today)}</div>
+          <div class="chips">{chips(["первые 3 позиции", "ещё 24 позиции", "Действие: открыть заявку"])}</div>
+        </article>
+        """
+        blocker_body = rows(blocker_rows, blocker_card, "Блокеров пока нет")
+        mobile_menu_body = """
+        <article class="sample-row">
+          <div class="chips"><span class="chip">Сегодня</span><span class="chip">Объекты</span><span class="chip">+</span><span class="chip">Уведомления</span><span class="chip">Я</span></div>
+          <p class="muted">Кнопка “+” открывает быстрые действия по роли: фото, задача, замечание, материал или проблема.</p>
+        </article>
+        """
         metadata_body = f"""
         <section class="meta-panel">
           <div class="meta-row"><span>generatedAt</span><strong>{e(generated_at)}</strong></div>
@@ -3693,24 +4157,31 @@ class AppHandler(BaseHTTPRequestHandler):
             <div class="top-grid">{metadata_body}</div>
             <div class="grid">
               {block("Проверка первого ТЗ", ["Сверить контракт", "Найти частичные пункты"], ["UX-контракт", "Аудит", "Статусы"], first_tz_body)}
+              {block("Проверка этапа 3", ["Сверить ролевые сценарии", "Проверить мобильный UX", "Проверить блокеры"], ["Роли", "Сигналы", "Блокеры", "Мобильный UX"], stage3_body)}
               {block("1. Сегодня", ["Открыть задачи", "Открыть материалы", "Открыть фотоотчёты"], ["Мои задачи", "Требует решения", "Активные объекты"], today_body)}
-              {block("2. Ролевые варианты", ["Сравнить видимость", "Проверить ограничения", "Оценить сценарий роли"], ["Роли", "Доступы", "Сценарии"], roles_body)}
-              {block("3. Сигналы", ["Открыть объекты", "Открыть задачи", "Посмотреть события"], ["Сигналы", "Сводка", "Задачи"], notification_body)}
-              {block("4. Список объектов", ["Выбрать объект", "Открыть карточку", "Перейти к задачам"], ["Объекты", "Статусы", "Прораб"], project_body)}
-              {block("5. Карточка объекта", ["Открыть задачи", "Добавить фотоотчёт", "Создать замечание", "Запросить материал", "Открыть документы"], ["Один выбранный объект", "Метрики", "Ближайшие действия"], selected_project_body)}
-              {block("6. Задача в коротком формате", ["Развернуть задачу", "Свернуть задачу", "Посмотреть комментарии"], ["Тип", "Ответственный", "Срок", "Статус"], short_task_body)}
-              {block("7. Задачи", ["Развернуть задачу", "Свернуть задачу", "Посмотреть комментарии"], ["Тип", "Ответственный", "Срок", "Статус"], task_body)}
-              {block("8. Материалы / заявки", ["Открыть заявку", "Посмотреть статус", "Посмотреть основание"], ["Все", "Нужно согласовать", "Согласовано", "Заказано", "В пути", "На объекте", "Проблема", "Закрыто"], material_body)}
-              {block("9. Фотоотчёты", ["Открыть карточку отчёта", "Посмотреть вложения", "Проверить статус"], ["Фотоотчёты", "Файлы", "Проверка"], photo_body)}
-              {block("10. Пустое состояние фотоотчётов", ["Открыть объект", "Добавить фотоотчёт"], ["Пустое состояние", "Список объектов"], photo_empty_body)}
-              {block("11. Замечания по объектам", ["Открыть замечание", "Проверить фото до/после", "Посмотреть ответственного"], ["Объект", "Зона", "Срок", "Проверка"], remark_body)}
-              {block("12. Пустое состояние замечаний", ["Создать замечание", "Назначить ответственного"], ["Пример структуры", "Контроль качества"], remark_empty_body)}
-              {block("13. Документы", ["Открыть папку", "Посмотреть список", "Проверить классификацию"], ["Проект", "Смета", "Договор", "Акт", "Счёт", "Фото/видео", "Не разобрано"], document_body)}
-              {block("14. Обратная связь по программе", ["Фильтровать", "Открыть сообщение", "Смотреть статус"], ["MAX", "Комментарии", "Статусы"], feedback_body)}
-              {block("15. Настройки", ["Оценить структуру ролей", "Смотреть список участников"], ["Роли", "Уведомления", "MAX"], settings_body)}
-              {block("16. Мобильный вид главной", ["Прокрутить", "Потянуть для обновления", "Открыть нижнее меню"], ["Мобильная навигация", "Карточки", "Сигналы"], today_body, mobile=True)}
-              {block("17. Мобильный вид карточки объекта", ["Развернуть раздел", "Свернуть раздел", "Перейти к задачам"], ["Обзор", "Вкладки", "Документы"], selected_project_body, mobile=True)}
-              {block("18. Мобильный вид задачи", ["Развернуть задачу", "Свернуть задачу", "Посмотреть комментарии"], ["Задачи", "Комментарии", "Статусы"], short_task_body, mobile=True)}
+              {block("2. Сегодня для руководителя", ["Открыть проблемный объект", "Открыть задачу", "Посмотреть сигналы"], ["Руководитель", "Решения", "Блокеры"], today_owner_body)}
+              {block("3. Сегодня для прораба", ["Добавить фотоотчёт", "Создать заявку", "Отметить выполнено"], ["Прораб", "Мои объекты", "Материалы"], today_foreman_body)}
+              {block("4. Сегодня для мастера", ["Готово", "Сообщить проблему", "Добавить фото"], ["Мастер", "Простой режим", "Фото"], today_master_body, mobile=True)}
+              {block("5. Ролевые варианты", ["Сравнить видимость", "Проверить ограничения", "Оценить сценарий роли"], ["Роли", "Доступы", "Сценарии"], roles_body)}
+              {block("6. Сгруппированный сигнал", ["Открыть заявку", "Развернуть список", "Скрыть сигнал"], ["Дедупликация", "Группировка", "Сигналы"], signal_group_body)}
+              {block("7. Блокер", ["Открыть объект", "Назначить ответственного", "Закрыть после решения"], ["Блокер", "Ответственный", "Срок"], blocker_body)}
+              {block("8. Сигналы", ["Открыть объекты", "Открыть задачи", "Посмотреть события"], ["Сигналы", "Сводка", "Задачи"], notification_body)}
+              {block("9. Список объектов", ["Выбрать объект", "Открыть карточку", "Перейти к задачам"], ["Объекты", "Статусы", "Прораб"], project_body)}
+              {block("10. Карточка объекта", ["Открыть задачи", "Добавить фотоотчёт", "Создать замечание", "Запросить материал", "Открыть документы"], ["Один выбранный объект", "Метрики", "Ближайшие действия"], selected_project_body)}
+              {block("11. Задача в коротком формате", ["Развернуть задачу", "Свернуть задачу", "Посмотреть комментарии"], ["Тип", "Ответственный", "Срок", "Статус"], short_task_body)}
+              {block("12. Задачи", ["Развернуть задачу", "Свернуть задачу", "Посмотреть комментарии"], ["Тип", "Ответственный", "Срок", "Статус"], task_body)}
+              {block("13. Материалы / заявки", ["Открыть заявку", "Посмотреть статус", "Посмотреть основание"], ["Все", "Мои", "Срочные", "Без срока", "Тормозит объект", "Вне сметы"], material_body)}
+              {block("14. Пример заявки на материал", ["Открыть заявку", "Изменить статус", "Добавить комментарий"], ["Материал", "Срок", "Статус", "Ответственный"], material_body)}
+              {block("15. Фотоотчёты", ["Открыть карточку отчёта", "Посмотреть вложения", "Проверить статус"], ["Фотоотчёты", "Файлы", "Проверка"], photo_body)}
+              {block("16. Пустое состояние фотоотчётов", ["Открыть объект", "Добавить фотоотчёт"], ["Пустое состояние", "Список объектов"], photo_empty_body)}
+              {block("17. Замечания по объектам", ["Открыть замечание", "Проверить фото до/после", "Посмотреть ответственного"], ["Объект", "Зона", "Срок", "Проверка"], remark_body)}
+              {block("18. Пустое состояние замечаний", ["Создать замечание", "Назначить ответственного"], ["Пример структуры", "Контроль качества"], remark_empty_body)}
+              {block("19. Документы", ["Открыть папку", "Посмотреть список", "Проверить классификацию"], ["Проект", "Смета", "Договор", "Акт", "Счёт", "Фото/видео", "Не разобрано"], document_body)}
+              {block("20. Мобильное меню с кнопкой +", ["Открыть быстрое действие", "Добавить фото", "Сообщить проблему"], ["Сегодня", "Объекты", "+", "Уведомления", "Я"], mobile_menu_body, mobile=True)}
+              {block("21. Обратная связь по программе", ["Фильтровать", "Открыть сообщение", "Смотреть статус"], ["MAX", "Комментарии", "Статусы"], feedback_body)}
+              {block("22. Настройки", ["Оценить структуру ролей", "Смотреть список участников"], ["Роли", "Уведомления", "MAX"], settings_body)}
+              {block("23. Мобильный вид карточки объекта", ["Развернуть раздел", "Свернуть раздел", "Перейти к задачам"], ["Обзор", "Вкладки", "Документы"], selected_project_body, mobile=True)}
+              {block("24. Мобильный вид задачи", ["Развернуть задачу", "Свернуть задачу", "Посмотреть комментарии"], ["Задачи", "Комментарии", "Статусы"], short_task_body, mobile=True)}
             </div>
           </main>
         </body>
@@ -4023,6 +4494,14 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     params,
                 ).fetchall()
                 json_response(self, sanitize_notifications_for_account(rows_to_dicts(rows), account))
+                return
+
+            if path == "/api/blockers":
+                if account_role(account) not in {"owner", "construction_manager", "finance_director", "foreman", "master", "procurement_manager", "estimator", "technical_supervisor", "ai_auditor"}:
+                    json_response(self, [])
+                    return
+                project_id = int((query.get("project_id") or ["0"])[0] or 0)
+                json_response(self, blockers_payload(db, account, project_id or None))
                 return
 
             if path == "/api/feedback":
@@ -5834,6 +6313,48 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 json_response(self, {"id": variation_id, "status": action})
                 return
 
+            task_type_update = re.match(r"^/api/tasks/(\d+)/type$", path)
+            if task_type_update:
+                task_id = int(task_type_update.group(1))
+                row = db.execute(
+                    """
+                    SELECT t.*, p.title AS project_title
+                    FROM tasks t
+                    JOIN projects p ON p.id = t.project_id
+                    WHERE t.id = ?
+                    """,
+                    (task_id,),
+                ).fetchone()
+                if not row:
+                    json_response(self, {"error": "Task not found"}, 404)
+                    return
+                role = account_role(account)
+                user_id = account_user_id(account)
+                if role not in {"owner", "construction_manager", "finance_director"} and user_id not in {int(row["creator_id"] or 0), int(row["reviewer_id"] or 0)}:
+                    raise PermissionError("Недостаточно прав для изменения типа задачи.")
+                next_type = normalize_task_type_value(
+                    data.get("task_type"),
+                    row["title"],
+                    row["description"],
+                    row["related_type"],
+                )
+                db.execute(
+                    "UPDATE tasks SET task_type = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (next_type, task_id),
+                )
+                create_task_event(
+                    db,
+                    task_id=task_id,
+                    project_id=int(row["project_id"]),
+                    actor_id=user_id or None,
+                    action="comment",
+                    status_from=row["status"],
+                    status_to=row["status"],
+                    comment=f"Тип задачи изменён на: {next_type}",
+                )
+                json_response(self, {"id": task_id, "task_type": next_type})
+                return
+
             task_action = re.match(r"^/api/tasks/(\d+)/(complete|accept|return|postpone|delete)$", path)
             if task_action:
                 task_id = int(task_action.group(1))
@@ -6910,6 +7431,59 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             "task",
                             int(cursor.lastrowid),
                             force_max=force_max,
+                        )
+                json_response(self, {"id": cursor.lastrowid}, 201)
+                return
+
+            if path == "/api/blockers":
+                role = account_role(account)
+                if role not in {"owner", "construction_manager", "finance_director", "foreman", "master", "procurement_manager", "estimator", "technical_supervisor"}:
+                    raise PermissionError("Недостаточно прав для создания блокера.")
+                project_id = int(data.get("project_id") or 0)
+                if not project_id:
+                    raise ValueError("Выберите объект.")
+                project = db.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+                if not project or not project_visible_for_account(row_to_dict(project), account):
+                    raise PermissionError("Объект недоступен.")
+                title = str(data.get("title") or "").strip()
+                if not title:
+                    raise ValueError("Укажите, что тормозит объект.")
+                cursor = db.execute(
+                    """
+                    INSERT INTO blockers (
+                        project_id, title, description, blocker_type, responsible_user_id,
+                        due_date, severity, status, linked_task_id, linked_material_request_id,
+                        linked_issue_id, created_by
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)
+                    """,
+                    (
+                        project_id,
+                        title,
+                        str(data.get("description") or "").strip(),
+                        data.get("blocker_type") or "other",
+                        int(data.get("responsible_user_id") or 0) or None,
+                        data.get("due_date") or None,
+                        data.get("severity") or "medium",
+                        int(data.get("linked_task_id") or 0) or None,
+                        int(data.get("linked_material_request_id") or 0) or None,
+                        int(data.get("linked_issue_id") or 0) or None,
+                        account_user_id(account) or None,
+                    ),
+                )
+                message = f"{project['title']}: блокер — {title}"
+                for watcher_id in {user_id_by_role(db, "owner"), user_id_by_role(db, "construction_manager"), int(data.get("responsible_user_id") or 0) or None}:
+                    if watcher_id:
+                        create_notification(
+                            db,
+                            project_id,
+                            watcher_id,
+                            role_by_user_id(db, watcher_id),
+                            "Новый блокер объекта",
+                            message,
+                            "blocker",
+                            int(cursor.lastrowid),
+                            force_max=force_personal_max(data),
                         )
                 json_response(self, {"id": cursor.lastrowid}, 201)
                 return

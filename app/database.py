@@ -185,6 +185,31 @@ def init_db() -> None:
                 FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS blockers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT,
+                blocker_type TEXT NOT NULL DEFAULT 'other',
+                responsible_user_id INTEGER,
+                due_date TEXT,
+                severity TEXT NOT NULL DEFAULT 'medium',
+                status TEXT NOT NULL DEFAULT 'open',
+                linked_task_id INTEGER,
+                linked_material_request_id INTEGER,
+                linked_issue_id INTEGER,
+                created_by INTEGER,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                resolved_at TEXT,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+                FOREIGN KEY (responsible_user_id) REFERENCES users(id),
+                FOREIGN KEY (linked_task_id) REFERENCES tasks(id) ON DELETE SET NULL,
+                FOREIGN KEY (linked_material_request_id) REFERENCES material_request_batches(id) ON DELETE SET NULL,
+                FOREIGN KEY (linked_issue_id) REFERENCES object_remarks(id) ON DELETE SET NULL,
+                FOREIGN KEY (created_by) REFERENCES users(id)
+            );
+
             CREATE TABLE IF NOT EXISTS material_requests (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 batch_id INTEGER,
@@ -484,6 +509,8 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(due_date);
             CREATE INDEX IF NOT EXISTS idx_object_remarks_project ON object_remarks(project_id, status);
             CREATE INDEX IF NOT EXISTS idx_photo_reports_project ON photo_reports(project_id, report_date);
+            CREATE INDEX IF NOT EXISTS idx_blockers_project ON blockers(project_id, status);
+            CREATE INDEX IF NOT EXISTS idx_blockers_due ON blockers(due_date, status);
             CREATE INDEX IF NOT EXISTS idx_materials_project ON material_requests(project_id);
             CREATE INDEX IF NOT EXISTS idx_estimate_materials_project ON estimate_materials(project_id);
             CREATE INDEX IF NOT EXISTS idx_estimate_jobs_status ON estimate_jobs(status, due_date);
@@ -548,6 +575,11 @@ def init_db() -> None:
         ensure_column(db, "tasks", "start_date", "TEXT")
         ensure_column(db, "tasks", "contract_id", "INTEGER")
         ensure_column(db, "tasks", "task_type", "TEXT NOT NULL DEFAULT 'task'")
+        ensure_column(db, "tasks", "is_blocker", "INTEGER NOT NULL DEFAULT 0")
+        ensure_column(db, "material_request_batches", "is_blocker", "INTEGER NOT NULL DEFAULT 0")
+        ensure_column(db, "object_remarks", "is_blocker", "INTEGER NOT NULL DEFAULT 0")
+        ensure_column(db, "blockers", "severity", "TEXT NOT NULL DEFAULT 'medium'")
+        ensure_column(db, "blockers", "status", "TEXT NOT NULL DEFAULT 'open'")
         ensure_column(db, "work_extra_items", "estimate_section", "TEXT")
         ensure_column(db, "documents", "file_name", "TEXT")
         ensure_column(db, "documents", "file_path", "TEXT")
@@ -592,12 +624,39 @@ def init_db() -> None:
         seed_related_records(db)
         backfill_material_request_batches(db)
         backfill_project_customers(db)
+        backfill_task_titles(db)
 
 
 def ensure_column(db: sqlite3.Connection, table: str, column: str, definition: str) -> None:
     columns = {row["name"] for row in db.execute(f"PRAGMA table_info({table})").fetchall()}
     if column not in columns:
         db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
+def backfill_task_titles(db: sqlite3.Connection) -> None:
+    rows = db.execute(
+        """
+        SELECT id, title, description
+        FROM tasks
+        WHERE title LIKE 'Сделать фотоотчёт,%'
+           OR title LIKE 'Сделать фотоотчет,%'
+        """
+    ).fetchall()
+    for row in rows:
+        old_title = row["title"] or ""
+        description = (row["description"] or "").strip()
+        next_description = description or old_title
+        db.execute(
+            """
+            UPDATE tasks
+            SET title = 'Сделать фотоотчёт по объекту',
+                description = ?,
+                task_type = 'photo_report',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (next_description, row["id"]),
+        )
 
 
 def backfill_material_request_batches(db: sqlite3.Connection) -> None:

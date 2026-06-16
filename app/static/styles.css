@@ -3751,6 +3751,29 @@ textarea {
   gap: 12px;
 }
 
+.today-role-panel {
+  border: 1px solid var(--line);
+  background: #f8fbfb;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.today-role-panel h2 {
+  margin-top: 3px;
+}
+
+.today-primary-actions,
+.material-quick-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .today-wide {
   grid-column: 1 / -1;
 }
@@ -3915,6 +3938,29 @@ textarea {
   font-size: 12px;
 }
 
+.quick-filter {
+  min-height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+  color: #314248;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.quick-filter::after {
+  content: attr(data-count);
+  margin-left: 5px;
+  color: var(--muted);
+}
+
+.quick-filter.active {
+  border-color: #2a7a70;
+  background: #e7f3f0;
+  color: #14544d;
+  font-weight: 700;
+}
+
 .pipeline-filter::after {
   content: attr(data-count);
   margin-left: 5px;
@@ -4074,6 +4120,41 @@ textarea {
   gap: 6px;
 }
 
+.signal-preview {
+  display: grid;
+  gap: 4px;
+  margin-top: 5px;
+  color: #3d4b51;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.empty-action-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.empty-action-main {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  display: grid;
+  gap: 3px;
+  color: inherit;
+}
+
+.blocker-row {
+  background: #fffafa;
+}
+
+.mobile-bottom-nav,
+.mobile-quick-sheet {
+  display: none;
+}
+
 @media (max-width: 980px) {
   .app {
     display: block;
@@ -4111,6 +4192,10 @@ textarea {
   }
 
   .attention-list {
+    grid-template-columns: 1fr;
+  }
+
+  .today-role-panel {
     grid-template-columns: 1fr;
   }
 }
@@ -4531,6 +4616,10 @@ textarea {
     display: none;
   }
 
+  .sidebar {
+    display: none;
+  }
+
   .brand {
     display: none;
   }
@@ -4563,7 +4652,79 @@ textarea {
   }
 
   .main {
-    padding: 10px 10px calc(82px + env(safe-area-inset-bottom));
+    padding: 10px 10px calc(86px + env(safe-area-inset-bottom));
+  }
+
+  .mobile-bottom-nav {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 45;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 4px;
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+    background: #172026;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+  }
+
+  .mobile-bottom-nav button {
+    min-height: 50px;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    color: #d9e3e6;
+    display: grid;
+    place-items: center;
+    gap: 2px;
+    font-size: 11px;
+    line-height: 1.05;
+  }
+
+  .mobile-bottom-nav button:hover,
+  .mobile-bottom-nav button:focus-visible {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+  }
+
+  .mobile-bottom-nav .mobile-plus {
+    background: var(--brand);
+    color: #fff;
+    font-size: 24px;
+    font-weight: 700;
+  }
+
+  .mobile-quick-sheet {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: grid;
+    align-items: end;
+    background: rgba(17, 27, 31, 0.35);
+  }
+
+  .mobile-quick-sheet[hidden] {
+    display: none;
+  }
+
+  .mobile-quick-sheet-panel {
+    background: #fff;
+    border-radius: 14px 14px 0 0;
+    padding: 12px 12px calc(14px + env(safe-area-inset-bottom));
+    box-shadow: 0 -14px 32px rgba(17, 27, 31, 0.18);
+    display: grid;
+    gap: 10px;
+  }
+
+  .mobile-quick-actions {
+    display: grid;
+    gap: 8px;
+  }
+
+  .mobile-quick-actions button {
+    width: 100%;
+    justify-content: center;
   }
 
   .topbar {
@@ -4599,6 +4760,28 @@ textarea {
   .actions .primary,
   .actions .secondary {
     width: 100%;
+  }
+
+  .today-role-panel {
+    padding: 10px;
+    gap: 8px;
+  }
+
+  .today-primary-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .material-quick-filters,
+  .material-pipeline-tabs {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: 4px;
+  }
+
+  .quick-filter,
+  .pipeline-filter {
+    flex: 0 0 auto;
   }
 
   .primary,

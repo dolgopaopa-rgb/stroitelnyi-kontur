@@ -12,7 +12,7 @@
     <link rel="manifest" href="/static/manifest.webmanifest?v=20260611-android-pwa" />
     <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260616-ux-today" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260616-role-today" />
   </head>
   <body>
     <div class="app">
@@ -57,6 +57,7 @@
                 <option value="construction_manager">Рук. строительства</option>
                 <option value="foreman:7">Прораб Андрей</option>
                 <option value="foreman:8">Прораб Сергей</option>
+                <option value="master">Мастер</option>
                 <option value="procurement_manager">Снабжение</option>
                 <option value="estimator">Сметчик</option>
                 <option value="technical_supervisor">Технадзор</option>
@@ -70,23 +71,31 @@
         </header>
 
         <section class="view active" id="todayView">
+          <section class="today-role-panel">
+            <div>
+              <span class="eyebrow" id="todayRoleLabel">Рабочий день</span>
+              <h2 id="todayRoleQuestion">Что требует внимания сегодня?</h2>
+              <p class="muted" id="todayRoleHint">Контур покажет задачи, объекты и сигналы по текущей роли.</p>
+            </div>
+            <div class="today-primary-actions" id="todayPrimaryActions"></div>
+          </section>
           <div class="today-grid">
             <section class="panel today-focus-panel">
               <div class="panel-head">
-                <h2>Мои задачи на сегодня</h2>
+                <h2 id="todayTasksTitle">Мои задачи на сегодня</h2>
                 <button class="link-button" data-view-target="tasks">Открыть задачи</button>
               </div>
               <div class="list" id="todayTasks"></div>
             </section>
             <section class="panel today-focus-panel">
               <div class="panel-head">
-                <h2>Требует решения</h2>
+                <h2 id="todayAttentionTitle">Требует решения</h2>
               </div>
               <div class="list" id="todayAttention"></div>
             </section>
             <section class="panel">
               <div class="panel-head">
-                <h2>Материалы под риском</h2>
+                <h2 id="todayMaterialsTitle">Материалы под риском</h2>
                 <button class="link-button" data-view-target="materials">Открыть материалы</button>
               </div>
               <div class="list" id="todayMaterials"></div>
@@ -226,6 +235,17 @@
                 <button class="pipeline-filter" type="button" data-material-pipeline-filter="on_site">На объекте</button>
                 <button class="pipeline-filter" type="button" data-material-pipeline-filter="problem">Проблема</button>
                 <button class="pipeline-filter" type="button" data-material-pipeline-filter="closed">Закрыто</button>
+              </div>
+              <div class="material-quick-filters" role="tablist" aria-label="Быстрые фильтры заявок">
+                <button class="quick-filter active" type="button" data-material-quick-filter="all">Все заявки</button>
+                <button class="quick-filter" type="button" data-material-quick-filter="mine">Мои</button>
+                <button class="quick-filter" type="button" data-material-quick-filter="by_object">По объекту</button>
+                <button class="quick-filter" type="button" data-material-quick-filter="urgent">Срочные</button>
+                <button class="quick-filter" type="button" data-material-quick-filter="no_responsible">Без ответственного</button>
+                <button class="quick-filter" type="button" data-material-quick-filter="no_due">Без срока</button>
+                <button class="quick-filter" type="button" data-material-quick-filter="blocker">Тормозит объект</button>
+                <button class="quick-filter" type="button" data-material-quick-filter="extra">Допработы</button>
+                <button class="quick-filter" type="button" data-material-quick-filter="out_of_estimate">Вне основной сметы</button>
               </div>
               <div class="table" id="materialRows"></div>
             </section>
@@ -445,6 +465,23 @@
       </main>
     </div>
 
+    <nav class="mobile-bottom-nav" aria-label="Мобильное меню">
+      <button type="button" data-view-target="today"><span>⌂</span>Сегодня</button>
+      <button type="button" data-view-target="projects"><span>▦</span>Объекты</button>
+      <button class="mobile-plus" type="button" id="mobileQuickActionToggle"><span>+</span></button>
+      <button type="button" data-view-target="dashboard"><span>◈</span>Уведомления</button>
+      <button type="button" id="mobileProfileButton"><span>◉</span>Я</button>
+    </nav>
+    <div class="mobile-quick-sheet" id="mobileQuickSheet" hidden>
+      <div class="mobile-quick-sheet-panel">
+        <div class="panel-head">
+          <h2>Быстрое действие</h2>
+          <button class="icon" type="button" id="mobileQuickActionClose">×</button>
+        </div>
+        <div class="mobile-quick-actions" id="mobileQuickActions"></div>
+      </div>
+    </div>
+
     <dialog id="projectDialog">
       <form method="dialog" class="form" id="projectForm" novalidate>
         <div class="modal-head">
@@ -524,6 +561,8 @@
             <option value="photo_report">Фотоотчёт</option>
             <option value="material">Материал</option>
             <option value="decision">Решение</option>
+            <option value="check">Проверка</option>
+            <option value="approval">Согласование</option>
           </select>
         </label>
         <div class="grid-2">
@@ -1035,6 +1074,6 @@
       </div>
     </div>
     <div class="toast" id="toast"></div>
-    <script src="/static/app.compat.js?v=20260616-ux-today"></script>
+    <script src="/static/app.compat.js?v=20260616-role-today"></script>
   </body>
 </html>

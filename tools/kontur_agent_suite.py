@@ -443,6 +443,31 @@ def agent_ux_design(checks: list[AgentCheck]) -> None:
     else:
         add(checks, agent, "Экран Сегодня", "WARN", "Не найден полный экран Сегодня.", "Проверить /today и блоки внимания.")
 
+    if has_all(app_text, ["roleTodayProfile", "roleScopedTasks", "roleScopedMaterialRows"]) and "todayRoleQuestion" in index_html:
+        add(checks, agent, "Ролевое Сегодня", "OK", "Главный экран адаптируется под роль и показывает разные рабочие вопросы.")
+    else:
+        add(checks, agent, "Ролевое Сегодня", "WARN", "Не найден контракт ролевого экрана Сегодня.", "Развести сценарии директора, прораба, мастера, снабжения и сметчика.")
+
+    if has_all(app_text, ["dedupeSignals", "signalTypeKey", "signal-preview"]):
+        add(checks, agent, "Дедупликация сигналов", "OK", "Сигналы группируются по объекту, типу и дню.")
+    else:
+        add(checks, agent, "Дедупликация сигналов", "WARN", "Сигналы могут повторяться.", "Группировать однотипные события.")
+
+    if has_all(read_text("app/database.py"), ["CREATE TABLE IF NOT EXISTS blockers", "is_blocker"]) and has_all(app_text, ["project.blockers", "quickCreateBlocker"]):
+        add(checks, agent, "Блокеры объектов", "OK", "Есть сущность/флаг блокера и вывод в интерфейсе.")
+    else:
+        add(checks, agent, "Блокеры объектов", "WARN", "Блокеры внедрены неполно.", "Проверить API, карточку объекта и Today.")
+
+    if "data-material-quick-filter" in index_html and "materialBatchMatchesQuickFilter" in app_text:
+        add(checks, agent, "Фильтры материалов", "OK", "Есть быстрые фильтры: мои, срочные, без срока, тормозит объект, вне сметы.")
+    else:
+        add(checks, agent, "Фильтры материалов", "WARN", "Быстрые фильтры материалов не найдены.", "Добавить фильтры для рабочих сценариев снабжения и прораба.")
+
+    if "mobile-bottom-nav" in index_html and "mobileQuickActionsForRole" in app_text:
+        add(checks, agent, "Мобильные быстрые действия", "OK", "Есть нижнее меню и кнопка + с ролевыми действиями.")
+    else:
+        add(checks, agent, "Мобильные быстрые действия", "WARN", "Не найдено мобильное меню этапа 3.", "Добавить Сегодня / Объекты / + / Уведомления / Я.")
+
     server_text = read_text("app/server.py")
     snapshot_contract = [
         "generatedAt",
@@ -456,6 +481,9 @@ def agent_ux_design(checks: list[AgentCheck]) -> None:
         "object_issues_entity",
         "document_classification",
         "live_audit_login",
+        "Проверка этапа 3",
+        "role_based_today",
+        "mobile_quick_actions",
         "frontend_label_maps",
         "SNAPSHOT_FORBIDDEN_ENUMS",
     ]

@@ -11,6 +11,7 @@ const state = {
   projects: [],
   archivedProjects: [],
   materialRequests: [],
+  blockers: [],
   photoReports: [],
   objectRemarks: [],
   estimateJobs: [],
@@ -22,6 +23,7 @@ const state = {
   projectListMode: "active",
   materialListMode: "active",
   materialPipelineFilter: "all",
+  materialQuickFilter: "all",
   taskFilter: "all",
   feedbackFilter: "all",
   remarkFilter: "all",
@@ -41,10 +43,12 @@ const state = {
   estimateGallery: { jobId: null, files: [], index: 0 },
   knowledgeFolders: [],
   knowledgeCurrentFolderId: localStorage.getItem("knowledgeCurrentFolderId") || "",
+  knowledgeClassificationOnly: false,
   knowledgeUploading: false,
   knowledgeUploadMessage: "",
   installPromptEvent: null,
   installPromptReady: false,
+  mobileQuickOpen: false,
   loadingKeys: new Set(),
   pullRefresh: { tracking: false, startY: 0, distance: 0, ready: false, refreshing: false },
 };
@@ -151,6 +155,7 @@ const statusLabelMap = {
   procurement_manager: "Снабжение",
   estimator: "Сметчик",
   technical_supervisor: "Технадзор",
+  master: "Мастер",
   ai_auditor: "ИИ-аудитор",
   main_estimate: "По смете",
   main_estimate_overspend: "Сверх сметы",
@@ -178,8 +183,11 @@ const statusLabelMap = {
   estimate: "Смета",
   invoice: "Счёт",
   media: "Фото/видео",
+  photo_video: "Фото/видео",
   variation_attachment: "Вложение к допработе",
+  extra_work_attachment: "Вложение к допработе",
   service_file: "Служебный файл",
+  service_screenshot: "Служебный скриншот",
   unclassified: "Не разобрано",
   photo_report: "Фотоотчёт",
   object_remark: "Замечание по объекту",
@@ -191,12 +199,28 @@ const statusLabelMap = {
   photo: "Фотоотчёт",
   material: "Материал",
   decision: "Решение",
+  check: "Проверка",
   need_approval: "Нужно согласовать",
   agreed: "Согласовано",
   in_transit: "В пути",
   on_site: "На объекте",
   problem: "Проблема",
   closed: "Закрыто",
+  open: "Открыт",
+  waiting_external: "Ждём внешнего ответа",
+  resolved: "Решён",
+  no_material: "Нет материала",
+  waiting_client_decision: "Ждём решение заказчика",
+  waiting_owner_decision: "Ждём решение руководителя",
+  waiting_project_documentation: "Ждём проект / чертёж",
+  estimate_not_approved: "Не согласована смета",
+  subcontractor_problem: "Проблема с подрядчиком",
+  quality_problem: "Проблема качества",
+  no_photo_report: "Нет фотоотчёта",
+  material_under_risk: "Материал под риском",
+  medium: "Средняя",
+  high: "Высокая",
+  critical: "Критичная",
 };
 
 const statusLabels = statusLabelMap;
@@ -207,10 +231,10 @@ function statusLabel(value) {
 
 function statusLevel(value, fallback = "") {
   const key = String(value || "");
-  if (["overdue", "danger", "problem", "returned", "revision_requested", "rejected", "receipt_issue"].includes(key)) return "danger";
-  if (["warning", "review", "completed_pending_acceptance", "estimate_question", "estimate_returned", "submitted_to_construction", "decision_required", "need_approval", "estimate_hold", "new", "feedback_new"].includes(key)) return "warning";
-  if (["success", "accepted", "approved", "closed", "completed", "received", "on_site", "agreed", "done", "feedback_done", "estimate_done"].includes(key)) return "success";
-  if (["blue", "in_progress", "in_progress_task", "ordered", "in_transit", "delivery_scheduled", "delivery_confirmed", "estimate_in_work", "in_review", "active", "in_work", "feedback_in_work"].includes(key)) return "blue";
+  if (["overdue", "danger", "problem", "returned", "revision_requested", "rejected", "receipt_issue", "quality_problem", "no_material"].includes(key)) return "danger";
+  if (["warning", "review", "completed_pending_acceptance", "estimate_question", "estimate_returned", "submitted_to_construction", "decision_required", "need_approval", "estimate_hold", "new", "feedback_new", "open", "waiting_external", "waiting_client_decision", "waiting_owner_decision", "waiting_project_documentation", "estimate_not_approved", "subcontractor_problem", "no_photo_report", "approval", "check"].includes(key)) return "warning";
+  if (["success", "accepted", "approved", "closed", "completed", "received", "on_site", "agreed", "done", "feedback_done", "estimate_done", "resolved"].includes(key)) return "success";
+  if (["blue", "in_progress", "in_progress_task", "ordered", "in_transit", "delivery_scheduled", "delivery_confirmed", "estimate_in_work", "in_review", "active", "in_work", "feedback_in_work", "material"].includes(key)) return "blue";
   if (["draft", "archived", "estimate_new", "not_required"].includes(key)) return "";
   return fallback;
 }
@@ -488,6 +512,7 @@ const viewAccess = {
   accountant: ["today", "dashboard", "projects", "materials", "variations", "locations", "documents", "events"],
   sales_manager: ["today", "dashboard", "projects", "estimates", "documents"],
   foreman: ["today", "dashboard", "tasks", "works", "materials", "variations", "object_remarks", "photos", "locations", "documents"],
+  master: ["today", "tasks", "works", "object_remarks", "photos", "documents"],
   procurement_manager: ["today", "dashboard", "projects", "materials", "object_remarks", "locations", "documents"],
   estimator: ["today", "dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "object_remarks", "documents"],
   technical_supervisor: ["today", "dashboard", "projects", "tasks", "works", "materials", "object_remarks", "photos", "locations", "documents"],
@@ -513,6 +538,7 @@ function syncNavigationAccess() {
     node.hidden = !allowed.includes(node.dataset.requiresView);
   });
   syncTopbarAccess();
+  syncMobileQuickActions();
   if (!allowed.includes(state.view)) {
     switchView(allowed[0] || "dashboard");
   }
@@ -589,6 +615,7 @@ const documentAccess = {
   accountant: new Set(["main_estimate", "smetter_materials", "smetter_work_task", "contract", "variation_estimate", "act", "ks_2", "ks_3", "other"]),
   estimator: new Set(["main_estimate", "smetter_materials", "smetter_work_task", "project_documentation", "variation_estimate", "act", "ks_2", "ks_3", "other"]),
   foreman: new Set(["project_documentation", "detail_node", "regulation", "standard", "instruction"]),
+  master: new Set(["project_documentation", "detail_node", "regulation", "standard", "instruction"]),
   procurement_manager: new Set(["smetter_materials", "project_documentation", "detail_node", "regulation", "standard", "instruction", "other"]),
   technical_supervisor: new Set(["smetter_materials", "smetter_work_task", "project_documentation", "detail_node", "regulation", "standard", "instruction", "other"]),
 };
@@ -625,6 +652,7 @@ function projectTabs() {
     accountant: ["overview", "materials", "documents", "events", "finances"],
     sales_manager: ["overview", "documents"],
     foreman: ["overview", "tasks", "materials", "photos", "remarks", "documents"],
+    master: ["overview", "tasks", "photos", "remarks", "documents"],
     procurement_manager: ["overview", "materials", "remarks", "documents", "events"],
     estimator: ["overview", "tasks", "materials", "remarks", "documents", "events"],
     technical_supervisor: ["overview", "tasks", "materials", "photos", "remarks", "documents", "events"],
@@ -662,6 +690,7 @@ function availableRoleOptions() {
     ["sales_manager", "Менеджер"],
     ["construction_manager", "Рук. строительства"],
     ...usersByRole("foreman").map((user) => [`foreman:${user.id}`, `Прораб ${user.name}`]),
+    ["master", "Мастер"],
     ["procurement_manager", "Снабжение"],
     ["estimator", "Сметчик"],
     ["technical_supervisor", "Технадзор"],
@@ -834,23 +863,24 @@ function documentTypeKey(input) {
     if (rawType === "contract" || rawType === "additional_agreement") return "contract";
     if (rawType === "act" || rawType === "ks_2" || rawType === "ks_3") return "act";
     if (rawType === "invoice") return "invoice";
-    if (rawType === "photo_report" || rawType === "object_remark_photo" || rawType === "media") return "media";
-    if (rawType === "variation_attachment") return "variation_attachment";
-    if (rawType === "service_file") return "service_file";
+    if (rawType === "photo_report" || rawType === "object_remark_photo" || rawType === "media" || rawType === "photo_video") return "photo_video";
+    if (rawType === "variation_attachment" || rawType === "extra_work_attachment") return "extra_work_attachment";
+    if (rawType === "service_file" || rawType === "service_screenshot") return "service_screenshot";
     if (rawType === "other") return "other";
     if (statusLabelMap[rawType]) return rawType;
   }
   const name = `${doc.title || ""} ${doc.file_name || ""}`.toLowerCase();
   const processType = String(doc.process_type || "").toLowerCase();
   const mime = String(doc.mime_type || "").toLowerCase();
-  if (processType.startsWith("variation:")) return "variation_attachment";
-  if (mime.startsWith("image/") || mime.startsWith("video/")) return "media";
+  if (processType.startsWith("variation:")) return "extra_work_attachment";
+  if (/\b(кнопка|экран|ошибка|скрин|screenshot|feedback|интерфейс)\b/.test(name) && (mime.startsWith("image/") || /\.(png|jpe?g|webp)$/i.test(name))) return "service_screenshot";
+  if (mime.startsWith("image/") || mime.startsWith("video/") || /\.(mov|mp4|jpe?g|png|webp)$/i.test(name)) return "photo_video";
   if (/проект|пдф|узел|решени/.test(name)) return "project";
   if (/смет|задани[ея]\s+на\s+работ|smetter|work_assignment|purchase/.test(name)) return "estimate";
   if (/договор|допник|доп\.?\s*соглаш|contract/.test(name)) return "contract";
   if (/\bакт\b|кс-?2|кс-?3/.test(name)) return "act";
   if (/сч[её]т|invoice/.test(name)) return "invoice";
-  if (/скрин|служеб|интерфейс|feedback/.test(name)) return "service_file";
+  if (/скрин|служеб|интерфейс|feedback|ошибка|экран|screenshot/.test(name)) return "service_screenshot";
   return rawType ? "other" : "unclassified";
 }
 
@@ -1408,12 +1438,14 @@ async function loadCoreData() {
 
 async function loadAll() {
   await loadCoreData();
-  const [photoReports, objectRemarks] = await Promise.all([
+  const [photoReports, objectRemarks, blockers] = await Promise.all([
     canView("photos") || canView("today") || canView("projects") ? api("/api/photo-reports") : Promise.resolve([]),
     canView("object_remarks") || canView("today") || canView("projects") ? api("/api/object-remarks") : Promise.resolve([]),
+    canView("today") || canView("projects") || canView("tasks") || canView("materials") ? api("/api/blockers") : Promise.resolve([]),
   ]);
   state.photoReports = photoReports;
   state.objectRemarks = objectRemarks;
+  state.blockers = blockers;
   await Promise.all([
     renderToday(),
     renderDashboard(),
@@ -1885,6 +1917,7 @@ function buildMaterialBatches(items) {
         project_foreman_id: item.project_foreman_id,
         creator_id: item.creator_id,
         creator_name: item.creator_name,
+        procurement_name: item.procurement_name || "",
         created_at: item.batch_created_at || item.created_at,
         needed_at: item.needed_at,
         delivery_urgency: item.batch_delivery_urgency || item.delivery_urgency,
@@ -1974,6 +2007,41 @@ function materialReceiptAttachment(batch) {
 
 function materialBatchHasDeviation(batch) {
   return materialActiveItems(batch).some((item) => item.basis_type && item.basis_type !== "main_estimate");
+}
+
+function materialBatchHasNoPrice(batch) {
+  return materialActiveItems(batch).some(materialRowHasNoPrice);
+}
+
+function materialBatchActualOverrun(batch) {
+  return materialActiveItems(batch).some(materialRowActualOverrun) || (Number(batch.actual_purchase_amount || 0) > 0 && Number(batch.actual_purchase_amount || 0) > Number(batch.total_amount || 0));
+}
+
+function materialBatchIsMine(batch) {
+  const role = currentRoleBase();
+  const userId = Number(currentUserId() || 0);
+  if (["owner", "construction_manager", "finance_director"].includes(role)) return true;
+  if (role === "foreman") return Number(batch.project_foreman_id || 0) === userId || Number(batch.creator_id || 0) === userId;
+  if (role === "procurement_manager") return true;
+  if (role === "estimator") return materialBatchHasDeviation(batch) || materialBatchHasNoPrice(batch) || materialBatchActualOverrun(batch);
+  return false;
+}
+
+function materialBatchHasNoResponsible(batch) {
+  return !batch.procurement_name && !["closed", "on_site"].includes(materialPipelineStatus(batch));
+}
+
+function materialBatchMatchesQuickFilter(batch, filter = state.materialQuickFilter) {
+  if (!filter || filter === "all") return true;
+  if (filter === "mine") return materialBatchIsMine(batch);
+  if (filter === "by_object") return state.selectedProjectId ? Number(batch.project_id || 0) === Number(state.selectedProjectId) : true;
+  if (filter === "urgent") return batch.delivery_urgency === "urgent";
+  if (filter === "no_responsible") return materialBatchHasNoResponsible(batch);
+  if (filter === "no_due") return !batch.needed_at;
+  if (filter === "blocker") return materialIsRisky(batch) || (state.blockers || []).some((blocker) => Number(blocker.linked_material_request_id || 0) === Number(batch.id || 0) && !["resolved", "closed"].includes(blocker.status));
+  if (filter === "extra") return materialActiveItems(batch).some((item) => ["additional_work", "additional_agreement"].includes(item.basis_type));
+  if (filter === "out_of_estimate") return materialBatchHasDeviation(batch) || materialBatchHasNoPrice(batch) || materialBatchActualOverrun(batch);
+  return true;
 }
 
 function isRemovedMaterialItem(item) {
@@ -2165,6 +2233,7 @@ function taskStats(tasks) {
     waiting: tasks.filter((task) => task.status === "completed_pending_acceptance").length,
     accepted: tasks.filter((task) => task.status === "accepted").length,
     overdue: tasks.filter(taskCountsAsOverdue).length,
+    noDue: tasks.filter((task) => isOpenTask(task) && !task.due_date).length,
   };
 }
 
@@ -2178,6 +2247,7 @@ function taskMatchesFilter(task, filter) {
   if (filter === "waiting") return task.status === "completed_pending_acceptance";
   if (filter === "accepted") return task.status === "accepted";
   if (filter === "overdue") return taskCountsAsOverdue(task);
+  if (filter === "no_due") return isOpenTask(task) && !task.due_date;
   return true;
 }
 
@@ -2186,9 +2256,189 @@ function isOpenTask(task) {
 }
 
 function visibleTasksForRole(tasks) {
-  if (currentRoleBase() !== "foreman") return tasks;
-  const userId = currentUserId();
-  return tasks.filter((task) => task.project_foreman_id === userId || task.assignee_id === userId || task.reviewer_id === userId);
+  return roleScopedTasks(tasks);
+}
+
+function isLeadershipRole(role = currentRoleBase()) {
+  return ["owner", "construction_manager", "finance_director", "ai_auditor"].includes(role);
+}
+
+function roleScopedProjects(projects = state.projects) {
+  const role = currentRoleBase();
+  const userId = Number(currentUserId() || 0);
+  const activeProjects = (projects || []).filter((project) => project.status !== "archived");
+  if (isLeadershipRole(role)) return activeProjects;
+  if (role === "sales_manager") return activeProjects.filter((project) => !userId || Number(project.sales_manager_id || 0) === userId || Number(project.manager_id || 0) === userId);
+  if (role === "foreman") return activeProjects.filter((project) => Number(project.foreman_id || 0) === userId);
+  if (role === "technical_supervisor") return activeProjects.filter((project) => !userId || Number(project.tech_supervisor_id || 0) === userId);
+  if (role === "estimator") return activeProjects.filter((project) => !userId || Number(project.estimator_id || 0) === userId);
+  if (role === "master") {
+    const projectIds = new Set((state.lastTasks || []).filter((task) => task.assignee_role === "master" || task.reviewer_role === "master").map((task) => Number(task.project_id || 0)));
+    return activeProjects.filter((project) => projectIds.has(Number(project.id)));
+  }
+  if (role === "procurement_manager") return activeProjects;
+  return activeProjects;
+}
+
+function roleProjectIdSet(projects = roleScopedProjects(state.projects)) {
+  return new Set((projects || []).map((project) => Number(project.id || 0)).filter(Boolean));
+}
+
+function taskText(task) {
+  return `${task?.title || ""} ${task?.description || ""} ${task?.task_type || ""}`.toLowerCase();
+}
+
+function roleScopedTasks(tasks = []) {
+  const role = currentRoleBase();
+  const userId = Number(currentUserId() || 0);
+  const rows = Array.isArray(tasks) ? tasks : [];
+  if (isLeadershipRole(role)) return rows;
+  if (role === "foreman") {
+    return rows.filter((task) => Number(task.project_foreman_id || 0) === userId || Number(task.assignee_id || 0) === userId || Number(task.reviewer_id || 0) === userId);
+  }
+  if (role === "master") {
+    return rows.filter((task) => task.assignee_role === "master" || task.reviewer_role === "master" || (!userId && inferTaskType(task) === "task"));
+  }
+  if (role === "procurement_manager") {
+    return rows.filter((task) => ["material", "approval", "decision"].includes(inferTaskType(task)) || task.assignee_role === "procurement_manager" || task.reviewer_role === "procurement_manager" || /материал|заявк|поставк|купить|заказать/.test(taskText(task)));
+  }
+  if (role === "estimator") {
+    return rows.filter((task) => task.assignee_role === "estimator" || task.reviewer_role === "estimator" || ["check", "approval", "material"].includes(inferTaskType(task)) || /смет|цен|расцен|допработ|сверх/.test(taskText(task)));
+  }
+  if (role === "technical_supervisor") {
+    return rows.filter((task) => !userId || Number(task.assignee_id || 0) === userId || Number(task.reviewer_id || 0) === userId || ["check", "issue", "photo_report"].includes(inferTaskType(task)));
+  }
+  if (role === "sales_manager") {
+    return rows.filter((task) => !userId || Number(task.creator_id || 0) === userId || Number(task.assignee_id || 0) === userId || Number(task.reviewer_id || 0) === userId);
+  }
+  return rows;
+}
+
+function materialRowHasDeviation(item) {
+  return Boolean(item?.basis_type && item.basis_type !== "main_estimate");
+}
+
+function materialRowHasNoPrice(item) {
+  return Number(item?.total_amount || 0) <= 0 && Number(item?.actual_total_amount || 0) <= 0 && Number(item?.unit_price || 0) <= 0;
+}
+
+function materialRowActualOverrun(item) {
+  return Number(item?.actual_total_amount || 0) > 0 && Number(item?.actual_total_amount || 0) > Number(item?.total_amount || 0);
+}
+
+function roleScopedMaterialRows(rows = []) {
+  const role = currentRoleBase();
+  const userId = Number(currentUserId() || 0);
+  const projectIds = roleProjectIdSet();
+  const items = Array.isArray(rows) ? rows : [];
+  if (isLeadershipRole(role)) return items;
+  if (role === "foreman") {
+    return items.filter((item) => Number(item.project_foreman_id || 0) === userId || Number(item.creator_id || 0) === userId);
+  }
+  if (role === "master") return [];
+  if (role === "procurement_manager") return items;
+  if (role === "estimator") return items.filter((item) => materialRowHasDeviation(item) || materialRowHasNoPrice(item) || materialRowActualOverrun(item));
+  return items.filter((item) => projectIds.has(Number(item.project_id || 0)));
+}
+
+function roleScopedBlockers(blockers = []) {
+  const role = currentRoleBase();
+  const userId = Number(currentUserId() || 0);
+  const projectIds = roleProjectIdSet();
+  const rows = Array.isArray(blockers) ? blockers : [];
+  if (isLeadershipRole(role)) return rows;
+  if (role === "foreman") {
+    return rows.filter((blocker) => Number(blocker.project_foreman_id || 0) === userId || Number(blocker.responsible_user_id || 0) === userId || projectIds.has(Number(blocker.project_id || 0)));
+  }
+  if (role === "master") {
+    return rows.filter((blocker) => Number(blocker.responsible_user_id || 0) === userId || projectIds.has(Number(blocker.project_id || 0)));
+  }
+  if (role === "procurement_manager") return rows.filter((blocker) => ["no_material", "material_under_risk", "other"].includes(blocker.blocker_type) || projectIds.has(Number(blocker.project_id || 0)));
+  if (role === "estimator") return rows.filter((blocker) => ["estimate_not_approved", "material_under_risk", "other"].includes(blocker.blocker_type) || projectIds.has(Number(blocker.project_id || 0)));
+  return rows.filter((blocker) => projectIds.has(Number(blocker.project_id || 0)));
+}
+
+function roleTodayProfile() {
+  const role = currentRoleBase();
+  const profiles = {
+    owner: {
+      label: "Руководитель компании",
+      question: "Где горит и где нужно моё решение?",
+      hint: "Показываем просрочки, блокеры, материалы под риском и объекты с проблемами по всей компании.",
+      tasksTitle: "Задачи и решения на сегодня",
+      attentionTitle: "Требует моего решения",
+      materialsTitle: "Материалы под риском",
+      actions: [
+        ["dashboard", "Посмотреть сигналы"],
+        ["projects", "Проблемные объекты"],
+        ["tasks", "Открыть задачи"],
+      ],
+    },
+    construction_manager: {
+      label: "Руководитель строительства",
+      question: "Что происходит на моих объектах?",
+      hint: "Фокус на объектах, задачах, фотоотчётах, замечаниях и материалах, которые тормозят стройку.",
+      tasksTitle: "Задачи по объектам",
+      attentionTitle: "Вопросы, требующие решения",
+      materialsTitle: "Материалы, влияющие на объекты",
+      actions: [
+        ["projects", "Открыть объекты"],
+        ["tasks", "Создать задачу"],
+        ["photos", "Фотоотчёты"],
+      ],
+    },
+    foreman: {
+      label: "Прораб",
+      question: "Что мне сегодня сделать на объекте?",
+      hint: "Только закреплённые объекты, ваши задачи, заявки, фотоотчёты и замечания к закрытию.",
+      tasksTitle: "Мои задачи на сегодня",
+      attentionTitle: "Что мешает закрыть работы",
+      materialsTitle: "Материалы: получить или запросить",
+      actions: [
+        ["photos", "Добавить фотоотчёт"],
+        ["materials", "Запросить материал"],
+        ["tasks", "Мои задачи"],
+      ],
+    },
+    master: {
+      label: "Мастер",
+      question: "Что сделать, где сделать, как подтвердить?",
+      hint: "Упрощённый режим: задача, срок, место, кнопка готово, фото и сообщение о проблеме.",
+      tasksTitle: "Что сделать сегодня",
+      attentionTitle: "Что мешает выполнить",
+      materialsTitle: "Материалы по моим задачам",
+      actions: [
+        ["tasks", "Открыть задачи"],
+        ["photos", "Добавить фото"],
+      ],
+    },
+    procurement_manager: {
+      label: "Снабжение",
+      question: "Что купить, куда, когда и что тормозит объект?",
+      hint: "Новые заявки, срочные поставки, проблемы при приёмке и материалы, которые держат объект.",
+      tasksTitle: "Задачи по снабжению",
+      attentionTitle: "Что тормозит поставки",
+      materialsTitle: "Заявки с ближайшим сроком",
+      actions: [
+        ["materials", "Открыть заявки"],
+        ["locations", "Поставщики"],
+      ],
+    },
+    estimator: {
+      label: "Сметчик",
+      question: "Что требует проверки по смете и допработам?",
+      hint: "Вне сметы, нет цены, цена отличается от сметы, новые комментарии и документы на проверку.",
+      tasksTitle: "Проверки по смете",
+      attentionTitle: "Что нужно уточнить",
+      materialsTitle: "Материалы вне сметы / без цены",
+      actions: [
+        ["estimates", "Сметные задания"],
+        ["materials", "Проверить материалы"],
+        ["variations", "Допработы"],
+      ],
+    },
+  };
+  return profiles[role] || profiles.owner;
 }
 
 function renderTaskStats(tasks, activeFilter = state.taskFilter, options = {}) {
@@ -2201,6 +2451,7 @@ function renderTaskStats(tasks, activeFilter = state.taskFilter, options = {}) {
     ["waiting", "Ждет приемки", stats.waiting, "blue"],
     ["accepted", "Принято", stats.accepted, "success"],
     ["overdue", "Просрочено", stats.overdue, "danger"],
+    ["no_due", "Без срока", stats.noDue, "warning"],
   ];
   const visibleSegments = options.hideZero ? segments.filter(([, , count]) => Number(count || 0) > 0) : segments;
   if (!visibleSegments.length) {
@@ -2243,13 +2494,30 @@ function normalizeTaskType(type) {
   return key || "task";
 }
 
+function taskDisplayTitle(task) {
+  const title = String(task?.display_title || task?.title || "Задача").trim();
+  if (/^Сделать фотоотч[её]т,/i.test(title)) return "Сделать фотоотчёт по объекту";
+  if (title.length > 80) return `${title.slice(0, 77).trim()}...`;
+  return title || "Задача";
+}
+
+function taskDisplayDescription(task) {
+  const title = String(task?.title || "").trim();
+  const description = String(task?.description || "").trim();
+  if (/^Сделать фотоотч[её]т,/i.test(title) && !description) return title;
+  if (title.length > 80 && !description) return title;
+  return description;
+}
+
 function inferTaskType(taskOrType) {
   if (!taskOrType || typeof taskOrType !== "object") return normalizeTaskType(taskOrType);
   const explicit = normalizeTaskType(taskOrType.task_type || taskOrType.related_type || "task");
   const text = `${taskOrType.title || ""} ${taskOrType.description || ""} ${taskOrType.related_type || ""}`.toLowerCase();
   if (/фото\s*отч[её]т|фотоотч[её]т|photo/.test(text)) return "photo_report";
-  if (/[?？]/.test(text) || /что\s+думаете|вопрос|уточнить|уточнение/.test(text)) return "question";
-  if (/материал|заявк|снабжен|поставк/.test(text) || explicit === "material") return "material";
+  if (/согласовать|нужно\s+решение|требует\s+решения|утвердить|одобрить/.test(text) || explicit === "approval") return "approval";
+  if (/проверить|принять|контроль|проверка/.test(text) || explicit === "check") return "check";
+  if (/[?？]/.test(text) || /что\s+думаете|как\s+лучше|вопрос|уточнить|уточнение/.test(text)) return "question";
+  if (/материал|заявк|снабжен|поставк|заказать|купить/.test(text) || explicit === "material") return "material";
   if (/дефект|замечани|исправ|передел|брак|не\s+принят/.test(text)) return "issue";
   return explicit;
 }
@@ -2269,6 +2537,8 @@ function taskTypeLevel(taskOrType) {
     photo: "success",
     material: "blue",
     decision: "warning",
+    check: "warning",
+    approval: "warning",
   }[type || "task"] || "";
 }
 
@@ -2841,14 +3111,17 @@ function projectBlockerCount(project, tasks = state.lastTasks || [], materialRow
   const taskRows = projectTasks(project.id, tasks);
   const materialRowsForProject = projectMaterialBatches(project.id, materialRows);
   const remarks = projectRemarks(project.id);
+  const blockers = roleScopedBlockers(state.blockers || []).filter((blocker) => Number(blocker.project_id || 0) === Number(project.id) && !["resolved", "closed"].includes(blocker.status));
   return (
     taskRows.filter((task) => task.status === "returned" || taskCountsAsOverdue(task)).length +
     materialRowsForProject.filter(materialIsRisky).length +
-    remarks.filter((remark) => !["accepted", "closed"].includes(remark.status)).length
+    remarks.filter((remark) => !["accepted", "closed"].includes(remark.status)).length +
+    blockers.length
   );
 }
 
 function renderTodayTaskCard(task) {
+  const description = taskDisplayDescription(task);
   return `
     <button class="row clickable today-task-card" type="button" data-open-task="${task.id}">
       <div class="stack-line">
@@ -2856,13 +3129,15 @@ function renderTodayTaskCard(task) {
         ${pill(statusLabel(task.status), taskStatusLevel(task.status))}
         ${pill(task.due_date || "без срока", levelByDate(task.due_date))}
       </div>
-      <strong>${escapeHtml(task.title || "Задача")}</strong>
+      <strong class="task-card-title">${escapeHtml(taskDisplayTitle(task))}</strong>
       <div class="muted">${escapeHtml(task.project_title || "Объект не указан")} · ответственный: ${escapeHtml(task.assignee_name || "не назначен")}</div>
+      ${description ? `<p class="task-description-clamp">${escapeHtml(description)}</p>` : ""}
     </button>`;
 }
 
 function renderTodayMaterialCard(batch) {
   const overrun = Number(batch.actual_purchase_amount || 0) > Number(batch.total_amount || 0) && Number(batch.actual_purchase_amount || 0) > 0;
+  const firstItem = materialActiveItems(batch)[0] || {};
   return `
     <button class="row clickable today-material-card" type="button" data-open-material-batch="${batch.key}">
       <div class="stack-line">
@@ -2870,9 +3145,10 @@ function renderTodayMaterialCard(batch) {
         ${batch.delivery_urgency === "urgent" ? pill("Срочно", "danger") : ""}
         ${overrun ? pill("Факт выше сметы", "danger") : ""}
       </div>
-      <strong>${escapeHtml(batch.project_title || "Объект не указан")}</strong>
-      <div class="muted">позиций: ${materialActiveItems(batch).length} · смета: ${money(batch.total_amount)}${batch.actual_purchase_amount ? ` · факт: ${money(batch.actual_purchase_amount)}` : ""}</div>
-    </button>`;
+      <strong>${escapeHtml(firstItem.title || materialBatchTitle(batch))}</strong>
+      <div class="muted">${escapeHtml(batch.project_title || "Объект не указан")} · ${escapeHtml(firstItem.requested_quantity || firstItem.estimated_quantity || "")} ${escapeHtml(firstItem.requested_unit || firstItem.estimate_material_unit || "")}</div>
+      <div class="muted">позиций: ${materialActiveItems(batch).length} · основание: ${escapeHtml(materialBatchBasisSummary(batch) || "не указано")} · срок: ${batch.needed_at ? formatDateRu(batch.needed_at) : "без срока"}</div>
+      </button>`;
 }
 
 function renderTodayObjectCard(project, tasks, materialRows) {
@@ -2911,7 +3187,7 @@ function renderTodayAttentionCard(title, count, text, level, targetAttrs) {
     </button>`;
 }
 
-function todayDecisionItems({ overdueTasks = [], returnedTasks = [], waitingTasks = [], riskyMaterials = [], noPhotoProjects = [] }) {
+function todayDecisionItems({ overdueTasks = [], returnedTasks = [], waitingTasks = [], riskyMaterials = [], noPhotoProjects = [], blockers = [] }) {
   const today = new Date().toISOString().slice(0, 10);
   const taskItem = (task, type, level, action = "Открыть задачу") => ({
     type,
@@ -2925,6 +3201,17 @@ function todayDecisionItems({ overdueTasks = [], returnedTasks = [], waitingTask
     attrs: `data-open-task="${task.id}"`,
   });
   return [
+    ...blockers.map((blocker) => ({
+      type: statusLabel(blocker.blocker_type || "other"),
+      level: blocker.severity === "critical" || blocker.severity === "high" ? "danger" : "warning",
+      object: blocker.project_title || "Объект не указан",
+      title: blocker.title || "Блокер объекта",
+      responsible: blocker.responsible_name || "не назначен",
+      due: blocker.due_date || "без срока",
+      criticality: blocker.severity === "critical" || blocker.severity === "high" ? "Высокая" : "Средняя",
+      action: blocker.linked_task_id ? "Открыть задачу" : blocker.linked_material_request_id ? "Открыть заявку" : "Открыть объект",
+      attrs: blocker.linked_task_id ? `data-open-task="${blocker.linked_task_id}"` : blocker.linked_material_request_id ? `data-open-material-batch="batch-${blocker.linked_material_request_id}"` : `data-open-project="${blocker.project_id}"`,
+    })),
     ...overdueTasks.map((task) => taskItem(task, "Просрочено", "danger")),
     ...returnedTasks.map((task) => taskItem(task, "Возвращено", "warning")),
     ...waitingTasks.map((task) => taskItem(task, "Ждёт проверки", "blue")),
@@ -2965,6 +3252,136 @@ function renderTodayDecisionItem(item) {
     </button>`;
 }
 
+function renderTodayPrimaryActions(profile) {
+  return (profile.actions || [])
+    .filter(([view]) => canView(view))
+    .map(([view, title]) => `<button class="secondary" type="button" data-view-target="${view}">${escapeHtml(title)}</button>`)
+    .join("");
+}
+
+function mobileQuickActionsForRole() {
+  const role = currentRoleBase();
+  if (role === "master") {
+    return [
+      ["photo", "Добавить фото"],
+      ["blocker", "Сообщить проблему"],
+    ];
+  }
+  if (role === "foreman") {
+    return [
+      ["photo", "Добавить фотоотчёт"],
+      ["task", "Создать задачу"],
+      ["material", "Запросить материал"],
+      ["remark", "Создать замечание"],
+      ["blocker", "Сообщить проблему"],
+    ];
+  }
+  if (role === "procurement_manager") {
+    return [
+      ["material", "Открыть заявки"],
+      ["blocker", "Сообщить проблему"],
+    ];
+  }
+  return [
+    ["photo", "Добавить фотоотчёт"],
+    ["task", "Создать задачу"],
+    ["remark", "Создать замечание"],
+    ["material", "Запросить материал"],
+    ["blocker", "Сообщить проблему"],
+  ];
+}
+
+function syncMobileQuickActions() {
+  const sheet = qs("#mobileQuickSheet");
+  const list = qs("#mobileQuickActions");
+  if (!sheet || !list) return;
+  const actions = mobileQuickActionsForRole().filter(([action]) => {
+    if (action === "photo") return canView("photos") || canView("today");
+    if (action === "task") return canView("tasks");
+    if (action === "remark") return canView("object_remarks");
+    if (action === "material") return canView("materials") || currentRoleBase() === "foreman";
+    return true;
+  });
+  list.innerHTML = actions.map(([action, title]) => `<button class="secondary" type="button" data-mobile-action="${action}">${escapeHtml(title)}</button>`).join("");
+  sheet.hidden = !state.mobileQuickOpen;
+}
+
+function toggleMobileQuickActions(open = !state.mobileQuickOpen) {
+  state.mobileQuickOpen = Boolean(open);
+  syncMobileQuickActions();
+}
+
+function firstRoleProjectId() {
+  return state.selectedProjectId || roleScopedProjects(state.projects)[0]?.id || state.projects[0]?.id || "";
+}
+
+async function quickCreateBlocker() {
+  const projectId = firstRoleProjectId();
+  if (!projectId) {
+    showToast("Сначала нужен объект");
+    return;
+  }
+  const title = window.prompt("Кратко опишите проблему, которая тормозит объект");
+  if (title === null) return;
+  if (!String(title).trim()) {
+    showToast("Напишите проблему");
+    return;
+  }
+  await api("/api/blockers", {
+    method: "POST",
+    body: JSON.stringify({
+      project_id: projectId,
+      title: title.trim(),
+      description: "",
+      blocker_type: "other",
+      responsible_user_id: currentUserId() || "",
+      severity: "medium",
+      status: "open",
+      actor_id: currentUserId() || "",
+    }),
+  });
+  await loadAll();
+  showToast("Проблема добавлена в блокеры");
+}
+
+async function handleMobileQuickAction(action) {
+  toggleMobileQuickActions(false);
+  const projectId = firstRoleProjectId();
+  if (action === "photo") {
+    const form = qs("#photoReportForm");
+    form?.reset();
+    if (projectId && form?.elements.project_id) form.elements.project_id.value = String(projectId);
+    if (form?.elements.report_date) form.elements.report_date.value = todayIso();
+    qs("#photoReportDialog")?.showModal();
+    return;
+  }
+  if (action === "task") {
+    const form = qs("#taskForm");
+    form?.reset();
+    if (projectId && form?.elements.project_id) form.elements.project_id.value = String(projectId);
+    if (form?.elements.creator_role) form.elements.creator_role.value = currentRoleBase();
+    if (form?.elements.creator_id) form.elements.creator_id.value = currentUserId() || "";
+    loadTaskContractOptions(form?.elements.project_id?.value || "");
+    qs("#taskDialog")?.showModal();
+    return;
+  }
+  if (action === "remark") {
+    const form = qs("#objectRemarkForm");
+    form?.reset();
+    if (projectId && form?.elements.project_id) form.elements.project_id.value = String(projectId);
+    qs("#objectRemarkDialog")?.showModal();
+    return;
+  }
+  if (action === "material") {
+    if (canView("materials")) switchView("materials");
+    await openNewMaterialDialog(projectId);
+    return;
+  }
+  if (action === "blocker") {
+    await quickCreateBlocker();
+  }
+}
+
 async function renderToday() {
   if (!qs("#todayView")) return;
   const [tasks, materialRows, notifications] = await Promise.all([
@@ -2972,28 +3389,43 @@ async function renderToday() {
     canView("materials") || canView("today") ? api("/api/material-requests") : Promise.resolve([]),
     api("/api/notifications").catch(() => []),
   ]);
-  const roleTasks = visibleTasksForRole(tasks);
+  const profile = roleTodayProfile();
+  const roleProjects = roleScopedProjects(state.projects);
+  const roleProjectIds = roleProjectIdSet(roleProjects);
+  const roleTasks = roleScopedTasks(tasks);
+  const roleMaterialRows = roleScopedMaterialRows(materialRows);
+  const roleBlockers = roleScopedBlockers(state.blockers || []);
   state.lastTasks = roleTasks;
-  state.materialRequests = materialRows;
+  state.materialRequests = roleMaterialRows;
+  qs("#todayRoleLabel").textContent = profile.label;
+  qs("#todayRoleQuestion").textContent = profile.question;
+  qs("#todayRoleHint").textContent = profile.hint;
+  qs("#todayTasksTitle").textContent = profile.tasksTitle;
+  qs("#todayAttentionTitle").textContent = profile.attentionTitle;
+  qs("#todayMaterialsTitle").textContent = profile.materialsTitle;
+  qs("#todayPrimaryActions").innerHTML = renderTodayPrimaryActions(profile);
   const todayTasks = roleTasks.filter((task) => isOpenTask(task) && isTodayDate(task.due_date));
   const overdueTasks = roleTasks.filter(taskCountsAsOverdue);
   const returnedTasks = roleTasks.filter((task) => task.status === "returned");
   const waitingTasks = roleTasks.filter((task) => task.status === "completed_pending_acceptance");
-  const materialBatches = buildMaterialBatches(materialRows);
+  const materialBatches = buildMaterialBatches(roleMaterialRows);
   const riskyMaterials = materialBatches.filter(materialIsRisky);
-  const activeProjects = state.projects.filter((project) => project.status !== "archived");
+  const activeProjects = roleProjects;
   const noPhotoProjects = activeProjects.filter((project) => !isTodayDate(latestPhotoReportDate(project.id)));
-  const recentComments = notifications.filter((row) => isLast24Hours(row.created_at)).slice(0, 8);
+  const recentComments = notifications
+    .filter((row) => isLast24Hours(row.created_at))
+    .filter((row) => !row.project_id || isLeadershipRole() || roleProjectIds.has(Number(row.project_id || 0)))
+    .slice(0, 8);
   qs("#todayTasks").innerHTML = todayTasks.length
     ? todayTasks.slice(0, 6).map(renderTodayTaskCard).join("")
-    : `<p class="muted">На сегодня задач по выбранной роли нет.</p>`;
-  const decisionItems = todayDecisionItems({ overdueTasks, returnedTasks, waitingTasks, riskyMaterials, noPhotoProjects }).slice(0, 12);
+    : `<div class="empty-state"><strong>На сегодня задач нет</strong><p class="muted">Проверьте просроченные или откройте объект.</p></div>`;
+  const decisionItems = todayDecisionItems({ overdueTasks, returnedTasks, waitingTasks, riskyMaterials, noPhotoProjects, blockers: roleBlockers }).slice(0, 12);
   qs("#todayAttention").innerHTML = decisionItems.length
     ? decisionItems.map(renderTodayDecisionItem).join("")
     : `<div class="attention-empty"><strong>Критичных сигналов нет</strong><span>На сейчас ничего срочного не найдено.</span></div>`;
   qs("#todayMaterials").innerHTML = riskyMaterials.length
     ? riskyMaterials.slice(0, 8).map(renderTodayMaterialCard).join("")
-    : `<p class="muted">Материалов под риском нет.</p>`;
+    : `<div class="empty-state"><strong>Заявок под риском нет</strong><p class="muted">Заявки появятся здесь, когда прораб или руководитель запросит материалы.</p>${canView("materials") ? `<button class="secondary tiny" type="button" data-view-target="materials">Открыть материалы</button>` : ""}</div>`;
   qs("#todayComments").innerHTML = recentComments.length
     ? recentComments
         .map(
@@ -3007,7 +3439,7 @@ async function renderToday() {
         .join("")
     : `<p class="muted">Новых комментариев за 24 часа нет.</p>`;
   qs("#todayObjects").innerHTML = activeProjects.length
-    ? activeProjects.map((project) => renderTodayObjectCard(project, roleTasks, materialRows)).join("")
+    ? activeProjects.map((project) => renderTodayObjectCard(project, roleTasks, roleMaterialRows)).join("")
     : `<p class="muted">Активных объектов пока нет.</p>`;
   qs("#todayNoPhoto").innerHTML = noPhotoProjects.length
     ? noPhotoProjects
@@ -3051,13 +3483,75 @@ function notificationTargetAttrs(row) {
   return `data-view-target="dashboard"`;
 }
 
+function signalTypeKey(row) {
+  const title = String(row.title || "").toLowerCase();
+  if (/материал|закуп|заявк/.test(title)) return "материалы вне основной сметы";
+  if (/просроч/.test(title)) return "просроченная задача";
+  if (/возвращ/.test(title)) return "возвращённая задача";
+  if (/фото/.test(title)) return "нет фотоотчёта";
+  if (/допработ|отклон/.test(title)) return "новая допработа";
+  if (/смет/.test(title)) return "нужна проверка сметчика";
+  if (/ответствен/.test(title)) return "нет ответственного";
+  if (/срок/.test(title)) return "задача без срока";
+  return row.related_type || row.title || "сигнал";
+}
+
+function dedupeSignals(rows = []) {
+  const map = new Map();
+  rows.forEach((row) => {
+    const day = dateOnly(row.created_at) || "без даты";
+    const type = signalTypeKey(row);
+    const key = `${day}:${row.project_id || "general"}:${type}`;
+    if (!map.has(key)) {
+      map.set(key, {
+        ...row,
+        signal_key: key,
+        signal_type: type,
+        signal_day: day,
+        rows: [],
+        unread: 0,
+      });
+    }
+    const group = map.get(key);
+    group.rows.push(row);
+    if (!row.is_read) group.unread += 1;
+  });
+  return [...map.values()].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+}
+
+function signalStatus(row) {
+  if (row.status) return row.status;
+  if (row.unread) return "new";
+  return row.is_read ? "resolved" : "in_work";
+}
+
+function renderSignalRow(signal) {
+  const items = signal.rows || [signal];
+  const first = items[0] || signal;
+  const preview = items.slice(0, 3);
+  const rest = Math.max(0, items.length - preview.length);
+  return `
+    <button class="row clickable notification-row signal-row" ${notificationTargetAttrs(first)}>
+      <div class="stack-line">
+        <strong>[${escapeHtml(signal.signal_type || "Сигнал")}] ${escapeHtml(signal.project_title || "Без объекта")}</strong>
+        ${pill(statusLabel(signalStatus(signal)), statusLevel(signalStatus(signal)))}
+      </div>
+      <div class="muted">${items.length} позиций · создано ${formatDateRu(signal.signal_day || signal.created_at)}</div>
+      <div class="signal-preview">
+        ${preview.map((row) => `<span>${escapeHtml(row.title || "Событие")}: ${escapeHtml(row.text || "")}</span>`).join("")}
+        ${rest ? `<span class="muted">ещё ${rest} позиций</span>` : ""}
+      </div>
+    </button>`;
+}
+
 async function renderNotifications() {
   const rows = await api("/api/notifications");
   if (!rows.length) {
     qs("#notificationRows").innerHTML = `<p class="muted">Уведомлений пока нет.</p>`;
     return;
   }
-  const groups = rows.reduce((acc, row) => {
+  const signals = dedupeSignals(rows);
+  const groups = signals.reduce((acc, row) => {
     const key = row.project_id ? `project-${row.project_id}` : "general";
     if (!acc[key]) {
       acc[key] = {
@@ -3067,7 +3561,8 @@ async function renderNotifications() {
         rows: [],
       };
     }
-    if (!row.is_read) acc[key].unread += 1;
+    if (row.unread) acc[key].unread += row.unread;
+    else if (!row.is_read) acc[key].unread += 1;
     acc[key].rows.push(row);
     return acc;
   }, {});
@@ -3087,14 +3582,7 @@ async function renderNotifications() {
           <div class="notification-group-list">
             ${group.rows
               .slice(0, 8)
-              .map(
-                (row) => `
-                <button class="row clickable notification-row" ${notificationTargetAttrs(row)}>
-                  <div class="stack-line"><strong>${escapeHtml(row.title)}</strong>${pill(row.user_name || row.role, row.is_read ? "" : "warning")}</div>
-                  <div class="notification-text">${escapeHtml(row.text)}</div>
-                  <div class="muted">${formatDateRu(row.created_at)}</div>
-                </button>`
-              )
+              .map(renderSignalRow)
               .join("")}
           </div>
         </details>`;
@@ -3147,7 +3635,7 @@ function renderPhotoReportCard(report) {
 }
 
 function projectsWithoutTodayPhoto() {
-  return state.projects
+  return roleScopedProjects(state.projects)
     .filter((project) => project.status !== "archived")
     .filter((project) => !isTodayDate(latestPhotoReportDate(project.id)));
 }
@@ -3162,7 +3650,14 @@ function renderPhotoEmptyState(projects = projectsWithoutTodayPhoto()) {
         count
           ? `<div class="list compact-empty-list">${projects
               .slice(0, 8)
-              .map((project) => `<button class="row clickable" type="button" data-open-project="${project.id}"><strong>${escapeHtml(project.title || "Объект")}</strong><span class="muted">последний фотоотчёт: ${latestPhotoReportDate(project.id) ? formatDateRu(latestPhotoReportDate(project.id)) : "не найден"}</span></button>`)
+              .map((project) => `
+                <div class="row empty-action-row">
+                  <button class="clickable empty-action-main" type="button" data-open-project="${project.id}">
+                    <strong>${escapeHtml(project.title || "Объект")}</strong>
+                    <span class="muted">последний фотоотчёт: ${latestPhotoReportDate(project.id) ? formatDateRu(latestPhotoReportDate(project.id)) : "не найден"}</span>
+                  </button>
+                  ${canView("photos") ? `<button class="secondary tiny" type="button" data-mobile-action="photo" data-project-context="${project.id}">Добавить</button>` : `<button class="secondary tiny" type="button" data-open-project="${project.id}">Запросить</button>`}
+                </div>`)
               .join("")}</div>`
           : `<p class="muted">По всем активным объектам есть фотоотчёт за сегодня.</p>`
       }
@@ -3182,6 +3677,7 @@ function renderRemarkEmptyState() {
         <span>Фото после</span>
         <span>Принято</span>
       </div>
+      ${canView("object_remarks") ? `<button class="secondary tiny" type="button" data-mobile-action="remark">Создать замечание</button>` : ""}
     </section>`;
 }
 
@@ -3440,11 +3936,13 @@ function projectAttentionItems(project) {
   const tasks = projectDetailTasks(project);
   const batches = projectDetailBatches(project);
   const remarks = project.object_remarks || [];
+  const blockers = (project.blockers || []).filter((blocker) => !["resolved", "closed"].includes(blocker.status));
   const items = [];
   const overdueTasks = tasks.filter(taskCountsAsOverdue);
   const returnedTasks = tasks.filter((task) => task.status === "returned");
   const riskyMaterials = batches.filter(materialIsRisky);
   const openRemarks = remarks.filter((remark) => !["accepted", "closed"].includes(remark.status));
+  if (blockers.length) items.push({ title: "Открытые блокеры", count: blockers.length, level: "danger", tab: "overview" });
   if (overdueTasks.length) items.push({ title: "Просроченные задачи", count: overdueTasks.length, level: "danger", tab: "tasks" });
   if (returnedTasks.length) items.push({ title: "Возвращённые задачи", count: returnedTasks.length, level: "warning", tab: "tasks" });
   if (riskyMaterials.length) items.push({ title: "Материалы с проблемами", count: riskyMaterials.length, level: "danger", tab: "materials" });
@@ -3460,7 +3958,7 @@ function renderProjectHero(project) {
   const overdueTasks = tasks.filter(taskCountsAsOverdue);
   const riskyMaterials = batches.filter(materialIsRisky);
   const openRemarks = (project.object_remarks || []).filter((remark) => !["accepted", "closed"].includes(remark.status));
-  const blockers = projectAttentionItems(project).reduce((sum, item) => sum + Number(item.count || 0), 0);
+  const blockers = (project.blockers || []).filter((blocker) => !["resolved", "closed"].includes(blocker.status)).length;
   return `
     <section class="project-hero">
       <div class="project-hero-main">
@@ -3529,13 +4027,33 @@ function renderProjectQuickActions() {
 }
 
 function renderProjectOverview(project) {
+  const blockers = (project.blockers || []).filter((blocker) => !["resolved", "closed"].includes(blocker.status));
   return `
     <div class="detail-grid">
       <div class="info"><span>Статус</span><strong>${statusLabel(project.status)}</strong></div>
       <div class="info"><span>Ответственный</span><strong>${project.foreman_name || "не назначен"}</strong></div>
       <div class="info"><span>Этап</span><strong>${statusLabel(project.stage || project.status)}</strong></div>
       <div class="info"><span>Срок</span><strong>${project.planned_end_date ? formatDateRu(project.planned_end_date) : "не задан"}</strong></div>
-    </div>`;
+    </div>
+    ${
+      blockers.length
+        ? `<section class="workflow-panel compact-workflow">
+            <h3>Блокеры объекта</h3>
+            <div class="list">
+              ${blockers
+                .slice(0, 5)
+                .map(
+                  (blocker) => `
+                  <div class="row blocker-row">
+                    <div class="stack-line"><strong>${escapeHtml(blocker.title || "Блокер")}</strong>${pill(statusLabel(blocker.blocker_type || "other"), statusLevel(blocker.blocker_type || "warning"))}${pill(statusLabel(blocker.status || "open"), statusLevel(blocker.status || "open"))}</div>
+                    <div class="muted">ответственный: ${escapeHtml(blocker.responsible_name || "не назначен")} · срок: ${blocker.due_date ? formatDateRu(blocker.due_date) : "без срока"}</div>
+                  </div>`
+                )
+                .join("")}
+            </div>
+          </section>`
+        : ""
+    }`;
 }
 
 function renderProjectTaskList(tasks = []) {
@@ -3544,18 +4062,19 @@ function renderProjectTaskList(tasks = []) {
 }
 
 function renderCompactTaskRow(task) {
+  const description = taskDisplayDescription(task);
   return `
     <button class="row clickable compact-task-card" type="button" data-open-task="${task.id}">
       <div class="compact-task-title">
         ${pill(taskTypeLabel(task), taskTypeLevel(task))}
-        <strong>${escapeHtml(task.title || "Задача")}</strong>
+        <strong>${escapeHtml(taskDisplayTitle(task))}</strong>
       </div>
       <div class="compact-task-meta">
         <span>${escapeHtml(task.project_title || "объект")}</span>
         <span>ответственный: ${escapeHtml(task.assignee_name || "не назначен")}</span>
         <span>срок: ${task.due_date ? formatDateRu(task.due_date) : "без срока"}</span>
       </div>
-      ${task.description ? `<p class="task-description-clamp">${escapeHtml(task.description)}</p>` : ""}
+      ${description ? `<p class="task-description-clamp">${escapeHtml(description)}</p>` : ""}
       <div class="stack-line">
         ${pill(statusLabel(task.status), taskStatusLevel(task.status))}
         ${pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority))}
@@ -4037,9 +4556,9 @@ async function renderTasks() {
             <details class="row task-row task-collapsible" data-collapsible-key="${escapeAttr(taskKey)}"${openAttrForKey(taskKey)}>
               <summary class="task-summary">
                 <span class="task-summary-main">
-                  <span class="task-summary-title">${pill(taskTypeLabel(task), taskTypeLevel(task))}<strong>${escapeHtml(task.title || "Задача")}</strong></span>
+                  <span class="task-summary-title">${pill(taskTypeLabel(task), taskTypeLevel(task))}<strong>${escapeHtml(taskDisplayTitle(task))}</strong></span>
                   <span class="task-summary-meta">${escapeHtml(task.project_title || "объект не указан")} · ${escapeHtml(task.assignee_name || "ответственный не назначен")} · ${task.due_date ? formatDateRu(task.due_date) : "без срока"}</span>
-                  ${task.description ? `<span class="task-description-clamp">${escapeHtml(task.description)}</span>` : ""}
+                  ${taskDisplayDescription(task) ? `<span class="task-description-clamp">${escapeHtml(taskDisplayDescription(task))}</span>` : ""}
                   <span class="stack-line">${pill(label(task.status), taskStatusLevel(task.status))}${pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority))}</span>
                 </span>
               </summary>
@@ -4047,7 +4566,7 @@ async function renderTasks() {
               <div class="row-grid">
                 <div class="task-main">
                   <div class="muted">${task.project_title} · поставил: ${task.creator_name || "не указано"} · создана: ${formatDateRu(task.created_at)}${task.start_date ? ` · начало: ${formatDateRu(task.start_date)}` : ""}${task.contract_title ? ` · ${contractType(task.contract_type)}: ${task.contract_title}` : ""}</div>
-                  ${task.description ? `<div class="preserve-lines">${escapeHtml(task.description)}</div>` : ""}
+                  ${taskDisplayDescription(task) ? `<div class="preserve-lines">${escapeHtml(taskDisplayDescription(task))}</div>` : ""}
                   ${task.rejection_comment ? `<div class="muted">Комментарий по возврату: ${escapeHtml(task.rejection_comment)}</div>` : ""}
                   ${lastComment ? `<div class="task-last-comment"><strong>${escapeHtml(lastComment.actor_name || "Комментарий")}:</strong> ${escapeHtml(lastComment.comment)}</div>` : ""}
                 </div>
@@ -4230,13 +4749,45 @@ function renderTaskActionPanel(task) {
     </section>`;
 }
 
+function canEditTaskType(task) {
+  const role = currentRoleBase();
+  if (["owner", "construction_manager", "finance_director"].includes(role)) return true;
+  const userId = Number(currentUserId() || 0);
+  return Boolean(userId && [Number(task.creator_id || 0), Number(task.reviewer_id || 0)].includes(userId));
+}
+
+function renderTaskTypeEditor(task) {
+  if (!canEditTaskType(task)) return "";
+  const current = inferTaskType(task);
+  const options = [
+    ["task", "Задача"],
+    ["question", "Вопрос"],
+    ["decision", "Решение"],
+    ["photo_report", "Фотоотчёт"],
+    ["issue", "Замечание"],
+    ["material", "Материал"],
+    ["check", "Проверка"],
+    ["approval", "Согласование"],
+  ];
+  return `
+    <section class="workflow-panel task-type-editor">
+      <h3>Тип задачи</h3>
+      <div class="inline-form">
+        <select data-task-type-select="${task.id}">
+          ${options.map(([value, title]) => `<option value="${value}" ${value === current ? "selected" : ""}>${title}</option>`).join("")}
+        </select>
+        <button class="secondary" type="button" data-task-type-save="${task.id}">Сохранить тип</button>
+      </div>
+    </section>`;
+}
+
 function openTaskDetail(taskId) {
   const task = state.lastTasks.find((item) => Number(item.id) === Number(taskId));
   if (!task) {
     showToast("Задача не найдена");
     return;
   }
-  qs("#taskDetailTitle").textContent = task.title || "Задача";
+  qs("#taskDetailTitle").textContent = taskDisplayTitle(task);
   qs("#taskDetailContent").innerHTML = `
     <section class="workflow-panel compact-workflow">
       <div class="stack-line">
@@ -4253,13 +4804,14 @@ function openTaskDetail(taskId) {
         <div><span class="muted">Дата начала</span><strong>${task.start_date ? formatDateRu(task.start_date) : "не указана"}</strong></div>
         <div><span class="muted">Договор</span><strong>${task.contract_title ? `${contractType(task.contract_type)}: ${task.contract_title}` : "без привязки"}</strong></div>
       </div>
-      ${task.description ? `<p class="preserve-lines">${task.description}</p>` : ""}
+      ${taskDisplayDescription(task) ? `<p class="preserve-lines">${escapeHtml(taskDisplayDescription(task))}</p>` : ""}
       ${task.rejection_comment ? `<div class="hint-box warning"><strong>Причина возврата / непринятия</strong><p>${task.rejection_comment}</p></div>` : ""}
     </section>
     <section class="workflow-panel">
       <h3>История задачи</h3>
       ${taskTimeline(task)}
     </section>
+    ${renderTaskTypeEditor(task)}
     ${renderTaskActionPanel(task)}
     ${renderTaskDiscussion(task)}`;
   qs("#taskDetailDialog").showModal();
@@ -4421,33 +4973,40 @@ async function renderMaterials() {
     const count = buildMaterialBatches(state.materialRequests || []).filter((batch) => key === "all" || materialPipelineStatus(batch) === key).length;
     button.dataset.count = String(count || "");
   });
+  qsa("[data-material-quick-filter]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.materialQuickFilter === state.materialQuickFilter);
+  });
   const exportButton = qs("#exportCompletedMaterialsButton");
   if (exportButton) exportButton.hidden = !["owner", "construction_manager", "finance_director", "accountant", "procurement_manager"].includes(currentRoleBase());
   const items = await api(`/api/material-requests?archive=${state.materialListMode === "archive" ? "1" : "0"}`);
-  state.materialRequests = items;
-  const visibleItems =
-    currentRoleBase() === "foreman"
-      ? items.filter((item) => Number(item.project_foreman_id) === Number(currentUserId()) || Number(item.creator_id) === Number(currentUserId()))
-      : items;
+  const visibleItems = roleScopedMaterialRows(items);
+  state.materialRequests = visibleItems;
   const allBatches = buildMaterialBatches(visibleItems);
   qsa("[data-material-pipeline-filter]").forEach((button) => {
     const key = button.dataset.materialPipelineFilter;
     button.classList.toggle("active", key === state.materialPipelineFilter);
     button.dataset.count = String(allBatches.filter((batch) => key === "all" || materialPipelineStatus(batch) === key).length);
   });
-  const batches =
+  qsa("[data-material-quick-filter]").forEach((button) => {
+    const key = button.dataset.materialQuickFilter || "all";
+    button.classList.toggle("active", key === state.materialQuickFilter);
+    button.dataset.count = String(allBatches.filter((batch) => materialBatchMatchesQuickFilter(batch, key)).length || "");
+  });
+  const pipelineBatches =
     state.materialPipelineFilter === "all"
       ? allBatches
       : allBatches.filter((batch) => materialPipelineStatus(batch) === state.materialPipelineFilter);
+  const batches = pipelineBatches.filter((batch) => materialBatchMatchesQuickFilter(batch));
   const renderBatchCard = (batch) => {
     const activeCount = materialActiveItems(batch).length;
     const removedCount = materialRemovedItems(batch).length;
     const neededAt = batch.needed_at ? formatDateRu(batch.needed_at) : "не указано";
     const responsible = batch.procurement_name || "Снабжение";
+    const firstItem = materialActiveItems(batch)[0] || {};
     return `
       <button class="row clickable material-request-row material-batch-row" type="button" data-open-material-batch="${batch.key}">
         <div class="material-main">
-          <strong>${materialBatchTitle(batch, currentRoleBase() === "procurement_manager")}</strong>
+          <strong>${escapeHtml(firstItem.title || materialBatchTitle(batch, currentRoleBase() === "procurement_manager"))}</strong>
           <div class="material-card-grid">
             <span><b>Объект:</b> ${escapeHtml(batch.project_title || "не указан")}</span>
             <span><b>Позиций:</b> ${activeCount}${removedCount ? `, удалено: ${removedCount}` : ""}</span>
@@ -4456,6 +5015,7 @@ async function renderMaterials() {
             <span><b>Когда нужно:</b> ${escapeHtml(neededAt)}</span>
             <span><b>Ответственный:</b> ${escapeHtml(responsible)}</span>
           </div>
+          <div class="muted">${escapeHtml(materialBatchTitle(batch, currentRoleBase() === "procurement_manager"))}</div>
           <div class="muted">Сумма: ${money(batch.total_amount)}</div>
           ${batch.actual_purchase_amount ? `<div class="muted">Фактическая стоимость закупки: ${money(batch.actual_purchase_amount)}</div>` : ""}
           <div class="muted">${materialBatchDestination(batch)}</div>
@@ -4471,7 +5031,8 @@ async function renderMaterials() {
   };
   if (!batches.length) {
     const filterLabel = state.materialPipelineFilter === "all" ? "" : ` со статусом «${statusLabel(state.materialPipelineFilter)}»`;
-    qs("#materialRows").innerHTML = `<p class="muted">${state.materialListMode === "archive" ? `В архиве заявок${filterLabel} пока нет.` : currentRoleBase() === "foreman" ? `По объектам этого прораба заявок${filterLabel} пока нет. Нажмите “Добавить заявку”, чтобы заказать материалы.` : `Заявок${filterLabel} пока нет.`}</p>`;
+    const quickLabel = state.materialQuickFilter === "all" ? "" : ` в выбранном фильтре`;
+    qs("#materialRows").innerHTML = `<div class="empty-state"><strong>${state.materialListMode === "archive" ? `В архиве заявок${filterLabel}${quickLabel} пока нет.` : `Заявок${filterLabel}${quickLabel} пока нет.`}</strong><p class="muted">Заявки появятся здесь, когда прораб или руководитель запросит материалы.</p>${["foreman", "construction_manager", "owner", "finance_director"].includes(currentRoleBase()) ? `<button class="secondary tiny" type="button" data-open-new-material>Создать заявку</button>` : ""}</div>`;
     return;
   }
   if (state.materialListMode === "archive") {
@@ -4493,6 +5054,18 @@ async function renderMaterials() {
     return;
   }
   qs("#materialRows").innerHTML = batches.map(renderBatchCard).join("");
+}
+
+async function openNewMaterialDialog(projectId = state.selectedProjectId) {
+  const form = qs("#materialForm");
+  if (!form) return;
+  form.reset();
+  resetExtraMaterials();
+  qs("#materialEstimatePicker").innerHTML = `<p class="muted">Выберите объект и нажмите “Материалы по смете”.</p>`;
+  fillMaterialProjectSelect(projectId);
+  updateMaterialActorHint();
+  await loadMaterialEstimatePicker();
+  qs("#materialDialog").showModal();
 }
 
 function findMaterialBatch(batchKey) {
@@ -5051,9 +5624,10 @@ function renderKnowledgeFileManager(folders = [], docs = []) {
   const childFolders = folders
     .filter((folder) => String(folder.parent_id || "") === currentId)
     .sort((a, b) => String(a.title || "").localeCompare(String(b.title || ""), "ru"));
-  const folderDocs = docs
+  const allFolderDocs = docs
     .filter((doc) => String(doc.folder_id || "") === currentId)
     .sort((a, b) => String(documentTitle(a) || "").localeCompare(String(documentTitle(b) || ""), "ru"));
+  const folderDocs = state.knowledgeClassificationOnly ? allFolderDocs.filter(documentNeedsClassification) : allFolderDocs;
   const parentId = currentFolder?.parent_id ? String(currentFolder.parent_id) : "";
   const emptyMessage = currentId
     ? "В этой папке пока нет файлов и подпапок."
@@ -5067,13 +5641,14 @@ function renderKnowledgeFileManager(folders = [], docs = []) {
   ]
     .filter(Boolean)
     .join("");
-  const unclassifiedRows = folderDocs.filter(documentNeedsClassification);
+  const unclassifiedRows = allFolderDocs.filter(documentNeedsClassification);
   const classificationNotice = unclassifiedRows.length
     ? `
       <section class="classification-notice">
         <strong>Требует классификации</strong>
         <p class="muted">Эти файлы не удалось автоматически отнести к проекту, смете, договору, акту, счёту или фото/видео.</p>
         <div class="stack-line">${unclassifiedRows.slice(0, 8).map((doc) => pill(documentTitle(doc), "warning")).join("")}</div>
+        <button class="secondary tiny" type="button" data-knowledge-classification-filter="${state.knowledgeClassificationOnly ? "all" : "unclassified"}">${state.knowledgeClassificationOnly ? "Показать все файлы" : "Показать только неразобранные"}</button>
       </section>`
     : "";
 
@@ -5083,7 +5658,7 @@ function renderKnowledgeFileManager(folders = [], docs = []) {
       <div class="knowledge-current-head">
         <div>
           <h3>${escapeHtml(currentFolder?.title || "База знаний")}</h3>
-          <p class="muted">${currentId ? escapeHtml(currentFolder?.path || "") : "Корень базы знаний"} · ${childFolders.length} папок · ${folderDocs.length} файлов</p>
+          <p class="muted">${currentId ? escapeHtml(currentFolder?.path || "") : "Корень базы знаний"} · ${childFolders.length} папок · ${folderDocs.length} файлов${state.knowledgeClassificationOnly ? " · фильтр: требуют классификации" : ""}</p>
         </div>
         ${canManageKnowledgeBase() ? `<div class="knowledge-drop-text">Перетащите файлы или папку сюда, чтобы загрузить их в текущую папку</div>` : ""}
       </div>
@@ -5965,6 +6540,9 @@ function bindEvents() {
   qsa("[data-view]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
   qsa("[data-view-target]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.viewTarget)));
   qs("#refreshButton").addEventListener("click", () => refreshAppFromUser("Обновляем данные").catch((error) => showToast(error.message)));
+  qs("#mobileQuickActionToggle")?.addEventListener("click", () => toggleMobileQuickActions());
+  qs("#mobileQuickActionClose")?.addEventListener("click", () => toggleMobileQuickActions(false));
+  qs("#mobileProfileButton")?.addEventListener("click", () => showToast(`Вы вошли как: ${roleLabel(state.currentRole)}`));
   qs("#logoutButton")?.addEventListener("click", () => {
     localStorage.removeItem("currentRole");
     window.location.href = "/logout";
@@ -6011,16 +6589,7 @@ function bindEvents() {
     qs("#estimateJobForm").dataset.siteCostsTouched = "true";
   });
   qs('#estimateJobFileForm select[name="mode"]')?.addEventListener("change", updateEstimateFileDialogMode);
-  qs("#newMaterialButton").addEventListener("click", async () => {
-    const form = qs("#materialForm");
-    form.reset();
-    resetExtraMaterials();
-    qs("#materialEstimatePicker").innerHTML = `<p class="muted">Выберите объект и нажмите “Материалы по смете”.</p>`;
-    fillMaterialProjectSelect(state.selectedProjectId);
-    updateMaterialActorHint();
-    await loadMaterialEstimatePicker();
-    qs("#materialDialog").showModal();
-  });
+  qs("#newMaterialButton").addEventListener("click", async () => openNewMaterialDialog());
   qs("#newVariationButton").addEventListener("click", () => qs("#variationDialog").showModal());
   qs("#newObjectRemarkButton")?.addEventListener("click", () => {
     const form = qs("#objectRemarkForm");
@@ -6131,6 +6700,12 @@ function bindEvents() {
       await renderMaterials();
     })
   );
+  qsa("[data-material-quick-filter]").forEach((button) =>
+    button.addEventListener("click", async () => {
+      state.materialQuickFilter = button.dataset.materialQuickFilter || "all";
+      await renderMaterials();
+    })
+  );
   qs("#exportCompletedMaterialsButton").addEventListener("click", () => {
     const projectId = qs('#estimateImportForm select[name="project_id"]')?.value || "";
     const suffix = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
@@ -6201,9 +6776,37 @@ function bindEvents() {
       return;
     }
 
+    const openNewMaterialButton = event.target.closest("[data-open-new-material]");
+    if (openNewMaterialButton) {
+      await openNewMaterialDialog();
+      return;
+    }
+
+    const mobileActionButton = event.target.closest("[data-mobile-action]");
+    if (mobileActionButton) {
+      if (mobileActionButton.dataset.projectContext) state.selectedProjectId = Number(mobileActionButton.dataset.projectContext);
+      await handleMobileQuickAction(mobileActionButton.dataset.mobileAction);
+      return;
+    }
+
     const taskCommentButton = event.target.closest("[data-task-comment-send]");
     if (taskCommentButton) {
       await handleTaskComment(taskCommentButton);
+      return;
+    }
+
+    const taskTypeSaveButton = event.target.closest("[data-task-type-save]");
+    if (taskTypeSaveButton) {
+      const taskId = taskTypeSaveButton.dataset.taskTypeSave;
+      const select = qs(`[data-task-type-select="${taskId}"]`);
+      await api(`/api/tasks/${taskId}/type`, {
+        method: "POST",
+        body: JSON.stringify({ task_type: select?.value || "task" }),
+      });
+      await loadAll();
+      if (state.view === "tasks") await renderTasks();
+      openTaskDetail(taskId);
+      showToast("Тип задачи обновлён");
       return;
     }
 
@@ -6461,7 +7064,15 @@ function bindEvents() {
 
     const knowledgeFolderOpenButton = event.target.closest("[data-knowledge-folder-open]");
     if (knowledgeFolderOpenButton) {
+      state.knowledgeClassificationOnly = false;
       setKnowledgeCurrentFolderId(knowledgeFolderOpenButton.dataset.knowledgeFolderOpen || "");
+      await renderDocuments();
+      return;
+    }
+
+    const knowledgeClassificationFilterButton = event.target.closest("[data-knowledge-classification-filter]");
+    if (knowledgeClassificationFilterButton) {
+      state.knowledgeClassificationOnly = knowledgeClassificationFilterButton.dataset.knowledgeClassificationFilter === "unclassified";
       await renderDocuments();
       return;
     }

@@ -46,6 +46,7 @@
     projects: [],
     archivedProjects: [],
     materialRequests: [],
+    blockers: [],
     photoReports: [],
     objectRemarks: [],
     estimateJobs: [],
@@ -57,6 +58,7 @@
     projectListMode: "active",
     materialListMode: "active",
     materialPipelineFilter: "all",
+    materialQuickFilter: "all",
     taskFilter: "all",
     feedbackFilter: "all",
     remarkFilter: "all",
@@ -76,10 +78,12 @@
     estimateGallery: { jobId: null, files: [], index: 0 },
     knowledgeFolders: [],
     knowledgeCurrentFolderId: localStorage.getItem("knowledgeCurrentFolderId") || "",
+    knowledgeClassificationOnly: false,
     knowledgeUploading: false,
     knowledgeUploadMessage: "",
     installPromptEvent: null,
     installPromptReady: false,
+    mobileQuickOpen: false,
     loadingKeys: /* @__PURE__ */ new Set(),
     pullRefresh: { tracking: false, startY: 0, distance: 0, ready: false, refreshing: false }
   };
@@ -182,6 +186,7 @@
     procurement_manager: "Снабжение",
     estimator: "Сметчик",
     technical_supervisor: "Технадзор",
+    master: "Мастер",
     ai_auditor: "ИИ-аудитор",
     main_estimate: "По смете",
     main_estimate_overspend: "Сверх сметы",
@@ -209,8 +214,11 @@
     estimate: "Смета",
     invoice: "Счёт",
     media: "Фото/видео",
+    photo_video: "Фото/видео",
     variation_attachment: "Вложение к допработе",
+    extra_work_attachment: "Вложение к допработе",
     service_file: "Служебный файл",
+    service_screenshot: "Служебный скриншот",
     unclassified: "Не разобрано",
     photo_report: "Фотоотчёт",
     object_remark: "Замечание по объекту",
@@ -222,22 +230,38 @@
     photo: "Фотоотчёт",
     material: "Материал",
     decision: "Решение",
+    check: "Проверка",
     need_approval: "Нужно согласовать",
     agreed: "Согласовано",
     in_transit: "В пути",
     on_site: "На объекте",
     problem: "Проблема",
-    closed: "Закрыто"
+    closed: "Закрыто",
+    open: "Открыт",
+    waiting_external: "Ждём внешнего ответа",
+    resolved: "Решён",
+    no_material: "Нет материала",
+    waiting_client_decision: "Ждём решение заказчика",
+    waiting_owner_decision: "Ждём решение руководителя",
+    waiting_project_documentation: "Ждём проект / чертёж",
+    estimate_not_approved: "Не согласована смета",
+    subcontractor_problem: "Проблема с подрядчиком",
+    quality_problem: "Проблема качества",
+    no_photo_report: "Нет фотоотчёта",
+    material_under_risk: "Материал под риском",
+    medium: "Средняя",
+    high: "Высокая",
+    critical: "Критичная"
   };
   function statusLabel(value) {
     return statusLabelMap[value] || "Не задано";
   }
   function statusLevel(value, fallback = "") {
     const key = String(value || "");
-    if (["overdue", "danger", "problem", "returned", "revision_requested", "rejected", "receipt_issue"].includes(key)) return "danger";
-    if (["warning", "review", "completed_pending_acceptance", "estimate_question", "estimate_returned", "submitted_to_construction", "decision_required", "need_approval", "estimate_hold", "new", "feedback_new"].includes(key)) return "warning";
-    if (["success", "accepted", "approved", "closed", "completed", "received", "on_site", "agreed", "done", "feedback_done", "estimate_done"].includes(key)) return "success";
-    if (["blue", "in_progress", "in_progress_task", "ordered", "in_transit", "delivery_scheduled", "delivery_confirmed", "estimate_in_work", "in_review", "active", "in_work", "feedback_in_work"].includes(key)) return "blue";
+    if (["overdue", "danger", "problem", "returned", "revision_requested", "rejected", "receipt_issue", "quality_problem", "no_material"].includes(key)) return "danger";
+    if (["warning", "review", "completed_pending_acceptance", "estimate_question", "estimate_returned", "submitted_to_construction", "decision_required", "need_approval", "estimate_hold", "new", "feedback_new", "open", "waiting_external", "waiting_client_decision", "waiting_owner_decision", "waiting_project_documentation", "estimate_not_approved", "subcontractor_problem", "no_photo_report", "approval", "check"].includes(key)) return "warning";
+    if (["success", "accepted", "approved", "closed", "completed", "received", "on_site", "agreed", "done", "feedback_done", "estimate_done", "resolved"].includes(key)) return "success";
+    if (["blue", "in_progress", "in_progress_task", "ordered", "in_transit", "delivery_scheduled", "delivery_confirmed", "estimate_in_work", "in_review", "active", "in_work", "feedback_in_work", "material"].includes(key)) return "blue";
     if (["draft", "archived", "estimate_new", "not_required"].includes(key)) return "";
     return fallback;
   }
@@ -455,6 +479,7 @@
     accountant: ["today", "dashboard", "projects", "materials", "variations", "locations", "documents", "events"],
     sales_manager: ["today", "dashboard", "projects", "estimates", "documents"],
     foreman: ["today", "dashboard", "tasks", "works", "materials", "variations", "object_remarks", "photos", "locations", "documents"],
+    master: ["today", "tasks", "works", "object_remarks", "photos", "documents"],
     procurement_manager: ["today", "dashboard", "projects", "materials", "object_remarks", "locations", "documents"],
     estimator: ["today", "dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "object_remarks", "documents"],
     technical_supervisor: ["today", "dashboard", "projects", "tasks", "works", "materials", "object_remarks", "photos", "locations", "documents"]
@@ -477,6 +502,7 @@
       node.hidden = !allowed.includes(node.dataset.requiresView);
     });
     syncTopbarAccess();
+    syncMobileQuickActions();
     if (!allowed.includes(state.view)) {
       switchView(allowed[0] || "dashboard");
     }
@@ -545,6 +571,7 @@
     accountant: /* @__PURE__ */ new Set(["main_estimate", "smetter_materials", "smetter_work_task", "contract", "variation_estimate", "act", "ks_2", "ks_3", "other"]),
     estimator: /* @__PURE__ */ new Set(["main_estimate", "smetter_materials", "smetter_work_task", "project_documentation", "variation_estimate", "act", "ks_2", "ks_3", "other"]),
     foreman: /* @__PURE__ */ new Set(["project_documentation", "detail_node", "regulation", "standard", "instruction"]),
+    master: /* @__PURE__ */ new Set(["project_documentation", "detail_node", "regulation", "standard", "instruction"]),
     procurement_manager: /* @__PURE__ */ new Set(["smetter_materials", "project_documentation", "detail_node", "regulation", "standard", "instruction", "other"]),
     technical_supervisor: /* @__PURE__ */ new Set(["smetter_materials", "smetter_work_task", "project_documentation", "detail_node", "regulation", "standard", "instruction", "other"])
   };
@@ -575,6 +602,7 @@
       accountant: ["overview", "materials", "documents", "events", "finances"],
       sales_manager: ["overview", "documents"],
       foreman: ["overview", "tasks", "materials", "photos", "remarks", "documents"],
+      master: ["overview", "tasks", "photos", "remarks", "documents"],
       procurement_manager: ["overview", "materials", "remarks", "documents", "events"],
       estimator: ["overview", "tasks", "materials", "remarks", "documents", "events"],
       technical_supervisor: ["overview", "tasks", "materials", "photos", "remarks", "documents", "events"]
@@ -609,6 +637,7 @@
       ["sales_manager", "Менеджер"],
       ["construction_manager", "Рук. строительства"],
       ...usersByRole("foreman").map((user) => ["foreman:".concat(user.id), "Прораб ".concat(user.name)]),
+      ["master", "Мастер"],
       ["procurement_manager", "Снабжение"],
       ["estimator", "Сметчик"],
       ["technical_supervisor", "Технадзор"]
@@ -742,23 +771,24 @@
       if (rawType === "contract" || rawType === "additional_agreement") return "contract";
       if (rawType === "act" || rawType === "ks_2" || rawType === "ks_3") return "act";
       if (rawType === "invoice") return "invoice";
-      if (rawType === "photo_report" || rawType === "object_remark_photo" || rawType === "media") return "media";
-      if (rawType === "variation_attachment") return "variation_attachment";
-      if (rawType === "service_file") return "service_file";
+      if (rawType === "photo_report" || rawType === "object_remark_photo" || rawType === "media" || rawType === "photo_video") return "photo_video";
+      if (rawType === "variation_attachment" || rawType === "extra_work_attachment") return "extra_work_attachment";
+      if (rawType === "service_file" || rawType === "service_screenshot") return "service_screenshot";
       if (rawType === "other") return "other";
       if (statusLabelMap[rawType]) return rawType;
     }
     const name = "".concat(doc.title || "", " ").concat(doc.file_name || "").toLowerCase();
     const processType = String(doc.process_type || "").toLowerCase();
     const mime = String(doc.mime_type || "").toLowerCase();
-    if (processType.startsWith("variation:")) return "variation_attachment";
-    if (mime.startsWith("image/") || mime.startsWith("video/")) return "media";
+    if (processType.startsWith("variation:")) return "extra_work_attachment";
+    if (/\b(кнопка|экран|ошибка|скрин|screenshot|feedback|интерфейс)\b/.test(name) && (mime.startsWith("image/") || /\.(png|jpe?g|webp)$/i.test(name))) return "service_screenshot";
+    if (mime.startsWith("image/") || mime.startsWith("video/") || /\.(mov|mp4|jpe?g|png|webp)$/i.test(name)) return "photo_video";
     if (/проект|пдф|узел|решени/.test(name)) return "project";
     if (/смет|задани[ея]\s+на\s+работ|smetter|work_assignment|purchase/.test(name)) return "estimate";
     if (/договор|допник|доп\.?\s*соглаш|contract/.test(name)) return "contract";
     if (/\bакт\b|кс-?2|кс-?3/.test(name)) return "act";
     if (/сч[её]т|invoice/.test(name)) return "invoice";
-    if (/скрин|служеб|интерфейс|feedback/.test(name)) return "service_file";
+    if (/скрин|служеб|интерфейс|feedback|ошибка|экран|screenshot/.test(name)) return "service_screenshot";
     return rawType ? "other" : "unclassified";
   }
   function documentType(input) {
@@ -1190,12 +1220,14 @@
   }
   async function loadAll() {
     await loadCoreData();
-    const [photoReports, objectRemarks] = await Promise.all([
+    const [photoReports, objectRemarks, blockers] = await Promise.all([
       canView("photos") || canView("today") || canView("projects") ? api("/api/photo-reports") : Promise.resolve([]),
-      canView("object_remarks") || canView("today") || canView("projects") ? api("/api/object-remarks") : Promise.resolve([])
+      canView("object_remarks") || canView("today") || canView("projects") ? api("/api/object-remarks") : Promise.resolve([]),
+      canView("today") || canView("projects") || canView("tasks") || canView("materials") ? api("/api/blockers") : Promise.resolve([])
     ]);
     state.photoReports = photoReports;
     state.objectRemarks = objectRemarks;
+    state.blockers = blockers;
     await Promise.all([
       renderToday(),
       renderDashboard(),
@@ -1557,6 +1589,7 @@
           project_foreman_id: item.project_foreman_id,
           creator_id: item.creator_id,
           creator_name: item.creator_name,
+          procurement_name: item.procurement_name || "",
           created_at: item.batch_created_at || item.created_at,
           needed_at: item.needed_at,
           delivery_urgency: item.batch_delivery_urgency || item.delivery_urgency,
@@ -1626,6 +1659,36 @@
   }
   function materialBatchHasDeviation(batch) {
     return materialActiveItems(batch).some((item) => item.basis_type && item.basis_type !== "main_estimate");
+  }
+  function materialBatchHasNoPrice(batch) {
+    return materialActiveItems(batch).some(materialRowHasNoPrice);
+  }
+  function materialBatchActualOverrun(batch) {
+    return materialActiveItems(batch).some(materialRowActualOverrun) || Number(batch.actual_purchase_amount || 0) > 0 && Number(batch.actual_purchase_amount || 0) > Number(batch.total_amount || 0);
+  }
+  function materialBatchIsMine(batch) {
+    const role = currentRoleBase();
+    const userId = Number(currentUserId() || 0);
+    if (["owner", "construction_manager", "finance_director"].includes(role)) return true;
+    if (role === "foreman") return Number(batch.project_foreman_id || 0) === userId || Number(batch.creator_id || 0) === userId;
+    if (role === "procurement_manager") return true;
+    if (role === "estimator") return materialBatchHasDeviation(batch) || materialBatchHasNoPrice(batch) || materialBatchActualOverrun(batch);
+    return false;
+  }
+  function materialBatchHasNoResponsible(batch) {
+    return !batch.procurement_name && !["closed", "on_site"].includes(materialPipelineStatus(batch));
+  }
+  function materialBatchMatchesQuickFilter(batch, filter = state.materialQuickFilter) {
+    if (!filter || filter === "all") return true;
+    if (filter === "mine") return materialBatchIsMine(batch);
+    if (filter === "by_object") return state.selectedProjectId ? Number(batch.project_id || 0) === Number(state.selectedProjectId) : true;
+    if (filter === "urgent") return batch.delivery_urgency === "urgent";
+    if (filter === "no_responsible") return materialBatchHasNoResponsible(batch);
+    if (filter === "no_due") return !batch.needed_at;
+    if (filter === "blocker") return materialIsRisky(batch) || (state.blockers || []).some((blocker) => Number(blocker.linked_material_request_id || 0) === Number(batch.id || 0) && !["resolved", "closed"].includes(blocker.status));
+    if (filter === "extra") return materialActiveItems(batch).some((item) => ["additional_work", "additional_agreement"].includes(item.basis_type));
+    if (filter === "out_of_estimate") return materialBatchHasDeviation(batch) || materialBatchHasNoPrice(batch) || materialBatchActualOverrun(batch);
+    return true;
   }
   function isRemovedMaterialItem(item) {
     return (item == null ? void 0 : item.change_type) === "removed" || (item == null ? void 0 : item.procurement_status) === "removed";
@@ -1752,7 +1815,8 @@
       returned: tasks.filter((task) => task.status === "returned").length,
       waiting: tasks.filter((task) => task.status === "completed_pending_acceptance").length,
       accepted: tasks.filter((task) => task.status === "accepted").length,
-      overdue: tasks.filter(taskCountsAsOverdue).length
+      overdue: tasks.filter(taskCountsAsOverdue).length,
+      noDue: tasks.filter((task) => isOpenTask(task) && !task.due_date).length
     };
   }
   function taskCountsAsOverdue(task) {
@@ -1764,15 +1828,185 @@
     if (filter === "waiting") return task.status === "completed_pending_acceptance";
     if (filter === "accepted") return task.status === "accepted";
     if (filter === "overdue") return taskCountsAsOverdue(task);
+    if (filter === "no_due") return isOpenTask(task) && !task.due_date;
     return true;
   }
   function isOpenTask(task) {
     return task.status !== "accepted";
   }
   function visibleTasksForRole(tasks) {
-    if (currentRoleBase() !== "foreman") return tasks;
-    const userId = currentUserId();
-    return tasks.filter((task) => task.project_foreman_id === userId || task.assignee_id === userId || task.reviewer_id === userId);
+    return roleScopedTasks(tasks);
+  }
+  function isLeadershipRole(role = currentRoleBase()) {
+    return ["owner", "construction_manager", "finance_director", "ai_auditor"].includes(role);
+  }
+  function roleScopedProjects(projects = state.projects) {
+    const role = currentRoleBase();
+    const userId = Number(currentUserId() || 0);
+    const activeProjects = (projects || []).filter((project) => project.status !== "archived");
+    if (isLeadershipRole(role)) return activeProjects;
+    if (role === "sales_manager") return activeProjects.filter((project) => !userId || Number(project.sales_manager_id || 0) === userId || Number(project.manager_id || 0) === userId);
+    if (role === "foreman") return activeProjects.filter((project) => Number(project.foreman_id || 0) === userId);
+    if (role === "technical_supervisor") return activeProjects.filter((project) => !userId || Number(project.tech_supervisor_id || 0) === userId);
+    if (role === "estimator") return activeProjects.filter((project) => !userId || Number(project.estimator_id || 0) === userId);
+    if (role === "master") {
+      const projectIds = new Set((state.lastTasks || []).filter((task) => task.assignee_role === "master" || task.reviewer_role === "master").map((task) => Number(task.project_id || 0)));
+      return activeProjects.filter((project) => projectIds.has(Number(project.id)));
+    }
+    if (role === "procurement_manager") return activeProjects;
+    return activeProjects;
+  }
+  function roleProjectIdSet(projects = roleScopedProjects(state.projects)) {
+    return new Set((projects || []).map((project) => Number(project.id || 0)).filter(Boolean));
+  }
+  function taskText(task) {
+    return "".concat((task == null ? void 0 : task.title) || "", " ").concat((task == null ? void 0 : task.description) || "", " ").concat((task == null ? void 0 : task.task_type) || "").toLowerCase();
+  }
+  function roleScopedTasks(tasks = []) {
+    const role = currentRoleBase();
+    const userId = Number(currentUserId() || 0);
+    const rows = Array.isArray(tasks) ? tasks : [];
+    if (isLeadershipRole(role)) return rows;
+    if (role === "foreman") {
+      return rows.filter((task) => Number(task.project_foreman_id || 0) === userId || Number(task.assignee_id || 0) === userId || Number(task.reviewer_id || 0) === userId);
+    }
+    if (role === "master") {
+      return rows.filter((task) => task.assignee_role === "master" || task.reviewer_role === "master" || !userId && inferTaskType(task) === "task");
+    }
+    if (role === "procurement_manager") {
+      return rows.filter((task) => ["material", "approval", "decision"].includes(inferTaskType(task)) || task.assignee_role === "procurement_manager" || task.reviewer_role === "procurement_manager" || /материал|заявк|поставк|купить|заказать/.test(taskText(task)));
+    }
+    if (role === "estimator") {
+      return rows.filter((task) => task.assignee_role === "estimator" || task.reviewer_role === "estimator" || ["check", "approval", "material"].includes(inferTaskType(task)) || /смет|цен|расцен|допработ|сверх/.test(taskText(task)));
+    }
+    if (role === "technical_supervisor") {
+      return rows.filter((task) => !userId || Number(task.assignee_id || 0) === userId || Number(task.reviewer_id || 0) === userId || ["check", "issue", "photo_report"].includes(inferTaskType(task)));
+    }
+    if (role === "sales_manager") {
+      return rows.filter((task) => !userId || Number(task.creator_id || 0) === userId || Number(task.assignee_id || 0) === userId || Number(task.reviewer_id || 0) === userId);
+    }
+    return rows;
+  }
+  function materialRowHasDeviation(item) {
+    return Boolean((item == null ? void 0 : item.basis_type) && item.basis_type !== "main_estimate");
+  }
+  function materialRowHasNoPrice(item) {
+    return Number((item == null ? void 0 : item.total_amount) || 0) <= 0 && Number((item == null ? void 0 : item.actual_total_amount) || 0) <= 0 && Number((item == null ? void 0 : item.unit_price) || 0) <= 0;
+  }
+  function materialRowActualOverrun(item) {
+    return Number((item == null ? void 0 : item.actual_total_amount) || 0) > 0 && Number((item == null ? void 0 : item.actual_total_amount) || 0) > Number((item == null ? void 0 : item.total_amount) || 0);
+  }
+  function roleScopedMaterialRows(rows = []) {
+    const role = currentRoleBase();
+    const userId = Number(currentUserId() || 0);
+    const projectIds = roleProjectIdSet();
+    const items = Array.isArray(rows) ? rows : [];
+    if (isLeadershipRole(role)) return items;
+    if (role === "foreman") {
+      return items.filter((item) => Number(item.project_foreman_id || 0) === userId || Number(item.creator_id || 0) === userId);
+    }
+    if (role === "master") return [];
+    if (role === "procurement_manager") return items;
+    if (role === "estimator") return items.filter((item) => materialRowHasDeviation(item) || materialRowHasNoPrice(item) || materialRowActualOverrun(item));
+    return items.filter((item) => projectIds.has(Number(item.project_id || 0)));
+  }
+  function roleScopedBlockers(blockers = []) {
+    const role = currentRoleBase();
+    const userId = Number(currentUserId() || 0);
+    const projectIds = roleProjectIdSet();
+    const rows = Array.isArray(blockers) ? blockers : [];
+    if (isLeadershipRole(role)) return rows;
+    if (role === "foreman") {
+      return rows.filter((blocker) => Number(blocker.project_foreman_id || 0) === userId || Number(blocker.responsible_user_id || 0) === userId || projectIds.has(Number(blocker.project_id || 0)));
+    }
+    if (role === "master") {
+      return rows.filter((blocker) => Number(blocker.responsible_user_id || 0) === userId || projectIds.has(Number(blocker.project_id || 0)));
+    }
+    if (role === "procurement_manager") return rows.filter((blocker) => ["no_material", "material_under_risk", "other"].includes(blocker.blocker_type) || projectIds.has(Number(blocker.project_id || 0)));
+    if (role === "estimator") return rows.filter((blocker) => ["estimate_not_approved", "material_under_risk", "other"].includes(blocker.blocker_type) || projectIds.has(Number(blocker.project_id || 0)));
+    return rows.filter((blocker) => projectIds.has(Number(blocker.project_id || 0)));
+  }
+  function roleTodayProfile() {
+    const role = currentRoleBase();
+    const profiles = {
+      owner: {
+        label: "Руководитель компании",
+        question: "Где горит и где нужно моё решение?",
+        hint: "Показываем просрочки, блокеры, материалы под риском и объекты с проблемами по всей компании.",
+        tasksTitle: "Задачи и решения на сегодня",
+        attentionTitle: "Требует моего решения",
+        materialsTitle: "Материалы под риском",
+        actions: [
+          ["dashboard", "Посмотреть сигналы"],
+          ["projects", "Проблемные объекты"],
+          ["tasks", "Открыть задачи"]
+        ]
+      },
+      construction_manager: {
+        label: "Руководитель строительства",
+        question: "Что происходит на моих объектах?",
+        hint: "Фокус на объектах, задачах, фотоотчётах, замечаниях и материалах, которые тормозят стройку.",
+        tasksTitle: "Задачи по объектам",
+        attentionTitle: "Вопросы, требующие решения",
+        materialsTitle: "Материалы, влияющие на объекты",
+        actions: [
+          ["projects", "Открыть объекты"],
+          ["tasks", "Создать задачу"],
+          ["photos", "Фотоотчёты"]
+        ]
+      },
+      foreman: {
+        label: "Прораб",
+        question: "Что мне сегодня сделать на объекте?",
+        hint: "Только закреплённые объекты, ваши задачи, заявки, фотоотчёты и замечания к закрытию.",
+        tasksTitle: "Мои задачи на сегодня",
+        attentionTitle: "Что мешает закрыть работы",
+        materialsTitle: "Материалы: получить или запросить",
+        actions: [
+          ["photos", "Добавить фотоотчёт"],
+          ["materials", "Запросить материал"],
+          ["tasks", "Мои задачи"]
+        ]
+      },
+      master: {
+        label: "Мастер",
+        question: "Что сделать, где сделать, как подтвердить?",
+        hint: "Упрощённый режим: задача, срок, место, кнопка готово, фото и сообщение о проблеме.",
+        tasksTitle: "Что сделать сегодня",
+        attentionTitle: "Что мешает выполнить",
+        materialsTitle: "Материалы по моим задачам",
+        actions: [
+          ["tasks", "Открыть задачи"],
+          ["photos", "Добавить фото"]
+        ]
+      },
+      procurement_manager: {
+        label: "Снабжение",
+        question: "Что купить, куда, когда и что тормозит объект?",
+        hint: "Новые заявки, срочные поставки, проблемы при приёмке и материалы, которые держат объект.",
+        tasksTitle: "Задачи по снабжению",
+        attentionTitle: "Что тормозит поставки",
+        materialsTitle: "Заявки с ближайшим сроком",
+        actions: [
+          ["materials", "Открыть заявки"],
+          ["locations", "Поставщики"]
+        ]
+      },
+      estimator: {
+        label: "Сметчик",
+        question: "Что требует проверки по смете и допработам?",
+        hint: "Вне сметы, нет цены, цена отличается от сметы, новые комментарии и документы на проверку.",
+        tasksTitle: "Проверки по смете",
+        attentionTitle: "Что нужно уточнить",
+        materialsTitle: "Материалы вне сметы / без цены",
+        actions: [
+          ["estimates", "Сметные задания"],
+          ["materials", "Проверить материалы"],
+          ["variations", "Допработы"]
+        ]
+      }
+    };
+    return profiles[role] || profiles.owner;
   }
   function renderTaskStats(tasks, activeFilter = state.taskFilter, options = {}) {
     const stats = taskStats(tasks);
@@ -1783,7 +2017,8 @@
       ["returned", "На доработке", stats.returned, "danger"],
       ["waiting", "Ждет приемки", stats.waiting, "blue"],
       ["accepted", "Принято", stats.accepted, "success"],
-      ["overdue", "Просрочено", stats.overdue, "danger"]
+      ["overdue", "Просрочено", stats.overdue, "danger"],
+      ["no_due", "Без срока", stats.noDue, "warning"]
     ];
     const visibleSegments = options.hideZero ? segments.filter(([, , count]) => Number(count || 0) > 0) : segments;
     if (!visibleSegments.length) {
@@ -1812,13 +2047,28 @@
     if (key === "remark") return "issue";
     return key || "task";
   }
+  function taskDisplayTitle(task) {
+    const title = String((task == null ? void 0 : task.display_title) || (task == null ? void 0 : task.title) || "Задача").trim();
+    if (/^Сделать фотоотч[её]т,/i.test(title)) return "Сделать фотоотчёт по объекту";
+    if (title.length > 80) return "".concat(title.slice(0, 77).trim(), "...");
+    return title || "Задача";
+  }
+  function taskDisplayDescription(task) {
+    const title = String((task == null ? void 0 : task.title) || "").trim();
+    const description = String((task == null ? void 0 : task.description) || "").trim();
+    if (/^Сделать фотоотч[её]т,/i.test(title) && !description) return title;
+    if (title.length > 80 && !description) return title;
+    return description;
+  }
   function inferTaskType(taskOrType) {
     if (!taskOrType || typeof taskOrType !== "object") return normalizeTaskType(taskOrType);
     const explicit = normalizeTaskType(taskOrType.task_type || taskOrType.related_type || "task");
     const text = "".concat(taskOrType.title || "", " ").concat(taskOrType.description || "", " ").concat(taskOrType.related_type || "").toLowerCase();
     if (/фото\s*отч[её]т|фотоотч[её]т|photo/.test(text)) return "photo_report";
-    if (/[?？]/.test(text) || /что\s+думаете|вопрос|уточнить|уточнение/.test(text)) return "question";
-    if (/материал|заявк|снабжен|поставк/.test(text) || explicit === "material") return "material";
+    if (/согласовать|нужно\s+решение|требует\s+решения|утвердить|одобрить/.test(text) || explicit === "approval") return "approval";
+    if (/проверить|принять|контроль|проверка/.test(text) || explicit === "check") return "check";
+    if (/[?？]/.test(text) || /что\s+думаете|как\s+лучше|вопрос|уточнить|уточнение/.test(text)) return "question";
+    if (/материал|заявк|снабжен|поставк|заказать|купить/.test(text) || explicit === "material") return "material";
     if (/дефект|замечани|исправ|передел|брак|не\s+принят/.test(text)) return "issue";
     return explicit;
   }
@@ -1835,7 +2085,9 @@
       photo_report: "success",
       photo: "success",
       material: "blue",
-      decision: "warning"
+      decision: "warning",
+      check: "warning",
+      approval: "warning"
     }[type || "task"] || "";
   }
   function taskPriorityLabel(priority) {
@@ -2252,14 +2504,17 @@
     const taskRows = projectTasks(project.id, tasks);
     const materialRowsForProject = projectMaterialBatches(project.id, materialRows);
     const remarks = projectRemarks(project.id);
-    return taskRows.filter((task) => task.status === "returned" || taskCountsAsOverdue(task)).length + materialRowsForProject.filter(materialIsRisky).length + remarks.filter((remark) => !["accepted", "closed"].includes(remark.status)).length;
+    const blockers = roleScopedBlockers(state.blockers || []).filter((blocker) => Number(blocker.project_id || 0) === Number(project.id) && !["resolved", "closed"].includes(blocker.status));
+    return taskRows.filter((task) => task.status === "returned" || taskCountsAsOverdue(task)).length + materialRowsForProject.filter(materialIsRisky).length + remarks.filter((remark) => !["accepted", "closed"].includes(remark.status)).length + blockers.length;
   }
   function renderTodayTaskCard(task) {
-    return '\n    <button class="row clickable today-task-card" type="button" data-open-task="'.concat(task.id, '">\n      <div class="stack-line">\n        ').concat(pill(taskTypeLabel(task), taskTypeLevel(task)), "\n        ").concat(pill(statusLabel(task.status), taskStatusLevel(task.status)), "\n        ").concat(pill(task.due_date || "без срока", levelByDate(task.due_date)), "\n      </div>\n      <strong>").concat(escapeHtml(task.title || "Задача"), '</strong>\n      <div class="muted">').concat(escapeHtml(task.project_title || "Объект не указан"), " · ответственный: ").concat(escapeHtml(task.assignee_name || "не назначен"), "</div>\n    </button>");
+    const description = taskDisplayDescription(task);
+    return '\n    <button class="row clickable today-task-card" type="button" data-open-task="'.concat(task.id, '">\n      <div class="stack-line">\n        ').concat(pill(taskTypeLabel(task), taskTypeLevel(task)), "\n        ").concat(pill(statusLabel(task.status), taskStatusLevel(task.status)), "\n        ").concat(pill(task.due_date || "без срока", levelByDate(task.due_date)), '\n      </div>\n      <strong class="task-card-title">').concat(escapeHtml(taskDisplayTitle(task)), '</strong>\n      <div class="muted">').concat(escapeHtml(task.project_title || "Объект не указан"), " · ответственный: ").concat(escapeHtml(task.assignee_name || "не назначен"), "</div>\n      ").concat(description ? '<p class="task-description-clamp">'.concat(escapeHtml(description), "</p>") : "", "\n    </button>");
   }
   function renderTodayMaterialCard(batch) {
     const overrun = Number(batch.actual_purchase_amount || 0) > Number(batch.total_amount || 0) && Number(batch.actual_purchase_amount || 0) > 0;
-    return '\n    <button class="row clickable today-material-card" type="button" data-open-material-batch="'.concat(batch.key, '">\n      <div class="stack-line">\n        ').concat(pill(statusLabel(materialPipelineStatus(batch)), materialPipelineLevel(batch)), "\n        ").concat(batch.delivery_urgency === "urgent" ? pill("Срочно", "danger") : "", "\n        ").concat(overrun ? pill("Факт выше сметы", "danger") : "", "\n      </div>\n      <strong>").concat(escapeHtml(batch.project_title || "Объект не указан"), '</strong>\n      <div class="muted">позиций: ').concat(materialActiveItems(batch).length, " · смета: ").concat(money(batch.total_amount)).concat(batch.actual_purchase_amount ? " · факт: ".concat(money(batch.actual_purchase_amount)) : "", "</div>\n    </button>");
+    const firstItem = materialActiveItems(batch)[0] || {};
+    return '\n    <button class="row clickable today-material-card" type="button" data-open-material-batch="'.concat(batch.key, '">\n      <div class="stack-line">\n        ').concat(pill(statusLabel(materialPipelineStatus(batch)), materialPipelineLevel(batch)), "\n        ").concat(batch.delivery_urgency === "urgent" ? pill("Срочно", "danger") : "", "\n        ").concat(overrun ? pill("Факт выше сметы", "danger") : "", "\n      </div>\n      <strong>").concat(escapeHtml(firstItem.title || materialBatchTitle(batch)), '</strong>\n      <div class="muted">').concat(escapeHtml(batch.project_title || "Объект не указан"), " · ").concat(escapeHtml(firstItem.requested_quantity || firstItem.estimated_quantity || ""), " ").concat(escapeHtml(firstItem.requested_unit || firstItem.estimate_material_unit || ""), '</div>\n      <div class="muted">позиций: ').concat(materialActiveItems(batch).length, " · основание: ").concat(escapeHtml(materialBatchBasisSummary(batch) || "не указано"), " · срок: ").concat(batch.needed_at ? formatDateRu(batch.needed_at) : "без срока", "</div>\n      </button>");
   }
   function renderTodayObjectCard(project, tasks, materialRows) {
     const taskRows = projectTasks(project.id, tasks);
@@ -2270,7 +2525,7 @@
     const latestPhoto = latestPhotoReportDate(project.id);
     return '\n    <button class="today-object-card clickable" type="button" data-open-project="'.concat(project.id, '">\n      <div class="today-object-head">\n        <strong>').concat(escapeHtml(project.title || "Объект"), "</strong>\n        ").concat(pill(statusLabel(project.status), statusLevel(project.status)), '\n      </div>\n      <div class="muted">ответственный: ').concat(escapeHtml(project.foreman_name || "прораб не назначен"), " · этап: ").concat(statusLabel(project.stage || project.status), '</div>\n      <div class="today-object-metrics">\n        ').concat(pill("открыто: ".concat(openTasks.length), openTasks.length ? "blue" : ""), "\n        ").concat(overdueTasks.length ? pill("просрочено: ".concat(overdueTasks.length), "danger") : "", "\n        ").concat(blockers ? pill("блокеры: ".concat(blockers), "danger") : "", "\n        ").concat(riskyMaterials.length ? pill("материалы под риском: ".concat(riskyMaterials.length), "warning") : "", '\n      </div>\n      <div class="muted">последний фотоотчёт: ').concat(latestPhoto ? formatDateRu(latestPhoto) : "не найден", "</div>\n    </button>");
   }
-  function todayDecisionItems({ overdueTasks = [], returnedTasks = [], waitingTasks = [], riskyMaterials = [], noPhotoProjects = [] }) {
+  function todayDecisionItems({ overdueTasks = [], returnedTasks = [], waitingTasks = [], riskyMaterials = [], noPhotoProjects = [], blockers = [] }) {
     const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
     const taskItem = (task, type, level, action = "Открыть задачу") => ({
       type,
@@ -2284,6 +2539,17 @@
       attrs: 'data-open-task="'.concat(task.id, '"')
     });
     return [
+      ...blockers.map((blocker) => ({
+        type: statusLabel(blocker.blocker_type || "other"),
+        level: blocker.severity === "critical" || blocker.severity === "high" ? "danger" : "warning",
+        object: blocker.project_title || "Объект не указан",
+        title: blocker.title || "Блокер объекта",
+        responsible: blocker.responsible_name || "не назначен",
+        due: blocker.due_date || "без срока",
+        criticality: blocker.severity === "critical" || blocker.severity === "high" ? "Высокая" : "Средняя",
+        action: blocker.linked_task_id ? "Открыть задачу" : blocker.linked_material_request_id ? "Открыть заявку" : "Открыть объект",
+        attrs: blocker.linked_task_id ? 'data-open-task="'.concat(blocker.linked_task_id, '"') : blocker.linked_material_request_id ? 'data-open-material-batch="batch-'.concat(blocker.linked_material_request_id, '"') : 'data-open-project="'.concat(blocker.project_id, '"')
+      })),
       ...overdueTasks.map((task) => taskItem(task, "Просрочено", "danger")),
       ...returnedTasks.map((task) => taskItem(task, "Возвращено", "warning")),
       ...waitingTasks.map((task) => taskItem(task, "Ждёт проверки", "blue")),
@@ -2314,6 +2580,128 @@
   function renderTodayDecisionItem(item) {
     return '\n    <button class="attention-item decision-item '.concat(item.level || "", '" type="button" ').concat(item.attrs || 'data-view-target="tasks"', '>\n      <span class="attention-count">').concat(escapeHtml(item.type || "Сигнал"), '</span>\n      <span class="attention-body">\n        <strong>').concat(escapeHtml(item.object || "Объект"), " — ").concat(escapeHtml(item.title || "Что-то требует решения"), "</strong>\n        <small>Ответственный: ").concat(escapeHtml(item.responsible || "не назначен"), " · Срок: ").concat(escapeHtml(item.due || "без срока"), " · Критичность: ").concat(escapeHtml(item.criticality || "рабочая"), "</small>\n        <em>").concat(escapeHtml(item.action || "Открыть"), "</em>\n      </span>\n    </button>");
   }
+  function renderTodayPrimaryActions(profile) {
+    return (profile.actions || []).filter(([view]) => canView(view)).map(([view, title]) => '<button class="secondary" type="button" data-view-target="'.concat(view, '">').concat(escapeHtml(title), "</button>")).join("");
+  }
+  function mobileQuickActionsForRole() {
+    const role = currentRoleBase();
+    if (role === "master") {
+      return [
+        ["photo", "Добавить фото"],
+        ["blocker", "Сообщить проблему"]
+      ];
+    }
+    if (role === "foreman") {
+      return [
+        ["photo", "Добавить фотоотчёт"],
+        ["task", "Создать задачу"],
+        ["material", "Запросить материал"],
+        ["remark", "Создать замечание"],
+        ["blocker", "Сообщить проблему"]
+      ];
+    }
+    if (role === "procurement_manager") {
+      return [
+        ["material", "Открыть заявки"],
+        ["blocker", "Сообщить проблему"]
+      ];
+    }
+    return [
+      ["photo", "Добавить фотоотчёт"],
+      ["task", "Создать задачу"],
+      ["remark", "Создать замечание"],
+      ["material", "Запросить материал"],
+      ["blocker", "Сообщить проблему"]
+    ];
+  }
+  function syncMobileQuickActions() {
+    const sheet = qs("#mobileQuickSheet");
+    const list = qs("#mobileQuickActions");
+    if (!sheet || !list) return;
+    const actions = mobileQuickActionsForRole().filter(([action]) => {
+      if (action === "photo") return canView("photos") || canView("today");
+      if (action === "task") return canView("tasks");
+      if (action === "remark") return canView("object_remarks");
+      if (action === "material") return canView("materials") || currentRoleBase() === "foreman";
+      return true;
+    });
+    list.innerHTML = actions.map(([action, title]) => '<button class="secondary" type="button" data-mobile-action="'.concat(action, '">').concat(escapeHtml(title), "</button>")).join("");
+    sheet.hidden = !state.mobileQuickOpen;
+  }
+  function toggleMobileQuickActions(open = !state.mobileQuickOpen) {
+    state.mobileQuickOpen = Boolean(open);
+    syncMobileQuickActions();
+  }
+  function firstRoleProjectId() {
+    var _a, _b;
+    return state.selectedProjectId || ((_a = roleScopedProjects(state.projects)[0]) == null ? void 0 : _a.id) || ((_b = state.projects[0]) == null ? void 0 : _b.id) || "";
+  }
+  async function quickCreateBlocker() {
+    const projectId = firstRoleProjectId();
+    if (!projectId) {
+      showToast("Сначала нужен объект");
+      return;
+    }
+    const title = window.prompt("Кратко опишите проблему, которая тормозит объект");
+    if (title === null) return;
+    if (!String(title).trim()) {
+      showToast("Напишите проблему");
+      return;
+    }
+    await api("/api/blockers", {
+      method: "POST",
+      body: JSON.stringify({
+        project_id: projectId,
+        title: title.trim(),
+        description: "",
+        blocker_type: "other",
+        responsible_user_id: currentUserId() || "",
+        severity: "medium",
+        status: "open",
+        actor_id: currentUserId() || ""
+      })
+    });
+    await loadAll();
+    showToast("Проблема добавлена в блокеры");
+  }
+  async function handleMobileQuickAction(action) {
+    var _a, _b, _c, _d;
+    toggleMobileQuickActions(false);
+    const projectId = firstRoleProjectId();
+    if (action === "photo") {
+      const form = qs("#photoReportForm");
+      form == null ? void 0 : form.reset();
+      if (projectId && (form == null ? void 0 : form.elements.project_id)) form.elements.project_id.value = String(projectId);
+      if (form == null ? void 0 : form.elements.report_date) form.elements.report_date.value = todayIso();
+      (_a = qs("#photoReportDialog")) == null ? void 0 : _a.showModal();
+      return;
+    }
+    if (action === "task") {
+      const form = qs("#taskForm");
+      form == null ? void 0 : form.reset();
+      if (projectId && (form == null ? void 0 : form.elements.project_id)) form.elements.project_id.value = String(projectId);
+      if (form == null ? void 0 : form.elements.creator_role) form.elements.creator_role.value = currentRoleBase();
+      if (form == null ? void 0 : form.elements.creator_id) form.elements.creator_id.value = currentUserId() || "";
+      loadTaskContractOptions(((_b = form == null ? void 0 : form.elements.project_id) == null ? void 0 : _b.value) || "");
+      (_c = qs("#taskDialog")) == null ? void 0 : _c.showModal();
+      return;
+    }
+    if (action === "remark") {
+      const form = qs("#objectRemarkForm");
+      form == null ? void 0 : form.reset();
+      if (projectId && (form == null ? void 0 : form.elements.project_id)) form.elements.project_id.value = String(projectId);
+      (_d = qs("#objectRemarkDialog")) == null ? void 0 : _d.showModal();
+      return;
+    }
+    if (action === "material") {
+      if (canView("materials")) switchView("materials");
+      await openNewMaterialDialog(projectId);
+      return;
+    }
+    if (action === "blocker") {
+      await quickCreateBlocker();
+    }
+  }
   async function renderToday() {
     if (!qs("#todayView")) return;
     const [tasks, materialRows, notifications] = await Promise.all([
@@ -2321,26 +2709,38 @@
       canView("materials") || canView("today") ? api("/api/material-requests") : Promise.resolve([]),
       api("/api/notifications").catch(() => [])
     ]);
-    const roleTasks = visibleTasksForRole(tasks);
+    const profile = roleTodayProfile();
+    const roleProjects = roleScopedProjects(state.projects);
+    const roleProjectIds = roleProjectIdSet(roleProjects);
+    const roleTasks = roleScopedTasks(tasks);
+    const roleMaterialRows = roleScopedMaterialRows(materialRows);
+    const roleBlockers = roleScopedBlockers(state.blockers || []);
     state.lastTasks = roleTasks;
-    state.materialRequests = materialRows;
+    state.materialRequests = roleMaterialRows;
+    qs("#todayRoleLabel").textContent = profile.label;
+    qs("#todayRoleQuestion").textContent = profile.question;
+    qs("#todayRoleHint").textContent = profile.hint;
+    qs("#todayTasksTitle").textContent = profile.tasksTitle;
+    qs("#todayAttentionTitle").textContent = profile.attentionTitle;
+    qs("#todayMaterialsTitle").textContent = profile.materialsTitle;
+    qs("#todayPrimaryActions").innerHTML = renderTodayPrimaryActions(profile);
     const todayTasks = roleTasks.filter((task) => isOpenTask(task) && isTodayDate(task.due_date));
     const overdueTasks = roleTasks.filter(taskCountsAsOverdue);
     const returnedTasks = roleTasks.filter((task) => task.status === "returned");
     const waitingTasks = roleTasks.filter((task) => task.status === "completed_pending_acceptance");
-    const materialBatches = buildMaterialBatches(materialRows);
+    const materialBatches = buildMaterialBatches(roleMaterialRows);
     const riskyMaterials = materialBatches.filter(materialIsRisky);
-    const activeProjects = state.projects.filter((project) => project.status !== "archived");
+    const activeProjects = roleProjects;
     const noPhotoProjects = activeProjects.filter((project) => !isTodayDate(latestPhotoReportDate(project.id)));
-    const recentComments = notifications.filter((row) => isLast24Hours(row.created_at)).slice(0, 8);
-    qs("#todayTasks").innerHTML = todayTasks.length ? todayTasks.slice(0, 6).map(renderTodayTaskCard).join("") : '<p class="muted">На сегодня задач по выбранной роли нет.</p>';
-    const decisionItems = todayDecisionItems({ overdueTasks, returnedTasks, waitingTasks, riskyMaterials, noPhotoProjects }).slice(0, 12);
+    const recentComments = notifications.filter((row) => isLast24Hours(row.created_at)).filter((row) => !row.project_id || isLeadershipRole() || roleProjectIds.has(Number(row.project_id || 0))).slice(0, 8);
+    qs("#todayTasks").innerHTML = todayTasks.length ? todayTasks.slice(0, 6).map(renderTodayTaskCard).join("") : '<div class="empty-state"><strong>На сегодня задач нет</strong><p class="muted">Проверьте просроченные или откройте объект.</p></div>';
+    const decisionItems = todayDecisionItems({ overdueTasks, returnedTasks, waitingTasks, riskyMaterials, noPhotoProjects, blockers: roleBlockers }).slice(0, 12);
     qs("#todayAttention").innerHTML = decisionItems.length ? decisionItems.map(renderTodayDecisionItem).join("") : '<div class="attention-empty"><strong>Критичных сигналов нет</strong><span>На сейчас ничего срочного не найдено.</span></div>';
-    qs("#todayMaterials").innerHTML = riskyMaterials.length ? riskyMaterials.slice(0, 8).map(renderTodayMaterialCard).join("") : '<p class="muted">Материалов под риском нет.</p>';
+    qs("#todayMaterials").innerHTML = riskyMaterials.length ? riskyMaterials.slice(0, 8).map(renderTodayMaterialCard).join("") : '<div class="empty-state"><strong>Заявок под риском нет</strong><p class="muted">Заявки появятся здесь, когда прораб или руководитель запросит материалы.</p>'.concat(canView("materials") ? '<button class="secondary tiny" type="button" data-view-target="materials">Открыть материалы</button>' : "", "</div>");
     qs("#todayComments").innerHTML = recentComments.length ? recentComments.map(
       (row) => '\n          <button class="row clickable" type="button" '.concat(notificationTargetAttrs(row), ">\n            <strong>").concat(escapeHtml(row.title || "Событие"), '</strong>\n            <div class="muted">').concat(escapeHtml(row.project_title || "без объекта"), " · ").concat(formatDateRu(row.created_at), "</div>\n            <p>").concat(escapeHtml(row.text || ""), "</p>\n          </button>")
     ).join("") : '<p class="muted">Новых комментариев за 24 часа нет.</p>';
-    qs("#todayObjects").innerHTML = activeProjects.length ? activeProjects.map((project) => renderTodayObjectCard(project, roleTasks, materialRows)).join("") : '<p class="muted">Активных объектов пока нет.</p>';
+    qs("#todayObjects").innerHTML = activeProjects.length ? activeProjects.map((project) => renderTodayObjectCard(project, roleTasks, roleMaterialRows)).join("") : '<p class="muted">Активных объектов пока нет.</p>';
     qs("#todayNoPhoto").innerHTML = noPhotoProjects.length ? noPhotoProjects.slice(0, 8).map(
       (project) => '\n          <button class="row clickable" type="button" data-open-project="'.concat(project.id, '">\n            <strong>').concat(escapeHtml(project.title), '</strong>\n            <div class="muted">последний фотоотчёт: ').concat(latestPhotoReportDate(project.id) ? formatDateRu(latestPhotoReportDate(project.id)) : "не найден", "</div>\n          </button>")
     ).join("") : '<p class="muted">По всем активным объектам есть фотоотчёт за сегодня.</p>';
@@ -2369,6 +2769,51 @@
     if (row.project_id) return 'data-open-project="'.concat(row.project_id, '"');
     return 'data-view-target="dashboard"';
   }
+  function signalTypeKey(row) {
+    const title = String(row.title || "").toLowerCase();
+    if (/материал|закуп|заявк/.test(title)) return "материалы вне основной сметы";
+    if (/просроч/.test(title)) return "просроченная задача";
+    if (/возвращ/.test(title)) return "возвращённая задача";
+    if (/фото/.test(title)) return "нет фотоотчёта";
+    if (/допработ|отклон/.test(title)) return "новая допработа";
+    if (/смет/.test(title)) return "нужна проверка сметчика";
+    if (/ответствен/.test(title)) return "нет ответственного";
+    if (/срок/.test(title)) return "задача без срока";
+    return row.related_type || row.title || "сигнал";
+  }
+  function dedupeSignals(rows = []) {
+    const map = /* @__PURE__ */ new Map();
+    rows.forEach((row) => {
+      const day = dateOnly(row.created_at) || "без даты";
+      const type = signalTypeKey(row);
+      const key = "".concat(day, ":").concat(row.project_id || "general", ":").concat(type);
+      if (!map.has(key)) {
+        map.set(key, __spreadProps(__spreadValues({}, row), {
+          signal_key: key,
+          signal_type: type,
+          signal_day: day,
+          rows: [],
+          unread: 0
+        }));
+      }
+      const group = map.get(key);
+      group.rows.push(row);
+      if (!row.is_read) group.unread += 1;
+    });
+    return [...map.values()].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+  }
+  function signalStatus(row) {
+    if (row.status) return row.status;
+    if (row.unread) return "new";
+    return row.is_read ? "resolved" : "in_work";
+  }
+  function renderSignalRow(signal) {
+    const items = signal.rows || [signal];
+    const first = items[0] || signal;
+    const preview = items.slice(0, 3);
+    const rest = Math.max(0, items.length - preview.length);
+    return '\n    <button class="row clickable notification-row signal-row" '.concat(notificationTargetAttrs(first), '>\n      <div class="stack-line">\n        <strong>[').concat(escapeHtml(signal.signal_type || "Сигнал"), "] ").concat(escapeHtml(signal.project_title || "Без объекта"), "</strong>\n        ").concat(pill(statusLabel(signalStatus(signal)), statusLevel(signalStatus(signal))), '\n      </div>\n      <div class="muted">').concat(items.length, " позиций · создано ").concat(formatDateRu(signal.signal_day || signal.created_at), '</div>\n      <div class="signal-preview">\n        ').concat(preview.map((row) => "<span>".concat(escapeHtml(row.title || "Событие"), ": ").concat(escapeHtml(row.text || ""), "</span>")).join(""), "\n        ").concat(rest ? '<span class="muted">ещё '.concat(rest, " позиций</span>") : "", "\n      </div>\n    </button>");
+  }
   async function renderNotifications() {
     var _a;
     const rows = await api("/api/notifications");
@@ -2376,7 +2821,8 @@
       qs("#notificationRows").innerHTML = '<p class="muted">Уведомлений пока нет.</p>';
       return;
     }
-    const groups = rows.reduce((acc, row) => {
+    const signals = dedupeSignals(rows);
+    const groups = signals.reduce((acc, row) => {
       const key = row.project_id ? "project-".concat(row.project_id) : "general";
       if (!acc[key]) {
         acc[key] = {
@@ -2386,16 +2832,15 @@
           rows: []
         };
       }
-      if (!row.is_read) acc[key].unread += 1;
+      if (row.unread) acc[key].unread += row.unread;
+      else if (!row.is_read) acc[key].unread += 1;
       acc[key].rows.push(row);
       return acc;
     }, {});
     const groupRows = Object.values(groups).sort((a, b) => b.rows.length - a.rows.length || a.title.localeCompare(b.title, "ru")).map((group, index) => {
       var _a2;
       const open = (_a2 = state.notificationGroupsOpen[group.key]) != null ? _a2 : index === 0;
-      return '\n        <details class="notification-group" data-notification-group="'.concat(group.key, '" ').concat(open ? "open" : "", ">\n          <summary>\n            <span>\n              <strong>").concat(escapeHtml(group.title), "</strong>\n              <small>").concat(group.rows.length, " событий").concat(group.unread ? " · новых: ".concat(group.unread) : "", "</small>\n            </span>\n            ").concat(group.unread ? pill("".concat(group.unread, " новых"), "warning") : "", '\n          </summary>\n          <div class="notification-group-list">\n            ').concat(group.rows.slice(0, 8).map(
-        (row) => '\n                <button class="row clickable notification-row" '.concat(notificationTargetAttrs(row), '>\n                  <div class="stack-line"><strong>').concat(escapeHtml(row.title), "</strong>").concat(pill(row.user_name || row.role, row.is_read ? "" : "warning"), '</div>\n                  <div class="notification-text">').concat(escapeHtml(row.text), '</div>\n                  <div class="muted">').concat(formatDateRu(row.created_at), "</div>\n                </button>")
-      ).join(""), "\n          </div>\n        </details>");
+      return '\n        <details class="notification-group" data-notification-group="'.concat(group.key, '" ').concat(open ? "open" : "", ">\n          <summary>\n            <span>\n              <strong>").concat(escapeHtml(group.title), "</strong>\n              <small>").concat(group.rows.length, " событий").concat(group.unread ? " · новых: ".concat(group.unread) : "", "</small>\n            </span>\n            ").concat(group.unread ? pill("".concat(group.unread, " новых"), "warning") : "", '\n          </summary>\n          <div class="notification-group-list">\n            ').concat(group.rows.slice(0, 8).map(renderSignalRow).join(""), "\n          </div>\n        </details>");
     }).join("");
     qs("#notificationRows").innerHTML = '\n    <details class="inline-collapsible notification-collapsible" '.concat(state.notificationsOpen ? "open" : "", ">\n      <summary>Последние события: ").concat(rows.length, '</summary>\n      <div class="notification-groups">').concat(groupRows, "</div>\n    </details>");
     (_a = qs(".notification-collapsible")) == null ? void 0 : _a.addEventListener("toggle", (event) => {
@@ -2425,14 +2870,14 @@
     return '\n    <article class="row photo-report-card">\n      <div class="photo-report-main">\n        <div class="stack-line">\n          <strong>'.concat(escapeHtml(report.project_title || "Объект не указан"), "</strong>\n          ").concat(pill(statusLabel(report.status || "review"), statusLevel(report.status || "review")), "\n          ").concat(pill(formatDateRu(report.report_date), "blue"), '\n        </div>\n        <div class="muted">автор: ').concat(escapeHtml(report.author_name || "не указан"), " · этап: ").concat(escapeHtml(report.stage || "не указан"), " · зоны: ").concat(escapeHtml(report.zones || "не указаны"), "</div>\n        ").concat(report.comment ? "<p>".concat(escapeHtml(report.comment), "</p>") : "", '\n      </div>\n      <div class="media-grid">').concat(attachments.length ? attachments.map(mediaPreviewLink).join("") : '<span class="muted">Фото/видео не прикреплены.</span>', "</div>\n    </article>");
   }
   function projectsWithoutTodayPhoto() {
-    return state.projects.filter((project) => project.status !== "archived").filter((project) => !isTodayDate(latestPhotoReportDate(project.id)));
+    return roleScopedProjects(state.projects).filter((project) => project.status !== "archived").filter((project) => !isTodayDate(latestPhotoReportDate(project.id)));
   }
   function renderPhotoEmptyState(projects = projectsWithoutTodayPhoto()) {
     const count = projects.length;
-    return '\n    <section class="empty-state photo-empty-state">\n      <strong>Фотоотчётов пока нет</strong>\n      <p>По активным объектам сегодня нет '.concat(count, " фотоотчёт").concat(count === 1 ? "а" : count >= 2 && count <= 4 ? "ов" : "ов", ".</p>\n      ").concat(count ? '<div class="list compact-empty-list">'.concat(projects.slice(0, 8).map((project) => '<button class="row clickable" type="button" data-open-project="'.concat(project.id, '"><strong>').concat(escapeHtml(project.title || "Объект"), '</strong><span class="muted">последний фотоотчёт: ').concat(latestPhotoReportDate(project.id) ? formatDateRu(latestPhotoReportDate(project.id)) : "не найден", "</span></button>")).join(""), "</div>") : '<p class="muted">По всем активным объектам есть фотоотчёт за сегодня.</p>', "\n    </section>");
+    return '\n    <section class="empty-state photo-empty-state">\n      <strong>Фотоотчётов пока нет</strong>\n      <p>По активным объектам сегодня нет '.concat(count, " фотоотчёт").concat(count === 1 ? "а" : count >= 2 && count <= 4 ? "ов" : "ов", ".</p>\n      ").concat(count ? '<div class="list compact-empty-list">'.concat(projects.slice(0, 8).map((project) => '\n                <div class="row empty-action-row">\n                  <button class="clickable empty-action-main" type="button" data-open-project="'.concat(project.id, '">\n                    <strong>').concat(escapeHtml(project.title || "Объект"), '</strong>\n                    <span class="muted">последний фотоотчёт: ').concat(latestPhotoReportDate(project.id) ? formatDateRu(latestPhotoReportDate(project.id)) : "не найден", "</span>\n                  </button>\n                  ").concat(canView("photos") ? '<button class="secondary tiny" type="button" data-mobile-action="photo" data-project-context="'.concat(project.id, '">Добавить</button>') : '<button class="secondary tiny" type="button" data-open-project="'.concat(project.id, '">Запросить</button>'), "\n                </div>")).join(""), "</div>") : '<p class="muted">По всем активным объектам есть фотоотчёт за сегодня.</p>', "\n    </section>");
   }
   function renderRemarkEmptyState() {
-    return '\n    <section class="empty-state remark-empty-state">\n      <strong>Замечаний по объектам пока нет</strong>\n      <p>Здесь будут строительные замечания: дефекты, переделки, контроль качества.</p>\n      <div class="remark-example-flow">\n        <span>Фото до</span>\n        <span>Описание</span>\n        <span>Ответственный</span>\n        <span>Срок</span>\n        <span>Фото после</span>\n        <span>Принято</span>\n      </div>\n    </section>';
+    return '\n    <section class="empty-state remark-empty-state">\n      <strong>Замечаний по объектам пока нет</strong>\n      <p>Здесь будут строительные замечания: дефекты, переделки, контроль качества.</p>\n      <div class="remark-example-flow">\n        <span>Фото до</span>\n        <span>Описание</span>\n        <span>Ответственный</span>\n        <span>Срок</span>\n        <span>Фото после</span>\n        <span>Принято</span>\n      </div>\n      '.concat(canView("object_remarks") ? '<button class="secondary tiny" type="button" data-mobile-action="remark">Создать замечание</button>' : "", "\n    </section>");
   }
   async function renderPhotoReports() {
     const rowsNode = qs("#photoReportRows");
@@ -2538,11 +2983,13 @@
     const tasks = projectDetailTasks(project);
     const batches = projectDetailBatches(project);
     const remarks = project.object_remarks || [];
+    const blockers = (project.blockers || []).filter((blocker) => !["resolved", "closed"].includes(blocker.status));
     const items = [];
     const overdueTasks = tasks.filter(taskCountsAsOverdue);
     const returnedTasks = tasks.filter((task) => task.status === "returned");
     const riskyMaterials = batches.filter(materialIsRisky);
     const openRemarks = remarks.filter((remark) => !["accepted", "closed"].includes(remark.status));
+    if (blockers.length) items.push({ title: "Открытые блокеры", count: blockers.length, level: "danger", tab: "overview" });
     if (overdueTasks.length) items.push({ title: "Просроченные задачи", count: overdueTasks.length, level: "danger", tab: "tasks" });
     if (returnedTasks.length) items.push({ title: "Возвращённые задачи", count: returnedTasks.length, level: "warning", tab: "tasks" });
     if (riskyMaterials.length) items.push({ title: "Материалы с проблемами", count: riskyMaterials.length, level: "danger", tab: "materials" });
@@ -2557,7 +3004,7 @@
     const overdueTasks = tasks.filter(taskCountsAsOverdue);
     const riskyMaterials = batches.filter(materialIsRisky);
     const openRemarks = (project.object_remarks || []).filter((remark) => !["accepted", "closed"].includes(remark.status));
-    const blockers = projectAttentionItems(project).reduce((sum, item) => sum + Number(item.count || 0), 0);
+    const blockers = (project.blockers || []).filter((blocker) => !["resolved", "closed"].includes(blocker.status)).length;
     return '\n    <section class="project-hero">\n      <div class="project-hero-main">\n        <div class="stack-line">\n          <h2>'.concat(escapeHtml(project.title || "Объект"), "</h2>\n          ").concat(pill(statusLabel(project.status), statusLevel(project.status)), '\n        </div>\n        <div class="project-hero-meta">\n          <span>Ответственный: <strong>').concat(escapeHtml(project.foreman_name || "прораб не назначен"), "</strong></span>\n          <span>Этап: <strong>").concat(statusLabel(project.stage || project.status), "</strong></span>\n          <span>Ближайший дедлайн: <strong>").concat(project.planned_end_date ? formatDateRu(project.planned_end_date) : "не задан", "</strong></span>\n          <span>Последний фотоотчёт: <strong>").concat(latestPhoto ? formatDateRu(latestPhoto) : "не найден", '</strong></span>\n        </div>\n      </div>\n      <div class="project-hero-stats">\n        <div class="info"><span>Открытые задачи</span><strong>').concat(openTasks.length, '</strong></div>\n        <div class="info ').concat(overdueTasks.length ? "danger" : "", '"><span>Просрочено</span><strong>').concat(overdueTasks.length, '</strong></div>\n        <div class="info ').concat(blockers ? "danger" : "", '"><span>Блокеры</span><strong>').concat(blockers, '</strong></div>\n        <div class="info ').concat(riskyMaterials.length ? "warning" : "", '"><span>Материалы под риском</span><strong>').concat(riskyMaterials.length, '</strong></div>\n        <div class="info ').concat(openRemarks.length ? "warning" : "", '"><span>Открытые замечания</span><strong>').concat(openRemarks.length, "</strong></div>\n      </div>\n    </section>");
   }
   function renderProjectAttention(project) {
@@ -2580,14 +3027,18 @@
     return '\n    <section class="project-quick-actions">\n      <strong>Ближайшие действия</strong>\n      <div class="project-action-list">\n        '.concat(actions.map(([attrs, title]) => '<button class="secondary tiny" type="button" '.concat(attrs, ">").concat(title, "</button>")).join(""), "\n      </div>\n    </section>");
   }
   function renderProjectOverview(project) {
-    return '\n    <div class="detail-grid">\n      <div class="info"><span>Статус</span><strong>'.concat(statusLabel(project.status), '</strong></div>\n      <div class="info"><span>Ответственный</span><strong>').concat(project.foreman_name || "не назначен", '</strong></div>\n      <div class="info"><span>Этап</span><strong>').concat(statusLabel(project.stage || project.status), '</strong></div>\n      <div class="info"><span>Срок</span><strong>').concat(project.planned_end_date ? formatDateRu(project.planned_end_date) : "не задан", "</strong></div>\n    </div>");
+    const blockers = (project.blockers || []).filter((blocker) => !["resolved", "closed"].includes(blocker.status));
+    return '\n    <div class="detail-grid">\n      <div class="info"><span>Статус</span><strong>'.concat(statusLabel(project.status), '</strong></div>\n      <div class="info"><span>Ответственный</span><strong>').concat(project.foreman_name || "не назначен", '</strong></div>\n      <div class="info"><span>Этап</span><strong>').concat(statusLabel(project.stage || project.status), '</strong></div>\n      <div class="info"><span>Срок</span><strong>').concat(project.planned_end_date ? formatDateRu(project.planned_end_date) : "не задан", "</strong></div>\n    </div>\n    ").concat(blockers.length ? '<section class="workflow-panel compact-workflow">\n            <h3>Блокеры объекта</h3>\n            <div class="list">\n              '.concat(blockers.slice(0, 5).map(
+      (blocker) => '\n                  <div class="row blocker-row">\n                    <div class="stack-line"><strong>'.concat(escapeHtml(blocker.title || "Блокер"), "</strong>").concat(pill(statusLabel(blocker.blocker_type || "other"), statusLevel(blocker.blocker_type || "warning"))).concat(pill(statusLabel(blocker.status || "open"), statusLevel(blocker.status || "open")), '</div>\n                    <div class="muted">ответственный: ').concat(escapeHtml(blocker.responsible_name || "не назначен"), " · срок: ").concat(blocker.due_date ? formatDateRu(blocker.due_date) : "без срока", "</div>\n                  </div>")
+    ).join(""), "\n            </div>\n          </section>") : "");
   }
   function renderProjectTaskList(tasks = []) {
     if (!tasks.length) return '<p class="muted">Задач по объекту пока нет.</p>';
     return '<div class="list">'.concat(tasks.map(renderCompactTaskRow).join(""), "</div>");
   }
   function renderCompactTaskRow(task) {
-    return '\n    <button class="row clickable compact-task-card" type="button" data-open-task="'.concat(task.id, '">\n      <div class="compact-task-title">\n        ').concat(pill(taskTypeLabel(task), taskTypeLevel(task)), "\n        <strong>").concat(escapeHtml(task.title || "Задача"), '</strong>\n      </div>\n      <div class="compact-task-meta">\n        <span>').concat(escapeHtml(task.project_title || "объект"), "</span>\n        <span>ответственный: ").concat(escapeHtml(task.assignee_name || "не назначен"), "</span>\n        <span>срок: ").concat(task.due_date ? formatDateRu(task.due_date) : "без срока", "</span>\n      </div>\n      ").concat(task.description ? '<p class="task-description-clamp">'.concat(escapeHtml(task.description), "</p>") : "", '\n      <div class="stack-line">\n        ').concat(pill(statusLabel(task.status), taskStatusLevel(task.status)), "\n        ").concat(pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority)), "\n      </div>\n    </button>");
+    const description = taskDisplayDescription(task);
+    return '\n    <button class="row clickable compact-task-card" type="button" data-open-task="'.concat(task.id, '">\n      <div class="compact-task-title">\n        ').concat(pill(taskTypeLabel(task), taskTypeLevel(task)), "\n        <strong>").concat(escapeHtml(taskDisplayTitle(task)), '</strong>\n      </div>\n      <div class="compact-task-meta">\n        <span>').concat(escapeHtml(task.project_title || "объект"), "</span>\n        <span>ответственный: ").concat(escapeHtml(task.assignee_name || "не назначен"), "</span>\n        <span>срок: ").concat(task.due_date ? formatDateRu(task.due_date) : "без срока", "</span>\n      </div>\n      ").concat(description ? '<p class="task-description-clamp">'.concat(escapeHtml(description), "</p>") : "", '\n      <div class="stack-line">\n        ').concat(pill(statusLabel(task.status), taskStatusLevel(task.status)), "\n        ").concat(pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority)), "\n      </div>\n    </button>");
   }
   function renderProjectMaterialList(project) {
     const batches = projectDetailBatches(project);
@@ -2866,7 +3317,7 @@
       const canReview = task.status === "completed_pending_acceptance" && (["owner", "construction_manager", "finance_director"].includes(currentRoleBase()) || canActAsTaskUser(task, "reviewer"));
       const lastComment = latestTaskComment(task);
       const taskKey = "task:".concat(task.id);
-      return '\n            <details class="row task-row task-collapsible" data-collapsible-key="'.concat(escapeAttr(taskKey), '"').concat(openAttrForKey(taskKey), '>\n              <summary class="task-summary">\n                <span class="task-summary-main">\n                  <span class="task-summary-title">').concat(pill(taskTypeLabel(task), taskTypeLevel(task)), "<strong>").concat(escapeHtml(task.title || "Задача"), '</strong></span>\n                  <span class="task-summary-meta">').concat(escapeHtml(task.project_title || "объект не указан"), " · ").concat(escapeHtml(task.assignee_name || "ответственный не назначен"), " · ").concat(task.due_date ? formatDateRu(task.due_date) : "без срока", "</span>\n                  ").concat(task.description ? '<span class="task-description-clamp">'.concat(escapeHtml(task.description), "</span>") : "", '\n                  <span class="stack-line">').concat(pill(label(task.status), taskStatusLevel(task.status))).concat(pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority)), '</span>\n                </span>\n              </summary>\n              <div class="task-row-body">\n              <div class="row-grid">\n                <div class="task-main">\n                  <div class="muted">').concat(task.project_title, " · поставил: ").concat(task.creator_name || "не указано", " · создана: ").concat(formatDateRu(task.created_at)).concat(task.start_date ? " · начало: ".concat(formatDateRu(task.start_date)) : "").concat(task.contract_title ? " · ".concat(contractType(task.contract_type), ": ").concat(task.contract_title) : "", "</div>\n                  ").concat(task.description ? '<div class="preserve-lines">'.concat(escapeHtml(task.description), "</div>") : "", "\n                  ").concat(task.rejection_comment ? '<div class="muted">Комментарий по возврату: '.concat(escapeHtml(task.rejection_comment), "</div>") : "", "\n                  ").concat(lastComment ? '<div class="task-last-comment"><strong>'.concat(escapeHtml(lastComment.actor_name || "Комментарий"), ":</strong> ").concat(escapeHtml(lastComment.comment), "</div>") : "", '\n                </div>\n                <div class="task-people">Ответственный: ').concat(task.assignee_name || "не назначен", '<br /><span class="muted">Принимает: ').concat(task.reviewer_name || task.creator_name || "не назначен", '</span></div>\n              </div>\n              <div class="task-actions">\n                <button class="secondary" type="button" data-open-task="').concat(task.id, '">Подробнее</button>\n                ').concat(canComplete ? '<button class="secondary" data-task-action="complete" data-task-id="'.concat(task.id, '">Выполнено</button>') : "", "\n                ").concat(canReview ? '<button class="primary" data-task-action="accept" data-task-id="'.concat(task.id, '">Принять</button><button class="secondary" data-task-action="return" data-task-id="').concat(task.id, '">Вернуть</button>') : "", "\n                ").concat(canDeleteTask(task) ? '<button class="danger-button" data-task-action="delete" data-task-id="'.concat(task.id, '">Удалить</button>') : "", "\n              </div>\n              </div>\n            </details>");
+      return '\n            <details class="row task-row task-collapsible" data-collapsible-key="'.concat(escapeAttr(taskKey), '"').concat(openAttrForKey(taskKey), '>\n              <summary class="task-summary">\n                <span class="task-summary-main">\n                  <span class="task-summary-title">').concat(pill(taskTypeLabel(task), taskTypeLevel(task)), "<strong>").concat(escapeHtml(taskDisplayTitle(task)), '</strong></span>\n                  <span class="task-summary-meta">').concat(escapeHtml(task.project_title || "объект не указан"), " · ").concat(escapeHtml(task.assignee_name || "ответственный не назначен"), " · ").concat(task.due_date ? formatDateRu(task.due_date) : "без срока", "</span>\n                  ").concat(taskDisplayDescription(task) ? '<span class="task-description-clamp">'.concat(escapeHtml(taskDisplayDescription(task)), "</span>") : "", '\n                  <span class="stack-line">').concat(pill(label(task.status), taskStatusLevel(task.status))).concat(pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority)), '</span>\n                </span>\n              </summary>\n              <div class="task-row-body">\n              <div class="row-grid">\n                <div class="task-main">\n                  <div class="muted">').concat(task.project_title, " · поставил: ").concat(task.creator_name || "не указано", " · создана: ").concat(formatDateRu(task.created_at)).concat(task.start_date ? " · начало: ".concat(formatDateRu(task.start_date)) : "").concat(task.contract_title ? " · ".concat(contractType(task.contract_type), ": ").concat(task.contract_title) : "", "</div>\n                  ").concat(taskDisplayDescription(task) ? '<div class="preserve-lines">'.concat(escapeHtml(taskDisplayDescription(task)), "</div>") : "", "\n                  ").concat(task.rejection_comment ? '<div class="muted">Комментарий по возврату: '.concat(escapeHtml(task.rejection_comment), "</div>") : "", "\n                  ").concat(lastComment ? '<div class="task-last-comment"><strong>'.concat(escapeHtml(lastComment.actor_name || "Комментарий"), ":</strong> ").concat(escapeHtml(lastComment.comment), "</div>") : "", '\n                </div>\n                <div class="task-people">Ответственный: ').concat(task.assignee_name || "не назначен", '<br /><span class="muted">Принимает: ').concat(task.reviewer_name || task.creator_name || "не назначен", '</span></div>\n              </div>\n              <div class="task-actions">\n                <button class="secondary" type="button" data-open-task="').concat(task.id, '">Подробнее</button>\n                ').concat(canComplete ? '<button class="secondary" data-task-action="complete" data-task-id="'.concat(task.id, '">Выполнено</button>') : "", "\n                ").concat(canReview ? '<button class="primary" data-task-action="accept" data-task-id="'.concat(task.id, '">Принять</button><button class="secondary" data-task-action="return" data-task-id="').concat(task.id, '">Вернуть</button>') : "", "\n                ").concat(canDeleteTask(task) ? '<button class="danger-button" data-task-action="delete" data-task-id="'.concat(task.id, '">Удалить</button>') : "", "\n              </div>\n              </div>\n            </details>");
     }).join("") : '<p class="muted">'.concat(tasks.length ? "В этом фильтре задач нет." : "Задач пока нет.", "</p>");
   }
   function workProjectId() {
@@ -2954,14 +3405,35 @@
     if (!canComplete && !canReview) return "";
     return '\n    <section class="workflow-panel task-action-panel" data-task-action-panel data-task-id="'.concat(task.id, '">\n      <div class="panel-head">\n        <h3>Действия по задаче</h3>\n        <span class="muted">Результат, перенос срока и файлы фиксируются в истории</span>\n      </div>\n      <label>Комментарий <textarea rows="3" data-task-action-comment placeholder="При выполнении обязательно напишите, что сделано. При возврате - что исправить."></textarea></label>\n      <div class="grid-2">\n        <label>Новый срок при переносе/возврате <input type="date" data-task-action-due-date value="').concat(task.due_date || "", '" /></label>\n        <label>Фото / видео / документ <input type="file" data-task-action-files multiple /></label>\n      </div>\n      ').concat(personalNotifyControl(), '\n      <div class="form-actions">\n        ').concat(canComplete ? '<button class="primary" type="button" data-task-action="complete" data-task-id="'.concat(task.id, '">Выполнено</button><button class="secondary" type="button" data-task-action="postpone" data-task-id="').concat(task.id, '">Частично / перенести срок</button>') : "", "\n        ").concat(canReview ? '<button class="primary" type="button" data-task-action="accept" data-task-id="'.concat(task.id, '">Принять выполнение</button><button class="secondary" type="button" data-task-action="return" data-task-id="').concat(task.id, '">Вернуть на доработку</button>') : "", "\n      </div>\n    </section>");
   }
+  function canEditTaskType(task) {
+    const role = currentRoleBase();
+    if (["owner", "construction_manager", "finance_director"].includes(role)) return true;
+    const userId = Number(currentUserId() || 0);
+    return Boolean(userId && [Number(task.creator_id || 0), Number(task.reviewer_id || 0)].includes(userId));
+  }
+  function renderTaskTypeEditor(task) {
+    if (!canEditTaskType(task)) return "";
+    const current = inferTaskType(task);
+    const options = [
+      ["task", "Задача"],
+      ["question", "Вопрос"],
+      ["decision", "Решение"],
+      ["photo_report", "Фотоотчёт"],
+      ["issue", "Замечание"],
+      ["material", "Материал"],
+      ["check", "Проверка"],
+      ["approval", "Согласование"]
+    ];
+    return '\n    <section class="workflow-panel task-type-editor">\n      <h3>Тип задачи</h3>\n      <div class="inline-form">\n        <select data-task-type-select="'.concat(task.id, '">\n          ').concat(options.map(([value, title]) => '<option value="'.concat(value, '" ').concat(value === current ? "selected" : "", ">").concat(title, "</option>")).join(""), '\n        </select>\n        <button class="secondary" type="button" data-task-type-save="').concat(task.id, '">Сохранить тип</button>\n      </div>\n    </section>');
+  }
   function openTaskDetail(taskId) {
     const task = state.lastTasks.find((item) => Number(item.id) === Number(taskId));
     if (!task) {
       showToast("Задача не найдена");
       return;
     }
-    qs("#taskDetailTitle").textContent = task.title || "Задача";
-    qs("#taskDetailContent").innerHTML = '\n    <section class="workflow-panel compact-workflow">\n      <div class="stack-line">\n        <h3>'.concat(task.project_title || "Объект не указан", "</h3>\n        ").concat(pill(label(task.status), taskStatusLevel(task.status)), "\n        ").concat(pill(task.due_date || "без срока", levelByDate(task.due_date)), "\n        ").concat(pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority)), '\n      </div>\n      <div class="task-detail-grid">\n        <div><span class="muted">Поставил</span><strong>').concat(task.creator_name || "не указано", '</strong></div>\n        <div><span class="muted">Исполнитель</span><strong>').concat(task.assignee_name || "не назначен", '</strong></div>\n        <div><span class="muted">Принимает</span><strong>').concat(task.reviewer_name || task.creator_name || "не назначен", '</strong></div>\n        <div><span class="muted">Дата постановки</span><strong>').concat(formatDateRu(task.created_at), '</strong></div>\n        <div><span class="muted">Дата начала</span><strong>').concat(task.start_date ? formatDateRu(task.start_date) : "не указана", '</strong></div>\n        <div><span class="muted">Договор</span><strong>').concat(task.contract_title ? "".concat(contractType(task.contract_type), ": ").concat(task.contract_title) : "без привязки", "</strong></div>\n      </div>\n      ").concat(task.description ? '<p class="preserve-lines">'.concat(task.description, "</p>") : "", "\n      ").concat(task.rejection_comment ? '<div class="hint-box warning"><strong>Причина возврата / непринятия</strong><p>'.concat(task.rejection_comment, "</p></div>") : "", '\n    </section>\n    <section class="workflow-panel">\n      <h3>История задачи</h3>\n      ').concat(taskTimeline(task), "\n    </section>\n    ").concat(renderTaskActionPanel(task), "\n    ").concat(renderTaskDiscussion(task));
+    qs("#taskDetailTitle").textContent = taskDisplayTitle(task);
+    qs("#taskDetailContent").innerHTML = '\n    <section class="workflow-panel compact-workflow">\n      <div class="stack-line">\n        <h3>'.concat(task.project_title || "Объект не указан", "</h3>\n        ").concat(pill(label(task.status), taskStatusLevel(task.status)), "\n        ").concat(pill(task.due_date || "без срока", levelByDate(task.due_date)), "\n        ").concat(pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority)), '\n      </div>\n      <div class="task-detail-grid">\n        <div><span class="muted">Поставил</span><strong>').concat(task.creator_name || "не указано", '</strong></div>\n        <div><span class="muted">Исполнитель</span><strong>').concat(task.assignee_name || "не назначен", '</strong></div>\n        <div><span class="muted">Принимает</span><strong>').concat(task.reviewer_name || task.creator_name || "не назначен", '</strong></div>\n        <div><span class="muted">Дата постановки</span><strong>').concat(formatDateRu(task.created_at), '</strong></div>\n        <div><span class="muted">Дата начала</span><strong>').concat(task.start_date ? formatDateRu(task.start_date) : "не указана", '</strong></div>\n        <div><span class="muted">Договор</span><strong>').concat(task.contract_title ? "".concat(contractType(task.contract_type), ": ").concat(task.contract_title) : "без привязки", "</strong></div>\n      </div>\n      ").concat(taskDisplayDescription(task) ? '<p class="preserve-lines">'.concat(escapeHtml(taskDisplayDescription(task)), "</p>") : "", "\n      ").concat(task.rejection_comment ? '<div class="hint-box warning"><strong>Причина возврата / непринятия</strong><p>'.concat(task.rejection_comment, "</p></div>") : "", '\n    </section>\n    <section class="workflow-panel">\n      <h3>История задачи</h3>\n      ').concat(taskTimeline(task), "\n    </section>\n    ").concat(renderTaskTypeEditor(task), "\n    ").concat(renderTaskActionPanel(task), "\n    ").concat(renderTaskDiscussion(task));
     qs("#taskDetailDialog").showModal();
   }
   function isWorkStageOpen(projectId, stage) {
@@ -3031,28 +3503,39 @@
       const count = buildMaterialBatches(state.materialRequests || []).filter((batch) => key === "all" || materialPipelineStatus(batch) === key).length;
       button.dataset.count = String(count || "");
     });
+    qsa("[data-material-quick-filter]").forEach((button) => {
+      button.classList.toggle("active", button.dataset.materialQuickFilter === state.materialQuickFilter);
+    });
     const exportButton = qs("#exportCompletedMaterialsButton");
     if (exportButton) exportButton.hidden = !["owner", "construction_manager", "finance_director", "accountant", "procurement_manager"].includes(currentRoleBase());
     const items = await api("/api/material-requests?archive=".concat(state.materialListMode === "archive" ? "1" : "0"));
-    state.materialRequests = items;
-    const visibleItems = currentRoleBase() === "foreman" ? items.filter((item) => Number(item.project_foreman_id) === Number(currentUserId()) || Number(item.creator_id) === Number(currentUserId())) : items;
+    const visibleItems = roleScopedMaterialRows(items);
+    state.materialRequests = visibleItems;
     const allBatches = buildMaterialBatches(visibleItems);
     qsa("[data-material-pipeline-filter]").forEach((button) => {
       const key = button.dataset.materialPipelineFilter;
       button.classList.toggle("active", key === state.materialPipelineFilter);
       button.dataset.count = String(allBatches.filter((batch) => key === "all" || materialPipelineStatus(batch) === key).length);
     });
-    const batches = state.materialPipelineFilter === "all" ? allBatches : allBatches.filter((batch) => materialPipelineStatus(batch) === state.materialPipelineFilter);
+    qsa("[data-material-quick-filter]").forEach((button) => {
+      const key = button.dataset.materialQuickFilter || "all";
+      button.classList.toggle("active", key === state.materialQuickFilter);
+      button.dataset.count = String(allBatches.filter((batch) => materialBatchMatchesQuickFilter(batch, key)).length || "");
+    });
+    const pipelineBatches = state.materialPipelineFilter === "all" ? allBatches : allBatches.filter((batch) => materialPipelineStatus(batch) === state.materialPipelineFilter);
+    const batches = pipelineBatches.filter((batch) => materialBatchMatchesQuickFilter(batch));
     const renderBatchCard = (batch) => {
       const activeCount = materialActiveItems(batch).length;
       const removedCount = materialRemovedItems(batch).length;
       const neededAt = batch.needed_at ? formatDateRu(batch.needed_at) : "не указано";
       const responsible = batch.procurement_name || "Снабжение";
-      return '\n      <button class="row clickable material-request-row material-batch-row" type="button" data-open-material-batch="'.concat(batch.key, '">\n        <div class="material-main">\n          <strong>').concat(materialBatchTitle(batch, currentRoleBase() === "procurement_manager"), '</strong>\n          <div class="material-card-grid">\n            <span><b>Объект:</b> ').concat(escapeHtml(batch.project_title || "не указан"), "</span>\n            <span><b>Позиций:</b> ").concat(activeCount).concat(removedCount ? ", удалено: ".concat(removedCount) : "", "</span>\n            <span><b>Основание:</b> ").concat(escapeHtml(materialBatchBasisSummary(batch) || "не указано"), "</span>\n            <span><b>Кто запросил:</b> ").concat(escapeHtml(batch.creator_name || "не указано"), "</span>\n            <span><b>Когда нужно:</b> ").concat(escapeHtml(neededAt), "</span>\n            <span><b>Ответственный:</b> ").concat(escapeHtml(responsible), '</span>\n          </div>\n          <div class="muted">Сумма: ').concat(money(batch.total_amount), "</div>\n          ").concat(batch.actual_purchase_amount ? '<div class="muted">Фактическая стоимость закупки: '.concat(money(batch.actual_purchase_amount), "</div>") : "", '\n          <div class="muted">').concat(materialBatchDestination(batch), "</div>\n          ").concat(materialReceiptActionNote(batch), "\n          ").concat(batch.revision_comment ? '<div class="muted">Комментарий по доработке: '.concat(batch.revision_comment, "</div>") : "", "\n          ").concat(state.materialListMode === "archive" && batch.archived_at ? '<div class="muted">В архиве с '.concat(formatDateRu(batch.archived_at), "</div>") : "", '\n        </div>\n        <div class="stack-line">\n          ').concat(pill(urgencyLabel(batch.delivery_urgency), urgencyLevel(batch.delivery_urgency)), "\n          ").concat(pill(statusLabel(materialPipelineStatus(batch)), materialPipelineLevel(batch)), "\n        </div>\n      </button>");
+      const firstItem = materialActiveItems(batch)[0] || {};
+      return '\n      <button class="row clickable material-request-row material-batch-row" type="button" data-open-material-batch="'.concat(batch.key, '">\n        <div class="material-main">\n          <strong>').concat(escapeHtml(firstItem.title || materialBatchTitle(batch, currentRoleBase() === "procurement_manager")), '</strong>\n          <div class="material-card-grid">\n            <span><b>Объект:</b> ').concat(escapeHtml(batch.project_title || "не указан"), "</span>\n            <span><b>Позиций:</b> ").concat(activeCount).concat(removedCount ? ", удалено: ".concat(removedCount) : "", "</span>\n            <span><b>Основание:</b> ").concat(escapeHtml(materialBatchBasisSummary(batch) || "не указано"), "</span>\n            <span><b>Кто запросил:</b> ").concat(escapeHtml(batch.creator_name || "не указано"), "</span>\n            <span><b>Когда нужно:</b> ").concat(escapeHtml(neededAt), "</span>\n            <span><b>Ответственный:</b> ").concat(escapeHtml(responsible), '</span>\n          </div>\n          <div class="muted">').concat(escapeHtml(materialBatchTitle(batch, currentRoleBase() === "procurement_manager")), '</div>\n          <div class="muted">Сумма: ').concat(money(batch.total_amount), "</div>\n          ").concat(batch.actual_purchase_amount ? '<div class="muted">Фактическая стоимость закупки: '.concat(money(batch.actual_purchase_amount), "</div>") : "", '\n          <div class="muted">').concat(materialBatchDestination(batch), "</div>\n          ").concat(materialReceiptActionNote(batch), "\n          ").concat(batch.revision_comment ? '<div class="muted">Комментарий по доработке: '.concat(batch.revision_comment, "</div>") : "", "\n          ").concat(state.materialListMode === "archive" && batch.archived_at ? '<div class="muted">В архиве с '.concat(formatDateRu(batch.archived_at), "</div>") : "", '\n        </div>\n        <div class="stack-line">\n          ').concat(pill(urgencyLabel(batch.delivery_urgency), urgencyLevel(batch.delivery_urgency)), "\n          ").concat(pill(statusLabel(materialPipelineStatus(batch)), materialPipelineLevel(batch)), "\n        </div>\n      </button>");
     };
     if (!batches.length) {
       const filterLabel = state.materialPipelineFilter === "all" ? "" : " со статусом «".concat(statusLabel(state.materialPipelineFilter), "»");
-      qs("#materialRows").innerHTML = '<p class="muted">'.concat(state.materialListMode === "archive" ? "В архиве заявок".concat(filterLabel, " пока нет.") : currentRoleBase() === "foreman" ? "По объектам этого прораба заявок".concat(filterLabel, " пока нет. Нажмите “Добавить заявку”, чтобы заказать материалы.") : "Заявок".concat(filterLabel, " пока нет."), "</p>");
+      const quickLabel = state.materialQuickFilter === "all" ? "" : " в выбранном фильтре";
+      qs("#materialRows").innerHTML = '<div class="empty-state"><strong>'.concat(state.materialListMode === "archive" ? "В архиве заявок".concat(filterLabel).concat(quickLabel, " пока нет.") : "Заявок".concat(filterLabel).concat(quickLabel, " пока нет."), '</strong><p class="muted">Заявки появятся здесь, когда прораб или руководитель запросит материалы.</p>').concat(["foreman", "construction_manager", "owner", "finance_director"].includes(currentRoleBase()) ? '<button class="secondary tiny" type="button" data-open-new-material>Создать заявку</button>' : "", "</div>");
       return;
     }
     if (state.materialListMode === "archive") {
@@ -3068,6 +3551,17 @@
       return;
     }
     qs("#materialRows").innerHTML = batches.map(renderBatchCard).join("");
+  }
+  async function openNewMaterialDialog(projectId = state.selectedProjectId) {
+    const form = qs("#materialForm");
+    if (!form) return;
+    form.reset();
+    resetExtraMaterials();
+    qs("#materialEstimatePicker").innerHTML = '<p class="muted">Выберите объект и нажмите “Материалы по смете”.</p>';
+    fillMaterialProjectSelect(projectId);
+    updateMaterialActorHint();
+    await loadMaterialEstimatePicker();
+    qs("#materialDialog").showModal();
   }
   function findMaterialBatch(batchKey) {
     return buildMaterialBatches(state.materialRequests).find((batch) => batch.key === batchKey);
@@ -3288,7 +3782,8 @@
     const currentId = knowledgeCurrentFolderId();
     const currentFolder = knowledgeFolderById(currentId, folders);
     const childFolders = folders.filter((folder) => String(folder.parent_id || "") === currentId).sort((a, b) => String(a.title || "").localeCompare(String(b.title || ""), "ru"));
-    const folderDocs = docs.filter((doc) => String(doc.folder_id || "") === currentId).sort((a, b) => String(documentTitle(a) || "").localeCompare(String(documentTitle(b) || ""), "ru"));
+    const allFolderDocs = docs.filter((doc) => String(doc.folder_id || "") === currentId).sort((a, b) => String(documentTitle(a) || "").localeCompare(String(documentTitle(b) || ""), "ru"));
+    const folderDocs = state.knowledgeClassificationOnly ? allFolderDocs.filter(documentNeedsClassification) : allFolderDocs;
     const parentId = (currentFolder == null ? void 0 : currentFolder.parent_id) ? String(currentFolder.parent_id) : "";
     const emptyMessage = currentId ? "В этой папке пока нет файлов и подпапок." : "База знаний пока пустая. Загружайте сюда регламенты, проектные решения, узлы и общую документацию.";
     const rows = [
@@ -3296,9 +3791,9 @@
       ...childFolders.map((folder) => renderKnowledgeFolderRow(folder, folders, docs)),
       ...folderDocs.map(renderKnowledgeDocumentRow)
     ].filter(Boolean).join("");
-    const unclassifiedRows = folderDocs.filter(documentNeedsClassification);
-    const classificationNotice = unclassifiedRows.length ? '\n      <section class="classification-notice">\n        <strong>Требует классификации</strong>\n        <p class="muted">Эти файлы не удалось автоматически отнести к проекту, смете, договору, акту, счёту или фото/видео.</p>\n        <div class="stack-line">'.concat(unclassifiedRows.slice(0, 8).map((doc) => pill(documentTitle(doc), "warning")).join(""), "</div>\n      </section>") : "";
-    return '\n    <section class="knowledge-manager" data-knowledge-drop-zone data-folder-id="'.concat(escapeAttr(currentId), '">\n      ').concat(renderKnowledgeBreadcrumb(currentId, folders), '\n      <div class="knowledge-current-head">\n        <div>\n          <h3>').concat(escapeHtml((currentFolder == null ? void 0 : currentFolder.title) || "База знаний"), '</h3>\n          <p class="muted">').concat(currentId ? escapeHtml((currentFolder == null ? void 0 : currentFolder.path) || "") : "Корень базы знаний", " · ").concat(childFolders.length, " папок · ").concat(folderDocs.length, " файлов</p>\n        </div>\n        ").concat(canManageKnowledgeBase() ? '<div class="knowledge-drop-text">Перетащите файлы или папку сюда, чтобы загрузить их в текущую папку</div>' : "", '\n      </div>\n      <div class="knowledge-list">\n        ').concat(classificationNotice, "\n        ").concat(rows || '<p class="muted knowledge-empty">'.concat(emptyMessage, "</p>"), "\n      </div>\n      ").concat(canManageKnowledgeBase() ? renderKnowledgeUploadOverlay() : "", "\n    </section>");
+    const unclassifiedRows = allFolderDocs.filter(documentNeedsClassification);
+    const classificationNotice = unclassifiedRows.length ? '\n      <section class="classification-notice">\n        <strong>Требует классификации</strong>\n        <p class="muted">Эти файлы не удалось автоматически отнести к проекту, смете, договору, акту, счёту или фото/видео.</p>\n        <div class="stack-line">'.concat(unclassifiedRows.slice(0, 8).map((doc) => pill(documentTitle(doc), "warning")).join(""), '</div>\n        <button class="secondary tiny" type="button" data-knowledge-classification-filter="').concat(state.knowledgeClassificationOnly ? "all" : "unclassified", '">').concat(state.knowledgeClassificationOnly ? "Показать все файлы" : "Показать только неразобранные", "</button>\n      </section>") : "";
+    return '\n    <section class="knowledge-manager" data-knowledge-drop-zone data-folder-id="'.concat(escapeAttr(currentId), '">\n      ').concat(renderKnowledgeBreadcrumb(currentId, folders), '\n      <div class="knowledge-current-head">\n        <div>\n          <h3>').concat(escapeHtml((currentFolder == null ? void 0 : currentFolder.title) || "База знаний"), '</h3>\n          <p class="muted">').concat(currentId ? escapeHtml((currentFolder == null ? void 0 : currentFolder.path) || "") : "Корень базы знаний", " · ").concat(childFolders.length, " папок · ").concat(folderDocs.length, " файлов").concat(state.knowledgeClassificationOnly ? " · фильтр: требуют классификации" : "", "</p>\n        </div>\n        ").concat(canManageKnowledgeBase() ? '<div class="knowledge-drop-text">Перетащите файлы или папку сюда, чтобы загрузить их в текущую папку</div>' : "", '\n      </div>\n      <div class="knowledge-list">\n        ').concat(classificationNotice, "\n        ").concat(rows || '<p class="muted knowledge-empty">'.concat(emptyMessage, "</p>"), "\n      </div>\n      ").concat(canManageKnowledgeBase() ? renderKnowledgeUploadOverlay() : "", "\n    </section>");
   }
   function knowledgeUploadItem(file, relativePath = "") {
     return {
@@ -4081,14 +4576,17 @@
     }
   }
   function bindEvents() {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u;
     bindStableDetailsTouchGuard();
     bindWheelPageScroll();
     initPullToRefresh();
     qsa("[data-view]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
     qsa("[data-view-target]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.viewTarget)));
     qs("#refreshButton").addEventListener("click", () => refreshAppFromUser("Обновляем данные").catch((error) => showToast(error.message)));
-    (_a = qs("#logoutButton")) == null ? void 0 : _a.addEventListener("click", () => {
+    (_a = qs("#mobileQuickActionToggle")) == null ? void 0 : _a.addEventListener("click", () => toggleMobileQuickActions());
+    (_b = qs("#mobileQuickActionClose")) == null ? void 0 : _b.addEventListener("click", () => toggleMobileQuickActions(false));
+    (_c = qs("#mobileProfileButton")) == null ? void 0 : _c.addEventListener("click", () => showToast("Вы вошли как: ".concat(roleLabel(state.currentRole))));
+    (_d = qs("#logoutButton")) == null ? void 0 : _d.addEventListener("click", () => {
       localStorage.removeItem("currentRole");
       window.location.href = "/logout";
     });
@@ -4114,7 +4612,7 @@
       resetProjectDialog();
       qs("#projectDialog").showModal();
     });
-    (_b = qs("#newContractButton")) == null ? void 0 : _b.addEventListener("click", () => openContractDialog(state.selectedProjectId || ""));
+    (_e = qs("#newContractButton")) == null ? void 0 : _e.addEventListener("click", () => openContractDialog(state.selectedProjectId || ""));
     qs("#newTaskButton").addEventListener("click", () => {
       var _a2;
       const form = qs("#taskForm");
@@ -4127,38 +4625,29 @@
       loadTaskContractOptions(((_a2 = form.elements.project_id) == null ? void 0 : _a2.value) || "");
       qs("#taskDialog").showModal();
     });
-    (_c = qs('#taskForm select[name="project_id"]')) == null ? void 0 : _c.addEventListener("change", (event) => loadTaskContractOptions(event.target.value));
+    (_f = qs('#taskForm select[name="project_id"]')) == null ? void 0 : _f.addEventListener("change", (event) => loadTaskContractOptions(event.target.value));
     qs("#newEstimateJobButton").addEventListener("click", () => openEstimateJobDialog());
-    (_d = qs('#estimateJobForm select[name="estimate_type"]')) == null ? void 0 : _d.addEventListener("change", () => syncEstimateSiteCostsByType());
-    (_e = qs('#estimateJobForm select[name="site_costs_policy"]')) == null ? void 0 : _e.addEventListener("change", () => {
+    (_g = qs('#estimateJobForm select[name="estimate_type"]')) == null ? void 0 : _g.addEventListener("change", () => syncEstimateSiteCostsByType());
+    (_h = qs('#estimateJobForm select[name="site_costs_policy"]')) == null ? void 0 : _h.addEventListener("change", () => {
       qs("#estimateJobForm").dataset.siteCostsTouched = "true";
     });
-    (_f = qs('#estimateJobFileForm select[name="mode"]')) == null ? void 0 : _f.addEventListener("change", updateEstimateFileDialogMode);
-    qs("#newMaterialButton").addEventListener("click", async () => {
-      const form = qs("#materialForm");
-      form.reset();
-      resetExtraMaterials();
-      qs("#materialEstimatePicker").innerHTML = '<p class="muted">Выберите объект и нажмите “Материалы по смете”.</p>';
-      fillMaterialProjectSelect(state.selectedProjectId);
-      updateMaterialActorHint();
-      await loadMaterialEstimatePicker();
-      qs("#materialDialog").showModal();
-    });
+    (_i = qs('#estimateJobFileForm select[name="mode"]')) == null ? void 0 : _i.addEventListener("change", updateEstimateFileDialogMode);
+    qs("#newMaterialButton").addEventListener("click", async () => openNewMaterialDialog());
     qs("#newVariationButton").addEventListener("click", () => qs("#variationDialog").showModal());
-    (_g = qs("#newObjectRemarkButton")) == null ? void 0 : _g.addEventListener("click", () => {
+    (_j = qs("#newObjectRemarkButton")) == null ? void 0 : _j.addEventListener("click", () => {
       const form = qs("#objectRemarkForm");
       form.reset();
       if (state.selectedProjectId && form.elements.project_id) form.elements.project_id.value = String(state.selectedProjectId);
       qs("#objectRemarkDialog").showModal();
     });
-    (_h = qs("#newPhotoReportButton")) == null ? void 0 : _h.addEventListener("click", () => {
+    (_k = qs("#newPhotoReportButton")) == null ? void 0 : _k.addEventListener("click", () => {
       const form = qs("#photoReportForm");
       form.reset();
       if (state.selectedProjectId && form.elements.project_id) form.elements.project_id.value = String(state.selectedProjectId);
       form.elements.report_date.value = todayIso();
       qs("#photoReportDialog").showModal();
     });
-    (_i = qs("#newKnowledgeFolderButton")) == null ? void 0 : _i.addEventListener("click", () => {
+    (_l = qs("#newKnowledgeFolderButton")) == null ? void 0 : _l.addEventListener("click", () => {
       const form = qs("#knowledgeFolderForm");
       form.reset();
       fillKnowledgeFolderSelects();
@@ -4174,7 +4663,7 @@
       qs("#documentDialog").showModal();
     });
     qs("#newEventButton").addEventListener("click", () => qs("#eventDialog").showModal());
-    (_j = qs("#refreshFeedbackButton")) == null ? void 0 : _j.addEventListener("click", async () => {
+    (_m = qs("#refreshFeedbackButton")) == null ? void 0 : _m.addEventListener("click", async () => {
       try {
         await renderFeedback();
         showToast("Обратная связь обновлена");
@@ -4182,7 +4671,7 @@
         showToast(error.message || "Не удалось обновить обратную связь");
       }
     });
-    (_k = qs("#deleteSelectedFeedbackButton")) == null ? void 0 : _k.addEventListener("click", async () => {
+    (_n = qs("#deleteSelectedFeedbackButton")) == null ? void 0 : _n.addEventListener("click", async () => {
       if (!canDeleteFeedback()) {
         showToast("Удаление сообщений недоступно для текущей роли");
         return;
@@ -4203,10 +4692,10 @@
       showToast("Удалено сообщений: ".concat(result.deleted || ids.length));
     });
     qsa("[data-close]").forEach((button) => button.addEventListener("click", () => qs("#".concat(button.dataset.close)).close()));
-    (_l = qs("#estimateImagePrev")) == null ? void 0 : _l.addEventListener("click", () => moveEstimateGallery(-1));
-    (_m = qs("#estimateImageNext")) == null ? void 0 : _m.addEventListener("click", () => moveEstimateGallery(1));
+    (_o = qs("#estimateImagePrev")) == null ? void 0 : _o.addEventListener("click", () => moveEstimateGallery(-1));
+    (_p = qs("#estimateImageNext")) == null ? void 0 : _p.addEventListener("click", () => moveEstimateGallery(1));
     let estimateGalleryTouchX = null;
-    (_n = qs("#estimateImageStage")) == null ? void 0 : _n.addEventListener(
+    (_q = qs("#estimateImageStage")) == null ? void 0 : _q.addEventListener(
       "touchstart",
       (event) => {
         var _a2, _b2, _c2;
@@ -4214,7 +4703,7 @@
       },
       { passive: true }
     );
-    (_o = qs("#estimateImageStage")) == null ? void 0 : _o.addEventListener(
+    (_r = qs("#estimateImageStage")) == null ? void 0 : _r.addEventListener(
       "touchend",
       (event) => {
         var _a2, _b2, _c2;
@@ -4250,6 +4739,12 @@
     qsa("[data-material-pipeline-filter]").forEach(
       (button) => button.addEventListener("click", async () => {
         state.materialPipelineFilter = button.dataset.materialPipelineFilter || "all";
+        await renderMaterials();
+      })
+    );
+    qsa("[data-material-quick-filter]").forEach(
+      (button) => button.addEventListener("click", async () => {
+        state.materialQuickFilter = button.dataset.materialQuickFilter || "all";
         await renderMaterials();
       })
     );
@@ -4321,9 +4816,34 @@
         openTaskDetail(openTaskButton.dataset.openTask);
         return;
       }
+      const openNewMaterialButton = event.target.closest("[data-open-new-material]");
+      if (openNewMaterialButton) {
+        await openNewMaterialDialog();
+        return;
+      }
+      const mobileActionButton = event.target.closest("[data-mobile-action]");
+      if (mobileActionButton) {
+        if (mobileActionButton.dataset.projectContext) state.selectedProjectId = Number(mobileActionButton.dataset.projectContext);
+        await handleMobileQuickAction(mobileActionButton.dataset.mobileAction);
+        return;
+      }
       const taskCommentButton = event.target.closest("[data-task-comment-send]");
       if (taskCommentButton) {
         await handleTaskComment(taskCommentButton);
+        return;
+      }
+      const taskTypeSaveButton = event.target.closest("[data-task-type-save]");
+      if (taskTypeSaveButton) {
+        const taskId = taskTypeSaveButton.dataset.taskTypeSave;
+        const select = qs('[data-task-type-select="'.concat(taskId, '"]'));
+        await api("/api/tasks/".concat(taskId, "/type"), {
+          method: "POST",
+          body: JSON.stringify({ task_type: (select == null ? void 0 : select.value) || "task" })
+        });
+        await loadAll();
+        if (state.view === "tasks") await renderTasks();
+        openTaskDetail(taskId);
+        showToast("Тип задачи обновлён");
         return;
       }
       const feedbackFilterButton = event.target.closest("[data-feedback-filter]");
@@ -4556,7 +5076,14 @@
       }
       const knowledgeFolderOpenButton = event.target.closest("[data-knowledge-folder-open]");
       if (knowledgeFolderOpenButton) {
+        state.knowledgeClassificationOnly = false;
         setKnowledgeCurrentFolderId(knowledgeFolderOpenButton.dataset.knowledgeFolderOpen || "");
+        await renderDocuments();
+        return;
+      }
+      const knowledgeClassificationFilterButton = event.target.closest("[data-knowledge-classification-filter]");
+      if (knowledgeClassificationFilterButton) {
+        state.knowledgeClassificationOnly = knowledgeClassificationFilterButton.dataset.knowledgeClassificationFilter === "unclassified";
         await renderDocuments();
         return;
       }
@@ -4884,8 +5411,8 @@
       qs('#taskForm input[name="creator_id"]').value = currentUserId() || "";
       submitForm("taskDialog", "taskForm", "/api/tasks", "Задача создана");
     });
-    (_p = qs("#photoReportForm")) == null ? void 0 : _p.addEventListener("submit", submitPhotoReportForm);
-    (_q = qs("#objectRemarkForm")) == null ? void 0 : _q.addEventListener("submit", submitObjectRemarkForm);
+    (_s = qs("#photoReportForm")) == null ? void 0 : _s.addEventListener("submit", submitPhotoReportForm);
+    (_t = qs("#objectRemarkForm")) == null ? void 0 : _t.addEventListener("submit", submitObjectRemarkForm);
     qs("#estimateJobForm").addEventListener("submit", async (event) => {
       var _a2;
       event.preventDefault();
@@ -5073,7 +5600,7 @@
       switchView("materials");
       showToast("Материалы сметы загружены в объект");
     });
-    (_r = qs("#knowledgeFolderForm")) == null ? void 0 : _r.addEventListener("submit", async (event) => {
+    (_u = qs("#knowledgeFolderForm")) == null ? void 0 : _u.addEventListener("submit", async (event) => {
       event.preventDefault();
       const form = qs("#knowledgeFolderForm");
       try {
