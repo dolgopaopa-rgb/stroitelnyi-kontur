@@ -27,6 +27,23 @@ function checkLine(label, value) {
   return `— ${label}: ${statusIcon(value)}`;
 }
 
+export function looksCorruptedText(message) {
+  const value = String(message || "");
+  if (!value.trim()) return false;
+  const compact = value.replace(/\s+/g, "");
+  const questionCount = [...value].filter((char) => char === "?").length;
+  if (compact.includes("?????") && questionCount >= 10) return true;
+  const suspiciousLines = value
+    .split(/\n/)
+    .filter((line) => {
+      const clean = line.trim();
+      if (clean.length < 18) return false;
+      const lineQuestionCount = [...clean].filter((char) => char === "?").length;
+      return lineQuestionCount >= 5 && lineQuestionCount / clean.length > 0.25;
+    }).length;
+  return suspiciousLines >= 2;
+}
+
 export function formatMaxReport(input = {}) {
   const checks = input.checks || {};
   const problems = input.problems || [];
@@ -84,10 +101,12 @@ export function validateMaxReport(message) {
   const hasLongSingleParagraph = String(message || "")
     .split(/\n\s*\n/)
     .some((paragraph) => paragraph.length > 900);
+  const hasCorruptedText = looksCorruptedText(message);
   return {
-    ok: missing.length === 0 && hasSectionBreaks && !hasLongSingleParagraph,
+    ok: missing.length === 0 && hasSectionBreaks && !hasLongSingleParagraph && !hasCorruptedText,
     missing,
     hasSectionBreaks,
     hasLongSingleParagraph,
+    hasCorruptedText,
   };
 }

@@ -1223,6 +1223,18 @@ def max_message_text_is_corrupted(text: str) -> bool:
     has_cyrillic = bool(re.search(r"[А-Яа-яЁё]", value))
     question_count = value.count("?")
     compact = re.sub(r"\s+", "", value)
+    if "?????" in compact and question_count >= 10:
+        return True
+    suspicious_lines = 0
+    for line in value.splitlines():
+        clean_line = line.strip()
+        if len(clean_line) < 18:
+            continue
+        line_question_count = clean_line.count("?")
+        if line_question_count >= 5 and line_question_count / max(len(clean_line), 1) > 0.25:
+            suspicious_lines += 1
+    if suspicious_lines >= 2:
+        return True
     return not has_cyrillic and ("?????" in compact or (question_count >= 12 and question_count / max(len(value), 1) > 0.12))
 
 
