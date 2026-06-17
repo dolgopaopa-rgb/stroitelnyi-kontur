@@ -3032,7 +3032,27 @@
     if (/смет/.test(title)) return "нужна проверка сметчика";
     if (/ответствен/.test(title)) return "нет ответственного";
     if (/срок/.test(title)) return "задача без срока";
-    return row.related_type || row.title || "сигнал";
+    const relatedType = String(row.related_type || "").toLowerCase();
+    const relatedLabels = {
+      task: "Задача",
+      tasks: "Задача",
+      material: "Материалы вне основной сметы",
+      materials: "Материалы вне основной сметы",
+      material_request: "Материалы вне основной сметы",
+      material_requests: "Материалы вне основной сметы",
+      photo: "Нет фотоотчёта",
+      photo_report: "Нет фотоотчёта",
+      photo_reports: "Нет фотоотчёта",
+      blocker: "Блокер",
+      blockers: "Блокер",
+      object_remark: "Замечание",
+      object_remarks: "Замечание",
+      variation: "Допработа",
+      variations: "Допработа",
+      estimate: "Смета",
+      estimate_job: "Смета"
+    };
+    return relatedLabels[relatedType] || row.title || "Сигнал";
   }
   function normalizeSignalPreviewText(row) {
     const title = String(row.title || "Событие").trim();

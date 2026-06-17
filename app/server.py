@@ -4183,7 +4183,29 @@ class AppHandler(BaseHTTPRequestHandler):
                 return "нет ответственного"
             if "срок" in title:
                 return "задача без срока"
-            return str(row.get("related_type") or row.get("title") or "сигнал")
+            related_type = str(row.get("related_type") or "").strip().lower()
+            related_labels = {
+                "task": "Задача",
+                "tasks": "Задача",
+                "material": "Материалы вне основной сметы",
+                "materials": "Материалы вне основной сметы",
+                "material_request": "Материалы вне основной сметы",
+                "material_requests": "Материалы вне основной сметы",
+                "photo": "Нет фотоотчёта",
+                "photo_report": "Нет фотоотчёта",
+                "photo_reports": "Нет фотоотчёта",
+                "blocker": "Блокер",
+                "blockers": "Блокер",
+                "object_remark": "Замечание",
+                "object_remarks": "Замечание",
+                "variation": "Допработа",
+                "variations": "Допработа",
+                "estimate": "Смета",
+                "estimate_job": "Смета",
+            }
+            if related_type in related_labels:
+                return related_labels[related_type]
+            return str(row.get("title") or "Сигнал")
 
         def snapshot_dedupe_signals(items: list[dict]) -> list[dict]:
             grouped: dict[str, dict] = {}
@@ -4400,12 +4422,18 @@ class AppHandler(BaseHTTPRequestHandler):
         feature_body = "".join(feature_row(key, value) for key, value in feature_flags.items())
         app_js_snapshot = (STATIC_DIR / "app.js").read_text(encoding="utf-8", errors="replace") if (STATIC_DIR / "app.js").exists() else ""
         index_snapshot = (STATIC_DIR / "index.html").read_text(encoding="utf-8", errors="replace") if (STATIC_DIR / "index.html").exists() else ""
+        styles_snapshot = (STATIC_DIR / "styles.css").read_text(encoding="utf-8", errors="replace") if (STATIC_DIR / "styles.css").exists() else ""
         server_snapshot = Path(__file__).read_text(encoding="utf-8", errors="replace")
+        master_variant = next((variant for variant in role_variants if variant[0] == "Мастер"), None)
+        master_items = set((master_variant[2] if master_variant else []) + (master_variant[3] if master_variant else []))
+        master_required_items = {"Что сделать", "Готово", "Добавить фото", "Сообщить проблему", "Комментарий"}
+        master_complex_items = {"Работы", "Материалы"}
+        master_has_simple_mode = master_required_items.issubset(master_items) and not master_complex_items.intersection(master_items)
         first_tz_checks = {
             "human_status_labels": "ok" if feature_flags.get("human_status_labels") else "missing",
             "today_screen": "ok" if feature_flags.get("today_screen") else "missing",
             "object_attention_block": "ok" if feature_flags.get("object_attention_block") else "missing",
-            "task_short_cards": "ok" if all(marker in app_js_snapshot for marker in ["task-summary-title", "task-description-clamp", "renderCompactTaskRow"]) else "partial",
+            "task_short_cards": "ok" if all(marker in app_js_snapshot for marker in ["TASK_DESCRIPTION_COLLAPSED_IN_LIST = true", "task-summary-title", "task-row-body", "renderCompactTaskRow"]) else "partial",
             "photo_reports_entity": "ok" if feature_flags.get("photo_reports_entity") else "missing",
             "object_issues_entity": "ok" if feature_flags.get("object_issues_entity") else "missing",
             "feedback_split": "ok" if "object_remarksView" in index_snapshot and "feedbackView" in index_snapshot else "missing",
@@ -4436,11 +4464,11 @@ class AppHandler(BaseHTTPRequestHandler):
             "empty_states": "ok" if "renderPhotoEmptyState" in app_js_snapshot and "renderRemarkEmptyState" in app_js_snapshot and "empty-state" in app_js_snapshot else "partial",
             "role_navigation": "ok" if "navLabelsByRole" in app_js_snapshot and "viewAccess" in app_js_snapshot else "partial",
             "role_today_has_real_cards": "ok" if "role-card-examples" in server_snapshot and "worker-simple-card" in server_snapshot else "partial",
-            "worker_mode_simplified": "ok" if "worker-simple-card" in server_snapshot and "Смотрит работы" not in server_snapshot else "partial",
+            "worker_mode_simplified": "ok" if "worker-simple-card" in server_snapshot and master_has_simple_mode else "partial",
             "task_description_collapsed_in_list": "ok" if "TASK_DESCRIPTION_COLLAPSED_IN_LIST = true" in app_js_snapshot else "partial",
             "signal_pluralization": "ok" if "snapshot_positions_label" in server_snapshot and "positionsLabel" in app_js_snapshot else "partial",
             "materials_pipeline_tabs_visible": "ok" if all(label in server_snapshot for label in ["Нужно согласовать", "Согласовано", "Заказано", "В пути", "На объекте", "Проблема", "Закрыто"]) else "partial",
-            "mobile_plus_button_separated": "ok" if "mobile-nav-demo" in server_snapshot and "mobile-plus" in ((STATIC_DIR / "styles.css").read_text(encoding="utf-8", errors="replace")) else "partial",
+            "mobile_plus_button_separated": "ok" if "mobile-nav-demo" in server_snapshot and "nav-separator" in server_snapshot and 'aria-label="Сегодня | Объекты | + | Уведомления | Я"' in server_snapshot and "mobile-plus" in styles_snapshot else "partial",
             "live_audit_login": qa_snapshot_status(qa_report, "live_audit_login_actual_access"),
         }
         stage3_body = "".join(
@@ -4527,7 +4555,7 @@ class AppHandler(BaseHTTPRequestHandler):
         blocker_body = rows(blocker_rows, blocker_card, "Блокеров пока нет")
         mobile_menu_body = """
         <article class="sample-row">
-          <div class="mobile-nav-demo"><span>Сегодня</span><span>Объекты</span><strong>+</strong><span>Уведомления</span><span>Я</span></div>
+          <div class="mobile-nav-demo" aria-label="Сегодня | Объекты | + | Уведомления | Я"><span>Сегодня</span><span class="nav-separator">|</span><span>Объекты</span><span class="nav-separator">|</span><strong>+</strong><span class="nav-separator">|</span><span>Уведомления</span><span class="nav-separator">|</span><span>Я</span></div>
           <p class="muted">Кнопка “+” открывает быстрые действия по роли: фото, задача, замечание, материал или проблема.</p>
         </article>
         """
@@ -4627,7 +4655,8 @@ class AppHandler(BaseHTTPRequestHandler):
             .short-description {{ color:var(--muted); margin:6px 0 0; line-height:1.35; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }}
             .signal-preview {{ display:grid; gap:4px; color:var(--muted); font-size:13px; margin-top:6px; }}
             .empty-demo {{ background:#f7fbfb; border-style:dashed; }}
-            .mobile-nav-demo {{ display:grid; grid-template-columns:1fr 1fr 52px 1fr 1fr; align-items:center; gap:6px; padding:8px; border-radius:18px; background:#142127; color:white; text-align:center; font-size:12px; }}
+            .mobile-nav-demo {{ display:grid; grid-template-columns:1fr auto 1fr auto 52px auto 1fr auto 1fr; align-items:center; gap:6px; padding:8px; border-radius:18px; background:#142127; color:white; text-align:center; font-size:12px; }}
+            .mobile-nav-demo .nav-separator {{ color:rgba(255,255,255,.45); font-weight:700; }}
             .mobile-nav-demo strong {{ display:grid; place-items:center; width:48px; height:48px; border-radius:50%; background:var(--brand); font-size:26px; justify-self:center; box-shadow:0 6px 18px rgba(0,0,0,.22); }}
             .meta-panel {{ background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:12px; display:grid; gap:8px; }}
             .meta-row {{ display:grid; grid-template-columns:1fr auto; gap:10px; align-items:center; border-bottom:1px solid #eef2f4; padding-bottom:7px; }}
@@ -4672,7 +4701,7 @@ class AppHandler(BaseHTTPRequestHandler):
               {block("20. Замечания по объектам", ["Открыть замечание", "Проверить фото до/после", "Посмотреть ответственного"], ["Объект", "Зона", "Срок", "Проверка"], remark_body)}
               {block("21. Пустое состояние замечаний", ["Создать замечание", "Назначить ответственного"], ["Пример структуры", "Контроль качества"], remark_empty_body)}
               {block("22. Документы", ["Открыть папку", "Посмотреть список", "Проверить классификацию"], ["Проект", "Смета", "Договор", "Акт", "Счёт", "Фото/видео", "Не разобрано"], document_body)}
-              {block("23. Мобильное меню с кнопкой +", ["Открыть быстрое действие", "Добавить фото", "Сообщить проблему"], ["Сегодня", "Объекты", "+", "Уведомления", "Я"], mobile_menu_body, mobile=True)}
+              {block("23. Мобильное меню с кнопкой +", ["Открыть быстрое действие", "Добавить фото", "Сообщить проблему"], ["Сегодня | Объекты | + | Уведомления | Я"], mobile_menu_body, mobile=True)}
               {block("24. Обратная связь по программе", ["Фильтровать", "Открыть сообщение", "Смотреть статус"], ["MAX", "Комментарии", "Статусы"], feedback_body)}
               {block("25. Настройки", ["Оценить структуру ролей", "Смотреть список участников"], ["Роли", "Уведомления", "MAX"], settings_body)}
               {block("26. Мобильный вид карточки объекта", ["Развернуть раздел", "Свернуть раздел", "Перейти к задачам"], ["Обзор", "Вкладки", "Документы"], selected_project_body, mobile=True)}

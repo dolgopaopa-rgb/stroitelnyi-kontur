@@ -414,6 +414,11 @@ async function runUx(results, page) {
   const rolePanelCount = await page.locator('[data-testid^="today-role-"]').count().catch(() => 0);
   add(results, "UX Sanity QA Agent", "Today screen is role-aware", rolePanelCount > 0 ? "OK" : "FAIL", `role-panels=${rolePanelCount}`, rolePanelCount > 0 ? "normal" : "blocker");
   await route(page, "dashboard");
+  const technicalSignalType = await page.evaluate(() => {
+    const text = document.body.innerText || "";
+    return /\[(task|tasks|material_request|material_requests|photo_report|photo_reports|object_remark|object_remarks|variation|variations|estimate_job)\]/i.test(text);
+  }).catch(() => false);
+  add(results, "UX Sanity QA Agent", "Signal types are human-readable", technicalSignalType ? "FAIL" : "OK", `technical-signal-type=${technicalSignalType}`, technicalSignalType ? "blocker" : "normal");
   const duplicateSignalText = await page.evaluate(() => {
     const cards = [...document.querySelectorAll('[data-testid="signal-card"] .signal-preview')];
     return cards.some((card) => {
@@ -447,9 +452,14 @@ async function runMobile(results, playwright) {
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 4);
       await page.locator('[data-testid="mobile-plus-button"]').click().catch(() => {});
       const actions = await page.locator('[data-testid="mobile-quick-actions"] [data-mobile-action]').count().catch(() => 0);
-      const plusSeparated = await page.locator('[data-testid="mobile-plus-button"].mobile-plus').isVisible().catch(() => false);
+      const plusButton = page.locator('[data-testid="mobile-plus-button"].mobile-plus');
+      const plusVisible = await plusButton.isVisible().catch(() => false);
+      const plusBox = await plusButton.boundingBox().catch(() => null);
+      const navBox = await page.locator('[data-testid="mobile-bottom-nav"]').boundingBox().catch(() => null);
+      const plusSeparated = Boolean(plusVisible && plusBox && navBox && plusBox.width >= 44 && plusBox.height >= 44 && plusBox.x > navBox.x + 80 && plusBox.x + plusBox.width < navBox.x + navBox.width - 80);
       const status = navVisible && !overflow && actions > 0 && plusSeparated ? "OK" : "FAIL";
-      add(results, "Mobile QA Agent", `Viewport ${viewport.width}x${viewport.height}`, status, `nav=${navVisible}; horizontalOverflow=${overflow}; actions=${actions}; plusSeparated=${plusSeparated}`, status === "FAIL" ? "blocker" : "normal");
+      const plusDetails = plusBox ? `${Math.round(plusBox.width)}x${Math.round(plusBox.height)}@${Math.round(plusBox.x)}` : "missing";
+      add(results, "Mobile QA Agent", `Viewport ${viewport.width}x${viewport.height}`, status, `nav=${navVisible}; horizontalOverflow=${overflow}; actions=${actions}; plusSeparated=${plusSeparated}; plusBox=${plusDetails}`, status === "FAIL" ? "blocker" : "normal");
     } finally {
       await browser.close().catch(() => {});
     }
