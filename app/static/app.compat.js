@@ -1175,11 +1175,43 @@
       button.hidden = !canView(button.dataset.view);
       button.classList.toggle("active", button.dataset.view === view);
     });
-    qsa(".view").forEach((node) => node.classList.remove("active"));
-    qs("#".concat(view, "View")).classList.add("active");
+    qsa(".view").forEach((node) => {
+      var _a;
+      node.classList.remove("active");
+      (_a = node.querySelector(":scope > .qa-page-marker")) == null ? void 0 : _a.remove();
+    });
+    const activeView = qs("#".concat(view, "View"));
+    activeView.classList.add("active");
+    const pageTestId = viewPageTestId(view);
+    if (activeView.getAttribute("data-testid") !== pageTestId) {
+      const marker = document.createElement("span");
+      marker.className = "qa-page-marker";
+      marker.hidden = true;
+      marker.setAttribute("aria-hidden", "true");
+      marker.setAttribute("data-testid", pageTestId);
+      activeView.prepend(marker);
+    }
     qs("#pageTitle").textContent = viewTitles[view];
     syncTopbarAccess();
     initSortableZones();
+  }
+  function viewPageTestId(view) {
+    return {
+      today: "today-page",
+      dashboard: "signals-page",
+      projects: "objects-page",
+      estimates: "estimates-page",
+      tasks: "tasks-page",
+      works: "works-page",
+      materials: "materials-page",
+      variations: "variations-page",
+      object_remarks: "object-issues-page",
+      photos: "photo-reports-page",
+      locations: "locations-page",
+      documents: "documents-page",
+      feedback: "feedback-page",
+      events: "events-page"
+    }[view] || "".concat(view, "-page");
   }
   function clearProjectDetail() {
     const detail = qs("#projectDetail");

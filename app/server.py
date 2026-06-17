@@ -3904,6 +3904,7 @@ class AppHandler(BaseHTTPRequestHandler):
         commit_hash = str(metadata["commitHash"])
         qa_report = latest_qa_report()
         qa_checks = qa_report.get("checks") if isinstance(qa_report.get("checks"), dict) else {}
+        qa_coverage = qa_report.get("coverage") if isinstance(qa_report.get("coverage"), dict) else {}
         qa_overall = qa_report_overall_for_app(qa_report, commit_hash)
         qa_generated_at = str(qa_report.get("generatedAt") or "not_run")
         qa_app_version = str(qa_report.get("appVersion") or app_version or "unknown")
@@ -3992,6 +3993,10 @@ class AppHandler(BaseHTTPRequestHandler):
             value = qa_snapshot_status(qa_report, key)
             level = "success" if value == "ok" else "danger" if value == "failed" else "warning" if value == "partial" else "neutral"
             return f'<div class="meta-row"><span><code>{e(key)}</code> {e(title)}</span>{badge(value, level)}</div>'
+
+        def coverage_row(key: str, title: str, suffix: str = "") -> str:
+            value = qa_coverage.get(key, "not_run")
+            return f'<div class="meta-row"><span><code>{e(key)}</code> {e(title)}</span><strong>{e(value)}{e(suffix)}</strong></div>'
 
         def project_tasks(project_id: int) -> list[dict]:
             return [task for task in task_rows if int(task.get("project_id") or 0) == project_id]
@@ -4566,6 +4571,11 @@ class AppHandler(BaseHTTPRequestHandler):
           <div class="meta-row"><span>commitHash</span><strong>{e(qa_commit)}</strong></div>
           <div class="meta-row"><span>productionCommitHash</span><strong>{e(commit_hash)}</strong></div>
           <div class="meta-row"><span>qaRunCommitHash</span><strong>{e(qa_commit)}</strong></div>
+          <div class="meta-row"><span>targetEnvironment</span><strong>{e(qa_report.get("targetEnvironment") or "not_run")}</strong></div>
+          <div class="meta-row"><span>externalBaseUrl</span><strong>{e(qa_report.get("externalBaseUrl") or "not_run")}</strong></div>
+          <div class="meta-row"><span>localTestUrl</span><strong>{e(qa_report.get("localTestUrl") or "not_run")}</strong></div>
+          <div class="meta-row"><span>productionVersionCommitHash</span><strong>{e(qa_report.get("productionVersionCommitHash") or "not_run")}</strong></div>
+          <div class="meta-row"><span>snapshotCommitHash</span><strong>{e(qa_report.get("snapshotCommitHash") or "not_run")}</strong></div>
           <div class="meta-row"><span>buildTime</span><strong>{e(metadata["buildTime"])}</strong></div>
           <div class="meta-row"><span>deployedAt</span><strong>{e(metadata["deployedAt"])}</strong></div>
           <div class="meta-row"><span>environment</span><strong>{e(qa_environment)}</strong></div>
@@ -4590,6 +4600,21 @@ class AppHandler(BaseHTTPRequestHandler):
           {qa_row("console_errors", "Ошибки консоли")}
           {qa_row("visual_regression", "Визуальная проверка")}
           {qa_row("max_report_format", "Формат MAX-отчёта")}
+        </section>
+        <section class="meta-panel">
+          <h2>QA coverage</h2>
+          {coverage_row("pages_checked", "страниц проверено")}
+          {coverage_row("pages_verified_ok", "страниц подтверждено")}
+          <div class="meta-row"><span><code>role_panels_checked</code> ролевых панелей</span><strong>{e(qa_coverage.get("role_panels_checked", "not_run"))}/{e(qa_coverage.get("role_panels_total", "not_run"))}</strong></div>
+          {coverage_row("task_cards_checked", "карточек задач")}
+          {coverage_row("object_cards_checked", "карточек объектов")}
+          {coverage_row("blocker_cards_checked", "карточек блокеров")}
+          {coverage_row("material_cards_checked", "карточек материалов")}
+          {coverage_row("buttons_checked", "кнопок/действий")}
+          {coverage_row("mobile_viewports_checked", "мобильных viewport")}
+          {coverage_row("mobile_quick_actions_checked", "быстрых мобильных действий")}
+          <div class="meta-row"><span><code>readonly_write_methods_checked</code> write-методов read-only</span><strong>{e(qa_coverage.get("readonly_write_methods_checked", "not_run"))}/{e(qa_coverage.get("readonly_write_methods_total", "not_run"))}</strong></div>
+          {coverage_row("screenshots_created", "скриншотов")}
         </section>
         """
         metadata_body = f"""

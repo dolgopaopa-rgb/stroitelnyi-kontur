@@ -15,6 +15,29 @@ const VIDEO_DIR = path.join(ARTIFACT_DIR, "videos");
 const suite = arg("--suite", "all");
 const localQaPort = process.env.KONTUR_QA_PORT || "8765";
 const baseUrl = (process.env.KONTUR_BASE_URL || `http://127.0.0.1:${localQaPort}`).replace(/\/$/, "");
+const externalBaseUrl = (process.env.KONTUR_EXTERNAL_BASE_URL || "https://kontur.derevgroup.ru").replace(/\/$/, "");
+
+const rolePanelChecks = [
+  ["owner", "today-role-owner", "owner"],
+  ["construction_manager", "today-role-project-manager", "project_manager"],
+  ["foreman:7", "today-role-foreman", "foreman"],
+  ["master", "today-role-worker", "worker"],
+  ["procurement_manager", "today-role-procurement", "procurement"],
+  ["estimator", "today-role-estimator", "estimator"],
+];
+
+const visualPages = [
+  { view: "today", path: "/today", title: "Сегодня", testId: "today-page", activeViewId: "todayView" },
+  { view: "projects", path: "/objects", title: "Объекты", testId: "objects-page", activeViewId: "projectsView" },
+  { view: "tasks", path: "/tasks", title: "Задачи", testId: "tasks-page", activeViewId: "tasksView" },
+  { view: "materials", path: "/materials", title: "Материалы", testId: "materials-page", activeViewId: "materialsView" },
+  { view: "photos", path: "/photo-reports", title: "Фотоотчёты", testId: "photo-reports-page", activeViewId: "photosView" },
+  { view: "object_remarks", path: "/object-issues", title: "Замечания по объектам", testId: "object-issues-page", activeViewId: "object_remarksView" },
+  { view: "documents", path: "/documents", title: "База знаний", testId: "documents-page", activeViewId: "documentsView" },
+  { view: "dashboard", path: "/signals", title: "Сигналы", testId: "signals-page", activeViewId: "dashboardView" },
+  { view: "feedback", path: "/feedback", title: "Обратная связь по программе", testId: "feedback-page", activeViewId: "feedbackView" },
+  { view: "estimates", path: "/?view=estimates", title: "Сметы", testId: "estimates-page", activeViewId: "estimatesView" },
+];
 
 const agentNames = [
   "QA Orchestrator Agent",
@@ -98,7 +121,7 @@ async function ensureServer() {
   const port = parsedBaseUrl.port || (parsedBaseUrl.protocol === "https:" ? "443" : "80");
   const child = spawn("python", ["app/server.py"], {
     cwd: ROOT,
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["ignore", "ignore", "ignore"],
     shell: false,
     env: { ...process.env, HOST: parsedBaseUrl.hostname || "127.0.0.1", PORT: port },
   });
@@ -110,8 +133,42 @@ async function ensureServer() {
   return child;
 }
 
-function add(results, agent, name, status, details, severity = "normal", screenshot = "") {
-  results.push({ agent, name, status, details, severity, screenshot });
+function add(results, agent, name, status, details, severity = "normal", screenshot = "", meta = {}) {
+  results.push({ agent, name, status, details, severity, screenshot, meta });
+}
+
+function statusForElementCount(count, { expected = false } = {}) {
+  if (count > 0) return "OK";
+  return expected ? "FAIL" : "PARTIAL";
+}
+
+function severityForStatus(status, expected = false) {
+  if (status === "FAIL" && expected) return "blocker";
+  return "normal";
+}
+
+async function selectRole(page, role) {
+  const select = page.locator("#currentRoleSelect");
+  if (!(await select.count().catch(() => 0))) return { ok: false, reason: "role switcher missing" };
+  const options = await select.locator("option").evaluateAll((nodes) => nodes.map((node) => node.value)).catch(() => []);
+  if (!options.includes(role)) return { ok: false, reason: `role option ${role} missing` };
+  await select.selectOption(role);
+  await page.waitForTimeout(350);
+  return { ok: true, reason: "selected" };
+}
+
+async function fetchJsonSafe(url, timeoutMs = 2500) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { cache: "no-store", signal: controller.signal });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function preparePage(playwright, viewport = { width: 1366, height: 900 }) {
@@ -191,6 +248,104 @@ async function runUnit(results) {
   add(results, "QA Orchestrator Agent", "Unit smoke", failed ? "FAIL" : "OK", [py.output, db.output].filter(Boolean).join("\n") || "ok", failed ? "blocker" : "normal");
 }
 
+function ensureLocalQaFixtures(results) {
+  const isLocal = baseUrl.includes("127.0.0.1") || baseUrl.includes("localhost");
+  if (!isLocal || process.env.KONTUR_DISABLE_QA_FIXTURES === "1") {
+    add(results, "QA Orchestrator Agent", "Local QA fixtures", "WARN", "fixtures skipped outside local QA server");
+    return;
+  }
+  const script = String.raw`
+import sys
+from datetime import date, timedelta
+sys.path.insert(0, "app")
+from database import init_db, connect
+
+init_db()
+with connect() as db:
+    def user_id(role, name):
+        row = db.execute("SELECT id FROM users WHERE role = ? AND name = ?", (role, name)).fetchone()
+        if row:
+            return row["id"]
+        cur = db.execute("INSERT INTO users (name, role, is_active) VALUES (?, ?, 1)", (name, role))
+        return cur.lastrowid
+
+    owner = user_id("owner", "QA Руководитель")
+    master = user_id("master", "QA Мастер")
+    procurement = user_id("procurement_manager", "QA Снабжение")
+    row = db.execute("SELECT id FROM projects WHERE title = ?", ("QA тестовый объект",)).fetchone()
+    if row:
+        project = row["id"]
+    else:
+        cur = db.execute(
+            """
+            INSERT INTO projects (
+                title, customer_name, status, address, navigator_url, smetter_ref,
+                construction_manager_id, foreman_id, procurement_manager_id,
+                planned_end_date, main_estimate_amount
+            ) VALUES (?, ?, 'transferred_to_construction', ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "QA тестовый объект",
+                "QA клиент",
+                "Москва",
+                "https://yandex.ru/maps/?rtext=~55.751244,37.618423&rtt=auto",
+                "QA-SMT",
+                owner,
+                master,
+                procurement,
+                (date.today() + timedelta(days=14)).isoformat(),
+                100000,
+            ),
+        )
+        project = cur.lastrowid
+
+    task_title = "QA проверить короткую карточку задачи"
+    if not db.execute("SELECT id FROM tasks WHERE project_id = ? AND title = ?", (project, task_title)).fetchone():
+        db.execute(
+            """
+            INSERT INTO tasks (project_id, title, assignee_id, creator_id, reviewer_id, due_date, status, priority, task_type, description)
+            VALUES (?, ?, ?, ?, ?, ?, 'new', 'high', 'task', ?)
+            """,
+            (project, task_title, master, owner, owner, date.today().isoformat(), "Тестовая задача для проверки QA-карточек и кнопки выполнения."),
+        )
+
+    blocker_title = "QA блокер для проверки карточки"
+    if not db.execute("SELECT id FROM blockers WHERE project_id = ? AND title = ?", (project, blocker_title)).fetchone():
+        db.execute(
+            """
+            INSERT INTO blockers (project_id, title, description, blocker_type, responsible_user_id, due_date, severity, status, created_by)
+            VALUES (?, ?, ?, 'no_material', ?, ?, 'high', 'open', ?)
+            """,
+            (project, blocker_title, "Тестовый блокер для coverage QA.", procurement, date.today().isoformat(), owner),
+        )
+
+    batch_row = db.execute("SELECT id FROM material_request_batches WHERE project_id = ? AND comment = ?", (project, "QA fixture batch")).fetchone()
+    if batch_row:
+        batch = batch_row["id"]
+    else:
+        cur = db.execute(
+            """
+            INSERT INTO material_request_batches (project_id, creator_id, needed_at, delivery_urgency, status, comment)
+            VALUES (?, ?, ?, 'standard', 'new', 'QA fixture batch')
+            """,
+            (project, owner, (date.today() + timedelta(days=2)).isoformat()),
+        )
+        batch = cur.lastrowid
+    if not db.execute("SELECT id FROM material_requests WHERE batch_id = ? AND title = ?", (batch, "QA тестовый материал")).fetchone():
+        db.execute(
+            """
+            INSERT INTO material_requests (batch_id, project_id, creator_id, title, basis_type, estimate_section, needed_at, procurement_status, total_amount)
+            VALUES (?, ?, ?, 'QA тестовый материал', 'main_estimate', 'QA раздел', ?, 'new', 1000)
+            """,
+            (batch, project, owner, (date.today() + timedelta(days=2)).isoformat()),
+        )
+    db.commit()
+    print(f"fixture ok project={project}")
+`;
+  const result = run("python", ["-c", script], { timeout: 30_000 });
+  add(results, "QA Orchestrator Agent", "Local QA fixtures", result.code === 0 ? "OK" : "FAIL", result.output || "fixture ok", result.code === 0 ? "normal" : "blocker");
+}
+
 async function runSmoke(results, page) {
   await route(page, "/today");
   const length = await visibleTextLength(page);
@@ -253,6 +408,65 @@ async function runButtons(results, page) {
     const ok = before !== after || (await page.locator(".view.active").count()) > 0;
     add(results, "Button QA Agent", title, ok ? "OK" : "FAIL", `before=${before}; after=${after}`, ok ? "normal" : "blocker");
   }
+  await route(page, "projects");
+  const objectRows = page.locator('.row[data-testid="object-card"]');
+  const objectCount = await objectRows.count().catch(() => 0);
+  if (!objectCount) {
+    add(results, "Button QA Agent", "Open object card", "PARTIAL", "object_cards=0; карточку объекта открыть нечем", "normal", "", { buttonsChecked: 0, objectCardsChecked: 0 });
+  } else {
+    const beforeDetail = await page.locator("#projectDetail").innerText().catch(() => "");
+    await objectRows.first().click();
+    await page.waitForTimeout(450);
+    const afterDetail = await page.locator("#projectDetail").innerText().catch(() => "");
+    const opened = afterDetail.trim().length > 20 && afterDetail !== beforeDetail;
+    add(results, "Button QA Agent", "Open object card", opened ? "OK" : "FAIL", `object_cards=${objectCount}; opened=${opened}`, opened ? "normal" : "blocker", "", { buttonsChecked: 1, objectCardsChecked: objectCount });
+  }
+  const projectTabs = page.locator("button.tab[data-project-tab]");
+  const tabCount = await projectTabs.count().catch(() => 0);
+  if (!tabCount) {
+    add(results, "Button QA Agent", "Object tabs switch", "PARTIAL", "tabs=0; нет открытой карточки или вкладок объекта", "normal", "", { buttonsChecked: 0 });
+  } else {
+    const index = Math.min(1, tabCount - 1);
+    const tabText = await projectTabs.nth(index).innerText().catch(() => "");
+    await projectTabs.nth(index).click();
+    await page.waitForTimeout(200);
+    const activeText = await page.locator("button.tab[data-project-tab].active").innerText().catch(() => "");
+    const switched = Boolean(activeText && activeText.trim() === tabText.trim());
+    add(results, "Button QA Agent", "Object tabs switch", switched ? "OK" : "FAIL", `tabs=${tabCount}; clicked=${tabText}; active=${activeText}`, switched ? "normal" : "blocker", "", { buttonsChecked: 1 });
+  }
+  await route(page, "tasks");
+  await selectRole(page, "owner");
+  const taskCards = page.locator('#tasksView.active [data-testid="task-card"]');
+  const taskCardCount = await taskCards.count().catch(() => 0);
+  if (!taskCardCount) {
+    add(results, "Button QA Agent", "Open task details", "PARTIAL", "task_cards=0; нечего раскрывать", "normal", "", { buttonsChecked: 0, taskCardsChecked: 0 });
+  } else {
+    const firstTask = taskCards.first();
+    const wasOpen = await firstTask.evaluate((node) => node.hasAttribute("open")).catch(() => false);
+    await firstTask.locator("summary").click();
+    await page.waitForTimeout(200);
+    const isOpen = await firstTask.evaluate((node) => node.hasAttribute("open")).catch(() => false);
+    const toggled = wasOpen !== isOpen;
+    add(results, "Button QA Agent", "Open task details", toggled ? "OK" : "FAIL", `task_cards=${taskCardCount}; beforeOpen=${wasOpen}; afterOpen=${isOpen}`, toggled ? "normal" : "blocker", "", { buttonsChecked: 1, taskCardsChecked: taskCardCount });
+  }
+  await selectRole(page, "master");
+  await route(page, "tasks");
+  const masterDoneButtons = await page.locator('button:has-text("Выполнено"), button:has-text("Готово")').count().catch(() => 0);
+  add(results, "Button QA Agent", "Master done action is available when tasks exist", taskCardCount && masterDoneButtons ? "OK" : "PARTIAL", `task_cards=${taskCardCount}; done_buttons=${masterDoneButtons}`, "normal", "", { buttonsChecked: masterDoneButtons ? 1 : 0 });
+  await selectRole(page, "owner");
+  await route(page, "materials");
+  const pipelineButtons = page.locator('[data-material-pipeline-filter]');
+  const pipelineCount = await pipelineButtons.count().catch(() => 0);
+  let pipelineOk = pipelineCount >= 8;
+  if (pipelineOk) {
+    const target = pipelineButtons.nth(1);
+    const filter = await target.getAttribute("data-material-pipeline-filter");
+    await target.click();
+    await page.waitForTimeout(200);
+    const activeFilter = await page.locator("[data-material-pipeline-filter].active").getAttribute("data-material-pipeline-filter").catch(() => "");
+    pipelineOk = activeFilter === filter;
+  }
+  add(results, "Button QA Agent", "Material pipeline tabs switch", pipelineCount ? (pipelineOk ? "OK" : "FAIL") : "PARTIAL", `pipeline_buttons=${pipelineCount}; switched=${pipelineOk}`, pipelineOk || !pipelineCount ? "normal" : "blocker", "", { buttonsChecked: pipelineCount ? 1 : 0 });
   await page.setViewportSize({ width: 390, height: 844 });
   await route(page, "today");
   const plus = page.locator('[data-testid="mobile-plus-button"]').first();
@@ -260,8 +474,18 @@ async function runButtons(results, page) {
     await plus.click();
     await page.waitForTimeout(200);
     const open = await page.locator('[data-testid="mobile-quick-actions"] [data-mobile-action]').count();
-    add(results, "Button QA Agent", "Mobile + opens actions", open > 0 ? "OK" : "FAIL", `actions=${open}`, open > 0 ? "normal" : "blocker");
+    const labels = await page.locator('[data-testid="mobile-quick-actions"] [data-mobile-action]').evaluateAll((nodes) => nodes.map((node) => node.textContent?.trim()).filter(Boolean)).catch(() => []);
+    add(results, "Button QA Agent", "Mobile + opens actions", open > 0 ? "OK" : "FAIL", `actions=${open}; labels=${labels.join(" | ")}`, open > 0 ? "normal" : "blocker", "", { buttonsChecked: 1, mobileQuickActionsChecked: open });
   }
+  await route(page, "today");
+  await selectRole(page, "master");
+  await page.locator("#mobileQuickSheet:not([hidden]) #mobileQuickActionClose").click().catch(() => {});
+  await page.waitForTimeout(100);
+  await page.locator('[data-testid="mobile-plus-button"]').click().catch(() => {});
+  await page.waitForTimeout(200);
+  const masterActions = await page.locator('[data-testid="mobile-quick-actions"] [data-mobile-action]').evaluateAll((nodes) => nodes.map((node) => node.textContent?.trim()).filter(Boolean)).catch(() => []);
+  const masterQuickOk = masterActions.includes("Добавить фото") && masterActions.includes("Сообщить проблему");
+  add(results, "Button QA Agent", "Master mobile quick actions", masterQuickOk ? "OK" : "FAIL", `labels=${masterActions.join(" | ") || "none"}`, masterQuickOk ? "normal" : "blocker", "", { buttonsChecked: masterActions.length, mobileQuickActionsChecked: masterActions.length });
   await page.setViewportSize({ width: 1366, height: 900 });
 }
 
@@ -385,6 +609,18 @@ async function runReadonly(results, playwright) {
     });
     const writeMethodsOk = Object.values(writeStatuses).every((status) => status === 403);
     add(results, "Read-only Safety QA Agent", "Audit write methods return 403", writeMethodsOk ? "OK" : "FAIL", JSON.stringify(writeStatuses), writeMethodsOk ? "normal" : "blocker");
+    const activeWriteButtons = await page.evaluate(() => {
+      const dangerousText = /(добавить|создать|сохранить|удалить|принять|вернуть|готово|выполнено|запросить|отправить)/i;
+      const isVisible = (node) => {
+        const style = getComputedStyle(node);
+        return style.visibility !== "hidden" && style.display !== "none" && node.getClientRects().length > 0;
+      };
+      return [...document.querySelectorAll("button, [role='button']")]
+        .filter((node) => isVisible(node) && !node.disabled && node.getAttribute("aria-disabled") !== "true")
+        .map((node) => (node.textContent || "").trim())
+        .filter((text) => dangerousText.test(text));
+    });
+    add(results, "Read-only Safety QA Agent", "Read-only write buttons are hidden or disabled", activeWriteButtons.length ? "FAIL" : "OK", `active_write_buttons=${activeWriteButtons.join(" | ") || "none"}`, activeWriteButtons.length ? "blocker" : "normal");
     const sensitiveText = await page.evaluate(() => document.body.innerText || "");
     const leaks = [/\+7[-\s]?\d{3}/, /@/, /банк/i].filter((pattern) => pattern.test(sensitiveText)).length;
     add(results, "Read-only Safety QA Agent", "Sensitive data is hidden in auditor view", leaks === 0 ? "OK" : "WARN", `sensitive-patterns=${leaks}`);
@@ -396,23 +632,50 @@ async function runReadonly(results, playwright) {
 
 async function runUx(results, page) {
   await route(page, "tasks");
+  await selectRole(page, "owner");
   const bodyText = await page.evaluate(() => document.body.innerText || "");
   const forbidden = ["in_progress", "main_estimate", "construction_manager", "procurement_manager", "estimator"].filter((item) => bodyText.includes(item));
   add(results, "UX Sanity QA Agent", "No technical enum values in visible UI", forbidden.length ? "FAIL" : "OK", forbidden.join(", ") || "none", forbidden.length ? "blocker" : "normal");
-  const taskCardCount = await page.locator('[data-testid="task-card"]').count();
-  const badgeCount = await page.locator('[data-testid="task-type-badge"], [data-testid="task-status-badge"], [data-testid="task-priority-badge"]').count();
-  add(results, "UX Sanity QA Agent", "Task card has separated badges", taskCardCount === 0 || badgeCount > 0 ? "OK" : "FAIL", `cards=${taskCardCount}; badges=${badgeCount}`, "normal");
-  const taskTitleCount = await page.locator('[data-testid="task-title"]').count();
-  const taskMetaCount = await page.locator('[data-testid="task-meta"]').count();
-  const taskLayoutOk = taskCardCount === 0 || (taskTitleCount > 0 && taskMetaCount > 0 && badgeCount >= taskCardCount);
-  add(results, "UX Sanity QA Agent", "Task card separates title, meta and status", taskLayoutOk ? "OK" : "FAIL", `cards=${taskCardCount}; titles=${taskTitleCount}; meta=${taskMetaCount}; badges=${badgeCount}`, taskLayoutOk ? "normal" : "blocker");
-  const summaryDescriptionCount = await page.locator(".task-summary .task-description-clamp, .today-task-card .task-description-clamp, .compact-task-card .task-description-clamp").count().catch(() => 0);
-  add(results, "UX Sanity QA Agent", "Task descriptions are collapsed in lists", summaryDescriptionCount === 0 ? "OK" : "FAIL", `visible-list-descriptions=${summaryDescriptionCount}`, summaryDescriptionCount === 0 ? "normal" : "blocker");
+  const activeTasks = page.locator('#tasksView.active');
+  const taskCardCount = await activeTasks.locator('[data-testid="task-card"]').count();
+  const badgeCount = await activeTasks.locator('[data-testid="task-type-badge"], [data-testid="task-status-badge"], [data-testid="task-priority-badge"]').count();
+  const expectedBadgeCount = taskCardCount * 3;
+  const badgeStatus = taskCardCount === 0 ? "PARTIAL" : badgeCount >= expectedBadgeCount ? "OK" : "FAIL";
+  add(results, "UX Sanity QA Agent", "Task card has separated badges", badgeStatus, `cards=${taskCardCount}; badges=${badgeCount}; expected_badges>=${expectedBadgeCount}`, severityForStatus(badgeStatus, true), "", { taskCardsChecked: taskCardCount });
+  const taskTitleCount = await activeTasks.locator('[data-testid="task-title"]').count();
+  const taskMetaCount = await activeTasks.locator('[data-testid="task-meta"]').count();
+  const taskLayoutStatus = taskCardCount === 0 ? "PARTIAL" : taskTitleCount >= taskCardCount && taskMetaCount >= taskCardCount && badgeCount >= expectedBadgeCount ? "OK" : "FAIL";
+  add(results, "UX Sanity QA Agent", "Task card separates title, meta and status", taskLayoutStatus, `cards=${taskCardCount}; titles=${taskTitleCount}; meta=${taskMetaCount}; badges=${badgeCount}`, severityForStatus(taskLayoutStatus, true), "", { taskCardsChecked: taskCardCount });
+  const summaryDescriptionCount = await activeTasks.locator(".task-summary .task-description-clamp, .today-task-card .task-description-clamp, .compact-task-card .task-description-clamp").count().catch(() => 0);
+  add(results, "UX Sanity QA Agent", "Task descriptions are collapsed in lists", taskCardCount === 0 ? "PARTIAL" : summaryDescriptionCount === 0 ? "OK" : "FAIL", `cards=${taskCardCount}; visible-list-descriptions=${summaryDescriptionCount}`, taskCardCount === 0 || summaryDescriptionCount === 0 ? "normal" : "blocker");
   await route(page, "today");
   const attention = await page.locator('[data-testid="today-attention-list"]').innerText().catch(() => "");
   add(results, "UX Sanity QA Agent", "Today screen shows concrete attention block", attention.trim().length > 0 ? "OK" : "WARN", `length=${attention.trim().length}`);
-  const rolePanelCount = await page.locator('[data-testid^="today-role-"]').count().catch(() => 0);
-  add(results, "UX Sanity QA Agent", "Today screen is role-aware", rolePanelCount > 0 ? "OK" : "FAIL", `role-panels=${rolePanelCount}`, rolePanelCount > 0 ? "normal" : "blocker");
+  const roleResults = {};
+  for (const [role, testId, label] of rolePanelChecks) {
+    const selected = await selectRole(page, role);
+    roleResults[label] = Boolean(selected.ok && (await page.locator(`[data-testid="${testId}"]`).isVisible().catch(() => false)));
+  }
+  const rolePanelsChecked = Object.values(roleResults).filter(Boolean).length;
+  const roleDetails = [
+    `role-panels=${rolePanelsChecked}/${rolePanelChecks.length}`,
+    ...Object.entries(roleResults).map(([key, value]) => `${key}=${value}`),
+  ].join("; ");
+  const roleStatus = rolePanelsChecked === rolePanelChecks.length ? "OK" : rolePanelsChecked > 0 ? "PARTIAL" : "FAIL";
+  add(results, "UX Sanity QA Agent", "Today screen is role-aware", roleStatus, roleDetails, severityForStatus(roleStatus, true), "", { rolePanelsChecked, rolePanelsTotal: rolePanelChecks.length });
+  await selectRole(page, "owner");
+  await route(page, "projects");
+  const objectCardCount = await page.locator('.row[data-testid="object-card"]').count().catch(() => 0);
+  const objectStatus = statusForElementCount(objectCardCount);
+  add(results, "UX Sanity QA Agent", "Object cards are present", objectStatus, `object_cards=${objectCardCount}`, severityForStatus(objectStatus), "", { objectCardsChecked: objectCardCount });
+  const qaObject = page.locator('.row[data-testid="object-card"]').filter({ hasText: "QA тестовый объект" }).first();
+  if (await qaObject.count().catch(() => 0)) {
+    await qaObject.click();
+    await page.waitForTimeout(350);
+  }
+  const blockerCardCount = await page.locator('[data-testid="blocker-card"]').count().catch(() => 0);
+  const blockerStatus = statusForElementCount(blockerCardCount);
+  add(results, "UX Sanity QA Agent", "Blocker cards are present when blockers exist", blockerStatus, `blocker_cards=${blockerCardCount}`, "normal", "", { blockerCardsChecked: blockerCardCount });
   await route(page, "dashboard");
   const technicalSignalType = await page.evaluate(() => {
     const text = document.body.innerText || "";
@@ -435,6 +698,9 @@ async function runUx(results, page) {
   await route(page, "materials");
   const materialTabs = await page.locator('[data-testid="material-status-tabs"]').isVisible().catch(() => false);
   add(results, "UX Sanity QA Agent", "Materials pipeline tabs are visible", materialTabs ? "OK" : "FAIL", `tabs=${materialTabs}`, materialTabs ? "normal" : "blocker");
+  const materialCardCount = await page.locator('[data-testid="material-card"]').count().catch(() => 0);
+  const materialStatus = statusForElementCount(materialCardCount);
+  add(results, "UX Sanity QA Agent", "Material cards are present", materialStatus, `material_cards=${materialCardCount}`, severityForStatus(materialStatus), "", { materialCardsChecked: materialCardCount });
 }
 
 async function runMobile(results, playwright) {
@@ -467,13 +733,30 @@ async function runMobile(results, playwright) {
 }
 
 async function runVisual(results, page) {
-  const views = ["today", "projects", "tasks", "materials", "photos", "object_remarks", "documents", "dashboard"];
-  for (const view of views) {
-    await route(page, view);
-    const screenshot = path.join(SCREENSHOT_DIR, `${view}.png`);
+  for (const item of visualPages) {
+    await route(page, item.path);
+    const screenshot = path.join(SCREENSHOT_DIR, `${item.view}.png`);
     await page.screenshot({ path: screenshot, fullPage: true }).catch(() => null);
     const length = await visibleTextLength(page);
-    add(results, "Visual Regression QA Agent", `Screenshot ${view}`, length > 20 ? "OK" : "FAIL", `text=${length}`, length > 20 ? "normal" : "blocker", screenshot);
+    const title = await page.locator("#pageTitle").innerText().catch(() => "");
+    const testIdFound = await page.locator(`[data-testid="${item.testId}"]`).count().then((count) => count > 0).catch(() => false);
+    const activeViewFound = await page.locator(`#${item.activeViewId}.active`).count().then((count) => count > 0).catch(() => false);
+    const url = page.url();
+    const urlOk = url.includes(item.path) || url.includes(`view=${encodeURIComponent(item.view)}`);
+    const titleOk = title.trim() === item.title;
+    const screenshotExists = fs.existsSync(screenshot);
+    const ok = length > 20 && titleOk && testIdFound && activeViewFound && urlOk && screenshotExists;
+    const status = ok ? "OK" : item.optional && length > 20 ? "PARTIAL" : "FAIL";
+    add(
+      results,
+      "Visual Regression QA Agent",
+      `Screenshot ${item.view}`,
+      status,
+      `url=${url}; expected_path=${item.path}; urlOk=${urlOk}; testid=${item.testId}:${testIdFound}; title=${title}; expected_title=${item.title}; active=${item.activeViewId}:${activeViewFound}; text=${length}; screenshot=${screenshot}`,
+      status === "FAIL" ? "blocker" : "normal",
+      screenshot,
+      { pagesChecked: status === "OK" ? 1 : 0, screenshotsCreated: screenshotExists ? 1 : 0 },
+    );
   }
 }
 
@@ -516,14 +799,61 @@ function checksSummary(results) {
 function overallStatus(results, mandatorySuites) {
   const failures = results.filter((item) => item.status === "FAIL");
   if (failures.some((item) => item.severity === "blocker")) return "FAIL";
+  const partialResults = results.filter((item) => item.status === "WARN" || item.status === "PARTIAL");
   const checks = checksSummary(results);
   const notRun = mandatorySuites.filter((key) => checks[key] === "not_run");
   const partials = Object.values(checks).filter((value) => value === "PARTIAL");
-  if (failures.length || notRun.length || partials.length) return "PARTIAL";
+  if (failures.length || notRun.length || partials.length || partialResults.length) return "PARTIAL";
   return "PASS";
 }
 
-function writeReport(results, startedAt, finishedAt, mandatorySuites) {
+function detailNumber(details, key) {
+  const match = String(details || "").match(new RegExp(`${key}=([0-9]+)`));
+  return match ? Number(match[1]) : 0;
+}
+
+function maxMeta(results, key) {
+  return Math.max(0, ...results.map((item) => Number(item.meta?.[key] || 0)));
+}
+
+function sumMeta(results, key) {
+  return results.reduce((sum, item) => sum + Number(item.meta?.[key] || 0), 0);
+}
+
+function buildCoverage(results) {
+  const roleAware = results.find((item) => item.agent === "UX Sanity QA Agent" && item.name === "Today screen is role-aware");
+  const roleMatch = String(roleAware?.details || "").match(/role-panels=([0-9]+)\/([0-9]+)/);
+  const taskLayout = results.find((item) => item.agent === "UX Sanity QA Agent" && item.name === "Task card separates title, meta and status");
+  const readonlyMethods = results.find((item) => item.agent === "Read-only Safety QA Agent" && item.name === "Audit write methods return 403");
+  let readonlyChecked = 0;
+  try {
+    readonlyChecked = Object.values(JSON.parse(readonlyMethods?.details || "{}")).filter((status) => Number(status) === 403).length;
+  } catch {
+    readonlyChecked = 0;
+  }
+  const visualResults = results.filter((item) => item.agent === "Visual Regression QA Agent" && item.name.startsWith("Screenshot "));
+  const screenshotCount = visualResults.filter((item) => item.screenshot && fs.existsSync(item.screenshot)).length;
+  const buttonResults = results.filter((item) => item.agent === "Button QA Agent" && item.status !== "WARN");
+  return {
+    pages_checked: visualResults.length,
+    pages_verified_ok: visualResults.filter((item) => item.status === "OK").length,
+    role_panels_checked: Number(roleMatch?.[1] || 0),
+    role_panels_total: Number(roleMatch?.[2] || rolePanelChecks.length),
+    task_cards_checked: Math.max(maxMeta(results, "taskCardsChecked"), detailNumber(taskLayout?.details, "cards")),
+    object_cards_checked: maxMeta(results, "objectCardsChecked"),
+    blocker_cards_checked: maxMeta(results, "blockerCardsChecked"),
+    material_cards_checked: maxMeta(results, "materialCardsChecked"),
+    buttons_checked: Math.max(sumMeta(results, "buttonsChecked"), buttonResults.length),
+    mobile_viewports_checked: results.filter((item) => item.agent === "Mobile QA Agent" && item.name.startsWith("Viewport ")).length,
+    mobile_quick_actions_checked: maxMeta(results, "mobileQuickActionsChecked"),
+    readonly_write_methods_checked: readonlyChecked,
+    readonly_write_methods_total: 4,
+    screenshots_created: screenshotCount,
+    skipped_tests: [{ count: 0, reason: "QA-runner не пропускал проверки; skipped из отдельного Playwright-прогона смотрите в выводе Playwright." }],
+  };
+}
+
+function writeReport(results, startedAt, finishedAt, mandatorySuites, environmentInfo = {}) {
   const checks = checksSummary(results);
   const liveAudit = results.find((item) => item.agent === "Read-only Safety QA Agent" && item.name === "Live audit-login actual access");
   checks.liveAuditLogin = !liveAudit ? "not_run" : liveAudit.status === "OK" ? "OK" : liveAudit.status === "WARN" ? "PARTIAL" : "FAIL";
@@ -535,6 +865,7 @@ function writeReport(results, startedAt, finishedAt, mandatorySuites) {
   const notChecked = mandatorySuites.filter((key) => checks[key] === "not_run").map((key) => `${key}: проверка не запускалась`);
   const overall = overallStatus(results, mandatorySuites);
   const commit = run("git", ["rev-parse", "--short", "HEAD"]).output || "unknown";
+  const coverage = buildCoverage(results);
   const qaStatus = (value) => (value === "not_run" ? "not_run" : value === "FAIL" ? "failed" : value === "PARTIAL" ? "partial" : "ok");
   const hasAgent = (agent) => results.some((item) => item.agent === agent);
   const agentHasFail = (agent) => results.some((item) => item.agent === agent && item.status === "FAIL");
@@ -553,9 +884,16 @@ function writeReport(results, startedAt, finishedAt, mandatorySuites) {
     appVersion: "2026.06.16-qa",
     commit,
     qaRunCommitHash: commit,
+    environment: environmentInfo.environment || (baseUrl.includes("127.0.0.1") || baseUrl.includes("localhost") ? "local" : "production"),
+    targetEnvironment: environmentInfo.targetEnvironment || (baseUrl.includes("127.0.0.1") || baseUrl.includes("localhost") ? "local QA server via localhost" : "external URL"),
+    externalBaseUrl,
+    localTestUrl: baseUrl,
+    productionVersionCommitHash: environmentInfo.productionVersionCommitHash || "not_checked",
+    snapshotCommitHash: environmentInfo.snapshotCommitHash || environmentInfo.productionVersionCommitHash || "not_checked",
     url: baseUrl,
     agents: agentNames,
     checks,
+    coverage,
     results,
     criticalErrors,
     warnings,
@@ -622,6 +960,13 @@ function writeReport(results, startedAt, finishedAt, mandatorySuites) {
     "",
     `- Дата: ${finishedAt}`,
     `- Версия/commit: ${payload.appVersion} / ${commit}`,
+    `- environment: ${payload.environment}`,
+    `- targetEnvironment: ${payload.targetEnvironment}`,
+    `- externalBaseUrl: ${payload.externalBaseUrl}`,
+    `- localTestUrl: ${payload.localTestUrl}`,
+    `- productionVersionCommitHash: ${payload.productionVersionCommitHash}`,
+    `- qaRunCommitHash: ${payload.qaRunCommitHash}`,
+    `- snapshotCommitHash: ${payload.snapshotCommitHash}`,
     `- URL: ${baseUrl}`,
     `- Итог: **${overall}**`,
     "",
@@ -649,6 +994,22 @@ function writeReport(results, startedAt, finishedAt, mandatorySuites) {
     "",
     notChecked.length ? notChecked.map((item) => `- ${item}`).join("\n") : "Все обязательные проверки запускались.",
     "",
+    "## QA coverage",
+    "",
+    `- pages_checked: ${coverage.pages_checked}`,
+    `- pages_verified_ok: ${coverage.pages_verified_ok}/${coverage.pages_checked}`,
+    `- role_panels_checked: ${coverage.role_panels_checked}/${coverage.role_panels_total}`,
+    `- task_cards_checked: ${coverage.task_cards_checked}`,
+    `- object_cards_checked: ${coverage.object_cards_checked}`,
+    `- blocker_cards_checked: ${coverage.blocker_cards_checked}`,
+    `- material_cards_checked: ${coverage.material_cards_checked}`,
+    `- buttons_checked: ${coverage.buttons_checked}`,
+    `- mobile_viewports_checked: ${coverage.mobile_viewports_checked}`,
+    `- mobile_quick_actions_checked: ${coverage.mobile_quick_actions_checked}`,
+    `- readonly_write_methods_checked: ${coverage.readonly_write_methods_checked}/${coverage.readonly_write_methods_total}`,
+    `- screenshots_created: ${coverage.screenshots_created}`,
+    `- skipped_tests: ${coverage.skipped_tests.map((item) => `${item.count} (${item.reason})`).join("; ")}`,
+    "",
     "## Итог",
     "",
     overall,
@@ -656,6 +1017,33 @@ function writeReport(results, startedAt, finishedAt, mandatorySuites) {
   ].join("\n");
   fs.writeFileSync(path.join(ARTIFACT_DIR, "qa-report.md"), md, "utf8");
   return payload;
+}
+
+async function buildEnvironmentInfo() {
+  const isLocal = baseUrl.includes("127.0.0.1") || baseUrl.includes("localhost");
+  const productionVersion = await fetchJsonSafe(`${externalBaseUrl}/version`);
+  return {
+    environment: isLocal ? "local" : "production",
+    targetEnvironment: isLocal ? "local QA server via localhost" : "external URL",
+    productionVersionCommitHash: productionVersion?.commitHash || "not_checked",
+    snapshotCommitHash: productionVersion?.commitHash || "not_checked",
+  };
+}
+
+async function stopServerProcess(serverProcess) {
+  if (!serverProcess || serverProcess.killed) return;
+  await new Promise((resolve) => {
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+    serverProcess.once("exit", done);
+    serverProcess.once("close", done);
+    serverProcess.kill();
+    setTimeout(done, 1500);
+  });
 }
 
 async function main() {
@@ -669,6 +1057,7 @@ async function main() {
     if (["lint", "all", "report"].includes(suite)) await runLint(results);
     if (["typecheck", "all", "report"].includes(suite)) await runTypecheck(results);
     if (["unit", "all", "report"].includes(suite)) await runUnit(results);
+    if (["all", "report"].includes(suite)) ensureLocalQaFixtures(results);
 
     const needsBrowser = ["smoke", "scroll", "buttons", "navigation", "roles", "readonly", "mobile", "all", "report"].includes(suite);
     let playwright = null;
@@ -697,11 +1086,12 @@ async function main() {
     add(results, "QA Orchestrator Agent", "Quality gate runtime", "FAIL", error.stack || error.message, "blocker");
   } finally {
     if (browser) await browser.close().catch(() => {});
-    if (serverProcess) serverProcess.kill();
+    await stopServerProcess(serverProcess);
   }
-  const payload = writeReport(results, startedAt, new Date().toISOString(), mandatory);
+  const environmentInfo = await buildEnvironmentInfo();
+  const payload = writeReport(results, startedAt, new Date().toISOString(), mandatory, environmentInfo);
   console.log(JSON.stringify({ overall: payload.overall, checks: payload.checks, criticalErrors: payload.criticalErrors, report: "qa-artifacts/latest/qa-report.md" }, null, 2));
-  process.exit(payload.overall === "FAIL" ? 1 : 0);
+  process.exitCode = payload.overall === "FAIL" ? 1 : 0;
 }
 
 main();
