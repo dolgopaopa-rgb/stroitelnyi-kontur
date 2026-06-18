@@ -2268,10 +2268,10 @@ def project_visible_for_account(project: dict, account: dict | None) -> bool:
 
 
 DOCUMENT_TYPES_BY_ROLE = {
-    "foreman": {"project_documentation", "detail_node", "regulation", "standard", "instruction"},
-    "master": {"project_documentation", "detail_node", "regulation", "standard", "instruction"},
-    "procurement_manager": {"smetter_materials", "project_documentation", "variation_attachment", "detail_node", "regulation", "standard", "instruction", "other"},
-    "technical_supervisor": {"smetter_materials", "smetter_work_task", "project_documentation", "variation_attachment", "detail_node", "regulation", "standard", "instruction", "other"},
+    "foreman": {"project_documentation", "variation_attachment", "extra_work_attachment", "photo_report", "object_remark_photo", "detail_node", "regulation", "standard", "instruction"},
+    "master": {"project_documentation", "variation_attachment", "extra_work_attachment", "photo_report", "object_remark_photo", "detail_node", "regulation", "standard", "instruction"},
+    "procurement_manager": {"smetter_materials", "project_documentation", "variation_attachment", "extra_work_attachment", "detail_node", "regulation", "standard", "instruction", "other"},
+    "technical_supervisor": {"smetter_materials", "smetter_work_task", "project_documentation", "variation_attachment", "extra_work_attachment", "photo_report", "object_remark_photo", "detail_node", "regulation", "standard", "instruction", "other"},
     "estimator": {"main_estimate", "smetter_materials", "smetter_work_task", "project_documentation", "variation_attachment", "variation_estimate", "act", "ks_2", "ks_3", "other"},
     "accountant": {"main_estimate", "smetter_materials", "smetter_work_task", "contract", "variation_attachment", "variation_estimate", "act", "ks_2", "ks_3", "other"},
     "ai_auditor": AUDIT_SAFE_DOCUMENT_TYPES,

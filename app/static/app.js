@@ -705,10 +705,10 @@ const documentAccess = {
   ai_auditor: new Set(["smetter_materials", "smetter_work_task", "project_documentation", "detail_node", "regulation", "standard", "instruction", "other"]),
   accountant: new Set(["main_estimate", "smetter_materials", "smetter_work_task", "contract", "variation_estimate", "act", "ks_2", "ks_3", "other"]),
   estimator: new Set(["main_estimate", "smetter_materials", "smetter_work_task", "project_documentation", "variation_estimate", "act", "ks_2", "ks_3", "other"]),
-  foreman: new Set(["project_documentation", "detail_node", "regulation", "standard", "instruction"]),
-  master: new Set(["project_documentation", "detail_node", "regulation", "standard", "instruction"]),
-  procurement_manager: new Set(["smetter_materials", "project_documentation", "detail_node", "regulation", "standard", "instruction", "other"]),
-  technical_supervisor: new Set(["smetter_materials", "smetter_work_task", "project_documentation", "detail_node", "regulation", "standard", "instruction", "other"]),
+  foreman: new Set(["project_documentation", "variation_attachment", "extra_work_attachment", "photo_report", "object_remark_photo", "detail_node", "regulation", "standard", "instruction"]),
+  master: new Set(["project_documentation", "variation_attachment", "extra_work_attachment", "photo_report", "object_remark_photo", "detail_node", "regulation", "standard", "instruction"]),
+  procurement_manager: new Set(["smetter_materials", "project_documentation", "variation_attachment", "extra_work_attachment", "detail_node", "regulation", "standard", "instruction", "other"]),
+  technical_supervisor: new Set(["smetter_materials", "smetter_work_task", "project_documentation", "variation_attachment", "extra_work_attachment", "photo_report", "object_remark_photo", "detail_node", "regulation", "standard", "instruction", "other"]),
 };
 
 const projectFileDocumentTypes = new Set(["project_documentation", "detail_node", "regulation", "standard", "instruction"]);
@@ -3094,6 +3094,7 @@ function renderEstimateJobRow(job) {
   const canQuestion = canQuestionEstimateJob(job);
   const canManageFiles = canManageEstimateJobFiles(job);
   const canDelete = canDeleteEstimateJob(job);
+  const canAnswerQuestion = canEdit && job.status === "estimate_question" && ["owner", "construction_manager", "sales_manager"].includes(currentRoleBase());
   const smetterHref = estimateSmetterHref(job);
   return `
     <article class="row estimate-job-row">
@@ -3118,7 +3119,7 @@ function renderEstimateJobRow(job) {
         ${renderEstimateJobFiles(job.files, job.id, canManageFiles)}
       </div>
       <div class="estimate-job-actions">
-        ${canEdit ? `<button class="secondary tiny" type="button" data-edit-estimate-job="${job.id}">Редактировать</button>` : ""}
+        ${canAnswerQuestion ? `<button class="secondary tiny" type="button" data-edit-estimate-job="${job.id}">Ответить на уточнение</button>` : canEdit ? `<button class="secondary tiny" type="button" data-edit-estimate-job="${job.id}">Редактировать</button>` : ""}
         ${canStart ? `<button class="secondary tiny" type="button" data-estimate-job-status="estimate_in_work" data-estimate-job-id="${job.id}">В работу</button>` : ""}
         ${canQuestion ? `<button class="secondary tiny" type="button" data-estimate-job-status="estimate_question" data-estimate-job-id="${job.id}">Уточнить</button>` : ""}
         ${canReturn ? `<button class="secondary tiny danger-outline" type="button" data-estimate-job-status="estimate_returned" data-estimate-job-id="${job.id}">Вернуть менеджеру</button>` : ""}

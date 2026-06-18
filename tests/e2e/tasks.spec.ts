@@ -3,8 +3,8 @@ import { openApp } from "../helpers/auth";
 
 test("task cards have separated type/status/priority badges when tasks exist", async ({ page }) => {
   await openApp(page, "/tasks");
-  const cards = page.locator('[data-testid="task-card"]');
-  if ((await cards.count()) === 0) return;
+  const cards = page.locator('[data-testid="task-card"]:visible');
+  await expect(cards.first(), "Expected at least one visible task card on the tasks page").toBeVisible();
   const examplesToCheck = Math.min(await cards.count(), 5);
   for (let index = 0; index < examplesToCheck; index += 1) {
     const card = cards.nth(index);

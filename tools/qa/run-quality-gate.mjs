@@ -451,8 +451,26 @@ async function runButtons(results, page) {
   }
   await selectRole(page, "master");
   await route(page, "tasks");
-  const masterDoneButtons = await page.locator('button:has-text("Выполнено"), button:has-text("Готово")').count().catch(() => 0);
-  add(results, "Button QA Agent", "Master done action is available when tasks exist", taskCardCount && masterDoneButtons ? "OK" : "PARTIAL", `task_cards=${taskCardCount}; done_buttons=${masterDoneButtons}`, "normal", "", { buttonsChecked: masterDoneButtons ? 1 : 0 });
+  const masterTaskCards = page.locator('#tasksView.active [data-testid="task-card"]');
+  const masterTaskCardCount = await masterTaskCards.count().catch(() => 0);
+  const masterActionableTaskCount = await masterTaskCards.evaluateAll((cards) =>
+    cards.filter((card) => {
+      const text = card.textContent || "";
+      return !/(Выполнение принято|Закрыта|Отменена|Принято)/i.test(text);
+    }).length
+  ).catch(() => 0);
+  const masterDoneButtons = await page.locator('#tasksView.active button:has-text("Выполнено"), #tasksView.active button:has-text("Готово")').count().catch(() => 0);
+  const masterDoneOk = masterActionableTaskCount === 0 || masterDoneButtons > 0;
+  add(
+    results,
+    "Button QA Agent",
+    "Master done action is available for actionable tasks",
+    masterDoneOk ? "OK" : "FAIL",
+    `master_task_cards=${masterTaskCardCount}; actionable=${masterActionableTaskCount}; done_buttons=${masterDoneButtons}`,
+    masterDoneOk ? "normal" : "blocker",
+    "",
+    { buttonsChecked: masterDoneButtons ? 1 : 0, taskCardsChecked: masterTaskCardCount }
+  );
   await selectRole(page, "owner");
   await route(page, "materials");
   const pipelineButtons = page.locator('[data-material-pipeline-filter]');
@@ -716,6 +734,27 @@ async function runMobile(results, playwright) {
       await route(page, "today");
       const navVisible = await page.locator('[data-testid="mobile-bottom-nav"]').isVisible().catch(() => false);
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 4);
+      const todayLayout = await page.evaluate(() => {
+        const visible = (node) => {
+          const style = getComputedStyle(node);
+          return style.display !== "none" && style.visibility !== "hidden" && node.getClientRects().length > 0;
+        };
+        const gridChildren = [...document.querySelectorAll(".today-grid > *")]
+          .filter(visible)
+          .map((node) => Math.round(node.getBoundingClientRect().width));
+        const decisionCards = [...document.querySelectorAll(".attention-item.decision-item")]
+          .filter(visible)
+          .map((node) => Math.round(node.getBoundingClientRect().width));
+        return {
+          viewport: window.innerWidth,
+          minGridChildWidth: gridChildren.length ? Math.min(...gridChildren) : 0,
+          minDecisionWidth: decisionCards.length ? Math.min(...decisionCards) : window.innerWidth,
+          gridChildren: gridChildren.length,
+          decisionCards: decisionCards.length,
+        };
+      });
+      const minExpectedWidth = Math.min(300, viewport.width - 40);
+      const todayGridOk = todayLayout.minGridChildWidth > minExpectedWidth && todayLayout.minDecisionWidth > minExpectedWidth;
       await page.locator('[data-testid="mobile-plus-button"]').click().catch(() => {});
       const actions = await page.locator('[data-testid="mobile-quick-actions"] [data-mobile-action]').count().catch(() => 0);
       const plusButton = page.locator('[data-testid="mobile-plus-button"].mobile-plus');
@@ -723,9 +762,26 @@ async function runMobile(results, playwright) {
       const plusBox = await plusButton.boundingBox().catch(() => null);
       const navBox = await page.locator('[data-testid="mobile-bottom-nav"]').boundingBox().catch(() => null);
       const plusSeparated = Boolean(plusVisible && plusBox && navBox && plusBox.width >= 44 && plusBox.height >= 44 && plusBox.x > navBox.x + 80 && plusBox.x + plusBox.width < navBox.x + navBox.width - 80);
-      const status = navVisible && !overflow && actions > 0 && plusSeparated ? "OK" : "FAIL";
+      await route(page, "estimates");
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight)).catch(() => {});
+      await page.waitForTimeout(150);
+      const estimatesLayout = await page.evaluate(() => {
+        const nav = document.querySelector('[data-testid="mobile-bottom-nav"]');
+        const rows = [...document.querySelectorAll(".estimate-job-row")];
+        const row = rows.at(-1);
+        const navTop = nav?.getBoundingClientRect().top ?? window.innerHeight;
+        const rowBottom = row?.getBoundingClientRect().bottom ?? 0;
+        return {
+          rows: rows.length,
+          rowBottom: Math.round(rowBottom),
+          navTop: Math.round(navTop),
+          overlapped: Boolean(row && rowBottom > navTop + 2),
+        };
+      });
+      const estimatesOk = !estimatesLayout.overlapped;
+      const status = navVisible && !overflow && actions > 0 && plusSeparated && todayGridOk && estimatesOk ? "OK" : "FAIL";
       const plusDetails = plusBox ? `${Math.round(plusBox.width)}x${Math.round(plusBox.height)}@${Math.round(plusBox.x)}` : "missing";
-      add(results, "Mobile QA Agent", `Viewport ${viewport.width}x${viewport.height}`, status, `nav=${navVisible}; horizontalOverflow=${overflow}; actions=${actions}; plusSeparated=${plusSeparated}; plusBox=${plusDetails}`, status === "FAIL" ? "blocker" : "normal");
+      add(results, "Mobile QA Agent", `Viewport ${viewport.width}x${viewport.height}`, status, `nav=${navVisible}; horizontalOverflow=${overflow}; actions=${actions}; plusSeparated=${plusSeparated}; plusBox=${plusDetails}; todayGridOk=${todayGridOk}; minGridChildWidth=${todayLayout.minGridChildWidth}; minDecisionWidth=${todayLayout.minDecisionWidth}; minExpectedWidth=${minExpectedWidth}; estimatesOverlap=${estimatesLayout.overlapped}; estimateRows=${estimatesLayout.rows}; estimateRowBottom=${estimatesLayout.rowBottom}; navTop=${estimatesLayout.navTop}`, status === "FAIL" ? "blocker" : "normal");
     } finally {
       await browser.close().catch(() => {});
     }

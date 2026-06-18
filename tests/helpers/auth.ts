@@ -55,11 +55,21 @@ export async function openApp(page: Page, path = "/today") {
 }
 
 export async function switchRole(page: Page, role: string) {
-  const select = page.locator("#currentRoleSelect");
-  if (!(await select.count())) return false;
-  const values = await select.locator("option").evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value));
-  if (!values.includes(role)) return false;
-  await select.selectOption(role);
-  await page.waitForTimeout(250);
-  return true;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const select = page.locator("#currentRoleSelect");
+      if (!(await select.count())) return false;
+      const values = await select.locator("option").evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value));
+      if (!values.includes(role)) return false;
+      await select.selectOption(role);
+      await page.waitForLoadState("domcontentloaded").catch(() => undefined);
+      await page.waitForTimeout(250);
+      return true;
+    } catch (error) {
+      if (!String(error).includes("Execution context was destroyed") || attempt === 2) throw error;
+      await page.waitForLoadState("domcontentloaded").catch(() => undefined);
+      await page.waitForTimeout(250);
+    }
+  }
+  return false;
 }

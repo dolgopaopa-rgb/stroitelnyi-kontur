@@ -4,6 +4,8 @@ import { openApp } from "../helpers/auth";
 test("signals are grouped and do not repeat identical consecutive text", async ({ page }) => {
   await openApp(page, "/signals");
   await expect(page.locator('[data-testid="signals-list"]')).toBeVisible();
+  await page.waitForLoadState("networkidle").catch(() => undefined);
+  await page.waitForTimeout(250);
   const hasDuplicate = await page.evaluate(() => {
     return [...document.querySelectorAll('[data-testid="signal-card"] .signal-preview')].some((card) => {
       const rows = [...card.querySelectorAll("span")].map((node) => node.textContent?.trim()).filter(Boolean);

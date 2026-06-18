@@ -4204,6 +4204,7 @@ textarea {
 
   .metrics,
   .dashboard-sortable,
+  .today-grid,
   .layout-two,
   .split,
   .task-workspace,
@@ -4215,6 +4216,10 @@ textarea {
 
   .attention-list {
     grid-template-columns: 1fr;
+  }
+
+  .today-wide {
+    grid-column: auto;
   }
 
   .today-role-panel {
@@ -4787,6 +4792,37 @@ textarea {
   .today-role-panel {
     padding: 10px;
     gap: 8px;
+  }
+
+  .today-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .today-grid > *,
+  .today-wide,
+  .attention-list,
+  .attention-item,
+  .today-task-card,
+  .today-material-card,
+  .today-object-card {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .attention-item,
+  .attention-item.decision-item {
+    grid-template-columns: 1fr;
+    gap: 7px;
+  }
+
+  .attention-item.decision-item .attention-count {
+    min-width: 0;
+    width: max-content;
+    max-width: 100%;
+    white-space: normal;
+    height: auto;
+    min-height: 28px;
   }
 
   .today-primary-actions {

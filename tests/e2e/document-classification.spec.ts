@@ -2,7 +2,8 @@ import { expect, test } from "@playwright/test";
 import { openApp } from "../helpers/auth";
 
 test("document classifier is available in browser", async ({ page }) => {
-  await openApp(page, "/documents");
+  await openApp(page, "/today");
+  await page.waitForLoadState("networkidle").catch(() => undefined);
   await page.waitForFunction(() => typeof (window as any).__konturDocumentTypeKey === "function");
   const labels = await page.evaluate(() => {
     const fn = (window as any).__konturDocumentTypeKey;

@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { openApp } from "../helpers/auth";
 
-const views = ["/today", "/objects", "/tasks", "/materials", "/photo-reports", "/object-issues", "/documents", "/signals", "/feedback"];
+const views = ["/today", "/objects", "/tasks", "/materials", "/photo-reports", "/object-issues", "/documents", "/signals", "/feedback", "/estimates"];
 
 async function evaluateStable<T>(page, callback: () => T | Promise<T>): Promise<T> {
   let lastError;
