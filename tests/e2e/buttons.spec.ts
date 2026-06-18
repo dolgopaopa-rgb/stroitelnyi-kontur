@@ -2,7 +2,8 @@ import { expect, test } from "@playwright/test";
 import { openApp } from "../helpers/auth";
 import { testIds } from "../helpers/selectors";
 
-test("main navigation buttons change visible screen", async ({ page }) => {
+test("main navigation buttons change visible screen", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes("mobile"), "Desktop sidebar navigation is hidden on mobile; mobile navigation is covered separately.");
   await openApp(page, "/today");
   for (const selector of [testIds.navObjects, testIds.navTasks, testIds.navMaterials, testIds.navDocuments]) {
     const button = page.locator(selector).first();

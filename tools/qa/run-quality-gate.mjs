@@ -527,7 +527,7 @@ async function runRoles(results, page) {
     ["construction_manager", "today-role-project-manager", ["nav-objects", "nav-tasks", "nav-materials"], ["nav-feedback", "nav-estimates"]],
     ["foreman:7", "today-role-foreman", ["nav-objects", "nav-tasks", "nav-materials", "nav-photo-reports"], ["nav-feedback", "nav-estimates", "nav-documents"]],
     ["master", "today-role-worker", ["nav-tasks", "nav-photo-reports", "nav-object-issues"], ["nav-objects", "nav-materials", "nav-feedback", "nav-documents"]],
-    ["procurement_manager", "today-role-procurement", ["nav-materials", "nav-objects"], ["nav-tasks", "nav-feedback", "nav-estimates"]],
+    ["procurement_manager", "today-role-procurement", ["nav-materials", "nav-objects", "nav-photo-reports"], ["nav-tasks", "nav-feedback", "nav-estimates"]],
     ["estimator", "today-role-estimator", ["nav-estimates", "nav-materials", "nav-variations", "nav-photo-reports"], ["nav-feedback"]],
   ];
   await route(page, "today");

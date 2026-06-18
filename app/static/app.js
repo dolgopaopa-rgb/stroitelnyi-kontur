@@ -534,7 +534,7 @@ const viewAccess = {
   sales_manager: ["today", "dashboard", "projects", "estimates", "documents"],
   foreman: ["today", "dashboard", "projects", "tasks", "materials", "object_remarks", "photos"],
   master: ["today", "tasks", "object_remarks", "photos"],
-  procurement_manager: ["today", "dashboard", "projects", "materials", "locations", "documents"],
+  procurement_manager: ["today", "dashboard", "projects", "materials", "photos", "locations", "documents"],
   estimator: ["today", "estimates", "tasks", "materials", "variations", "photos", "documents"],
   technical_supervisor: ["today", "dashboard", "projects", "tasks", "works", "materials", "object_remarks", "photos", "locations", "documents"],
 };
@@ -572,6 +572,7 @@ const navLabelsByRole = {
   procurement_manager: {
     dashboard: "Проблемы",
     materials: "Заявки",
+    photos: "Фотоотчёты",
     locations: "Поставщики",
   },
   estimator: {
@@ -709,7 +710,7 @@ const documentAccess = {
   estimator: new Set(["main_estimate", "smetter_materials", "smetter_work_task", "project_documentation", "variation_estimate", "act", "ks_2", "ks_3", "photo_report", "object_remark_photo", "photo_video", "other"]),
   foreman: new Set(["project_documentation", "variation_attachment", "extra_work_attachment", "photo_report", "object_remark_photo", "detail_node", "regulation", "standard", "instruction"]),
   master: new Set(["project_documentation", "variation_attachment", "extra_work_attachment", "photo_report", "object_remark_photo", "detail_node", "regulation", "standard", "instruction"]),
-  procurement_manager: new Set(["smetter_materials", "project_documentation", "variation_attachment", "extra_work_attachment", "detail_node", "regulation", "standard", "instruction", "other"]),
+  procurement_manager: new Set(["smetter_materials", "project_documentation", "variation_attachment", "extra_work_attachment", "photo_report", "object_remark_photo", "photo_video", "detail_node", "regulation", "standard", "instruction", "other"]),
   technical_supervisor: new Set(["smetter_materials", "smetter_work_task", "project_documentation", "variation_attachment", "extra_work_attachment", "photo_report", "object_remark_photo", "detail_node", "regulation", "standard", "instruction", "other"]),
 };
 
@@ -746,7 +747,7 @@ function projectTabs() {
     sales_manager: ["overview", "documents"],
     foreman: ["overview", "tasks", "materials", "photos", "remarks", "documents"],
     master: ["overview", "tasks", "photos", "remarks", "documents"],
-    procurement_manager: ["overview", "materials", "remarks", "documents", "events"],
+    procurement_manager: ["overview", "materials", "photos", "remarks", "documents", "events"],
     estimator: ["overview", "tasks", "materials", "photos", "remarks", "documents", "events"],
     technical_supervisor: ["overview", "tasks", "materials", "photos", "remarks", "documents", "events"],
   }[base];
@@ -4015,7 +4016,7 @@ function mediaPreviewLink(doc) {
 function renderPhotoReportCard(report) {
   const attachments = (report.attachments || []).filter((doc) => String(doc.mime_type || "").startsWith("image/") || String(doc.mime_type || "").startsWith("video/"));
   return `
-    <article class="row photo-report-card">
+    <article class="row photo-report-card" data-testid="photo-report-card">
       <div class="photo-report-main">
         <div class="stack-line">
           <strong>${escapeHtml(report.project_title || "Объект не указан")}</strong>

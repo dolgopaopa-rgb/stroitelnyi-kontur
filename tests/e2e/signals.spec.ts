@@ -3,17 +3,32 @@ import { openApp } from "../helpers/auth";
 
 test("signals page opens and does not show duplicated raw enum values", async ({ page }) => {
   await openApp(page, "/signals");
-  const text = await page.locator("body").innerText();
+  await page.waitForLoadState("networkidle").catch(() => undefined);
+
+  let text = "";
+  let signalRows: string[] = [];
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      text = await page.locator("body").innerText();
+      signalRows = await page.locator(".signal-row").evaluateAll((nodes) =>
+        nodes.map((node) =>
+          (node.textContent || "")
+            .replace(/\s+/g, " ")
+            .replace(/more \d+ items/gi, "")
+            .replace(/ещ[её] \d+ позиц(ия|ии|ий)/gi, "")
+            .trim()
+        )
+      );
+      break;
+    } catch (error) {
+      if (!String(error).includes("Execution context was destroyed") || attempt === 4) throw error;
+      await page.waitForLoadState("domcontentloaded").catch(() => undefined);
+      await page.waitForTimeout(250);
+    }
+  }
+
   expect(text).not.toContain("in_progress");
   expect(text).not.toContain("construction_manager");
-  const signalRows = await page.locator(".signal-row").evaluateAll((nodes) =>
-    nodes.map((node) =>
-      (node.textContent || "")
-        .replace(/\s+/g, " ")
-        .replace(/ещё \d+ позиций/g, "")
-        .trim()
-    )
-  );
   for (let index = 2; index < signalRows.length; index += 1) {
     expect(signalRows[index]).not.toBe(signalRows[index - 1]);
     expect(signalRows[index]).not.toBe(signalRows[index - 2]);
@@ -29,9 +44,9 @@ test("signal grouping collapses repeated equal messages", async ({ page }) => {
         const rows = Array.from({ length: 4 }, (_, index) => ({
           id: index + 1,
           project_id: 13,
-          project_title: "Объект #13",
-          title: "Материалы по заявке получены",
-          text: "Квартира на Севастопольском: материалы по заявке от 15.06.2026 получены прорабом",
+          project_title: "Object #13",
+          title: "Materials request delivered",
+          text: "Object #13: materials request from 2026-06-15 was received by the foreman",
           related_type: "material_request",
           related_id: index + 1,
           created_at: "2026-06-16 10:00:00",
@@ -48,6 +63,6 @@ test("signal grouping collapses repeated equal messages", async ({ page }) => {
   if (!result) throw new Error("Signal grouping helpers were not available.");
   expect(result.signalCount).toBe(1);
   expect(result.itemCount).toBe(4);
-  expect(result.preview.visible).toEqual(["Квартира на Севастопольском: материалы по заявке от 15.06.2026 получены прорабом"]);
+  expect(result.preview.visible).toEqual(["Object #13: materials request from 2026-06-15 was received by the foreman"]);
   expect(result.preview.hidden).toBe(3);
 });

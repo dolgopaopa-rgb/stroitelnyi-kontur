@@ -499,7 +499,7 @@
     sales_manager: ["today", "dashboard", "projects", "estimates", "documents"],
     foreman: ["today", "dashboard", "projects", "tasks", "materials", "object_remarks", "photos"],
     master: ["today", "tasks", "object_remarks", "photos"],
-    procurement_manager: ["today", "dashboard", "projects", "materials", "locations", "documents"],
+    procurement_manager: ["today", "dashboard", "projects", "materials", "photos", "locations", "documents"],
     estimator: ["today", "estimates", "tasks", "materials", "variations", "photos", "documents"],
     technical_supervisor: ["today", "dashboard", "projects", "tasks", "works", "materials", "object_remarks", "photos", "locations", "documents"]
   };
@@ -536,6 +536,7 @@
     procurement_manager: {
       dashboard: "Проблемы",
       materials: "Заявки",
+      photos: "Фотоотчёты",
       locations: "Поставщики"
     },
     estimator: {
@@ -661,7 +662,7 @@
     estimator: /* @__PURE__ */ new Set(["main_estimate", "smetter_materials", "smetter_work_task", "project_documentation", "variation_estimate", "act", "ks_2", "ks_3", "photo_report", "object_remark_photo", "photo_video", "other"]),
     foreman: /* @__PURE__ */ new Set(["project_documentation", "variation_attachment", "extra_work_attachment", "photo_report", "object_remark_photo", "detail_node", "regulation", "standard", "instruction"]),
     master: /* @__PURE__ */ new Set(["project_documentation", "variation_attachment", "extra_work_attachment", "photo_report", "object_remark_photo", "detail_node", "regulation", "standard", "instruction"]),
-    procurement_manager: /* @__PURE__ */ new Set(["smetter_materials", "project_documentation", "variation_attachment", "extra_work_attachment", "detail_node", "regulation", "standard", "instruction", "other"]),
+    procurement_manager: /* @__PURE__ */ new Set(["smetter_materials", "project_documentation", "variation_attachment", "extra_work_attachment", "photo_report", "object_remark_photo", "photo_video", "detail_node", "regulation", "standard", "instruction", "other"]),
     technical_supervisor: /* @__PURE__ */ new Set(["smetter_materials", "smetter_work_task", "project_documentation", "variation_attachment", "extra_work_attachment", "photo_report", "object_remark_photo", "detail_node", "regulation", "standard", "instruction", "other"])
   };
   var projectFileDocumentTypes = /* @__PURE__ */ new Set(["project_documentation", "detail_node", "regulation", "standard", "instruction"]);
@@ -692,7 +693,7 @@
       sales_manager: ["overview", "documents"],
       foreman: ["overview", "tasks", "materials", "photos", "remarks", "documents"],
       master: ["overview", "tasks", "photos", "remarks", "documents"],
-      procurement_manager: ["overview", "materials", "remarks", "documents", "events"],
+      procurement_manager: ["overview", "materials", "photos", "remarks", "documents", "events"],
       estimator: ["overview", "tasks", "materials", "photos", "remarks", "documents", "events"],
       technical_supervisor: ["overview", "tasks", "materials", "photos", "remarks", "documents", "events"]
     }[base];
@@ -3237,7 +3238,7 @@
   }
   function renderPhotoReportCard(report) {
     const attachments = (report.attachments || []).filter((doc) => String(doc.mime_type || "").startsWith("image/") || String(doc.mime_type || "").startsWith("video/"));
-    return '\n    <article class="row photo-report-card">\n      <div class="photo-report-main">\n        <div class="stack-line">\n          <strong>'.concat(escapeHtml(report.project_title || "Объект не указан"), "</strong>\n          ").concat(pill(statusLabel(report.status || "review"), statusLevel(report.status || "review")), "\n          ").concat(pill(formatDateRu(report.report_date), "blue"), '\n        </div>\n        <div class="muted">автор: ').concat(escapeHtml(report.author_name || "не указан"), " · этап: ").concat(escapeHtml(report.stage || "не указан"), " · зоны: ").concat(escapeHtml(report.zones || "не указаны"), "</div>\n        ").concat(report.comment ? "<p>".concat(escapeHtml(report.comment), "</p>") : "", '\n      </div>\n      <div class="media-grid">').concat(attachments.length ? attachments.map(mediaPreviewLink).join("") : '<span class="muted">Фото/видео не прикреплены.</span>', "</div>\n    </article>");
+    return '\n    <article class="row photo-report-card" data-testid="photo-report-card">\n      <div class="photo-report-main">\n        <div class="stack-line">\n          <strong>'.concat(escapeHtml(report.project_title || "Объект не указан"), "</strong>\n          ").concat(pill(statusLabel(report.status || "review"), statusLevel(report.status || "review")), "\n          ").concat(pill(formatDateRu(report.report_date), "blue"), '\n        </div>\n        <div class="muted">автор: ').concat(escapeHtml(report.author_name || "не указан"), " · этап: ").concat(escapeHtml(report.stage || "не указан"), " · зоны: ").concat(escapeHtml(report.zones || "не указаны"), "</div>\n        ").concat(report.comment ? "<p>".concat(escapeHtml(report.comment), "</p>") : "", '\n      </div>\n      <div class="media-grid">').concat(attachments.length ? attachments.map(mediaPreviewLink).join("") : '<span class="muted">Фото/видео не прикреплены.</span>', "</div>\n    </article>");
   }
   function projectsWithoutTodayPhoto() {
     return roleScopedProjects(state.projects).filter((project) => project.status !== "archived").filter((project) => !isTodayDate(latestPhotoReportDate(project.id)));
