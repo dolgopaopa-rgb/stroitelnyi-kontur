@@ -64,6 +64,7 @@ const state = {
   mobileQuickOpen: false,
   mobileSheetMode: "actions",
   loadingKeys: new Set(),
+  mediaPreview: { items: [], index: 0, touchX: null },
   pullRefresh: { tracking: false, startY: 0, distance: 0, ready: false, refreshing: false },
 };
 
@@ -4018,26 +4019,62 @@ function closeMediaPreview() {
   const body = qs("#mediaPreviewBody");
   if (dialog?.open) dialog.close();
   if (body) body.innerHTML = "";
+  state.mediaPreview = { items: [], index: 0, touchX: null };
 }
 
-function openMediaPreview({ href, title, mime, kind }) {
+function mediaPreviewItemFromLink(link) {
+  return {
+    href: link.dataset.mediaUrl || link.getAttribute("href") || "",
+    title: link.dataset.mediaTitle || link.textContent?.trim() || "Просмотр файла",
+    mime: link.dataset.mediaMime || "",
+    kind: link.dataset.mediaPreview || "",
+  };
+}
+
+function renderMediaPreview() {
   const dialog = qs("#mediaPreviewDialog");
   const titleNode = qs("#mediaPreviewTitle");
   const body = qs("#mediaPreviewBody");
   const originalLink = qs("#mediaPreviewOpenOriginal");
+  const counter = qs("#mediaPreviewCounter");
+  const prevButton = qs("#mediaPreviewPrev");
+  const nextButton = qs("#mediaPreviewNext");
+  const items = state.mediaPreview.items || [];
+  const index = Math.min(Math.max(Number(state.mediaPreview.index || 0), 0), Math.max(items.length - 1, 0));
+  const item = items[index];
+  if (!item || !item.href || !dialog || !body) return;
+  const safeTitle = item.title || "Просмотр файла";
+  const mediaKind = item.kind || (String(item.mime || "").startsWith("video/") ? "video" : "image");
+  state.mediaPreview.index = index;
+  titleNode.textContent = safeTitle;
+  if (counter) counter.textContent = items.length > 1 ? `${index + 1} / ${items.length}` : "1 / 1";
+  if (prevButton) prevButton.disabled = items.length <= 1;
+  if (nextButton) nextButton.disabled = items.length <= 1;
+  if (originalLink) originalLink.href = item.href;
+  body.innerHTML =
+    mediaKind === "video"
+      ? `<video src="${item.href}" controls playsinline preload="metadata"></video>`
+      : `<img src="${item.href}" alt="${escapeHtml(safeTitle)}" />`;
+}
+
+function openMediaPreview({ href, title, mime, kind, items = [], index = 0 }) {
+  const dialog = qs("#mediaPreviewDialog");
+  const body = qs("#mediaPreviewBody");
   if (!href || !dialog || !body) {
     window.open(href || "#", "_blank", "noopener");
     return;
   }
-  const safeTitle = title || "Просмотр файла";
-  const mediaKind = kind || (String(mime || "").startsWith("video/") ? "video" : "image");
-  titleNode.textContent = safeTitle;
-  if (originalLink) originalLink.href = href;
-  body.innerHTML =
-    mediaKind === "video"
-      ? `<video src="${href}" controls playsinline preload="metadata"></video>`
-      : `<img src="${href}" alt="${escapeHtml(safeTitle)}" />`;
+  const galleryItems = items.length ? items : [{ href, title, mime, kind }];
+  state.mediaPreview = { items: galleryItems, index, touchX: null };
+  renderMediaPreview();
   if (!dialog.open) dialog.showModal();
+}
+
+function moveMediaPreview(delta) {
+  const items = state.mediaPreview.items || [];
+  if (items.length <= 1) return;
+  state.mediaPreview.index = (Number(state.mediaPreview.index || 0) + delta + items.length) % items.length;
+  renderMediaPreview();
 }
 
 function renderPhotoReportCard(report) {
@@ -7076,9 +7113,34 @@ function bindEvents() {
   qsa("[data-close]").forEach((button) => button.addEventListener("click", () => qs(`#${button.dataset.close}`).close()));
   qs("#mediaPreviewClose")?.addEventListener("click", closeMediaPreview);
   qs("#mediaPreviewCloseBottom")?.addEventListener("click", closeMediaPreview);
+  qs("#mediaPreviewPrev")?.addEventListener("click", () => moveMediaPreview(-1));
+  qs("#mediaPreviewNext")?.addEventListener("click", () => moveMediaPreview(1));
   qs("#mediaPreviewDialog")?.addEventListener("close", () => {
     const body = qs("#mediaPreviewBody");
     if (body) body.innerHTML = "";
+    state.mediaPreview = { items: [], index: 0, touchX: null };
+  });
+  qs("#mediaPreviewBody")?.addEventListener(
+    "touchstart",
+    (event) => {
+      state.mediaPreview.touchX = event.changedTouches?.[0]?.clientX ?? null;
+    },
+    { passive: true }
+  );
+  qs("#mediaPreviewBody")?.addEventListener(
+    "touchend",
+    (event) => {
+      const startX = state.mediaPreview.touchX;
+      const endX = event.changedTouches?.[0]?.clientX ?? null;
+      state.mediaPreview.touchX = null;
+      if (startX == null || endX == null || Math.abs(endX - startX) < 45) return;
+      moveMediaPreview(endX < startX ? 1 : -1);
+    },
+    { passive: true }
+  );
+  qs("#mediaPreviewDialog")?.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowLeft") moveMediaPreview(-1);
+    if (event.key === "ArrowRight") moveMediaPreview(1);
   });
 
   qs("#estimateImagePrev")?.addEventListener("click", () => moveEstimateGallery(-1));
@@ -7181,11 +7243,17 @@ function bindEvents() {
     const mediaPreviewButton = event.target.closest("[data-media-preview]");
     if (mediaPreviewButton) {
       event.preventDefault();
+      const galleryRoot = mediaPreviewButton.closest(".media-grid, .remark-media-grid, .photo-report-card, .object-remark-card");
+      const galleryItems = qsa("[data-media-preview]", galleryRoot || document).map(mediaPreviewItemFromLink).filter((item) => item.href);
+      const clickedHref = mediaPreviewButton.dataset.mediaUrl || mediaPreviewButton.getAttribute("href") || "";
+      const clickedIndex = Math.max(0, galleryItems.findIndex((item) => item.href === clickedHref));
       openMediaPreview({
         href: mediaPreviewButton.dataset.mediaUrl || mediaPreviewButton.getAttribute("href"),
         title: mediaPreviewButton.dataset.mediaTitle || mediaPreviewButton.textContent?.trim(),
         mime: mediaPreviewButton.dataset.mediaMime || "",
         kind: mediaPreviewButton.dataset.mediaPreview || "",
+        items: galleryItems,
+        index: clickedIndex,
       });
       return;
     }

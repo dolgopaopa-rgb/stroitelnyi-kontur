@@ -4127,6 +4127,24 @@ textarea {
   border-radius: 6px;
 }
 
+.media-preview-toolbar {
+  display: grid;
+  grid-template-columns: minmax(96px, 1fr) auto minmax(96px, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.media-preview-toolbar button {
+  min-height: 42px;
+}
+
+.media-preview-counter {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .media-preview-actions {
   justify-content: space-between;
 }
@@ -4797,6 +4815,16 @@ textarea {
   .media-preview-body img,
   .media-preview-body video {
     max-height: calc(100dvh - 170px);
+  }
+
+  .media-preview-toolbar {
+    grid-template-columns: 1fr auto 1fr;
+    gap: 8px;
+  }
+
+  .media-preview-toolbar button {
+    min-width: 0;
+    padding-inline: 8px;
   }
 
   .media-preview-actions {

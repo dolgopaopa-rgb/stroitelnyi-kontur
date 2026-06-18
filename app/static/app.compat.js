@@ -98,6 +98,7 @@
     mobileQuickOpen: false,
     mobileSheetMode: "actions",
     loadingKeys: /* @__PURE__ */ new Set(),
+    mediaPreview: { items: [], index: 0, touchX: null },
     pullRefresh: { tracking: false, startY: 0, distance: 0, ready: false, refreshing: false }
   };
   var PROJECT_FORM_DRAFT_KEY = "projectFormDraft:v1";
@@ -3241,22 +3242,56 @@
     const body = qs("#mediaPreviewBody");
     if (dialog == null ? void 0 : dialog.open) dialog.close();
     if (body) body.innerHTML = "";
+    state.mediaPreview = { items: [], index: 0, touchX: null };
   }
-  function openMediaPreview({ href, title, mime, kind }) {
+  function mediaPreviewItemFromLink(link) {
+    var _a;
+    return {
+      href: link.dataset.mediaUrl || link.getAttribute("href") || "",
+      title: link.dataset.mediaTitle || ((_a = link.textContent) == null ? void 0 : _a.trim()) || "Просмотр файла",
+      mime: link.dataset.mediaMime || "",
+      kind: link.dataset.mediaPreview || ""
+    };
+  }
+  function renderMediaPreview() {
     const dialog = qs("#mediaPreviewDialog");
     const titleNode = qs("#mediaPreviewTitle");
     const body = qs("#mediaPreviewBody");
     const originalLink = qs("#mediaPreviewOpenOriginal");
+    const counter = qs("#mediaPreviewCounter");
+    const prevButton = qs("#mediaPreviewPrev");
+    const nextButton = qs("#mediaPreviewNext");
+    const items = state.mediaPreview.items || [];
+    const index = Math.min(Math.max(Number(state.mediaPreview.index || 0), 0), Math.max(items.length - 1, 0));
+    const item = items[index];
+    if (!item || !item.href || !dialog || !body) return;
+    const safeTitle = item.title || "Просмотр файла";
+    const mediaKind = item.kind || (String(item.mime || "").startsWith("video/") ? "video" : "image");
+    state.mediaPreview.index = index;
+    titleNode.textContent = safeTitle;
+    if (counter) counter.textContent = items.length > 1 ? "".concat(index + 1, " / ").concat(items.length) : "1 / 1";
+    if (prevButton) prevButton.disabled = items.length <= 1;
+    if (nextButton) nextButton.disabled = items.length <= 1;
+    if (originalLink) originalLink.href = item.href;
+    body.innerHTML = mediaKind === "video" ? '<video src="'.concat(item.href, '" controls playsinline preload="metadata"></video>') : '<img src="'.concat(item.href, '" alt="').concat(escapeHtml(safeTitle), '" />');
+  }
+  function openMediaPreview({ href, title, mime, kind, items = [], index = 0 }) {
+    const dialog = qs("#mediaPreviewDialog");
+    const body = qs("#mediaPreviewBody");
     if (!href || !dialog || !body) {
       window.open(href || "#", "_blank", "noopener");
       return;
     }
-    const safeTitle = title || "Просмотр файла";
-    const mediaKind = kind || (String(mime || "").startsWith("video/") ? "video" : "image");
-    titleNode.textContent = safeTitle;
-    if (originalLink) originalLink.href = href;
-    body.innerHTML = mediaKind === "video" ? '<video src="'.concat(href, '" controls playsinline preload="metadata"></video>') : '<img src="'.concat(href, '" alt="').concat(escapeHtml(safeTitle), '" />');
+    const galleryItems = items.length ? items : [{ href, title, mime, kind }];
+    state.mediaPreview = { items: galleryItems, index, touchX: null };
+    renderMediaPreview();
     if (!dialog.open) dialog.showModal();
+  }
+  function moveMediaPreview(delta) {
+    const items = state.mediaPreview.items || [];
+    if (items.length <= 1) return;
+    state.mediaPreview.index = (Number(state.mediaPreview.index || 0) + delta + items.length) % items.length;
+    renderMediaPreview();
   }
   function renderPhotoReportCard(report) {
     const attachments = (report.attachments || []).filter((doc) => String(doc.mime_type || "").startsWith("image/") || String(doc.mime_type || "").startsWith("video/"));
@@ -4972,7 +5007,7 @@
     }
   }
   function bindEvents() {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C;
     bindStableDetailsTouchGuard();
     bindWheelPageScroll();
     initPullToRefresh();
@@ -5090,14 +5125,41 @@
     qsa("[data-close]").forEach((button) => button.addEventListener("click", () => qs("#".concat(button.dataset.close)).close()));
     (_o = qs("#mediaPreviewClose")) == null ? void 0 : _o.addEventListener("click", closeMediaPreview);
     (_p = qs("#mediaPreviewCloseBottom")) == null ? void 0 : _p.addEventListener("click", closeMediaPreview);
-    (_q = qs("#mediaPreviewDialog")) == null ? void 0 : _q.addEventListener("close", () => {
+    (_q = qs("#mediaPreviewPrev")) == null ? void 0 : _q.addEventListener("click", () => moveMediaPreview(-1));
+    (_r = qs("#mediaPreviewNext")) == null ? void 0 : _r.addEventListener("click", () => moveMediaPreview(1));
+    (_s = qs("#mediaPreviewDialog")) == null ? void 0 : _s.addEventListener("close", () => {
       const body = qs("#mediaPreviewBody");
       if (body) body.innerHTML = "";
+      state.mediaPreview = { items: [], index: 0, touchX: null };
     });
-    (_r = qs("#estimateImagePrev")) == null ? void 0 : _r.addEventListener("click", () => moveEstimateGallery(-1));
-    (_s = qs("#estimateImageNext")) == null ? void 0 : _s.addEventListener("click", () => moveEstimateGallery(1));
+    (_t = qs("#mediaPreviewBody")) == null ? void 0 : _t.addEventListener(
+      "touchstart",
+      (event) => {
+        var _a2, _b2, _c2;
+        state.mediaPreview.touchX = (_c2 = (_b2 = (_a2 = event.changedTouches) == null ? void 0 : _a2[0]) == null ? void 0 : _b2.clientX) != null ? _c2 : null;
+      },
+      { passive: true }
+    );
+    (_u = qs("#mediaPreviewBody")) == null ? void 0 : _u.addEventListener(
+      "touchend",
+      (event) => {
+        var _a2, _b2, _c2;
+        const startX = state.mediaPreview.touchX;
+        const endX = (_c2 = (_b2 = (_a2 = event.changedTouches) == null ? void 0 : _a2[0]) == null ? void 0 : _b2.clientX) != null ? _c2 : null;
+        state.mediaPreview.touchX = null;
+        if (startX == null || endX == null || Math.abs(endX - startX) < 45) return;
+        moveMediaPreview(endX < startX ? 1 : -1);
+      },
+      { passive: true }
+    );
+    (_v = qs("#mediaPreviewDialog")) == null ? void 0 : _v.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowLeft") moveMediaPreview(-1);
+      if (event.key === "ArrowRight") moveMediaPreview(1);
+    });
+    (_w = qs("#estimateImagePrev")) == null ? void 0 : _w.addEventListener("click", () => moveEstimateGallery(-1));
+    (_x = qs("#estimateImageNext")) == null ? void 0 : _x.addEventListener("click", () => moveEstimateGallery(1));
     let estimateGalleryTouchX = null;
-    (_t = qs("#estimateImageStage")) == null ? void 0 : _t.addEventListener(
+    (_y = qs("#estimateImageStage")) == null ? void 0 : _y.addEventListener(
       "touchstart",
       (event) => {
         var _a2, _b2, _c2;
@@ -5105,7 +5167,7 @@
       },
       { passive: true }
     );
-    (_u = qs("#estimateImageStage")) == null ? void 0 : _u.addEventListener(
+    (_z = qs("#estimateImageStage")) == null ? void 0 : _z.addEventListener(
       "touchend",
       (event) => {
         var _a2, _b2, _c2;
@@ -5197,11 +5259,17 @@
       const mediaPreviewButton = event.target.closest("[data-media-preview]");
       if (mediaPreviewButton) {
         event.preventDefault();
+        const galleryRoot = mediaPreviewButton.closest(".media-grid, .remark-media-grid, .photo-report-card, .object-remark-card");
+        const galleryItems = qsa("[data-media-preview]", galleryRoot || document).map(mediaPreviewItemFromLink).filter((item) => item.href);
+        const clickedHref = mediaPreviewButton.dataset.mediaUrl || mediaPreviewButton.getAttribute("href") || "";
+        const clickedIndex = Math.max(0, galleryItems.findIndex((item) => item.href === clickedHref));
         openMediaPreview({
           href: mediaPreviewButton.dataset.mediaUrl || mediaPreviewButton.getAttribute("href"),
           title: mediaPreviewButton.dataset.mediaTitle || ((_a2 = mediaPreviewButton.textContent) == null ? void 0 : _a2.trim()),
           mime: mediaPreviewButton.dataset.mediaMime || "",
-          kind: mediaPreviewButton.dataset.mediaPreview || ""
+          kind: mediaPreviewButton.dataset.mediaPreview || "",
+          items: galleryItems,
+          index: clickedIndex
         });
         return;
       }
@@ -5825,8 +5893,8 @@
       qs('#taskForm input[name="creator_id"]').value = currentUserId() || "";
       submitForm("taskDialog", "taskForm", "/api/tasks", "Задача создана");
     });
-    (_v = qs("#photoReportForm")) == null ? void 0 : _v.addEventListener("submit", submitPhotoReportForm);
-    (_w = qs("#objectRemarkForm")) == null ? void 0 : _w.addEventListener("submit", submitObjectRemarkForm);
+    (_A = qs("#photoReportForm")) == null ? void 0 : _A.addEventListener("submit", submitPhotoReportForm);
+    (_B = qs("#objectRemarkForm")) == null ? void 0 : _B.addEventListener("submit", submitObjectRemarkForm);
     qs("#estimateJobForm").addEventListener("submit", async (event) => {
       var _a2;
       event.preventDefault();
@@ -6014,7 +6082,7 @@
       switchView("materials");
       showToast("Материалы сметы загружены в объект");
     });
-    (_x = qs("#knowledgeFolderForm")) == null ? void 0 : _x.addEventListener("submit", async (event) => {
+    (_C = qs("#knowledgeFolderForm")) == null ? void 0 : _C.addEventListener("submit", async (event) => {
       event.preventDefault();
       const form = qs("#knowledgeFolderForm");
       try {

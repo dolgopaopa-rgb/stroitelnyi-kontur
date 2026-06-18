@@ -109,5 +109,6 @@ Mobile QA must verify the full photo/video viewing loop, not only the download U
 1. Tap/click a photo report thumbnail.
 2. The media must open inside Kontur, not leave the app without a visible return path.
 3. The preview must show a clear close/back control.
-4. Closing the preview must return to the same screen without losing scroll or opening a blank external page.
-5. If a visible photo/video has no working close/back path, Mobile QA must fail.
+4. If a report has two or more photos, the preview must show previous/next slideshow controls and the counter must change after tapping next/previous.
+5. Closing the preview must return to the same screen without losing scroll or opening a blank external page.
+6. If a visible photo/video has no working close/back path or slideshow controls do not switch slides, Mobile QA must fail.

@@ -354,11 +354,12 @@ with connect() as db:
         )
         report = cur.lastrowid
 
-    doc_title = "qa-photo-fixture.png"
-    doc_row = db.execute("SELECT id FROM documents WHERE project_id = ? AND title = ? AND type = 'photo_report'", (project, doc_title)).fetchone()
-    if doc_row:
-        doc = doc_row["id"]
-    else:
+    doc_ids = []
+    for doc_title in ("qa-photo-fixture-1.png", "qa-photo-fixture-2.png"):
+        doc_row = db.execute("SELECT id FROM documents WHERE project_id = ? AND title = ? AND type = 'photo_report'", (project, doc_title)).fetchone()
+        if doc_row:
+            doc_ids.append(doc_row["id"])
+            continue
         upload_dir = DATA_DIR / "uploads" / f"project_{project}"
         upload_dir.mkdir(parents=True, exist_ok=True)
         file_path = upload_dir / doc_title
@@ -381,9 +382,10 @@ with connect() as db:
                 file_path.stat().st_size,
             ),
         )
-        doc = cur.lastrowid
-    if not db.execute("SELECT id FROM photo_report_documents WHERE photo_report_id = ? AND document_id = ?", (report, doc)).fetchone():
-        db.execute("INSERT INTO photo_report_documents (photo_report_id, document_id) VALUES (?, ?)", (report, doc))
+        doc_ids.append(cur.lastrowid)
+    for doc in doc_ids:
+        if not db.execute("SELECT id FROM photo_report_documents WHERE photo_report_id = ? AND document_id = ?", (report, doc)).fetchone():
+            db.execute("INSERT INTO photo_report_documents (photo_report_id, document_id) VALUES (?, ?)", (report, doc))
     db.commit()
     print(f"fixture ok project={project}")
 `;
@@ -888,16 +890,30 @@ async function runMobile(results, playwright) {
       let photoPreviewDetails = "not-run";
       if (photosLayout.thumbs > 0) {
         try {
-          await page.locator(".photo-report-card .media-thumb").first().click();
+          const qaThumb = page.locator('.photo-report-card:has-text("QA photo report fixture") .media-thumb').first();
+          const thumb = (await qaThumb.count().catch(() => 0)) ? qaThumb : page.locator(".photo-report-card .media-thumb").first();
+          await thumb.click();
           await page.waitForTimeout(150);
           const dialogVisible = await page.locator('[data-testid="media-preview-dialog"]').isVisible().catch(() => false);
           const imageVisible = await page.locator('[data-testid="media-preview-body"] img, [data-testid="media-preview-body"] video').first().isVisible().catch(() => false);
           const closeVisible = await page.locator("#mediaPreviewCloseBottom").isVisible().catch(() => false);
+          const counterBefore = await page.locator('[data-testid="media-preview-counter"]').innerText().catch(() => "");
+          const nextVisible = await page.locator('[data-testid="media-preview-next"]').isVisible().catch(() => false);
+          if (nextVisible) await page.locator('[data-testid="media-preview-next"]').click();
+          await page.waitForTimeout(100);
+          const counterAfter = await page.locator('[data-testid="media-preview-counter"]').innerText().catch(() => "");
+          const beforeMatch = String(counterBefore).match(/(\d+)\s*\/\s*(\d+)/);
+          const afterMatch = String(counterAfter).match(/(\d+)\s*\/\s*(\d+)/);
+          const slideshowOk =
+            Boolean(beforeMatch && afterMatch) &&
+            counterBefore !== counterAfter &&
+            Number(afterMatch[2]) >= 2 &&
+            Number(beforeMatch[2]) === Number(afterMatch[2]);
           if (closeVisible) await page.locator("#mediaPreviewCloseBottom").click();
           await page.waitForTimeout(100);
           const closed = !(await page.locator('[data-testid="media-preview-dialog"]').isVisible().catch(() => false));
-          photoPreviewOk = dialogVisible && imageVisible && closeVisible && closed;
-          photoPreviewDetails = `dialog=${dialogVisible}; media=${imageVisible}; close=${closeVisible}; closed=${closed}`;
+          photoPreviewOk = dialogVisible && imageVisible && closeVisible && nextVisible && slideshowOk && closed;
+          photoPreviewDetails = `dialog=${dialogVisible}; media=${imageVisible}; close=${closeVisible}; next=${nextVisible}; counterBefore=${counterBefore}; counterAfter=${counterAfter}; slideshow=${slideshowOk}; closed=${closed}`;
         } catch (error) {
           photoPreviewDetails = String(error);
         }

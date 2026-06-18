@@ -9,10 +9,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Строительный контур</title>
-    <link rel="manifest" href="/static/manifest.webmanifest?v=20260618-media-preview" />
+    <link rel="manifest" href="/static/manifest.webmanifest?v=20260618-media-slides" />
     <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260618-media-preview" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260618-media-slides" />
   </head>
   <body>
     <div class="app" data-testid="qa-scroll-root">
@@ -1069,6 +1069,11 @@
           <button type="button" class="icon" id="mediaPreviewClose" aria-label="Закрыть просмотр">×</button>
         </div>
         <div id="mediaPreviewBody" class="media-preview-body" data-testid="media-preview-body"></div>
+        <div class="media-preview-toolbar" data-testid="media-preview-toolbar">
+          <button type="button" class="secondary" id="mediaPreviewPrev" data-testid="media-preview-prev">Назад</button>
+          <span id="mediaPreviewCounter" class="media-preview-counter" data-testid="media-preview-counter">1 / 1</span>
+          <button type="button" class="secondary" id="mediaPreviewNext" data-testid="media-preview-next">Вперёд</button>
+        </div>
         <div class="form-actions media-preview-actions">
           <a class="secondary" id="mediaPreviewOpenOriginal" href="#" target="_blank" rel="noopener">Открыть отдельно</a>
           <button type="button" class="primary" id="mediaPreviewCloseBottom">Назад / закрыть</button>
@@ -1088,6 +1093,6 @@
       </div>
     </div>
     <div class="toast" id="toast"></div>
-    <script src="/static/app.compat.js?v=20260618-media-preview"></script>
+    <script src="/static/app.compat.js?v=20260618-media-slides"></script>
   </body>
 </html>

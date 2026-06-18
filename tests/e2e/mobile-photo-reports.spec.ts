@@ -14,7 +14,9 @@ async function ensurePhotoReportFixture(page: Page) {
       projects.find((item: any) => Number(item.foreman_id || 0));
     if (!project) throw new Error("No project with a foreman was found for mobile photo report test.");
 
-    const fileName = `qa-mobile-photo-report-${Date.now()}.png`;
+    const stamp = Date.now();
+    const fileName = `qa-mobile-photo-report-${stamp}-1.png`;
+    const secondFileName = `qa-mobile-photo-report-${stamp}-2.png`;
     const createResponse = await fetch("/api/photo-reports", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -33,11 +35,17 @@ async function ensurePhotoReportFixture(page: Page) {
             mime_type: "image/png",
             file_base64: imageBase64,
           },
+          {
+            title: secondFileName,
+            file_name: secondFileName,
+            mime_type: "image/png",
+            file_base64: imageBase64,
+          },
         ],
       }),
     });
     if (!createResponse.ok) throw new Error(`Could not create mobile QA photo report: ${createResponse.status}`);
-    return { projectId: Number(project.id), foremanId: Number(project.foreman_id || 0), fileName };
+    return { projectId: Number(project.id), foremanId: Number(project.foreman_id || 0), fileName, secondFileName };
   }, tinyPng);
 }
 
@@ -92,6 +100,13 @@ test("mobile photo reports are readable and images open for foreman and procurem
     const previewDialog = page.locator('[data-testid="media-preview-dialog"]');
     await expect(previewDialog, `${role}: photo must open in an in-app preview dialog`).toBeVisible();
     await expect(page.locator('[data-testid="media-preview-body"] img'), `${role}: preview dialog must render the image`).toBeVisible();
+    await expect(page.locator('[data-testid="media-preview-toolbar"]'), `${role}: preview dialog must expose slideshow controls`).toBeVisible();
+    const counter = page.locator('[data-testid="media-preview-counter"]');
+    await expect(counter, `${role}: preview counter must show the first slide`).toHaveText(/1 \/ [2-9]\d*/);
+    await page.locator('[data-testid="media-preview-next"]').click();
+    await expect(counter, `${role}: next button must switch to the second slide`).toHaveText(/2 \/ [2-9]\d*/);
+    await page.locator('[data-testid="media-preview-prev"]').click();
+    await expect(counter, `${role}: previous button must switch back to the first slide`).toHaveText(/1 \/ [2-9]\d*/);
     await expect(page.locator("#mediaPreviewCloseBottom"), `${role}: preview dialog must have an obvious close/back button`).toBeVisible();
     await page.locator("#mediaPreviewCloseBottom").click();
     await expect(previewDialog, `${role}: preview dialog must close without leaving the app`).not.toBeVisible();
