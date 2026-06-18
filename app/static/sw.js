@@ -1,9 +1,9 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260618-task-cycle-a";
+const CACHE_NAME = "stroitelnyi-kontur-20260618-task-groups-b1";
 const CORE_ASSETS = [
   "/",
-  "/static/styles.css?v=20260618-task-cycle-a",
-  "/static/app.compat.js?v=20260618-task-cycle-a",
-  "/static/manifest.webmanifest?v=20260618-task-cycle-a",
+  "/static/styles.css?v=20260618-task-groups-b1",
+  "/static/app.compat.js?v=20260618-task-groups-b1",
+  "/static/manifest.webmanifest?v=20260618-task-groups-b1",
   "/static/assets/g2-logo-192.png",
   "/static/assets/g2-logo-512.png"
 ];

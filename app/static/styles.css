@@ -3333,6 +3333,37 @@ h2 {
   gap: 8px;
 }
 
+.task-workflow-section {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.task-workflow-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fbfb;
+}
+
+.task-workflow-head h3 {
+  margin: 0 0 2px;
+  font-size: 15px;
+}
+
+.task-workflow-head p {
+  margin: 0;
+}
+
+.task-workflow-list {
+  display: grid;
+  gap: 8px;
+}
+
 .task-status-scale {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

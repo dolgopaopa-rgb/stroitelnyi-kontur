@@ -5034,6 +5034,94 @@ function tabTitle(tab) {
   }[tab];
 }
 
+function taskWorkflowBucket(task) {
+  const status = taskStatusKey(task);
+  if (canActAsTaskUser(task, "assignee") && ["new", "in_progress", "returned"].includes(status)) {
+    return { key: "my_action", title: "Мне нужно сделать", hint: "Задачи, где следующий шаг сейчас на вас." };
+  }
+  if (canActOnTaskAsReviewer(task) && taskIsWaitingCheck(task)) {
+    return { key: "my_review", title: "Мне нужно проверить", hint: "Задачи, где исполнитель уже отправил результат." };
+  }
+  if (canActAsTaskUser(task, "assignee") && taskIsWaitingCheck(task)) {
+    return { key: "waiting", title: "Я жду", hint: "Вы уже отправили результат, теперь действие на проверяющем." };
+  }
+  const project = state.projects.find((item) => Number(item.id) === Number(task.project_id));
+  const userId = Number(currentUserId() || 0);
+  const ownsProject =
+    userId &&
+    project &&
+    [project.foreman_id, project.construction_manager_id, project.procurement_manager_id, project.estimator_id, project.technical_supervisor_id]
+      .map((value) => Number(value || 0))
+      .includes(userId);
+  if (ownsProject) {
+    return { key: "my_project", title: "На моих объектах", hint: "Задачи других сотрудников по объектам, за которые вы отвечаете." };
+  }
+  if (canActAsTaskUser(task, "creator")) {
+    return { key: "created_by_me", title: "Я поставил", hint: "Задачи, которые вы создали и можете контролировать." };
+  }
+  return { key: "other", title: "Остальные задачи", hint: "Задачи, доступные вашей роли для просмотра." };
+}
+
+function renderTaskCard(task) {
+  const canReview = taskIsWaitingCheck(task) && canActOnTaskAsReviewer(task);
+  const lastComment = latestTaskComment(task);
+  const taskKey = `task:${task.id}`;
+  return `
+    <details class="row task-row task-collapsible" data-collapsible-key="${escapeAttr(taskKey)}"${openAttrForKey(taskKey)} data-testid="task-card">
+      <summary class="task-summary">
+        <span class="task-summary-main">
+          <span class="task-summary-title"><span data-testid="task-type-badge">${pill(taskTypeLabel(task), taskTypeLevel(task))}</span><strong data-testid="task-title">${escapeHtml(taskDisplayTitle(task))}</strong></span>
+          <span class="task-summary-meta" data-testid="task-meta">${escapeHtml(task.project_title || "объект не указан")} · ${escapeHtml(task.assignee_name || "ответственный не назначен")} · ${task.due_date ? formatDateRu(task.due_date) : "без срока"} · ${escapeHtml(taskVisibilityReason(task))}</span>
+          <span class="stack-line"><span data-testid="task-status-badge">${pill(label(taskStatusKey(task)), taskStatusLevel(taskStatusKey(task)))}</span><span data-testid="task-priority-badge">${pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority))}</span></span>
+        </span>
+      </summary>
+      <div class="task-row-body">
+      <div class="row-grid">
+        <div class="task-main">
+          <div class="muted">${task.project_title} · поставил: ${task.creator_name || "не указано"} · создана: ${formatDateRu(task.created_at)}${task.start_date ? ` · начало: ${formatDateRu(task.start_date)}` : ""}${task.contract_title ? ` · ${contractType(task.contract_type)}: ${task.contract_title}` : ""}</div>
+          ${taskDisplayDescription(task) ? `<div class="preserve-lines">${escapeHtml(taskDisplayDescription(task))}</div>` : ""}
+          ${task.rejection_comment ? `<div class="muted">Комментарий по возврату: ${escapeHtml(task.rejection_comment)}</div>` : ""}
+          ${lastComment ? `<div class="task-last-comment"><strong>${escapeHtml(lastComment.actor_name || "Комментарий")}:</strong> ${escapeHtml(lastComment.comment)}</div>` : ""}
+        </div>
+        <div class="task-people">Ответственный: ${task.assignee_name || "не назначен"}<br /><span class="muted">Принимает: ${task.reviewer_name || task.creator_name || "не назначен"}</span></div>
+      </div>
+      <div class="task-actions">
+        <button class="secondary" type="button" data-open-task="${task.id}">Подробнее</button>
+        ${renderTaskNextAction(task)}
+        ${canReview ? `<button class="secondary" data-task-action="return" data-task-id="${task.id}">Вернуть</button>` : ""}
+        ${canDeleteTask(task) ? `<button class="danger-button" data-task-action="delete" data-task-id="${task.id}">Удалить</button>` : ""}
+      </div>
+      </div>
+    </details>`;
+}
+
+function renderTaskWorkflowSections(tasks) {
+  const order = ["my_action", "my_review", "waiting", "my_project", "created_by_me", "other"];
+  const groups = new Map();
+  tasks.forEach((task) => {
+    const bucket = taskWorkflowBucket(task);
+    if (!groups.has(bucket.key)) groups.set(bucket.key, { ...bucket, tasks: [] });
+    groups.get(bucket.key).tasks.push(task);
+  });
+  return order
+    .filter((key) => groups.has(key))
+    .map((key) => {
+      const group = groups.get(key);
+      return `
+        <section class="task-workflow-section" data-testid="task-workflow-section" data-task-workflow="${group.key}">
+          <div class="task-workflow-head">
+            <div>
+              <h3>${escapeHtml(group.title)}</h3>
+              <p class="muted">${escapeHtml(group.hint)}</p>
+            </div>
+            ${pill(`${group.tasks.length}`, "blue")}
+          </div>
+          <div class="task-workflow-list">${group.tasks.map(renderTaskCard).join("")}</div>
+        </section>`;
+    })
+    .join("");
+}
+
 async function renderTasks() {
   const allTasks = visibleTasksForRole(await api("/api/tasks"));
   state.lastTasks = allTasks;
@@ -5085,40 +5173,7 @@ async function renderTasks() {
     `<p class="muted task-status-help">Ждёт проверки — исполнитель отправил результат, дальше действие на проверяющем. На доработке — проверяющий вернул задачу исполнителю с комментарием и новым сроком.</p>`;
   const visibleTasks = tasks.filter((task) => taskMatchesFilter(task, state.taskFilter));
   qs("#taskRows").innerHTML = visibleTasks.length
-    ? visibleTasks
-        .map((task) => {
-          const canReview = taskIsWaitingCheck(task) && canActOnTaskAsReviewer(task);
-          const lastComment = latestTaskComment(task);
-          const taskKey = `task:${task.id}`;
-          return `
-            <details class="row task-row task-collapsible" data-collapsible-key="${escapeAttr(taskKey)}"${openAttrForKey(taskKey)} data-testid="task-card">
-              <summary class="task-summary">
-                <span class="task-summary-main">
-                  <span class="task-summary-title"><span data-testid="task-type-badge">${pill(taskTypeLabel(task), taskTypeLevel(task))}</span><strong data-testid="task-title">${escapeHtml(taskDisplayTitle(task))}</strong></span>
-                  <span class="task-summary-meta" data-testid="task-meta">${escapeHtml(task.project_title || "объект не указан")} · ${escapeHtml(task.assignee_name || "ответственный не назначен")} · ${task.due_date ? formatDateRu(task.due_date) : "без срока"} · ${escapeHtml(taskVisibilityReason(task))}</span>
-                  <span class="stack-line"><span data-testid="task-status-badge">${pill(label(taskStatusKey(task)), taskStatusLevel(taskStatusKey(task)))}</span><span data-testid="task-priority-badge">${pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority))}</span></span>
-                </span>
-              </summary>
-              <div class="task-row-body">
-              <div class="row-grid">
-                <div class="task-main">
-                  <div class="muted">${task.project_title} · поставил: ${task.creator_name || "не указано"} · создана: ${formatDateRu(task.created_at)}${task.start_date ? ` · начало: ${formatDateRu(task.start_date)}` : ""}${task.contract_title ? ` · ${contractType(task.contract_type)}: ${task.contract_title}` : ""}</div>
-                  ${taskDisplayDescription(task) ? `<div class="preserve-lines">${escapeHtml(taskDisplayDescription(task))}</div>` : ""}
-                  ${task.rejection_comment ? `<div class="muted">Комментарий по возврату: ${escapeHtml(task.rejection_comment)}</div>` : ""}
-                  ${lastComment ? `<div class="task-last-comment"><strong>${escapeHtml(lastComment.actor_name || "Комментарий")}:</strong> ${escapeHtml(lastComment.comment)}</div>` : ""}
-                </div>
-                <div class="task-people">Ответственный: ${task.assignee_name || "не назначен"}<br /><span class="muted">Принимает: ${task.reviewer_name || task.creator_name || "не назначен"}</span></div>
-              </div>
-              <div class="task-actions">
-                <button class="secondary" type="button" data-open-task="${task.id}">Подробнее</button>
-                ${renderTaskNextAction(task)}
-                ${canReview ? `<button class="secondary" data-task-action="return" data-task-id="${task.id}">Вернуть</button>` : ""}
-                ${canDeleteTask(task) ? `<button class="danger-button" data-task-action="delete" data-task-id="${task.id}">Удалить</button>` : ""}
-              </div>
-              </div>
-            </details>`;
-        })
-        .join("")
+    ? renderTaskWorkflowSections(visibleTasks)
     : `<p class="muted">${tasks.length ? "В этом фильтре задач нет." : "Задач пока нет."}</p>`;
 }
 

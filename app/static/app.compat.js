@@ -3770,6 +3770,47 @@
       finances: "Финансы"
     }[tab];
   }
+  function taskWorkflowBucket(task) {
+    const status = taskStatusKey(task);
+    if (canActAsTaskUser(task, "assignee") && ["new", "in_progress", "returned"].includes(status)) {
+      return { key: "my_action", title: "Мне нужно сделать", hint: "Задачи, где следующий шаг сейчас на вас." };
+    }
+    if (canActOnTaskAsReviewer(task) && taskIsWaitingCheck(task)) {
+      return { key: "my_review", title: "Мне нужно проверить", hint: "Задачи, где исполнитель уже отправил результат." };
+    }
+    if (canActAsTaskUser(task, "assignee") && taskIsWaitingCheck(task)) {
+      return { key: "waiting", title: "Я жду", hint: "Вы уже отправили результат, теперь действие на проверяющем." };
+    }
+    const project = state.projects.find((item) => Number(item.id) === Number(task.project_id));
+    const userId = Number(currentUserId() || 0);
+    const ownsProject = userId && project && [project.foreman_id, project.construction_manager_id, project.procurement_manager_id, project.estimator_id, project.technical_supervisor_id].map((value) => Number(value || 0)).includes(userId);
+    if (ownsProject) {
+      return { key: "my_project", title: "На моих объектах", hint: "Задачи других сотрудников по объектам, за которые вы отвечаете." };
+    }
+    if (canActAsTaskUser(task, "creator")) {
+      return { key: "created_by_me", title: "Я поставил", hint: "Задачи, которые вы создали и можете контролировать." };
+    }
+    return { key: "other", title: "Остальные задачи", hint: "Задачи, доступные вашей роли для просмотра." };
+  }
+  function renderTaskCard(task) {
+    const canReview = taskIsWaitingCheck(task) && canActOnTaskAsReviewer(task);
+    const lastComment = latestTaskComment(task);
+    const taskKey = "task:".concat(task.id);
+    return '\n    <details class="row task-row task-collapsible" data-collapsible-key="'.concat(escapeAttr(taskKey), '"').concat(openAttrForKey(taskKey), ' data-testid="task-card">\n      <summary class="task-summary">\n        <span class="task-summary-main">\n          <span class="task-summary-title"><span data-testid="task-type-badge">').concat(pill(taskTypeLabel(task), taskTypeLevel(task)), '</span><strong data-testid="task-title">').concat(escapeHtml(taskDisplayTitle(task)), '</strong></span>\n          <span class="task-summary-meta" data-testid="task-meta">').concat(escapeHtml(task.project_title || "объект не указан"), " · ").concat(escapeHtml(task.assignee_name || "ответственный не назначен"), " · ").concat(task.due_date ? formatDateRu(task.due_date) : "без срока", " · ").concat(escapeHtml(taskVisibilityReason(task)), '</span>\n          <span class="stack-line"><span data-testid="task-status-badge">').concat(pill(label(taskStatusKey(task)), taskStatusLevel(taskStatusKey(task))), '</span><span data-testid="task-priority-badge">').concat(pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority)), '</span></span>\n        </span>\n      </summary>\n      <div class="task-row-body">\n      <div class="row-grid">\n        <div class="task-main">\n          <div class="muted">').concat(task.project_title, " · поставил: ").concat(task.creator_name || "не указано", " · создана: ").concat(formatDateRu(task.created_at)).concat(task.start_date ? " · начало: ".concat(formatDateRu(task.start_date)) : "").concat(task.contract_title ? " · ".concat(contractType(task.contract_type), ": ").concat(task.contract_title) : "", "</div>\n          ").concat(taskDisplayDescription(task) ? '<div class="preserve-lines">'.concat(escapeHtml(taskDisplayDescription(task)), "</div>") : "", "\n          ").concat(task.rejection_comment ? '<div class="muted">Комментарий по возврату: '.concat(escapeHtml(task.rejection_comment), "</div>") : "", "\n          ").concat(lastComment ? '<div class="task-last-comment"><strong>'.concat(escapeHtml(lastComment.actor_name || "Комментарий"), ":</strong> ").concat(escapeHtml(lastComment.comment), "</div>") : "", '\n        </div>\n        <div class="task-people">Ответственный: ').concat(task.assignee_name || "не назначен", '<br /><span class="muted">Принимает: ').concat(task.reviewer_name || task.creator_name || "не назначен", '</span></div>\n      </div>\n      <div class="task-actions">\n        <button class="secondary" type="button" data-open-task="').concat(task.id, '">Подробнее</button>\n        ').concat(renderTaskNextAction(task), "\n        ").concat(canReview ? '<button class="secondary" data-task-action="return" data-task-id="'.concat(task.id, '">Вернуть</button>') : "", "\n        ").concat(canDeleteTask(task) ? '<button class="danger-button" data-task-action="delete" data-task-id="'.concat(task.id, '">Удалить</button>') : "", "\n      </div>\n      </div>\n    </details>");
+  }
+  function renderTaskWorkflowSections(tasks) {
+    const order = ["my_action", "my_review", "waiting", "my_project", "created_by_me", "other"];
+    const groups = /* @__PURE__ */ new Map();
+    tasks.forEach((task) => {
+      const bucket = taskWorkflowBucket(task);
+      if (!groups.has(bucket.key)) groups.set(bucket.key, __spreadProps(__spreadValues({}, bucket), { tasks: [] }));
+      groups.get(bucket.key).tasks.push(task);
+    });
+    return order.filter((key) => groups.has(key)).map((key) => {
+      const group = groups.get(key);
+      return '\n        <section class="task-workflow-section" data-testid="task-workflow-section" data-task-workflow="'.concat(group.key, '">\n          <div class="task-workflow-head">\n            <div>\n              <h3>').concat(escapeHtml(group.title), '</h3>\n              <p class="muted">').concat(escapeHtml(group.hint), "</p>\n            </div>\n            ").concat(pill("".concat(group.tasks.length), "blue"), '\n          </div>\n          <div class="task-workflow-list">').concat(group.tasks.map(renderTaskCard).join(""), "</div>\n        </section>");
+    }).join("");
+  }
   async function renderTasks() {
     const allTasks = visibleTasksForRole(await api("/api/tasks"));
     state.lastTasks = allTasks;
@@ -3808,12 +3849,7 @@
     }).join("") : '<p class="muted">'.concat(currentRoleBase() === "foreman" ? "За этим прорабом пока нет объектов с задачами." : "Задач пока нет.", "</p>");
     qs("#taskStats").innerHTML = renderTaskStats(tasks, state.taskFilter, { compact: true }) + '<p class="muted task-status-help">Ждёт проверки — исполнитель отправил результат, дальше действие на проверяющем. На доработке — проверяющий вернул задачу исполнителю с комментарием и новым сроком.</p>';
     const visibleTasks = tasks.filter((task) => taskMatchesFilter(task, state.taskFilter));
-    qs("#taskRows").innerHTML = visibleTasks.length ? visibleTasks.map((task) => {
-      const canReview = taskIsWaitingCheck(task) && canActOnTaskAsReviewer(task);
-      const lastComment = latestTaskComment(task);
-      const taskKey = "task:".concat(task.id);
-      return '\n            <details class="row task-row task-collapsible" data-collapsible-key="'.concat(escapeAttr(taskKey), '"').concat(openAttrForKey(taskKey), ' data-testid="task-card">\n              <summary class="task-summary">\n                <span class="task-summary-main">\n                  <span class="task-summary-title"><span data-testid="task-type-badge">').concat(pill(taskTypeLabel(task), taskTypeLevel(task)), '</span><strong data-testid="task-title">').concat(escapeHtml(taskDisplayTitle(task)), '</strong></span>\n                  <span class="task-summary-meta" data-testid="task-meta">').concat(escapeHtml(task.project_title || "объект не указан"), " · ").concat(escapeHtml(task.assignee_name || "ответственный не назначен"), " · ").concat(task.due_date ? formatDateRu(task.due_date) : "без срока", " · ").concat(escapeHtml(taskVisibilityReason(task)), '</span>\n                  <span class="stack-line"><span data-testid="task-status-badge">').concat(pill(label(taskStatusKey(task)), taskStatusLevel(taskStatusKey(task))), '</span><span data-testid="task-priority-badge">').concat(pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority)), '</span></span>\n                </span>\n              </summary>\n              <div class="task-row-body">\n              <div class="row-grid">\n                <div class="task-main">\n                  <div class="muted">').concat(task.project_title, " · поставил: ").concat(task.creator_name || "не указано", " · создана: ").concat(formatDateRu(task.created_at)).concat(task.start_date ? " · начало: ".concat(formatDateRu(task.start_date)) : "").concat(task.contract_title ? " · ".concat(contractType(task.contract_type), ": ").concat(task.contract_title) : "", "</div>\n                  ").concat(taskDisplayDescription(task) ? '<div class="preserve-lines">'.concat(escapeHtml(taskDisplayDescription(task)), "</div>") : "", "\n                  ").concat(task.rejection_comment ? '<div class="muted">Комментарий по возврату: '.concat(escapeHtml(task.rejection_comment), "</div>") : "", "\n                  ").concat(lastComment ? '<div class="task-last-comment"><strong>'.concat(escapeHtml(lastComment.actor_name || "Комментарий"), ":</strong> ").concat(escapeHtml(lastComment.comment), "</div>") : "", '\n                </div>\n                <div class="task-people">Ответственный: ').concat(task.assignee_name || "не назначен", '<br /><span class="muted">Принимает: ').concat(task.reviewer_name || task.creator_name || "не назначен", '</span></div>\n              </div>\n              <div class="task-actions">\n                <button class="secondary" type="button" data-open-task="').concat(task.id, '">Подробнее</button>\n                ').concat(renderTaskNextAction(task), "\n                ").concat(canReview ? '<button class="secondary" data-task-action="return" data-task-id="'.concat(task.id, '">Вернуть</button>') : "", "\n                ").concat(canDeleteTask(task) ? '<button class="danger-button" data-task-action="delete" data-task-id="'.concat(task.id, '">Удалить</button>') : "", "\n              </div>\n              </div>\n            </details>");
-    }).join("") : '<p class="muted">'.concat(tasks.length ? "В этом фильтре задач нет." : "Задач пока нет.", "</p>");
+    qs("#taskRows").innerHTML = visibleTasks.length ? renderTaskWorkflowSections(visibleTasks) : '<p class="muted">'.concat(tasks.length ? "В этом фильтре задач нет." : "Задач пока нет.", "</p>");
   }
   function workProjectId() {
     var _a, _b, _c;

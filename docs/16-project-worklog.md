@@ -2230,3 +2230,48 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 **Result.**
 
 Local QA result is `PARTIAL` only for the accepted external cookieless viewer limitation. No production deploy has been done in this step yet.
+
+### 2026-06-18: Release B1 - task ownership groups
+
+**Request.** Make the task list explain what the current user needs to do next, instead of showing one flat list.
+
+**What changed.**
+
+- Added task workflow buckets in the task list:
+  - `Мне нужно сделать`;
+  - `Мне нужно проверить`;
+  - `Я жду`;
+  - `На моих объектах`;
+  - `Я поставил`;
+  - `Остальные задачи`.
+- Kept existing project selection and task filters.
+- Kept the task card actions from Release A:
+  - `Принять в работу`;
+  - `Отправить на проверку`;
+  - reviewer accept/return actions.
+- Added compact section headers with explanations and counters.
+- Added `role-task-ownership.spec.ts`.
+- Added a QA-runner check: `Task list is grouped by role responsibility`.
+- Updated frontend cache version to `20260618-task-groups-b1`.
+
+**Checks.**
+
+- Targeted Playwright tests:
+  - `task-overdue-rules.spec.ts`: passed;
+  - `task-state-machine.spec.ts`: passed;
+  - `role-task-ownership.spec.ts`: passed.
+- Full QA report:
+  - lint: OK;
+  - typecheck: OK;
+  - unit: OK;
+  - scroll: OK;
+  - buttons: OK;
+  - navigation: OK;
+  - mobile: OK;
+  - readonly: PARTIAL only because `external_cookieless_viewer` is intentionally unsupported;
+  - workflow: OK;
+  - critical errors: 0.
+
+**Result.**
+
+Local QA result is `PARTIAL` only for the accepted external cookieless viewer limitation. No production deploy has been done in this step yet.

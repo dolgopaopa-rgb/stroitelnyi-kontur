@@ -131,3 +131,4 @@ For the "working cycles and real-use UX" stage, QA must verify business logic, n
 5. The tests `task-state-machine.spec.ts` and `task-overdue-rules.spec.ts` are mandatory for Release A changes.
 6. If these tests do not run, Release A cannot be marked PASS.
 7. `Workflow QA Agent` must run inside `npm run test:qa` / `npm run test:qa:report`; if workflow checks are not run or fail, the task lifecycle release cannot be marked PASS.
+8. The test `role-task-ownership.spec.ts` is mandatory for Release B1 changes that group tasks by role responsibility.

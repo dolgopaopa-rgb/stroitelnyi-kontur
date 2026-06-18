@@ -714,6 +714,9 @@ async function runUx(results, page) {
   add(results, "UX Sanity QA Agent", "Task card separates title, meta and status", taskLayoutStatus, `cards=${taskCardCount}; titles=${taskTitleCount}; meta=${taskMetaCount}; badges=${badgeCount}`, severityForStatus(taskLayoutStatus, true), "", { taskCardsChecked: taskCardCount });
   const summaryDescriptionCount = await activeTasks.locator(".task-summary .task-description-clamp, .today-task-card .task-description-clamp, .compact-task-card .task-description-clamp").count().catch(() => 0);
   add(results, "UX Sanity QA Agent", "Task descriptions are collapsed in lists", taskCardCount === 0 ? "PARTIAL" : summaryDescriptionCount === 0 ? "OK" : "FAIL", `cards=${taskCardCount}; visible-list-descriptions=${summaryDescriptionCount}`, taskCardCount === 0 || summaryDescriptionCount === 0 ? "normal" : "blocker");
+  const workflowSectionCount = await activeTasks.locator('[data-testid="task-workflow-section"]').count().catch(() => 0);
+  const workflowSectionStatus = taskCardCount === 0 ? "PARTIAL" : workflowSectionCount > 0 ? "OK" : "FAIL";
+  add(results, "UX Sanity QA Agent", "Task list is grouped by role responsibility", workflowSectionStatus, `cards=${taskCardCount}; sections=${workflowSectionCount}`, severityForStatus(workflowSectionStatus, true), "", { taskWorkflowSectionsChecked: workflowSectionCount });
   await route(page, "today");
   const attention = await page.locator('[data-testid="today-attention-list"]').innerText().catch(() => "");
   add(results, "UX Sanity QA Agent", "Today screen shows concrete attention block", attention.trim().length > 0 ? "OK" : "WARN", `length=${attention.trim().length}`);
@@ -1162,6 +1165,7 @@ function buildCoverage(results) {
     role_panels_checked: Number(roleMatch?.[1] || 0),
     role_panels_total: Number(roleMatch?.[2] || rolePanelChecks.length),
     task_cards_checked: Math.max(maxMeta(results, "taskCardsChecked"), detailNumber(taskLayout?.details, "cards")),
+    task_workflow_sections_checked: maxMeta(results, "taskWorkflowSectionsChecked"),
     object_cards_checked: maxMeta(results, "objectCardsChecked"),
     blocker_cards_checked: maxMeta(results, "blockerCardsChecked"),
     material_cards_checked: maxMeta(results, "materialCardsChecked"),
@@ -1324,6 +1328,7 @@ function writeReport(results, startedAt, finishedAt, mandatorySuites, environmen
     `- pages_verified_ok: ${coverage.pages_verified_ok}/${coverage.pages_checked}`,
     `- role_panels_checked: ${coverage.role_panels_checked}/${coverage.role_panels_total}`,
     `- task_cards_checked: ${coverage.task_cards_checked}`,
+    `- task_workflow_sections_checked: ${coverage.task_workflow_sections_checked}`,
     `- object_cards_checked: ${coverage.object_cards_checked}`,
     `- blocker_cards_checked: ${coverage.blocker_cards_checked}`,
     `- material_cards_checked: ${coverage.material_cards_checked}`,
