@@ -9,10 +9,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Строительный контур</title>
-    <link rel="manifest" href="/static/manifest.webmanifest?v=20260618-photo-reports-fix" />
+    <link rel="manifest" href="/static/manifest.webmanifest?v=20260618-media-preview" />
     <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260618-photo-reports-fix" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260618-media-preview" />
   </head>
   <body>
     <div class="app" data-testid="qa-scroll-root">
@@ -1062,6 +1062,20 @@
       </form>
     </dialog>
 
+    <dialog id="mediaPreviewDialog" class="media-preview-dialog" data-testid="media-preview-dialog">
+      <div class="media-preview-shell">
+        <div class="modal-head media-preview-head">
+          <h2 id="mediaPreviewTitle">Просмотр файла</h2>
+          <button type="button" class="icon" id="mediaPreviewClose" aria-label="Закрыть просмотр">×</button>
+        </div>
+        <div id="mediaPreviewBody" class="media-preview-body" data-testid="media-preview-body"></div>
+        <div class="form-actions media-preview-actions">
+          <a class="secondary" id="mediaPreviewOpenOriginal" href="#" target="_blank" rel="noopener">Открыть отдельно</a>
+          <button type="button" class="primary" id="mediaPreviewCloseBottom">Назад / закрыть</button>
+        </div>
+      </div>
+    </dialog>
+
     <div class="pull-refresh-indicator" id="pullRefreshIndicator" aria-live="polite" aria-hidden="true">
       <span class="pull-refresh-ring" aria-hidden="true"></span>
       <strong data-pull-refresh-message>Потяните вниз для обновления</strong>
@@ -1074,6 +1088,6 @@
       </div>
     </div>
     <div class="toast" id="toast"></div>
-    <script src="/static/app.compat.js?v=20260618-photo-reports-fix"></script>
+    <script src="/static/app.compat.js?v=20260618-media-preview"></script>
   </body>
 </html>

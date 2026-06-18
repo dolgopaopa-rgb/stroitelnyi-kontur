@@ -14,13 +14,7 @@ async function ensurePhotoReportFixture(page: Page) {
       projects.find((item: any) => Number(item.foreman_id || 0));
     if (!project) throw new Error("No project with a foreman was found for mobile photo report test.");
 
-    const reportResponse = await fetch(`/api/photo-reports?project_id=${project.id}`, { cache: "no-store" });
-    if (!reportResponse.ok) throw new Error("Could not load existing photo reports.");
-    const reports = await reportResponse.json();
-    if (reports.some((report: any) => (report.attachments || []).some((doc: any) => String(doc.mime_type || "").startsWith("image/")))) {
-      return { projectId: Number(project.id), foremanId: Number(project.foreman_id || 0) };
-    }
-
+    const fileName = `qa-mobile-photo-report-${Date.now()}.png`;
     const createResponse = await fetch("/api/photo-reports", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -34,8 +28,8 @@ async function ensurePhotoReportFixture(page: Page) {
         status: "review",
         attachments: [
           {
-            title: "qa-mobile-photo-report.png",
-            file_name: "qa-mobile-photo-report.png",
+            title: fileName,
+            file_name: fileName,
             mime_type: "image/png",
             file_base64: imageBase64,
           },
@@ -43,7 +37,7 @@ async function ensurePhotoReportFixture(page: Page) {
       }),
     });
     if (!createResponse.ok) throw new Error(`Could not create mobile QA photo report: ${createResponse.status}`);
-    return { projectId: Number(project.id), foremanId: Number(project.foreman_id || 0) };
+    return { projectId: Number(project.id), foremanId: Number(project.foreman_id || 0), fileName };
   }, tinyPng);
 }
 
@@ -83,7 +77,7 @@ test("mobile photo reports are readable and images open for foreman and procurem
     const cardBox = await card.boundingBox();
     expect(cardBox?.width || 0, `${role}: photo report card width`).toBeGreaterThan(Math.min(300, (viewport?.width || 390) - 40));
 
-    const thumb = page.locator('[data-testid="photo-report-card"] .media-thumb').first();
+    const thumb = page.locator('[data-testid="photo-report-card"] .media-thumb', { hasText: fixture.fileName }).first();
     await expect(thumb).toBeVisible();
     const thumbBox = await thumb.boundingBox();
     expect(thumbBox?.width || 0, `${role}: photo preview thumbnail width`).toBeGreaterThanOrEqual(120);
@@ -93,5 +87,13 @@ test("mobile photo reports are readable and images open for foreman and procurem
     const response = await page.request.get(href || "");
     expect(response.status(), `${role}: photo link must open inside Kontur`).toBe(200);
     expect(response.headers()["content-type"] || "", `${role}: photo response must be an image`).toMatch(/^image\//);
+
+    await thumb.click();
+    const previewDialog = page.locator('[data-testid="media-preview-dialog"]');
+    await expect(previewDialog, `${role}: photo must open in an in-app preview dialog`).toBeVisible();
+    await expect(page.locator('[data-testid="media-preview-body"] img'), `${role}: preview dialog must render the image`).toBeVisible();
+    await expect(page.locator("#mediaPreviewCloseBottom"), `${role}: preview dialog must have an obvious close/back button`).toBeVisible();
+    await page.locator("#mediaPreviewCloseBottom").click();
+    await expect(previewDialog, `${role}: preview dialog must close without leaving the app`).not.toBeVisible();
   }
 });

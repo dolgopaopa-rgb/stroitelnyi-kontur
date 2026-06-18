@@ -884,10 +884,28 @@ async function runMobile(results, playwright) {
         photosLayout.minThumbWidth >= 120 &&
         photosLayout.responseStatus === 200 &&
         String(photosLayout.responseType || "").startsWith("image/");
+      let photoPreviewOk = false;
+      let photoPreviewDetails = "not-run";
+      if (photosLayout.thumbs > 0) {
+        try {
+          await page.locator(".photo-report-card .media-thumb").first().click();
+          await page.waitForTimeout(150);
+          const dialogVisible = await page.locator('[data-testid="media-preview-dialog"]').isVisible().catch(() => false);
+          const imageVisible = await page.locator('[data-testid="media-preview-body"] img, [data-testid="media-preview-body"] video').first().isVisible().catch(() => false);
+          const closeVisible = await page.locator("#mediaPreviewCloseBottom").isVisible().catch(() => false);
+          if (closeVisible) await page.locator("#mediaPreviewCloseBottom").click();
+          await page.waitForTimeout(100);
+          const closed = !(await page.locator('[data-testid="media-preview-dialog"]').isVisible().catch(() => false));
+          photoPreviewOk = dialogVisible && imageVisible && closeVisible && closed;
+          photoPreviewDetails = `dialog=${dialogVisible}; media=${imageVisible}; close=${closeVisible}; closed=${closed}`;
+        } catch (error) {
+          photoPreviewDetails = String(error);
+        }
+      }
       const mobileMenuOk = moreVisible && feedbackMenuVisible && feedbackOpens;
-      const status = navVisible && !overflow && actions > 0 && plusSeparated && mobileMenuOk && todayGridOk && estimatesOk && photosOk ? "OK" : "FAIL";
+      const status = navVisible && !overflow && actions > 0 && plusSeparated && mobileMenuOk && todayGridOk && estimatesOk && photosOk && photoPreviewOk ? "OK" : "FAIL";
       const plusDetails = plusBox ? `${Math.round(plusBox.width)}x${Math.round(plusBox.height)}@${Math.round(plusBox.x)}` : "missing";
-      add(results, "Mobile QA Agent", `Viewport ${viewport.width}x${viewport.height}`, status, `nav=${navVisible}; horizontalOverflow=${overflow}; actions=${actions}; plusSeparated=${plusSeparated}; plusBox=${plusDetails}; mobileMenuOk=${mobileMenuOk}; moreVisible=${moreVisible}; feedbackMenuVisible=${feedbackMenuVisible}; feedbackOpens=${feedbackOpens}; todayGridOk=${todayGridOk}; minGridChildWidth=${todayLayout.minGridChildWidth}; minDecisionWidth=${todayLayout.minDecisionWidth}; minExpectedWidth=${minExpectedWidth}; estimatesOverlap=${estimatesLayout.overlapped}; estimateRows=${estimatesLayout.rows}; estimateRowBottom=${estimatesLayout.rowBottom}; navTop=${estimatesLayout.navTop}; photosOk=${photosOk}; photoLayoutChildren=${photosLayout.layoutChildren}; photoMinLayoutWidth=${photosLayout.minLayoutWidth}; photoCards=${photosLayout.cards}; photoMinCardWidth=${photosLayout.minCardWidth}; photoThumbs=${photosLayout.thumbs}; photoMinThumbWidth=${photosLayout.minThumbWidth}; photoResponse=${photosLayout.responseStatus}; photoType=${photosLayout.responseType}`, status === "FAIL" ? "blocker" : "normal");
+      add(results, "Mobile QA Agent", `Viewport ${viewport.width}x${viewport.height}`, status, `nav=${navVisible}; horizontalOverflow=${overflow}; actions=${actions}; plusSeparated=${plusSeparated}; plusBox=${plusDetails}; mobileMenuOk=${mobileMenuOk}; moreVisible=${moreVisible}; feedbackMenuVisible=${feedbackMenuVisible}; feedbackOpens=${feedbackOpens}; todayGridOk=${todayGridOk}; minGridChildWidth=${todayLayout.minGridChildWidth}; minDecisionWidth=${todayLayout.minDecisionWidth}; minExpectedWidth=${minExpectedWidth}; estimatesOverlap=${estimatesLayout.overlapped}; estimateRows=${estimatesLayout.rows}; estimateRowBottom=${estimatesLayout.rowBottom}; navTop=${estimatesLayout.navTop}; photosOk=${photosOk}; photoPreviewOk=${photoPreviewOk}; photoPreview=${photoPreviewDetails}; photoLayoutChildren=${photosLayout.layoutChildren}; photoMinLayoutWidth=${photosLayout.minLayoutWidth}; photoCards=${photosLayout.cards}; photoMinCardWidth=${photosLayout.minCardWidth}; photoThumbs=${photosLayout.thumbs}; photoMinThumbWidth=${photosLayout.minThumbWidth}; photoResponse=${photosLayout.responseStatus}; photoType=${photosLayout.responseType}`, status === "FAIL" ? "blocker" : "normal");
     } finally {
       await browser.close().catch(() => {});
     }

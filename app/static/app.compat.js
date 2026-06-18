@@ -3229,12 +3229,34 @@
     const title = escapeHtml(doc.file_name || doc.title || "Файл");
     const mime = String(doc.mime_type || "");
     if (mime.startsWith("image/")) {
-      return '<a class="media-thumb" href="'.concat(href, '" target="_blank" rel="noopener"><img src="').concat(href, '" alt="').concat(title, '" /><span>').concat(title, "</span></a>");
+      return '<a class="media-thumb" href="'.concat(href, '" data-media-preview="image" data-media-url="').concat(href, '" data-media-title="').concat(title, '" data-media-mime="').concat(escapeHtml(mime), '"><span class="media-thumb-placeholder">Фото</span><span>').concat(title, "</span></a>");
     }
     if (mime.startsWith("video/")) {
-      return '<a class="media-thumb video" href="'.concat(href, '" target="_blank" rel="noopener"><span>Видео</span><small>').concat(title, "</small></a>");
+      return '<a class="media-thumb video" href="'.concat(href, '" data-media-preview="video" data-media-url="').concat(href, '" data-media-title="').concat(title, '" data-media-mime="').concat(escapeHtml(mime), '"><span>Видео</span><small>').concat(title, "</small></a>");
     }
     return '<a class="media-thumb file" href="'.concat(href, '" target="_blank" rel="noopener"><span>').concat(title, "</span></a>");
+  }
+  function closeMediaPreview() {
+    const dialog = qs("#mediaPreviewDialog");
+    const body = qs("#mediaPreviewBody");
+    if (dialog == null ? void 0 : dialog.open) dialog.close();
+    if (body) body.innerHTML = "";
+  }
+  function openMediaPreview({ href, title, mime, kind }) {
+    const dialog = qs("#mediaPreviewDialog");
+    const titleNode = qs("#mediaPreviewTitle");
+    const body = qs("#mediaPreviewBody");
+    const originalLink = qs("#mediaPreviewOpenOriginal");
+    if (!href || !dialog || !body) {
+      window.open(href || "#", "_blank", "noopener");
+      return;
+    }
+    const safeTitle = title || "Просмотр файла";
+    const mediaKind = kind || (String(mime || "").startsWith("video/") ? "video" : "image");
+    titleNode.textContent = safeTitle;
+    if (originalLink) originalLink.href = href;
+    body.innerHTML = mediaKind === "video" ? '<video src="'.concat(href, '" controls playsinline preload="metadata"></video>') : '<img src="'.concat(href, '" alt="').concat(escapeHtml(safeTitle), '" />');
+    if (!dialog.open) dialog.showModal();
   }
   function renderPhotoReportCard(report) {
     const attachments = (report.attachments || []).filter((doc) => String(doc.mime_type || "").startsWith("image/") || String(doc.mime_type || "").startsWith("video/"));
@@ -4950,7 +4972,7 @@
     }
   }
   function bindEvents() {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x;
     bindStableDetailsTouchGuard();
     bindWheelPageScroll();
     initPullToRefresh();
@@ -5066,10 +5088,16 @@
       showToast("Удалено сообщений: ".concat(result.deleted || ids.length));
     });
     qsa("[data-close]").forEach((button) => button.addEventListener("click", () => qs("#".concat(button.dataset.close)).close()));
-    (_o = qs("#estimateImagePrev")) == null ? void 0 : _o.addEventListener("click", () => moveEstimateGallery(-1));
-    (_p = qs("#estimateImageNext")) == null ? void 0 : _p.addEventListener("click", () => moveEstimateGallery(1));
+    (_o = qs("#mediaPreviewClose")) == null ? void 0 : _o.addEventListener("click", closeMediaPreview);
+    (_p = qs("#mediaPreviewCloseBottom")) == null ? void 0 : _p.addEventListener("click", closeMediaPreview);
+    (_q = qs("#mediaPreviewDialog")) == null ? void 0 : _q.addEventListener("close", () => {
+      const body = qs("#mediaPreviewBody");
+      if (body) body.innerHTML = "";
+    });
+    (_r = qs("#estimateImagePrev")) == null ? void 0 : _r.addEventListener("click", () => moveEstimateGallery(-1));
+    (_s = qs("#estimateImageNext")) == null ? void 0 : _s.addEventListener("click", () => moveEstimateGallery(1));
     let estimateGalleryTouchX = null;
-    (_q = qs("#estimateImageStage")) == null ? void 0 : _q.addEventListener(
+    (_t = qs("#estimateImageStage")) == null ? void 0 : _t.addEventListener(
       "touchstart",
       (event) => {
         var _a2, _b2, _c2;
@@ -5077,7 +5105,7 @@
       },
       { passive: true }
     );
-    (_r = qs("#estimateImageStage")) == null ? void 0 : _r.addEventListener(
+    (_u = qs("#estimateImageStage")) == null ? void 0 : _u.addEventListener(
       "touchend",
       (event) => {
         var _a2, _b2, _c2;
@@ -5165,7 +5193,18 @@
       }
     });
     document.addEventListener("click", async (event) => {
-      var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k2, _l2, _m2, _n2, _o2;
+      var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k2, _l2, _m2, _n2, _o2, _p2;
+      const mediaPreviewButton = event.target.closest("[data-media-preview]");
+      if (mediaPreviewButton) {
+        event.preventDefault();
+        openMediaPreview({
+          href: mediaPreviewButton.dataset.mediaUrl || mediaPreviewButton.getAttribute("href"),
+          title: mediaPreviewButton.dataset.mediaTitle || ((_a2 = mediaPreviewButton.textContent) == null ? void 0 : _a2.trim()),
+          mime: mediaPreviewButton.dataset.mediaMime || "",
+          kind: mediaPreviewButton.dataset.mediaPreview || ""
+        });
+        return;
+      }
       const viewTargetButton = event.target.closest("[data-view-target]");
       if (viewTargetButton) {
         switchView(viewTargetButton.dataset.viewTarget);
@@ -5303,7 +5342,7 @@
       }
       const removeExtraMaterial = event.target.closest("[data-remove-extra-material]");
       if (removeExtraMaterial) {
-        (_a2 = removeExtraMaterial.closest(".extra-material-row")) == null ? void 0 : _a2.remove();
+        (_b2 = removeExtraMaterial.closest(".extra-material-row")) == null ? void 0 : _b2.remove();
         return;
       }
       const addBatchExtraMaterial = event.target.closest("[data-add-batch-extra-material]");
@@ -5525,10 +5564,10 @@
         let body = {};
         if (action === "delete" && !confirm("Удалить заявку на материалы? Это можно сделать только до принятия снабжением в работу.")) return;
         if (action === "return") {
-          body = { comment: ((_b2 = qs("#materialBatchReturnComment")) == null ? void 0 : _b2.value) || "" };
+          body = { comment: ((_c2 = qs("#materialBatchReturnComment")) == null ? void 0 : _c2.value) || "" };
         }
         if (action === "resubmit") {
-          body = { comment: ((_c2 = qs("#materialBatchResubmitComment")) == null ? void 0 : _c2.value) || "" };
+          body = { comment: ((_d2 = qs("#materialBatchResubmitComment")) == null ? void 0 : _d2.value) || "" };
         }
         if (action === "update") {
           const extraItems = collectExtraMaterials("#batchExtraMaterialRows");
@@ -5538,36 +5577,36 @@
             return;
           }
           body = {
-            comment: ((_d2 = qs("#materialBatchUpdateComment")) == null ? void 0 : _d2.value) || "",
-            needed_at: ((_e2 = qs("#materialBatchUpdateNeededAt")) == null ? void 0 : _e2.value) || "",
+            comment: ((_e2 = qs("#materialBatchUpdateComment")) == null ? void 0 : _e2.value) || "",
+            needed_at: ((_f2 = qs("#materialBatchUpdateNeededAt")) == null ? void 0 : _f2.value) || "",
             items: collectMaterialBatchEdits(),
             extra_items: extraItems
           };
         }
         if (action === "schedule") {
           body = {
-            scheduled_delivery_date: ((_f2 = qs("#materialBatchDeliveryDate")) == null ? void 0 : _f2.value) || "",
+            scheduled_delivery_date: ((_g2 = qs("#materialBatchDeliveryDate")) == null ? void 0 : _g2.value) || "",
             actual_items: currentBatch ? collectMaterialActualItems(currentBatch) : [],
-            comment: ((_g2 = qs("#materialBatchScheduleComment")) == null ? void 0 : _g2.value) || ""
+            comment: ((_h2 = qs("#materialBatchScheduleComment")) == null ? void 0 : _h2.value) || ""
           };
         }
         if (action === "save_actuals") {
           body = {
             actual_items: currentBatch ? collectMaterialActualItems(currentBatch) : [],
-            comment: ((_h2 = qs("#materialBatchScheduleComment")) == null ? void 0 : _h2.value) || ""
+            comment: ((_i2 = qs("#materialBatchScheduleComment")) == null ? void 0 : _i2.value) || ""
           };
         }
         if (action === "resolve_issue") {
           body = {
-            scheduled_delivery_date: ((_i2 = qs("#materialBatchResolveDate")) == null ? void 0 : _i2.value) || "",
-            comment: ((_j2 = qs("#materialBatchResolveComment")) == null ? void 0 : _j2.value) || ""
+            scheduled_delivery_date: ((_j2 = qs("#materialBatchResolveDate")) == null ? void 0 : _j2.value) || "",
+            comment: ((_k2 = qs("#materialBatchResolveComment")) == null ? void 0 : _k2.value) || ""
           };
         }
         if (action === "receive") {
-          const file = (_l2 = (_k2 = qs("#materialBatchReceiptFile")) == null ? void 0 : _k2.files) == null ? void 0 : _l2[0];
+          const file = (_m2 = (_l2 = qs("#materialBatchReceiptFile")) == null ? void 0 : _l2.files) == null ? void 0 : _m2[0];
           body = {
             receipt_status: materialBatchAction.dataset.receiptStatus || "received",
-            comment: ((_m2 = qs("#materialBatchReceiptComment")) == null ? void 0 : _m2.value) || "",
+            comment: ((_n2 = qs("#materialBatchReceiptComment")) == null ? void 0 : _n2.value) || "",
             receipt_file: file ? {
               title: file.name,
               type: "other",
@@ -5613,8 +5652,8 @@
         await api("/api/material-requests/".concat(id, "/deliver"), {
           method: "POST",
           body: JSON.stringify({
-            actual_delivery_date: ((_n2 = qs('[data-material-actual="'.concat(id, '"]'))) == null ? void 0 : _n2.value) || "",
-            procurement_comment: ((_o2 = qs('[data-material-comment="'.concat(id, '"]'))) == null ? void 0 : _o2.value) || ""
+            actual_delivery_date: ((_o2 = qs('[data-material-actual="'.concat(id, '"]'))) == null ? void 0 : _o2.value) || "",
+            procurement_comment: ((_p2 = qs('[data-material-comment="'.concat(id, '"]'))) == null ? void 0 : _p2.value) || ""
           })
         });
         await loadAll();
@@ -5786,8 +5825,8 @@
       qs('#taskForm input[name="creator_id"]').value = currentUserId() || "";
       submitForm("taskDialog", "taskForm", "/api/tasks", "Задача создана");
     });
-    (_s = qs("#photoReportForm")) == null ? void 0 : _s.addEventListener("submit", submitPhotoReportForm);
-    (_t = qs("#objectRemarkForm")) == null ? void 0 : _t.addEventListener("submit", submitObjectRemarkForm);
+    (_v = qs("#photoReportForm")) == null ? void 0 : _v.addEventListener("submit", submitPhotoReportForm);
+    (_w = qs("#objectRemarkForm")) == null ? void 0 : _w.addEventListener("submit", submitObjectRemarkForm);
     qs("#estimateJobForm").addEventListener("submit", async (event) => {
       var _a2;
       event.preventDefault();
@@ -5975,7 +6014,7 @@
       switchView("materials");
       showToast("Материалы сметы загружены в объект");
     });
-    (_u = qs("#knowledgeFolderForm")) == null ? void 0 : _u.addEventListener("submit", async (event) => {
+    (_x = qs("#knowledgeFolderForm")) == null ? void 0 : _x.addEventListener("submit", async (event) => {
       event.preventDefault();
       const form = qs("#knowledgeFolderForm");
       try {

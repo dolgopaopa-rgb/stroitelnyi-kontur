@@ -4005,12 +4005,39 @@ function mediaPreviewLink(doc) {
   const title = escapeHtml(doc.file_name || doc.title || "Файл");
   const mime = String(doc.mime_type || "");
   if (mime.startsWith("image/")) {
-    return `<a class="media-thumb" href="${href}" target="_blank" rel="noopener"><img src="${href}" alt="${title}" /><span>${title}</span></a>`;
+    return `<a class="media-thumb" href="${href}" data-media-preview="image" data-media-url="${href}" data-media-title="${title}" data-media-mime="${escapeHtml(mime)}"><span class="media-thumb-placeholder">Фото</span><span>${title}</span></a>`;
   }
   if (mime.startsWith("video/")) {
-    return `<a class="media-thumb video" href="${href}" target="_blank" rel="noopener"><span>Видео</span><small>${title}</small></a>`;
+    return `<a class="media-thumb video" href="${href}" data-media-preview="video" data-media-url="${href}" data-media-title="${title}" data-media-mime="${escapeHtml(mime)}"><span>Видео</span><small>${title}</small></a>`;
   }
   return `<a class="media-thumb file" href="${href}" target="_blank" rel="noopener"><span>${title}</span></a>`;
+}
+
+function closeMediaPreview() {
+  const dialog = qs("#mediaPreviewDialog");
+  const body = qs("#mediaPreviewBody");
+  if (dialog?.open) dialog.close();
+  if (body) body.innerHTML = "";
+}
+
+function openMediaPreview({ href, title, mime, kind }) {
+  const dialog = qs("#mediaPreviewDialog");
+  const titleNode = qs("#mediaPreviewTitle");
+  const body = qs("#mediaPreviewBody");
+  const originalLink = qs("#mediaPreviewOpenOriginal");
+  if (!href || !dialog || !body) {
+    window.open(href || "#", "_blank", "noopener");
+    return;
+  }
+  const safeTitle = title || "Просмотр файла";
+  const mediaKind = kind || (String(mime || "").startsWith("video/") ? "video" : "image");
+  titleNode.textContent = safeTitle;
+  if (originalLink) originalLink.href = href;
+  body.innerHTML =
+    mediaKind === "video"
+      ? `<video src="${href}" controls playsinline preload="metadata"></video>`
+      : `<img src="${href}" alt="${escapeHtml(safeTitle)}" />`;
+  if (!dialog.open) dialog.showModal();
 }
 
 function renderPhotoReportCard(report) {
@@ -7047,6 +7074,12 @@ function bindEvents() {
   });
 
   qsa("[data-close]").forEach((button) => button.addEventListener("click", () => qs(`#${button.dataset.close}`).close()));
+  qs("#mediaPreviewClose")?.addEventListener("click", closeMediaPreview);
+  qs("#mediaPreviewCloseBottom")?.addEventListener("click", closeMediaPreview);
+  qs("#mediaPreviewDialog")?.addEventListener("close", () => {
+    const body = qs("#mediaPreviewBody");
+    if (body) body.innerHTML = "";
+  });
 
   qs("#estimateImagePrev")?.addEventListener("click", () => moveEstimateGallery(-1));
   qs("#estimateImageNext")?.addEventListener("click", () => moveEstimateGallery(1));
@@ -7145,6 +7178,18 @@ function bindEvents() {
   });
 
   document.addEventListener("click", async (event) => {
+    const mediaPreviewButton = event.target.closest("[data-media-preview]");
+    if (mediaPreviewButton) {
+      event.preventDefault();
+      openMediaPreview({
+        href: mediaPreviewButton.dataset.mediaUrl || mediaPreviewButton.getAttribute("href"),
+        title: mediaPreviewButton.dataset.mediaTitle || mediaPreviewButton.textContent?.trim(),
+        mime: mediaPreviewButton.dataset.mediaMime || "",
+        kind: mediaPreviewButton.dataset.mediaPreview || "",
+      });
+      return;
+    }
+
     const viewTargetButton = event.target.closest("[data-view-target]");
     if (viewTargetButton) {
       switchView(viewTargetButton.dataset.viewTarget);

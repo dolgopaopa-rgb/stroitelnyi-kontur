@@ -102,3 +102,12 @@ node tools/qa/max-report-cli.mjs --report qa-artifacts/latest/qa-report.json
 ```
 
 Нельзя отправлять raw-текст одним полотном.
+## Media preview QA
+
+Mobile QA must verify the full photo/video viewing loop, not only the download URL:
+
+1. Tap/click a photo report thumbnail.
+2. The media must open inside Kontur, not leave the app without a visible return path.
+3. The preview must show a clear close/back control.
+4. Closing the preview must return to the same screen without losing scroll or opening a blank external page.
+5. If a visible photo/video has no working close/back path, Mobile QA must fail.
