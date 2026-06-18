@@ -9,10 +9,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Строительный контур</title>
-    <link rel="manifest" href="/static/manifest.webmanifest?v=20260611-android-pwa" />
+    <link rel="manifest" href="/static/manifest.webmanifest?v=20260618-mobile-menu" />
     <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260616-ux-roles" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260618-mobile-menu" />
   </head>
   <body>
     <div class="app" data-testid="qa-scroll-root">
@@ -470,12 +470,12 @@
       <button type="button" data-view-target="projects"><span>▦</span>Объекты</button>
       <button class="mobile-plus" type="button" id="mobileQuickActionToggle" data-testid="mobile-plus-button"><span>+</span></button>
       <button type="button" data-view-target="dashboard"><span>◈</span>Уведомления</button>
-      <button type="button" id="mobileProfileButton"><span>◉</span>Я</button>
+      <button type="button" id="mobileMoreButton" data-testid="mobile-more-button"><span>☰</span>Ещё</button>
     </nav>
     <div class="mobile-quick-sheet" id="mobileQuickSheet" hidden>
       <div class="mobile-quick-sheet-panel">
         <div class="panel-head">
-          <h2>Быстрое действие</h2>
+          <h2 id="mobileQuickSheetTitle">Быстрое действие</h2>
           <button class="icon" type="button" id="mobileQuickActionClose">×</button>
         </div>
         <div class="mobile-quick-actions" id="mobileQuickActions" data-testid="mobile-quick-actions"></div>
@@ -1074,6 +1074,6 @@
       </div>
     </div>
     <div class="toast" id="toast"></div>
-    <script src="/static/app.compat.js?v=20260616-ux-roles"></script>
+    <script src="/static/app.compat.js?v=20260618-mobile-menu"></script>
   </body>
 </html>

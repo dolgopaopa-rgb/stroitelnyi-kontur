@@ -2272,7 +2272,7 @@ DOCUMENT_TYPES_BY_ROLE = {
     "master": {"project_documentation", "variation_attachment", "extra_work_attachment", "photo_report", "object_remark_photo", "detail_node", "regulation", "standard", "instruction"},
     "procurement_manager": {"smetter_materials", "project_documentation", "variation_attachment", "extra_work_attachment", "detail_node", "regulation", "standard", "instruction", "other"},
     "technical_supervisor": {"smetter_materials", "smetter_work_task", "project_documentation", "variation_attachment", "extra_work_attachment", "photo_report", "object_remark_photo", "detail_node", "regulation", "standard", "instruction", "other"},
-    "estimator": {"main_estimate", "smetter_materials", "smetter_work_task", "project_documentation", "variation_attachment", "variation_estimate", "act", "ks_2", "ks_3", "other"},
+    "estimator": {"main_estimate", "smetter_materials", "smetter_work_task", "project_documentation", "variation_attachment", "variation_estimate", "act", "ks_2", "ks_3", "photo_report", "object_remark_photo", "photo_video", "other"},
     "accountant": {"main_estimate", "smetter_materials", "smetter_work_task", "contract", "variation_attachment", "variation_estimate", "act", "ks_2", "ks_3", "other"},
     "ai_auditor": AUDIT_SAFE_DOCUMENT_TYPES,
 }
@@ -3648,8 +3648,9 @@ class AppHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", content_types.get(file_path.suffix, "application/octet-stream"))
         maybe_send_session_cookie(self)
-        if file_path.name == "login.html":
-            self.send_header("Cache-Control", "no-store")
+        if file_path.suffix in {".html", ".css", ".js", ".webmanifest"}:
+            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+            self.send_header("Pragma", "no-cache")
         elif file_path.name == "sw.js":
             self.send_header("Cache-Control", "no-cache")
         self.send_header("Content-Length", str(len(body)))
@@ -4473,7 +4474,7 @@ class AppHandler(BaseHTTPRequestHandler):
             "task_description_collapsed_in_list": "ok" if "TASK_DESCRIPTION_COLLAPSED_IN_LIST = true" in app_js_snapshot else "partial",
             "signal_pluralization": "ok" if "snapshot_positions_label" in server_snapshot and "positionsLabel" in app_js_snapshot else "partial",
             "materials_pipeline_tabs_visible": "ok" if all(label in server_snapshot for label in ["Нужно согласовать", "Согласовано", "Заказано", "В пути", "На объекте", "Проблема", "Закрыто"]) else "partial",
-            "mobile_plus_button_separated": "ok" if "mobile-nav-demo" in server_snapshot and "nav-separator" in server_snapshot and 'aria-label="Сегодня | Объекты | + | Уведомления | Я"' in server_snapshot and "mobile-plus" in styles_snapshot else "partial",
+            "mobile_plus_button_separated": "ok" if "mobile-nav-demo" in server_snapshot and "nav-separator" in server_snapshot and 'aria-label="Сегодня | Объекты | + | Уведомления | Ещё"' in server_snapshot and "mobile-plus" in styles_snapshot else "partial",
             "live_audit_login": qa_snapshot_status(qa_report, "live_audit_login_actual_access"),
         }
         stage3_body = "".join(
@@ -4560,7 +4561,7 @@ class AppHandler(BaseHTTPRequestHandler):
         blocker_body = rows(blocker_rows, blocker_card, "Блокеров пока нет")
         mobile_menu_body = """
         <article class="sample-row">
-          <div class="mobile-nav-demo" aria-label="Сегодня | Объекты | + | Уведомления | Я"><span>Сегодня</span><span class="nav-separator">|</span><span>Объекты</span><span class="nav-separator">|</span><strong>+</strong><span class="nav-separator">|</span><span>Уведомления</span><span class="nav-separator">|</span><span>Я</span></div>
+          <div class="mobile-nav-demo" aria-label="Сегодня | Объекты | + | Уведомления | Ещё"><span>Сегодня</span><span class="nav-separator">|</span><span>Объекты</span><span class="nav-separator">|</span><strong>+</strong><span class="nav-separator">|</span><span>Уведомления</span><span class="nav-separator">|</span><span>Ещё</span></div>
           <p class="muted">Кнопка “+” открывает быстрые действия по роли: фото, задача, замечание, материал или проблема.</p>
         </article>
         """

@@ -1,9 +1,9 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260616-ux-roles";
+const CACHE_NAME = "stroitelnyi-kontur-20260618-mobile-menu";
 const CORE_ASSETS = [
   "/",
-  "/static/styles.css?v=20260616-ux-roles",
-  "/static/app.compat.js?v=20260616-ux-roles",
-  "/static/manifest.webmanifest?v=20260611-android-pwa",
+  "/static/styles.css?v=20260618-mobile-menu",
+  "/static/app.compat.js?v=20260618-mobile-menu",
+  "/static/manifest.webmanifest?v=20260618-mobile-menu",
   "/static/assets/g2-logo-192.png",
   "/static/assets/g2-logo-512.png"
 ];
@@ -35,9 +35,24 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.pathname.startsWith("/api/") || url.pathname === "/logout" || url.pathname === "/login") return;
 
+  if (url.pathname.startsWith("/static/") && [".css", ".js", ".webmanifest"].some((suffix) => url.pathname.endsWith(suffix))) {
+    event.respondWith(
+      fetch(request, { cache: "no-store" })
+        .then((response) => {
+          if (response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+          }
+          return response;
+        })
+        .catch(() => caches.match(request) || Response.error())
+    );
+    return;
+  }
+
   if (request.mode === "navigate") {
     event.respondWith(
-      fetch(request)
+      fetch(request, { cache: "no-store" })
         .then((response) => {
           if (response.ok && new URL(response.url).pathname !== "/login") {
             const copy = response.clone();

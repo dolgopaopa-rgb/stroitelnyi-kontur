@@ -11,6 +11,7 @@ for (const viewport of [
     await page.setViewportSize(viewport);
     await openApp(page, "/today");
     await expect(page.locator('[data-testid="mobile-bottom-nav"]')).toBeVisible();
+    await expect(page.locator('[data-testid="mobile-more-button"]')).toBeVisible();
     await expect(page.locator(".today-grid")).toBeVisible();
     await expect
       .poll(async () => {
@@ -40,6 +41,19 @@ for (const viewport of [
     });
     expect(layout.minGridChildWidth, `today-grid child width at ${viewport.width}x${viewport.height}`).toBeGreaterThan(Math.min(300, viewport.width - 40));
     expect(layout.minDecisionWidth, `decision card width at ${viewport.width}x${viewport.height}`).toBeGreaterThan(Math.min(300, viewport.width - 40));
+
+    await page.waitForLoadState("networkidle").catch(() => undefined);
+    let feedbackMenuVisible = false;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await page.locator('[data-testid="mobile-more-button"]').click().catch(() => undefined);
+      await page.waitForTimeout(350);
+      feedbackMenuVisible = await page.locator('[data-mobile-menu-item="feedback"]').isVisible().catch(() => false);
+      if (feedbackMenuVisible) break;
+      await page.waitForLoadState("domcontentloaded").catch(() => undefined);
+    }
+    expect(feedbackMenuVisible, "Feedback must be reachable from mobile More menu").toBeTruthy();
+    await page.locator('[data-mobile-menu-item="feedback"]').click();
+    await expect(page.locator("#feedbackView")).toHaveClass(/active/);
 
     await openApp(page, "/estimates");
     await expect(page.locator('[data-testid="mobile-bottom-nav"]')).toBeVisible();

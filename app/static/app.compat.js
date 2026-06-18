@@ -96,6 +96,7 @@
     installPromptEvent: null,
     installPromptReady: false,
     mobileQuickOpen: false,
+    mobileSheetMode: "actions",
     loadingKeys: /* @__PURE__ */ new Set(),
     pullRefresh: { tracking: false, startY: 0, distance: 0, ready: false, refreshing: false }
   };
@@ -499,7 +500,7 @@
     foreman: ["today", "dashboard", "projects", "tasks", "materials", "object_remarks", "photos"],
     master: ["today", "tasks", "object_remarks", "photos"],
     procurement_manager: ["today", "dashboard", "projects", "materials", "locations", "documents"],
-    estimator: ["today", "estimates", "tasks", "materials", "variations", "documents"],
+    estimator: ["today", "estimates", "tasks", "materials", "variations", "photos", "documents"],
     technical_supervisor: ["today", "dashboard", "projects", "tasks", "works", "materials", "object_remarks", "photos", "locations", "documents"]
   };
   var navLabelsByRole = {
@@ -540,7 +541,8 @@
     estimator: {
       tasks: "Проверки",
       materials: "Материалы вне сметы",
-      variations: "Допработы"
+      variations: "Допработы",
+      photos: "Фотоотчёты"
     }
   };
   var defaultNavLabels = {
@@ -656,7 +658,7 @@
     sales_manager: null,
     ai_auditor: /* @__PURE__ */ new Set(["smetter_materials", "smetter_work_task", "project_documentation", "detail_node", "regulation", "standard", "instruction", "other"]),
     accountant: /* @__PURE__ */ new Set(["main_estimate", "smetter_materials", "smetter_work_task", "contract", "variation_estimate", "act", "ks_2", "ks_3", "other"]),
-    estimator: /* @__PURE__ */ new Set(["main_estimate", "smetter_materials", "smetter_work_task", "project_documentation", "variation_estimate", "act", "ks_2", "ks_3", "other"]),
+    estimator: /* @__PURE__ */ new Set(["main_estimate", "smetter_materials", "smetter_work_task", "project_documentation", "variation_estimate", "act", "ks_2", "ks_3", "photo_report", "object_remark_photo", "photo_video", "other"]),
     foreman: /* @__PURE__ */ new Set(["project_documentation", "variation_attachment", "extra_work_attachment", "photo_report", "object_remark_photo", "detail_node", "regulation", "standard", "instruction"]),
     master: /* @__PURE__ */ new Set(["project_documentation", "variation_attachment", "extra_work_attachment", "photo_report", "object_remark_photo", "detail_node", "regulation", "standard", "instruction"]),
     procurement_manager: /* @__PURE__ */ new Set(["smetter_materials", "project_documentation", "variation_attachment", "extra_work_attachment", "detail_node", "regulation", "standard", "instruction", "other"]),
@@ -691,7 +693,7 @@
       foreman: ["overview", "tasks", "materials", "photos", "remarks", "documents"],
       master: ["overview", "tasks", "photos", "remarks", "documents"],
       procurement_manager: ["overview", "materials", "remarks", "documents", "events"],
-      estimator: ["overview", "tasks", "materials", "remarks", "documents", "events"],
+      estimator: ["overview", "tasks", "materials", "photos", "remarks", "documents", "events"],
       technical_supervisor: ["overview", "tasks", "materials", "photos", "remarks", "documents", "events"]
     }[base];
     return (tabs || ["overview"]).filter((tab) => tab !== "finances" || canViewFinancials());
@@ -2901,6 +2903,15 @@
     const sheet = qs("#mobileQuickSheet");
     const list = qs("#mobileQuickActions");
     if (!sheet || !list) return;
+    const title = qs("#mobileQuickSheetTitle");
+    if (state.mobileSheetMode === "menu") {
+      const views = mobileMenuViewsForRole();
+      if (title) title.textContent = "Разделы";
+      list.innerHTML = views.map((view) => '<button class="secondary mobile-menu-item" type="button" data-view-target="'.concat(view, '" data-mobile-menu-item="').concat(view, '">').concat(escapeHtml(navLabelForView(view)), "</button>")).join("");
+      sheet.hidden = !state.mobileQuickOpen;
+      return;
+    }
+    if (title) title.textContent = "Быстрое действие";
     const actions = mobileQuickActionsForRole().filter(([action]) => {
       if (action === "photo") return canView("photos") || canView("today");
       if (action === "task") return canView("tasks");
@@ -2908,11 +2919,22 @@
       if (action === "material") return canView("materials") || currentRoleBase() === "foreman";
       return true;
     });
-    list.innerHTML = actions.map(([action, title]) => '<button class="secondary" type="button" data-mobile-action="'.concat(action, '">').concat(escapeHtml(title), "</button>")).join("");
+    list.innerHTML = actions.map(([action, title2]) => '<button class="secondary" type="button" data-mobile-action="'.concat(action, '">').concat(escapeHtml(title2), "</button>")).join("");
     sheet.hidden = !state.mobileQuickOpen;
   }
   function toggleMobileQuickActions(open = !state.mobileQuickOpen) {
     state.mobileQuickOpen = Boolean(open);
+    state.mobileSheetMode = "actions";
+    syncMobileQuickActions();
+  }
+  function mobileMenuViewsForRole() {
+    const order = ["today", "dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "object_remarks", "photos", "locations", "documents", "feedback", "events"];
+    const allowed = allowedViews();
+    return order.filter((view) => allowed.includes(view));
+  }
+  function toggleMobileMenu(open = true) {
+    state.mobileQuickOpen = Boolean(open);
+    state.mobileSheetMode = "menu";
     syncMobileQuickActions();
   }
   function firstRoleProjectId() {
@@ -4936,7 +4958,7 @@
     qs("#refreshButton").addEventListener("click", () => refreshAppFromUser("Обновляем данные").catch((error) => showToast(error.message)));
     (_a = qs("#mobileQuickActionToggle")) == null ? void 0 : _a.addEventListener("click", () => toggleMobileQuickActions());
     (_b = qs("#mobileQuickActionClose")) == null ? void 0 : _b.addEventListener("click", () => toggleMobileQuickActions(false));
-    (_c = qs("#mobileProfileButton")) == null ? void 0 : _c.addEventListener("click", () => showToast("Вы вошли как: ".concat(roleLabel(state.currentRole))));
+    (_c = qs("#mobileMoreButton")) == null ? void 0 : _c.addEventListener("click", () => toggleMobileMenu(true));
     (_d = qs("#logoutButton")) == null ? void 0 : _d.addEventListener("click", () => {
       localStorage.removeItem("currentRole");
       window.location.href = "/logout";
@@ -5146,6 +5168,7 @@
       const viewTargetButton = event.target.closest("[data-view-target]");
       if (viewTargetButton) {
         switchView(viewTargetButton.dataset.viewTarget);
+        if (viewTargetButton.closest("#mobileQuickSheet")) toggleMobileQuickActions(false);
         return;
       }
       const taskFilterButton = event.target.closest("[data-task-filter]");
@@ -6041,7 +6064,7 @@
       refreshing = true;
       window.location.reload();
     });
-    navigator.serviceWorker.register("/sw.js").then((registration) => {
+    navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" }).then((registration) => {
       var _a;
       if (registration.waiting) registration.waiting.postMessage({ type: "SKIP_WAITING" });
       registration.addEventListener("updatefound", () => {

@@ -528,7 +528,7 @@ async function runRoles(results, page) {
     ["foreman:7", "today-role-foreman", ["nav-objects", "nav-tasks", "nav-materials", "nav-photo-reports"], ["nav-feedback", "nav-estimates", "nav-documents"]],
     ["master", "today-role-worker", ["nav-tasks", "nav-photo-reports", "nav-object-issues"], ["nav-objects", "nav-materials", "nav-feedback", "nav-documents"]],
     ["procurement_manager", "today-role-procurement", ["nav-materials", "nav-objects"], ["nav-tasks", "nav-feedback", "nav-estimates"]],
-    ["estimator", "today-role-estimator", ["nav-estimates", "nav-materials", "nav-variations"], ["nav-feedback", "nav-photo-reports"]],
+    ["estimator", "today-role-estimator", ["nav-estimates", "nav-materials", "nav-variations", "nav-photo-reports"], ["nav-feedback"]],
   ];
   await route(page, "today");
   for (const [role, rolePanelTestId, expectedIds, hiddenIds] of roleChecks) {
@@ -762,6 +762,17 @@ async function runMobile(results, playwright) {
       const plusBox = await plusButton.boundingBox().catch(() => null);
       const navBox = await page.locator('[data-testid="mobile-bottom-nav"]').boundingBox().catch(() => null);
       const plusSeparated = Boolean(plusVisible && plusBox && navBox && plusBox.width >= 44 && plusBox.height >= 44 && plusBox.x > navBox.x + 80 && plusBox.x + plusBox.width < navBox.x + navBox.width - 80);
+      await page.locator("#mobileQuickActionClose").click().catch(() => {});
+      const moreButton = page.locator('[data-testid="mobile-more-button"]');
+      await moreButton.click().catch(() => {});
+      const feedbackMenuItem = page.locator('[data-mobile-menu-item="feedback"]');
+      const moreVisible = await moreButton.isVisible().catch(() => false);
+      const feedbackMenuVisible = await feedbackMenuItem.isVisible().catch(() => false);
+      if (feedbackMenuVisible) {
+        await feedbackMenuItem.click();
+        await page.waitForTimeout(200);
+      }
+      const feedbackOpens = await page.locator("#feedbackView.active").isVisible().catch(() => false);
       await route(page, "estimates");
       await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight)).catch(() => {});
       await page.waitForTimeout(150);
@@ -779,9 +790,10 @@ async function runMobile(results, playwright) {
         };
       });
       const estimatesOk = !estimatesLayout.overlapped;
-      const status = navVisible && !overflow && actions > 0 && plusSeparated && todayGridOk && estimatesOk ? "OK" : "FAIL";
+      const mobileMenuOk = moreVisible && feedbackMenuVisible && feedbackOpens;
+      const status = navVisible && !overflow && actions > 0 && plusSeparated && mobileMenuOk && todayGridOk && estimatesOk ? "OK" : "FAIL";
       const plusDetails = plusBox ? `${Math.round(plusBox.width)}x${Math.round(plusBox.height)}@${Math.round(plusBox.x)}` : "missing";
-      add(results, "Mobile QA Agent", `Viewport ${viewport.width}x${viewport.height}`, status, `nav=${navVisible}; horizontalOverflow=${overflow}; actions=${actions}; plusSeparated=${plusSeparated}; plusBox=${plusDetails}; todayGridOk=${todayGridOk}; minGridChildWidth=${todayLayout.minGridChildWidth}; minDecisionWidth=${todayLayout.minDecisionWidth}; minExpectedWidth=${minExpectedWidth}; estimatesOverlap=${estimatesLayout.overlapped}; estimateRows=${estimatesLayout.rows}; estimateRowBottom=${estimatesLayout.rowBottom}; navTop=${estimatesLayout.navTop}`, status === "FAIL" ? "blocker" : "normal");
+      add(results, "Mobile QA Agent", `Viewport ${viewport.width}x${viewport.height}`, status, `nav=${navVisible}; horizontalOverflow=${overflow}; actions=${actions}; plusSeparated=${plusSeparated}; plusBox=${plusDetails}; mobileMenuOk=${mobileMenuOk}; moreVisible=${moreVisible}; feedbackMenuVisible=${feedbackMenuVisible}; feedbackOpens=${feedbackOpens}; todayGridOk=${todayGridOk}; minGridChildWidth=${todayLayout.minGridChildWidth}; minDecisionWidth=${todayLayout.minDecisionWidth}; minExpectedWidth=${minExpectedWidth}; estimatesOverlap=${estimatesLayout.overlapped}; estimateRows=${estimatesLayout.rows}; estimateRowBottom=${estimatesLayout.rowBottom}; navTop=${estimatesLayout.navTop}`, status === "FAIL" ? "blocker" : "normal");
     } finally {
       await browser.close().catch(() => {});
     }
