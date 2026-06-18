@@ -112,7 +112,10 @@ def init_db() -> None:
                 related_type TEXT,
                 description TEXT,
                 completed_at TEXT,
+                submitted_at TEXT,
+                review_due_at TEXT,
                 accepted_at TEXT,
+                cancelled_at TEXT,
                 rejection_comment TEXT,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -560,7 +563,10 @@ def init_db() -> None:
         ensure_column(db, "tasks", "creator_id", "INTEGER")
         ensure_column(db, "tasks", "reviewer_id", "INTEGER")
         ensure_column(db, "tasks", "completed_at", "TEXT")
+        ensure_column(db, "tasks", "submitted_at", "TEXT")
+        ensure_column(db, "tasks", "review_due_at", "TEXT")
         ensure_column(db, "tasks", "accepted_at", "TEXT")
+        ensure_column(db, "tasks", "cancelled_at", "TEXT")
         ensure_column(db, "tasks", "rejection_comment", "TEXT")
         ensure_column(db, "estimate_jobs", "return_comment", "TEXT")
         ensure_column(db, "estimate_jobs", "question_comment", "TEXT")

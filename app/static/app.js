@@ -131,10 +131,12 @@ const statusLabelMap = {
   archived: "Архив",
   new: "Новая",
   returned: "Возвращена на доработку",
+  waiting_check: "Ждёт проверки",
   in_progress_task: "В работе",
   review: "На проверке",
-  completed_pending_acceptance: "Выполнена, ждет приемки",
+  completed_pending_acceptance: "Ждёт проверки",
   accepted: "Выполнение принято",
+  cancelled: "Отменена",
   approval: "Согласование",
   ordered: "Заказано",
   delivery: "Доставка",
@@ -249,7 +251,7 @@ function statusLabel(value) {
 function statusLevel(value, fallback = "") {
   const key = String(value || "");
   if (["overdue", "danger", "problem", "returned", "revision_requested", "rejected", "receipt_issue", "quality_problem", "no_material"].includes(key)) return "danger";
-  if (["warning", "review", "completed_pending_acceptance", "estimate_question", "estimate_returned", "submitted_to_construction", "decision_required", "need_approval", "estimate_hold", "new", "feedback_new", "open", "waiting_external", "waiting_client_decision", "waiting_owner_decision", "waiting_project_documentation", "estimate_not_approved", "subcontractor_problem", "no_photo_report", "approval", "check"].includes(key)) return "warning";
+  if (["warning", "review", "completed_pending_acceptance", "waiting_check", "estimate_question", "estimate_returned", "submitted_to_construction", "decision_required", "need_approval", "estimate_hold", "new", "feedback_new", "open", "waiting_external", "waiting_client_decision", "waiting_owner_decision", "waiting_project_documentation", "estimate_not_approved", "subcontractor_problem", "no_photo_report", "approval", "check"].includes(key)) return "warning";
   if (["success", "accepted", "approved", "closed", "completed", "received", "on_site", "agreed", "done", "feedback_done", "estimate_done", "resolved"].includes(key)) return "success";
   if (["blue", "in_progress", "in_progress_task", "ordered", "in_transit", "delivery_scheduled", "delivery_confirmed", "estimate_in_work", "in_review", "active", "in_work", "feedback_in_work", "material"].includes(key)) return "blue";
   if (["draft", "archived", "estimate_new", "not_required"].includes(key)) return "";
@@ -1154,7 +1156,7 @@ function renderCollapsibleList({ items, visibleCount = 3, emptyText = "Пока 
 function renderDashboardTaskRow(task) {
   return `
     <button class="row clickable dashboard-task-row" type="button" data-open-task="${task.id}">
-      <div class="stack-line"><strong>${task.title}</strong>${pill(label(task.status), taskStatusLevel(task.status))}${pill(task.due_date || "без срока", levelByDate(task.due_date))}</div>
+      <div class="stack-line"><strong>${task.title}</strong>${pill(label(taskStatusKey(task)), taskStatusLevel(taskStatusKey(task)))}${pill(task.due_date || "без срока", levelByDate(task.due_date))}</div>
       <div class="muted">${task.project_title} · ответственный: ${task.assignee_name || "не назначен"} · принимает: ${task.reviewer_name || task.creator_name || "не назначен"}</div>
     </button>`;
 }
@@ -2359,31 +2361,62 @@ function collectMaterialBatchEdits() {
 
 function taskStats(tasks) {
   return {
-    active: tasks.filter((task) => ["new", "in_progress_task", "review"].includes(task.status)).length,
-    returned: tasks.filter((task) => task.status === "returned").length,
-    waiting: tasks.filter((task) => task.status === "completed_pending_acceptance").length,
-    accepted: tasks.filter((task) => task.status === "accepted").length,
+    active: tasks.filter((task) => ["new", "in_progress"].includes(taskStatusKey(task))).length,
+    returned: tasks.filter((task) => taskStatusKey(task) === "returned").length,
+    waiting: tasks.filter((task) => taskStatusKey(task) === "waiting_check").length,
+    accepted: tasks.filter((task) => taskStatusKey(task) === "accepted").length,
+    reviewOverdue: tasks.filter(taskReviewCountsAsOverdue).length,
     overdue: tasks.filter(taskCountsAsOverdue).length,
     noDue: tasks.filter((task) => isOpenTask(task) && !task.due_date).length,
   };
 }
 
-function taskCountsAsOverdue(task) {
-  return ["new", "in_progress_task", "review"].includes(task.status) && levelByDate(task.due_date) === "danger";
+const TASK_STATUS_ALIASES = {
+  completed_pending_acceptance: "waiting_check",
+  in_progress_task: "in_progress",
+  review: "in_progress",
+};
+
+function taskStatusKey(taskOrStatus) {
+  const raw = typeof taskOrStatus === "object" ? taskOrStatus?.status_key || taskOrStatus?.status : taskOrStatus;
+  const key = String(raw || "new").trim();
+  return TASK_STATUS_ALIASES[key] || key || "new";
 }
 
+function taskIsWaitingCheck(task) {
+  return taskStatusKey(task) === "waiting_check";
+}
+
+function taskExecutionOverdueStatuses() {
+  return new Set(["new", "in_progress", "returned"]);
+}
+
+function taskCountsAsOverdue(task) {
+  return taskExecutionOverdueStatuses().has(taskStatusKey(task)) && isDateOverdue(task.due_date);
+}
+
+function taskReviewCountsAsOverdue(task) {
+  return taskIsWaitingCheck(task) && isDateOverdue(task.review_due_at);
+}
+
+window.__konturTaskStatusKey = taskStatusKey;
+window.__konturTaskCountsAsOverdue = taskCountsAsOverdue;
+window.__konturTaskReviewCountsAsOverdue = taskReviewCountsAsOverdue;
+
 function taskMatchesFilter(task, filter) {
-  if (filter === "active") return ["new", "in_progress_task", "review"].includes(task.status);
-  if (filter === "returned") return task.status === "returned";
-  if (filter === "waiting") return task.status === "completed_pending_acceptance";
-  if (filter === "accepted") return task.status === "accepted";
+  const status = taskStatusKey(task);
+  if (filter === "active") return ["new", "in_progress"].includes(status);
+  if (filter === "returned") return status === "returned";
+  if (filter === "waiting") return status === "waiting_check";
+  if (filter === "accepted") return status === "accepted";
   if (filter === "overdue") return taskCountsAsOverdue(task);
+  if (filter === "review_overdue") return taskReviewCountsAsOverdue(task);
   if (filter === "no_due") return isOpenTask(task) && !task.due_date;
   return true;
 }
 
 function isOpenTask(task) {
-  return task.status !== "accepted";
+  return !["accepted", "cancelled", "closed"].includes(taskStatusKey(task));
 }
 
 function visibleTasksForRole(tasks) {
@@ -2657,8 +2690,9 @@ function taskMentions(task, words = []) {
 function taskRoleScore(task) {
   let score = 0;
   if (taskCountsAsOverdue(task)) score += 80;
-  if (task.status === "returned") score += 60;
-  if (["completed_pending_acceptance", "waiting_check"].includes(task.status)) score += 45;
+  if (taskReviewCountsAsOverdue(task)) score += 75;
+  if (taskStatusKey(task) === "returned") score += 60;
+  if (taskIsWaitingCheck(task)) score += 45;
   if (["question", "decision", "approval"].includes(taskTypeKey(task))) score += 35;
   if (!task.due_date) score += 15;
   if (isTodayDate(task.due_date)) score += 25;
@@ -2669,9 +2703,9 @@ function todayTasksForProfile(tasks = [], profile = roleTodayProfile()) {
   const mode = profile.taskMode || "leadership";
   let rows = (Array.isArray(tasks) ? tasks : []).filter(isOpenTask);
   if (mode === "worker") {
-    rows = rows.filter((task) => isTodayDate(task.due_date) || taskCountsAsOverdue(task) || ["returned", "completed_pending_acceptance"].includes(task.status) || ["photo_report", "issue"].includes(taskTypeKey(task)));
+    rows = rows.filter((task) => isTodayDate(task.due_date) || taskCountsAsOverdue(task) || taskReviewCountsAsOverdue(task) || ["returned", "waiting_check"].includes(taskStatusKey(task)) || ["photo_report", "issue"].includes(taskTypeKey(task)));
   } else if (mode === "my-work") {
-    rows = rows.filter((task) => isTodayDate(task.due_date) || taskCountsAsOverdue(task) || ["returned", "completed_pending_acceptance"].includes(task.status) || ["photo_report", "question", "decision", "approval", "issue", "material"].includes(taskTypeKey(task)));
+    rows = rows.filter((task) => isTodayDate(task.due_date) || taskCountsAsOverdue(task) || taskReviewCountsAsOverdue(task) || ["returned", "waiting_check"].includes(taskStatusKey(task)) || ["photo_report", "question", "decision", "approval", "issue", "material"].includes(taskTypeKey(task)));
   } else if (mode === "procurement") {
     rows = rows.filter((task) => ["material", "approval", "question"].includes(taskTypeKey(task)) || taskMentions(task, ["материал", "поставка", "заявк", "купить", "заказать"]));
   } else if (mode === "estimator") {
@@ -2679,7 +2713,7 @@ function todayTasksForProfile(tasks = [], profile = roleTodayProfile()) {
   } else if (mode === "manager") {
     rows = rows.filter((task) => ["returned", "waiting_answer"].includes(task.status) || taskMentions(task, ["документ", "договор", "смет"]));
   } else {
-    rows = rows.filter((task) => isTodayDate(task.due_date) || taskCountsAsOverdue(task) || ["returned", "completed_pending_acceptance", "waiting_answer"].includes(task.status) || ["question", "decision", "approval", "photo_report"].includes(taskTypeKey(task)));
+    rows = rows.filter((task) => isTodayDate(task.due_date) || taskCountsAsOverdue(task) || taskReviewCountsAsOverdue(task) || ["returned", "waiting_check", "waiting_answer"].includes(taskStatusKey(task)) || ["question", "decision", "approval", "photo_report"].includes(taskTypeKey(task)));
   }
   return rows.sort((a, b) => taskRoleScore(b) - taskRoleScore(a) || String(a.due_date || "9999").localeCompare(String(b.due_date || "9999")));
 }
@@ -2739,7 +2773,8 @@ function renderTaskStats(tasks, activeFilter = state.taskFilter, options = {}) {
     ["all", "Все", tasks.length, ""],
     ["active", "В работе", stats.active, "warning"],
     ["returned", "На доработке", stats.returned, "danger"],
-    ["waiting", "Ждет приемки", stats.waiting, "blue"],
+    ["waiting", "Ждёт проверки", stats.waiting, "blue"],
+    ["review_overdue", "Просрочена проверка", stats.reviewOverdue, "danger"],
     ["accepted", "Принято", stats.accepted, "success"],
     ["overdue", "Просрочено", stats.overdue, "danger"],
     ["no_due", "Без срока", stats.noDue, "warning"],
@@ -2768,7 +2803,8 @@ function taskProjectIndicatorPills(stats, openCount, newCount) {
   if (newCount) items.push(pill(`${newCount} требует внимания`, "warning"));
   if (stats.active) items.push(pill(`В работе ${stats.active}`, "warning"));
   if (stats.returned) items.push(pill(`На доработке ${stats.returned}`, "danger"));
-  if (stats.waiting) items.push(pill(`Ждет приемки ${stats.waiting}`, "blue"));
+  if (stats.waiting) items.push(pill(`Ждёт проверки ${stats.waiting}`, "blue"));
+  if (stats.reviewOverdue) items.push(pill(`Проверка просрочена ${stats.reviewOverdue}`, "danger"));
   if (stats.accepted) items.push(pill(`Принято ${stats.accepted}`, "success"));
   if (!openCount && !newCount) items.push(`<span class="muted">открытых задач нет</span>`);
   return items.join("");
@@ -3246,10 +3282,13 @@ function buildDashboardAttention(summary, tasks, materialRows) {
   const materialBatches = uniqueMaterialBatches(materialRows);
 
   if (stats.overdue) {
-    items.push(attentionItem("Просроченные задачи", stats.overdue, "Нужно открыть задачи и решить: принять, вернуть или перенести срок.", "danger", { taskFilter: "overdue" }));
+    items.push(attentionItem("Просрочено исполнение", stats.overdue, "Действие сейчас на исполнителе: принять в работу, продолжить или отправить на проверку.", "danger", { taskFilter: "overdue" }));
+  }
+  if (stats.reviewOverdue) {
+    items.push(attentionItem("Просрочена проверка", stats.reviewOverdue, "Исполнитель уже отправил результат, теперь действие на проверяющем.", "danger", { taskFilter: "review_overdue" }));
   }
   if (stats.waiting) {
-    items.push(attentionItem("Ждут приемки", stats.waiting, "Исполнители отметили выполнение, но принимающий еще не закрыл результат.", "blue", { taskFilter: "waiting" }));
+    items.push(attentionItem("Ждут проверки", stats.waiting, "Исполнители отправили результат, проверяющему нужно принять или вернуть.", "blue", { taskFilter: "waiting" }));
   }
   if (stats.returned) {
     items.push(attentionItem("На доработке", stats.returned, "Есть задачи, которые вернули исполнителям с комментариями.", "warning", { taskFilter: "returned" }));
@@ -3330,8 +3369,50 @@ function canActAsTaskUser(task, kind) {
 }
 
 function canDeleteTask(task) {
-  if (["accepted", "completed_pending_acceptance"].includes(task.status)) return false;
+  if (["accepted", "waiting_check"].includes(taskStatusKey(task))) return false;
   return ["owner", "construction_manager"].includes(currentRoleBase());
+}
+
+function canActAsTaskPrivileged() {
+  return ["owner", "construction_manager", "finance_director"].includes(currentRoleBase());
+}
+
+function canActOnTaskAsAssignee(task) {
+  return canActAsTaskPrivileged() || canActAsTaskUser(task, "assignee");
+}
+
+function canActOnTaskAsReviewer(task) {
+  return canActAsTaskPrivileged() || canActAsTaskUser(task, "reviewer") || canActAsTaskUser(task, "creator");
+}
+
+function taskVisibilityReason(task) {
+  if (canActAsTaskUser(task, "assignee")) return "Назначено вам";
+  if (canActAsTaskUser(task, "reviewer")) return "Требуется ваша проверка";
+  if (canActAsTaskUser(task, "creator")) return "Вы создали задачу";
+  const project = state.projects.find((item) => Number(item.id) === Number(task.project_id));
+  const userId = Number(currentUserId() || 0);
+  if (project && userId && [project.foreman_id, project.tech_supervisor_id, project.procurement_manager_id, project.estimator_id].some((id) => Number(id || 0) === userId)) return "На вашем объекте";
+  if (isLeadershipRole()) return "Контроль руководителя";
+  return "Доступно по вашей роли";
+}
+
+function taskNextAction(task) {
+  const status = taskStatusKey(task);
+  if (status === "new" && canActOnTaskAsAssignee(task)) return { action: "start", title: "Принять в работу", level: "primary" };
+  if (status === "in_progress" && canActOnTaskAsAssignee(task)) return { action: "complete", title: "Отправить на проверку", level: "primary" };
+  if (status === "returned" && canActOnTaskAsAssignee(task)) return { action: "start", title: "Продолжить работу", level: "primary" };
+  if (status === "waiting_check" && canActOnTaskAsReviewer(task)) return { action: "accept", title: "Принять выполнение", level: "primary" };
+  if (status === "waiting_check") return { title: "Ожидается проверка", disabled: true };
+  if (status === "accepted") return { title: "Работа завершена и принята", disabled: true };
+  return null;
+}
+
+function renderTaskNextAction(task, options = {}) {
+  const next = taskNextAction(task);
+  if (!next) return "";
+  if (next.disabled) return `<button class="secondary" type="button" disabled title="${escapeAttr(next.title)}">${escapeHtml(next.title)}</button>`;
+  const levelClass = next.level === "primary" ? "primary" : "secondary";
+  return `<button class="${levelClass}" type="button" data-task-action="${next.action}" data-task-id="${task.id}">${escapeHtml(next.title)}</button>`;
 }
 
 async function renderDashboard() {
@@ -3344,7 +3425,7 @@ async function renderDashboard() {
     renderDashboardMetric({ title: "Объекты", count: summary.projects, details: "В базе MVP", view: "projects", always: true }),
     renderDashboardMetric({ title: "У менеджера", count: summary.pending_handover, details: "Черновики и доработки", view: "projects", level: "warning" }),
     renderDashboardMetric({ title: "На передаче", count: summary.construction_review || 0, details: "Ждут решения строительства", view: "projects", level: "warning" }),
-    canView("tasks") ? renderDashboardMetric({ title: "Задачи к приемке", count: summary.task_done_waiting || 0, details: "Выполнены, но не приняты", taskFilter: "waiting", level: "blue" }) : "",
+    canView("tasks") ? renderDashboardMetric({ title: "Задачи к проверке", count: summary.task_done_waiting || 0, details: "Исполнитель отправил, проверяющий ещё не принял", taskFilter: "waiting", level: "blue" }) : "",
     canView("tasks") ? renderDashboardMetric({ title: "Просрочено", count: dashboardStats.overdue, details: "По открытым задачам", taskFilter: "overdue", level: "danger" }) : "",
     canView("estimates") ? renderDashboardMetric({ title: "Сметы в работе", count: summary.estimate_jobs_open || 0, details: "Нужно рассчитать", view: "estimates", level: "blue" }) : "",
     canView("estimates") ? renderDashboardMetric({ title: "Сметы просрочены", count: summary.estimate_jobs_overdue || 0, details: "Срок уже прошел", view: "estimates", level: "danger" }) : "",
@@ -3417,7 +3498,7 @@ function renderTodayTaskCard(task) {
     <button class="row clickable today-task-card" type="button" data-open-task="${task.id}" data-testid="task-card">
       <div class="stack-line">
         <span data-testid="task-type-badge">${pill(taskTypeLabel(task), taskTypeLevel(task))}</span>
-        <span data-testid="task-status-badge">${pill(statusLabel(task.status), taskStatusLevel(task.status))}</span>
+        <span data-testid="task-status-badge">${pill(statusLabel(taskStatusKey(task)), taskStatusLevel(taskStatusKey(task)))}</span>
         <span data-testid="task-priority-badge">${pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority))}</span>
         ${pill(task.due_date || "без срока", levelByDate(task.due_date))}
       </div>
@@ -3734,8 +3815,8 @@ async function renderToday() {
   qs("#todayPrimaryActions").innerHTML = renderTodayPrimaryActions(profile);
   const todayTasks = todayTasksForProfile(roleTasks, profile);
   const overdueTasks = roleTasks.filter(taskCountsAsOverdue);
-  const returnedTasks = roleTasks.filter((task) => task.status === "returned");
-  const waitingTasks = roleTasks.filter((task) => task.status === "completed_pending_acceptance");
+  const returnedTasks = roleTasks.filter((task) => taskStatusKey(task) === "returned");
+  const waitingTasks = roleTasks.filter(taskIsWaitingCheck);
   const materialBatches = buildMaterialBatches(roleMaterialRows);
   const riskyMaterials = todayMaterialsForProfile(materialBatches, profile);
   const activeProjects = todayProjectsForProfile(roleProjects, roleTasks, roleMaterialRows, profile);
@@ -4399,7 +4480,7 @@ function projectAttentionItems(project) {
   const blockers = (project.blockers || []).filter((blocker) => !["resolved", "closed"].includes(blocker.status));
   const items = [];
   const overdueTasks = tasks.filter(taskCountsAsOverdue);
-  const returnedTasks = tasks.filter((task) => task.status === "returned");
+  const returnedTasks = tasks.filter((task) => taskStatusKey(task) === "returned");
   const riskyMaterials = batches.filter(materialIsRisky);
   const openRemarks = remarks.filter((remark) => !["accepted", "closed"].includes(remark.status));
   if (blockers.length) items.push({ title: "Открытые блокеры", count: blockers.length, level: "danger", tab: "overview" });
@@ -4534,7 +4615,7 @@ function renderCompactTaskRow(task) {
         <span>срок: ${task.due_date ? formatDateRu(task.due_date) : "без срока"}</span>
       </div>
       <div class="stack-line">
-        <span data-testid="task-status-badge">${pill(statusLabel(task.status), taskStatusLevel(task.status))}</span>
+        <span data-testid="task-status-badge">${pill(statusLabel(taskStatusKey(task)), taskStatusLevel(taskStatusKey(task)))}</span>
         <span data-testid="task-priority-badge">${pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority))}</span>
       </div>
     </button>`;
@@ -4989,7 +5070,7 @@ async function renderTasks() {
     ? taskProjects
         .map((project) => {
           const stats = taskStats(project.tasks);
-          const newCount = project.tasks.filter((task) => ["new", "returned", "completed_pending_acceptance"].includes(task.status)).length;
+          const newCount = project.tasks.filter((task) => ["new", "returned", "waiting_check"].includes(taskStatusKey(task))).length;
           const openCount = project.tasks.filter(isOpenTask).length;
           return `
             <button class="row clickable task-project-row ${state.selectedTaskProjectId === project.id ? "active" : ""}" data-task-project="${project.id}">
@@ -5001,13 +5082,12 @@ async function renderTasks() {
     : `<p class="muted">${currentRoleBase() === "foreman" ? "За этим прорабом пока нет объектов с задачами." : "Задач пока нет."}</p>`;
   qs("#taskStats").innerHTML =
     renderTaskStats(tasks, state.taskFilter, { compact: true }) +
-    `<p class="muted task-status-help">Не принято / ждет приемки — исполнитель отметил выполнение, но проверяющий еще не принял. На доработке — проверяющий вернул задачу исполнителю с комментарием и новым сроком.</p>`;
+    `<p class="muted task-status-help">Ждёт проверки — исполнитель отправил результат, дальше действие на проверяющем. На доработке — проверяющий вернул задачу исполнителю с комментарием и новым сроком.</p>`;
   const visibleTasks = tasks.filter((task) => taskMatchesFilter(task, state.taskFilter));
   qs("#taskRows").innerHTML = visibleTasks.length
     ? visibleTasks
         .map((task) => {
-          const canComplete = task.status !== "accepted" && task.status !== "completed_pending_acceptance" && (canActAsTaskUser(task, "assignee") || ["owner", "construction_manager", "finance_director"].includes(currentRoleBase()));
-          const canReview = task.status === "completed_pending_acceptance" && (["owner", "construction_manager", "finance_director"].includes(currentRoleBase()) || canActAsTaskUser(task, "reviewer"));
+          const canReview = taskIsWaitingCheck(task) && canActOnTaskAsReviewer(task);
           const lastComment = latestTaskComment(task);
           const taskKey = `task:${task.id}`;
           return `
@@ -5015,8 +5095,8 @@ async function renderTasks() {
               <summary class="task-summary">
                 <span class="task-summary-main">
                   <span class="task-summary-title"><span data-testid="task-type-badge">${pill(taskTypeLabel(task), taskTypeLevel(task))}</span><strong data-testid="task-title">${escapeHtml(taskDisplayTitle(task))}</strong></span>
-                  <span class="task-summary-meta" data-testid="task-meta">${escapeHtml(task.project_title || "объект не указан")} · ${escapeHtml(task.assignee_name || "ответственный не назначен")} · ${task.due_date ? formatDateRu(task.due_date) : "без срока"}</span>
-                  <span class="stack-line"><span data-testid="task-status-badge">${pill(label(task.status), taskStatusLevel(task.status))}</span><span data-testid="task-priority-badge">${pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority))}</span></span>
+                  <span class="task-summary-meta" data-testid="task-meta">${escapeHtml(task.project_title || "объект не указан")} · ${escapeHtml(task.assignee_name || "ответственный не назначен")} · ${task.due_date ? formatDateRu(task.due_date) : "без срока"} · ${escapeHtml(taskVisibilityReason(task))}</span>
+                  <span class="stack-line"><span data-testid="task-status-badge">${pill(label(taskStatusKey(task)), taskStatusLevel(taskStatusKey(task)))}</span><span data-testid="task-priority-badge">${pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority))}</span></span>
                 </span>
               </summary>
               <div class="task-row-body">
@@ -5031,8 +5111,8 @@ async function renderTasks() {
               </div>
               <div class="task-actions">
                 <button class="secondary" type="button" data-open-task="${task.id}">Подробнее</button>
-                ${canComplete ? `<button class="secondary" data-task-action="complete" data-task-id="${task.id}">Выполнено</button>` : ""}
-                ${canReview ? `<button class="primary" data-task-action="accept" data-task-id="${task.id}">Принять</button><button class="secondary" data-task-action="return" data-task-id="${task.id}">Вернуть</button>` : ""}
+                ${renderTaskNextAction(task)}
+                ${canReview ? `<button class="secondary" data-task-action="return" data-task-id="${task.id}">Вернуть</button>` : ""}
                 ${canDeleteTask(task) ? `<button class="danger-button" data-task-action="delete" data-task-id="${task.id}">Удалить</button>` : ""}
               </div>
               </div>
@@ -5184,23 +5264,26 @@ function renderTaskDiscussion(task) {
 }
 
 function renderTaskActionPanel(task) {
-  const canComplete = task.status !== "accepted" && task.status !== "completed_pending_acceptance" && (canActAsTaskUser(task, "assignee") || ["owner", "construction_manager", "finance_director"].includes(currentRoleBase()));
-  const canReview = task.status === "completed_pending_acceptance" && (["owner", "construction_manager", "finance_director"].includes(currentRoleBase()) || canActAsTaskUser(task, "reviewer"));
-  if (!canComplete && !canReview) return "";
+  const status = taskStatusKey(task);
+  const canStart = ["new", "returned"].includes(status) && canActOnTaskAsAssignee(task);
+  const canSubmit = status === "in_progress" && canActOnTaskAsAssignee(task);
+  const canReview = status === "waiting_check" && canActOnTaskAsReviewer(task);
+  if (!canStart && !canSubmit && !canReview) return "";
   return `
     <section class="workflow-panel task-action-panel" data-task-action-panel data-task-id="${task.id}">
       <div class="panel-head">
         <h3>Действия по задаче</h3>
-        <span class="muted">Результат, перенос срока и файлы фиксируются в истории</span>
+        <span class="muted">Каждое действие меняет статус и фиксируется в истории</span>
       </div>
-      <label>Комментарий <textarea rows="3" data-task-action-comment placeholder="При выполнении обязательно напишите, что сделано. При возврате - что исправить."></textarea></label>
+      <label>Комментарий <textarea rows="3" data-task-action-comment placeholder="При отправке на проверку напишите, что сделано. При возврате - что исправить."></textarea></label>
       <div class="grid-2">
         <label>Новый срок при переносе/возврате <input type="date" data-task-action-due-date value="${task.due_date || ""}" /></label>
         <label>Фото / видео / документ <input type="file" data-task-action-files multiple /></label>
       </div>
       ${personalNotifyControl()}
       <div class="form-actions">
-        ${canComplete ? `<button class="primary" type="button" data-task-action="complete" data-task-id="${task.id}">Выполнено</button><button class="secondary" type="button" data-task-action="postpone" data-task-id="${task.id}">Частично / перенести срок</button>` : ""}
+        ${canStart ? `<button class="primary" type="button" data-task-action="start" data-task-id="${task.id}">${status === "returned" ? "Продолжить работу" : "Принять в работу"}</button>` : ""}
+        ${canSubmit ? `<button class="primary" type="button" data-task-action="complete" data-task-id="${task.id}">Отправить на проверку</button><button class="secondary" type="button" data-task-action="postpone" data-task-id="${task.id}">Оставить в работе / перенести срок</button>` : ""}
         ${canReview ? `<button class="primary" type="button" data-task-action="accept" data-task-id="${task.id}">Принять выполнение</button><button class="secondary" type="button" data-task-action="return" data-task-id="${task.id}">Вернуть на доработку</button>` : ""}
       </div>
     </section>`;
@@ -5238,6 +5321,27 @@ function renderTaskTypeEditor(task) {
     </section>`;
 }
 
+function renderTaskStatusScale(task) {
+  const status = taskStatusKey(task);
+  const order = [
+    ["new", "Новая"],
+    ["in_progress", "В работе"],
+    ["waiting_check", "Проверка"],
+    ["accepted", "Принято"],
+  ];
+  const statusIndex = status === "returned" ? 1 : Math.max(order.findIndex(([key]) => key === status), 0);
+  return `
+    <div class="task-status-scale" aria-label="Жизненный цикл задачи">
+      ${order
+        .map(([key, title], index) => {
+          const active = key === status || (status === "returned" && key === "in_progress");
+          const done = index < statusIndex || status === "accepted";
+          return `<span class="${done ? "done" : ""} ${active ? "active" : ""}">${escapeHtml(title)}</span>`;
+        })
+        .join("")}
+    </div>`;
+}
+
 function openTaskDetail(taskId) {
   const task = state.lastTasks.find((item) => Number(item.id) === Number(taskId));
   if (!task) {
@@ -5249,10 +5353,11 @@ function openTaskDetail(taskId) {
     <section class="workflow-panel compact-workflow">
       <div class="stack-line">
         <h3>${task.project_title || "Объект не указан"}</h3>
-        ${pill(label(task.status), taskStatusLevel(task.status))}
+        ${pill(label(taskStatusKey(task)), taskStatusLevel(taskStatusKey(task)))}
         ${pill(task.due_date || "без срока", levelByDate(task.due_date))}
         ${pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority))}
       </div>
+      ${renderTaskStatusScale(task)}
       <div class="task-detail-grid">
         <div><span class="muted">Поставил</span><strong>${task.creator_name || "не указано"}</strong></div>
         <div><span class="muted">Исполнитель</span><strong>${task.assignee_name || "не назначен"}</strong></div>
@@ -5261,6 +5366,7 @@ function openTaskDetail(taskId) {
         <div><span class="muted">Дата начала</span><strong>${task.start_date ? formatDateRu(task.start_date) : "не указана"}</strong></div>
         <div><span class="muted">Договор</span><strong>${task.contract_title ? `${contractType(task.contract_type)}: ${task.contract_title}` : "без привязки"}</strong></div>
       </div>
+      <p class="muted">${escapeHtml(taskVisibilityReason(task))}</p>
       ${taskDisplayDescription(task) ? `<p class="preserve-lines">${escapeHtml(taskDisplayDescription(task))}</p>` : ""}
       ${task.rejection_comment ? `<div class="hint-box warning"><strong>Причина возврата / непринятия</strong><p>${task.rejection_comment}</p></div>` : ""}
     </section>
@@ -6889,6 +6995,11 @@ async function handleTaskAction(button) {
   const notifyPersonal = readPersonalNotify(panel);
   let payload = {};
   let message = "Задача обновлена";
+  if (action === "start") {
+    const comment = panel ? panelComment : "";
+    payload = { ...payload, comment };
+    message = "Задача принята в работу";
+  }
   if (action === "complete") {
     const answer = panel ? panelComment : window.prompt("Что сделано по задаче? Комментарий обязателен.", "");
     if (answer === null) return;
@@ -6898,7 +7009,7 @@ async function handleTaskAction(button) {
       return;
     }
     payload = { ...payload, comment };
-    message = "Задача отмечена выполненной";
+    message = "Задача отправлена на проверку";
   }
   if (action === "accept") {
     const answer = panel ? panelComment : window.prompt("Комментарий к приемке. Можно оставить пустым.", "");

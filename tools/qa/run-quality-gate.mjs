@@ -47,6 +47,7 @@ const agentNames = [
   "Role QA Agent",
   "Read-only Safety QA Agent",
   "UX Sanity QA Agent",
+  "Workflow QA Agent",
   "Mobile QA Agent",
   "Console Error QA Agent",
   "Visual Regression QA Agent",
@@ -506,17 +507,17 @@ async function runButtons(results, page) {
       return !/(Выполнение принято|Закрыта|Отменена|Принято)/i.test(text);
     }).length
   ).catch(() => 0);
-  const masterDoneButtons = await page.locator('#tasksView.active button:has-text("Выполнено"), #tasksView.active button:has-text("Готово")').count().catch(() => 0);
-  const masterDoneOk = masterActionableTaskCount === 0 || masterDoneButtons > 0;
+  const masterNextActionButtons = await page.locator('#tasksView.active [data-task-action="start"], #tasksView.active [data-task-action="complete"]').count().catch(() => 0);
+  const masterDoneOk = masterActionableTaskCount === 0 || masterNextActionButtons > 0;
   add(
     results,
     "Button QA Agent",
-    "Master done action is available for actionable tasks",
+    "Master next task action is available for actionable tasks",
     masterDoneOk ? "OK" : "FAIL",
-    `master_task_cards=${masterTaskCardCount}; actionable=${masterActionableTaskCount}; done_buttons=${masterDoneButtons}`,
+    `master_task_cards=${masterTaskCardCount}; actionable=${masterActionableTaskCount}; next_action_buttons=${masterNextActionButtons}`,
     masterDoneOk ? "normal" : "blocker",
     "",
-    { buttonsChecked: masterDoneButtons ? 1 : 0, taskCardsChecked: masterTaskCardCount }
+    { buttonsChecked: masterNextActionButtons ? 1 : 0, taskCardsChecked: masterTaskCardCount }
   );
   await selectRole(page, "owner");
   await route(page, "materials");
@@ -768,6 +769,130 @@ async function runUx(results, page) {
   add(results, "UX Sanity QA Agent", "Material cards are present", materialStatus, `material_cards=${materialCardCount}`, severityForStatus(materialStatus), "", { materialCardsChecked: materialCardCount });
 }
 
+async function runWorkflow(results, page) {
+  await route(page, "tasks");
+  const helpersReady = await page
+    .waitForFunction(
+      () =>
+        typeof window.__konturTaskStatusKey === "function" &&
+        typeof window.__konturTaskCountsAsOverdue === "function" &&
+        typeof window.__konturTaskReviewCountsAsOverdue === "function",
+      null,
+      { timeout: 5000 },
+    )
+    .then(() => true)
+    .catch(() => false);
+  add(
+    results,
+    "Workflow QA Agent",
+    "Task workflow helpers are available",
+    helpersReady ? "OK" : "FAIL",
+    `helpers_ready=${helpersReady}`,
+    helpersReady ? "normal" : "blocker",
+  );
+  if (!helpersReady) return;
+
+  const workflow = await page.evaluate(() => {
+    const statusKey = window.__konturTaskStatusKey;
+    const executionOverdue = window.__konturTaskCountsAsOverdue;
+    const reviewOverdue = window.__konturTaskReviewCountsAsOverdue;
+    const yesterday = "2026-01-01";
+    const aliases = {
+      newStatus: statusKey("new"),
+      inProgress: statusKey("in_progress"),
+      oldInProgress: statusKey("in_progress_task"),
+      waiting: statusKey("waiting_check"),
+      oldWaiting: statusKey("completed_pending_acceptance"),
+      accepted: statusKey("accepted"),
+      cancelled: statusKey("cancelled"),
+    };
+    const execution = {
+      newTask: executionOverdue({ status: "new", due_date: yesterday }),
+      inProgress: executionOverdue({ status: "in_progress", due_date: yesterday }),
+      oldInProgress: executionOverdue({ status: "in_progress_task", due_date: yesterday }),
+      returned: executionOverdue({ status: "returned", due_date: yesterday }),
+      waitingCheck: executionOverdue({ status: "waiting_check", due_date: yesterday }),
+      oldWaitingCheck: executionOverdue({ status: "completed_pending_acceptance", due_date: yesterday }),
+      accepted: executionOverdue({ status: "accepted", due_date: yesterday }),
+      cancelled: executionOverdue({ status: "cancelled", due_date: yesterday }),
+      noDueDate: executionOverdue({ status: "in_progress", due_date: "" }),
+    };
+    const review = {
+      waitingCheck: reviewOverdue({ status: "waiting_check", review_due_at: yesterday }),
+      oldWaitingCheck: reviewOverdue({ status: "completed_pending_acceptance", review_due_at: yesterday }),
+      accepted: reviewOverdue({ status: "accepted", review_due_at: yesterday }),
+      inProgress: reviewOverdue({ status: "in_progress", review_due_at: yesterday }),
+    };
+    const activeText = document.querySelector("#tasksView.active")?.innerText || document.body.innerText || "";
+    const leakedTechnicalStatuses = ["completed_pending_acceptance", "in_progress_task", "waiting_check"].filter((item) => activeText.includes(item));
+    return { aliases, execution, review, leakedTechnicalStatuses };
+  });
+
+  const aliasOk =
+    workflow.aliases.oldInProgress === "in_progress" &&
+    workflow.aliases.oldWaiting === "waiting_check" &&
+    workflow.aliases.waiting === "waiting_check" &&
+    workflow.aliases.accepted === "accepted" &&
+    workflow.aliases.cancelled === "cancelled";
+  add(
+    results,
+    "Workflow QA Agent",
+    "Task status aliases are canonical",
+    aliasOk ? "OK" : "FAIL",
+    JSON.stringify(workflow.aliases),
+    aliasOk ? "normal" : "blocker",
+    "",
+    { workflowRulesChecked: 1 },
+  );
+
+  const executionOk =
+    workflow.execution.newTask === true &&
+    workflow.execution.inProgress === true &&
+    workflow.execution.oldInProgress === true &&
+    workflow.execution.returned === true &&
+    workflow.execution.waitingCheck === false &&
+    workflow.execution.oldWaitingCheck === false &&
+    workflow.execution.accepted === false &&
+    workflow.execution.cancelled === false &&
+    workflow.execution.noDueDate === false;
+  add(
+    results,
+    "Workflow QA Agent",
+    "Task execution overdue rules",
+    executionOk ? "OK" : "FAIL",
+    JSON.stringify(workflow.execution),
+    executionOk ? "normal" : "blocker",
+    "",
+    { workflowRulesChecked: 1 },
+  );
+
+  const reviewOk =
+    workflow.review.waitingCheck === true &&
+    workflow.review.oldWaitingCheck === true &&
+    workflow.review.accepted === false &&
+    workflow.review.inProgress === false;
+  add(
+    results,
+    "Workflow QA Agent",
+    "Task review overdue rules",
+    reviewOk ? "OK" : "FAIL",
+    JSON.stringify(workflow.review),
+    reviewOk ? "normal" : "blocker",
+    "",
+    { workflowRulesChecked: 1 },
+  );
+
+  const leakOk = workflow.leakedTechnicalStatuses.length === 0;
+  add(
+    results,
+    "Workflow QA Agent",
+    "Task workflow technical statuses are hidden",
+    leakOk ? "OK" : "FAIL",
+    workflow.leakedTechnicalStatuses.join(", ") || "none",
+    leakOk ? "normal" : "blocker",
+  );
+}
+
 async function runMobile(results, playwright) {
   const viewports = [
     { width: 390, height: 844 },
@@ -989,6 +1114,7 @@ function checksSummary(results) {
   map.navigation = agentSummary("Navigation QA Agent");
   map.mobile = agentSummary("Mobile QA Agent");
   map.readonly = agentSummary("Read-only Safety QA Agent");
+  map.workflow = agentSummary("Workflow QA Agent");
   return map;
 }
 
@@ -1039,6 +1165,7 @@ function buildCoverage(results) {
     object_cards_checked: maxMeta(results, "objectCardsChecked"),
     blocker_cards_checked: maxMeta(results, "blockerCardsChecked"),
     material_cards_checked: maxMeta(results, "materialCardsChecked"),
+    workflow_rules_checked: maxMeta(results, "workflowRulesChecked"),
     buttons_checked: Math.max(sumMeta(results, "buttonsChecked"), buttonResults.length),
     mobile_viewports_checked: results.filter((item) => item.agent === "Mobile QA Agent" && item.name.startsWith("Viewport ")).length,
     mobile_quick_actions_checked: maxMeta(results, "mobileQuickActionsChecked"),
@@ -1110,6 +1237,7 @@ function writeReport(results, startedAt, finishedAt, mandatorySuites, environmen
       estimator_today_screen: checkQaStatus("Role QA Agent", "estimator: role today panel"),
       role_navigation: agentQaStatus("Role QA Agent"),
       readonly_tests: qaStatus(checks.readonly),
+      workflow_tests: qaStatus(checks.workflow),
       actual_playwright_login: results.find((item) => item.agent === "Read-only Safety QA Agent" && item.name === "Live audit-login actual access")?.status === "OK" ? "ok" : results.find((item) => item.agent === "Read-only Safety QA Agent" && item.name === "Live audit-login actual access") ? "failed" : "not_run",
       live_audit_login_actual_access: results.find((item) => item.agent === "Read-only Safety QA Agent" && item.name === "Live audit-login actual access")?.status === "OK" ? "ok" : results.find((item) => item.agent === "Read-only Safety QA Agent" && item.name === "Live audit-login actual access") ? "failed" : "not_run",
       external_cookieless_viewer: results.find((item) => item.agent === "Read-only Safety QA Agent" && item.name === "External cookie-limited viewer") ? "partial" : "not_run",
@@ -1199,6 +1327,7 @@ function writeReport(results, startedAt, finishedAt, mandatorySuites, environmen
     `- object_cards_checked: ${coverage.object_cards_checked}`,
     `- blocker_cards_checked: ${coverage.blocker_cards_checked}`,
     `- material_cards_checked: ${coverage.material_cards_checked}`,
+    `- workflow_rules_checked: ${coverage.workflow_rules_checked}`,
     `- buttons_checked: ${coverage.buttons_checked}`,
     `- mobile_viewports_checked: ${coverage.mobile_viewports_checked}`,
     `- mobile_quick_actions_checked: ${coverage.mobile_quick_actions_checked}`,
@@ -1246,7 +1375,7 @@ async function main() {
   ensureDirs();
   const startedAt = new Date().toISOString();
   const results = [];
-  const mandatory = suite === "all" || suite === "report" ? ["lint", "typecheck", "unit", "scroll", "buttons", "navigation", "mobile", "readonly"] : [];
+  const mandatory = suite === "all" || suite === "report" ? ["lint", "typecheck", "unit", "scroll", "buttons", "navigation", "mobile", "readonly", "workflow"] : [];
   let serverProcess = null;
   let browser = null;
   try {
@@ -1274,6 +1403,7 @@ async function main() {
       if (["readonly", "all", "report"].includes(suite)) await runReadonly(results, playwright);
       if (["mobile", "all", "report"].includes(suite)) await runMobile(results, playwright);
       if (["all", "report"].includes(suite)) await runUx(results, page);
+      if (["all", "report"].includes(suite)) await runWorkflow(results, page);
       if (["all", "report"].includes(suite)) await runVisual(results, page);
       add(results, "Console Error QA Agent", "Browser console", errors.length ? "FAIL" : "OK", errors.join("\n") || "No console/page/request errors.", errors.length ? "blocker" : "normal");
     }

@@ -2174,3 +2174,59 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 **Правило для следующего этапа.**
 
 Работу вести релизами A/B/C, после каждого релиза запускать полный QA quality gate, обновлять snapshot/qa-report и не ставить `PASS`, если обязательные проверки не запускались или есть непокрытый `PARTIAL`.
+
+### 2026-06-18: Release A - task lifecycle and workflow QA
+
+**Request.** Start the "working cycles and real-use UX" stage safely after the baseline, without breaking the current production behavior.
+
+**What changed.**
+
+- Added canonical task status handling for legacy statuses:
+  - `completed_pending_acceptance` is treated as `waiting_check`;
+  - `in_progress_task` and `review` are treated as `in_progress`.
+- Split task overdue logic into two separate concepts:
+  - execution overdue: only `new`, `in_progress`, and `returned` tasks with overdue `due_date`;
+  - review overdue: only `waiting_check` tasks with overdue `review_due_at`.
+- Added task lifecycle fields in SQLite:
+  - `submitted_at`;
+  - `review_due_at`;
+  - `cancelled_at`.
+- Added explicit task action `start`:
+  - new/returned task -> in progress;
+  - in-progress task -> send to check;
+  - waiting-check task -> reviewer accepts or returns;
+  - accepted/cancelled/closed tasks do not show active execution actions.
+- Updated task UI labels:
+  - "В работе";
+  - "Ждёт проверки";
+  - "Просрочено исполнение";
+  - "Просрочена проверка".
+- Added a task status scale in the task detail view:
+  - New -> In progress -> Check -> Accepted.
+- Added browser helpers and Playwright tests for task status rules:
+  - `tests/e2e/task-overdue-rules.spec.ts`;
+  - `tests/e2e/task-state-machine.spec.ts`.
+- Added `Workflow QA Agent` to the permanent QA runner.
+  - It verifies task aliases, execution overdue rules, review overdue rules, and hidden technical task statuses.
+- Updated `CODEX_RULES.md` so future task lifecycle releases cannot be marked PASS if workflow QA is not run.
+
+**Checks.**
+
+- Python syntax: OK.
+- JS syntax: OK.
+- Targeted Playwright task lifecycle tests: 2/2 passed.
+- Full quality gate:
+  - lint: OK;
+  - typecheck: OK;
+  - unit: OK;
+  - scroll: OK;
+  - buttons: OK;
+  - navigation: OK;
+  - mobile: OK;
+  - readonly: PARTIAL only because `external_cookieless_viewer` is still intentionally unsupported;
+  - workflow: OK;
+  - critical errors: 0.
+
+**Result.**
+
+Local QA result is `PARTIAL` only for the accepted external cookieless viewer limitation. No production deploy has been done in this step yet.

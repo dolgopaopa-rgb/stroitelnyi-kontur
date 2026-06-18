@@ -112,3 +112,22 @@ Mobile QA must verify the full photo/video viewing loop, not only the download U
 4. If a report has two or more photos, the preview must show previous/next slideshow controls and the counter must change after tapping next/previous.
 5. Closing the preview must return to the same screen without losing scroll or opening a blank external page.
 6. If a visible photo/video has no working close/back path or slideshow controls do not switch slides, Mobile QA must fail.
+
+## Working cycles QA
+
+For the "working cycles and real-use UX" stage, QA must verify business logic, not just that screens render:
+
+1. A task with status `accepted`, `cancelled`, `closed`, `waiting_check`, or legacy `completed_pending_acceptance` must not count as execution-overdue.
+2. A task with status `waiting_check` or legacy `completed_pending_acceptance` can only be review-overdue when `review_due_at` is overdue.
+3. Legacy task statuses must stay backward-compatible:
+   - `completed_pending_acceptance` is treated as `waiting_check`;
+   - `in_progress_task` and `review` are treated as `in_progress`.
+4. A visible task card must show one clear next action by current status:
+   - `new` -> `Принять в работу`;
+   - `in_progress` -> `Отправить на проверку`;
+   - `waiting_check` -> reviewer can accept/return, assignee sees waiting state;
+   - `returned` -> `Продолжить работу`;
+   - `accepted` -> no active action.
+5. The tests `task-state-machine.spec.ts` and `task-overdue-rules.spec.ts` are mandatory for Release A changes.
+6. If these tests do not run, Release A cannot be marked PASS.
+7. `Workflow QA Agent` must run inside `npm run test:qa` / `npm run test:qa:report`; if workflow checks are not run or fail, the task lifecycle release cannot be marked PASS.

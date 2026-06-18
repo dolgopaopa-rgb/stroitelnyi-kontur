@@ -1738,15 +1738,41 @@ def snapshot_material_pipeline_status(row: dict) -> str:
     return "need_approval"
 
 
+TASK_STATUS_ALIASES = {
+    "completed_pending_acceptance": "waiting_check",
+    "in_progress_task": "in_progress",
+    "review": "in_progress",
+}
+
+TASK_EXECUTION_OVERDUE_STATUSES = {"new", "in_progress", "returned"}
+
+
+def task_status_key(value: object | dict) -> str:
+    raw = value.get("status") if isinstance(value, dict) else value
+    key = str(raw or "new").strip()
+    return TASK_STATUS_ALIASES.get(key, key or "new")
+
+
+def task_is_waiting_check(row: dict) -> bool:
+    return task_status_key(row) == "waiting_check"
+
+
+def task_is_execution_overdue(row: dict) -> bool:
+    due_date = str(row.get("due_date") or "")[:10]
+    return bool(due_date and due_date < date.today().isoformat() and task_status_key(row) in TASK_EXECUTION_OVERDUE_STATUSES)
+
+
+def task_is_review_overdue(row: dict) -> bool:
+    review_due_at = str(row.get("review_due_at") or "")[:10]
+    return bool(review_due_at and review_due_at < date.today().isoformat() and task_is_waiting_check(row))
+
+
 def snapshot_task_is_open(row: dict) -> bool:
-    return str(row.get("status") or "") not in {"accepted", "closed", "archived"}
+    return task_status_key(row) not in {"accepted", "cancelled", "closed", "archived"}
 
 
 def snapshot_task_is_overdue(row: dict) -> bool:
-    due_date = str(row.get("due_date") or "")
-    if not due_date or str(row.get("status") or "") in {"accepted", "returned", "closed", "archived"}:
-        return False
-    return due_date < date.today().isoformat()
+    return task_is_execution_overdue(row)
 
 
 def normalize_task_type_value(value: object, title: object = "", description: object = "", related_type: object = "") -> str:
@@ -1787,6 +1813,9 @@ def normalize_task_display(row: dict) -> None:
 def normalize_task_rows(rows: list[dict]) -> list[dict]:
     for row in rows:
         normalize_task_display(row)
+        row["status_key"] = task_status_key(row)
+        row["is_execution_overdue"] = task_is_execution_overdue(row)
+        row["is_review_overdue"] = task_is_review_overdue(row)
         row["task_type"] = normalize_task_type_value(
             row.get("task_type"),
             row.get("title"),
@@ -3814,7 +3843,7 @@ class AppHandler(BaseHTTPRequestHandler):
             account = audit_account_from_token_row(token_row)
             summary = {
                 "projects": db.execute("SELECT COUNT(*) AS count FROM projects WHERE status != 'archived' AND COALESCE(bitrix_ref, '') != '__knowledge_base__'").fetchone()["count"],
-                "task_waiting": db.execute("SELECT COUNT(*) AS count FROM tasks t JOIN projects p ON p.id = t.project_id WHERE p.status != 'archived' AND t.status = 'completed_pending_acceptance'").fetchone()["count"],
+                "task_waiting": db.execute("SELECT COUNT(*) AS count FROM tasks t JOIN projects p ON p.id = t.project_id WHERE p.status != 'archived' AND t.status IN ('waiting_check', 'completed_pending_acceptance')").fetchone()["count"],
                 "task_returned": db.execute("SELECT COUNT(*) AS count FROM tasks t JOIN projects p ON p.id = t.project_id WHERE p.status != 'archived' AND t.status = 'returned'").fetchone()["count"],
                 "estimate_jobs_open": db.execute("SELECT COUNT(*) AS count FROM estimate_jobs WHERE status IN ('estimate_new', 'estimate_in_work', 'estimate_returned', 'estimate_question')").fetchone()["count"],
             }
@@ -3947,7 +3976,7 @@ class AppHandler(BaseHTTPRequestHandler):
             key = str(value or "")
             if key in {"overdue", "danger", "problem", "returned", "revision_requested", "rejected", "receipt_issue", "no_material", "quality_problem", "critical", "high"}:
                 return "danger"
-            if key in {"warning", "review", "completed_pending_acceptance", "estimate_question", "estimate_returned", "submitted_to_construction", "decision_required", "need_approval", "estimate_hold", "new", "feedback_new", "open", "waiting_external", "waiting_client_decision", "waiting_owner_decision", "waiting_project_documentation", "estimate_not_approved", "subcontractor_problem", "no_photo_report", "medium", "check", "approval"}:
+            if key in {"warning", "review", "completed_pending_acceptance", "waiting_check", "estimate_question", "estimate_returned", "submitted_to_construction", "decision_required", "need_approval", "estimate_hold", "new", "feedback_new", "open", "waiting_external", "waiting_client_decision", "waiting_owner_decision", "waiting_project_documentation", "estimate_not_approved", "subcontractor_problem", "no_photo_report", "medium", "check", "approval"}:
                 return "warning"
             if key in {"success", "accepted", "approved", "closed", "completed", "received", "on_site", "agreed", "done", "feedback_done", "estimate_done"}:
                 return "success"
@@ -4316,7 +4345,7 @@ class AppHandler(BaseHTTPRequestHandler):
         today_tasks = [task for task in task_rows if snapshot_task_is_open(task) and str(task.get("due_date") or "") == today]
         overdue_tasks = [task for task in task_rows if snapshot_task_is_overdue(task)]
         returned_tasks = [task for task in task_rows if str(task.get("status") or "") == "returned"]
-        waiting_tasks = [task for task in task_rows if str(task.get("status") or "") == "completed_pending_acceptance"]
+        waiting_tasks = [task for task in task_rows if task_is_waiting_check(task)]
         risky_materials = [row for row in material_rows if material_is_risky(row)]
         no_photo_projects = [project for project in project_rows if int(project.get("id") or 0) not in {int(row.get("project_id") or 0) for row in photo_rows if str(row.get("report_date") or row.get("created_at") or "")[:10] == today}]
 
@@ -5125,8 +5154,8 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     "archived_projects": db.execute("SELECT COUNT(*) AS count FROM projects WHERE status = 'archived'").fetchone()["count"],
                     "pending_handover": db.execute("SELECT COUNT(*) AS count FROM projects WHERE status IN ('draft', 'revision_requested')").fetchone()["count"],
                     "construction_review": db.execute("SELECT COUNT(*) AS count FROM projects WHERE status = 'submitted_to_construction'").fetchone()["count"],
-                    "task_new": db.execute("SELECT COUNT(*) AS count FROM tasks t JOIN projects p ON p.id = t.project_id WHERE p.status != 'archived' AND t.status IN ('new', 'in_progress_task', 'review')").fetchone()["count"],
-                    "task_done_waiting": db.execute("SELECT COUNT(*) AS count FROM tasks t JOIN projects p ON p.id = t.project_id WHERE p.status != 'archived' AND t.status = 'completed_pending_acceptance'").fetchone()["count"],
+                    "task_new": db.execute("SELECT COUNT(*) AS count FROM tasks t JOIN projects p ON p.id = t.project_id WHERE p.status != 'archived' AND t.status IN ('new', 'in_progress', 'in_progress_task', 'review')").fetchone()["count"],
+                    "task_done_waiting": db.execute("SELECT COUNT(*) AS count FROM tasks t JOIN projects p ON p.id = t.project_id WHERE p.status != 'archived' AND t.status IN ('waiting_check', 'completed_pending_acceptance')").fetchone()["count"],
                     "task_accepted": db.execute("SELECT COUNT(*) AS count FROM tasks t JOIN projects p ON p.id = t.project_id WHERE p.status != 'archived' AND t.status = 'accepted'").fetchone()["count"],
                     "task_returned": db.execute("SELECT COUNT(*) AS count FROM tasks t JOIN projects p ON p.id = t.project_id WHERE p.status != 'archived' AND t.status = 'returned'").fetchone()["count"],
                     "material_requests": db.execute("SELECT COUNT(*) AS count FROM material_requests WHERE procurement_status != 'closed'").fetchone()["count"],
@@ -5432,11 +5461,13 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     WHERE p.status != 'archived'
                     ORDER BY
                         CASE t.status
+                            WHEN 'waiting_check' THEN 1
                             WHEN 'completed_pending_acceptance' THEN 1
                             WHEN 'returned' THEN 2
                             WHEN 'new' THEN 3
+                            WHEN 'in_progress' THEN 4
                             WHEN 'in_progress_task' THEN 4
-                            WHEN 'review' THEN 5
+                            WHEN 'review' THEN 4
                             WHEN 'accepted' THEN 6
                             ELSE 7
                         END,
@@ -6938,7 +6969,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 json_response(self, {"id": task_id, "task_type": next_type})
                 return
 
-            task_action = re.match(r"^/api/tasks/(\d+)/(complete|accept|return|postpone|delete)$", path)
+            task_action = re.match(r"^/api/tasks/(\d+)/(start|complete|accept|return|postpone|delete)$", path)
             if task_action:
                 task_id = int(task_action.group(1))
                 action = task_action.group(2)
@@ -6960,7 +6991,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 request_user_id = account_user_id(account)
                 privileged_task_role = request_role in {"owner", "construction_manager", "finance_director"}
                 force_max = force_personal_max(data)
-                if action in {"complete", "postpone"} and not privileged_task_role and (not request_user_id or request_user_id != task["assignee_id"]):
+                if action in {"start", "complete", "postpone"} and not privileged_task_role and (not request_user_id or request_user_id != task["assignee_id"]):
                     json_response(self, {"error": "Forbidden"}, 403)
                     return
                 if action in {"accept", "return"} and not privileged_task_role and (not request_user_id or request_user_id not in {task["reviewer_id"], task["creator_id"]}):
@@ -6970,7 +7001,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 if action == "delete":
                     if request_role not in {"owner", "construction_manager"}:
                         raise ValueError("Удалять задачи может только ген.директор или руководитель строительства.")
-                    if task["status"] in {"accepted", "completed_pending_acceptance"}:
+                    if task_status_key(task) in {"accepted", "waiting_check"}:
                         raise ValueError("Завершенную задачу удалить нельзя. Она остается в истории объекта.")
                     create_task_event(
                         db,
@@ -6987,15 +7018,15 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     json_response(self, {"deleted": task_id})
                     return
 
-                if action == "complete":
-                    comment = str(data.get("comment") or "").strip()
-                    if not comment:
-                        raise ValueError("После выполнения задачи напишите, что именно сделано.")
+                if action == "start":
+                    if task_status_key(task) not in {"new", "returned"}:
+                        raise ValueError("Эту задачу нельзя принять или продолжить из текущего статуса.")
+                    comment = str(data.get("comment") or "").strip() or ("Задача продолжена после доработки." if task_status_key(task) == "returned" else "Задача принята в работу.")
                     db.execute(
                         """
                         UPDATE tasks
-                        SET status = 'completed_pending_acceptance',
-                            completed_at = CURRENT_TIMESTAMP,
+                        SET status = 'in_progress',
+                            rejection_comment = '',
                             updated_at = CURRENT_TIMESTAMP
                         WHERE id = ?
                         """,
@@ -7006,9 +7037,43 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         task_id=task_id,
                         project_id=task["project_id"],
                         actor_id=actor_id or task["assignee_id"],
-                        action="complete",
+                        action="start",
                         status_from=task["status"],
-                        status_to="completed_pending_acceptance",
+                        status_to="in_progress",
+                        comment=comment,
+                        due_date=task["due_date"],
+                    )
+                    save_task_event_attachments(db, project_id=task["project_id"], event_id=event_id, attachments=data.get("attachments") or [], owner_id=actor_id or task["assignee_id"])
+                    db.commit()
+                    json_response(self, {"id": task_id, "status": "in_progress"})
+                    return
+
+                if action == "complete":
+                    if task_status_key(task) != "in_progress":
+                        raise ValueError("Отправить на проверку можно только задачу в работе.")
+                    comment = str(data.get("comment") or "").strip()
+                    if not comment:
+                        raise ValueError("Перед отправкой на проверку напишите, что именно сделано.")
+                    db.execute(
+                        """
+                        UPDATE tasks
+                        SET status = 'waiting_check',
+                            completed_at = CURRENT_TIMESTAMP,
+                            submitted_at = CURRENT_TIMESTAMP,
+                            review_due_at = COALESCE(review_due_at, date('now', '+1 day')),
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (task_id,),
+                    )
+                    event_id = create_task_event(
+                        db,
+                        task_id=task_id,
+                        project_id=task["project_id"],
+                        actor_id=actor_id or task["assignee_id"],
+                        action="submit_for_check",
+                        status_from=task["status"],
+                        status_to="waiting_check",
                         comment=comment,
                         due_date=task["due_date"],
                     )
@@ -7019,7 +7084,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         task["project_id"],
                         reviewer_id,
                         role_by_user_id(db, reviewer_id),
-                        "Задача выполнена, нужна приемка",
+                        "Задача отправлена на проверку",
                         f"{task['project_title']}: {task['title']}",
                         "task",
                         task_id,
@@ -7032,17 +7097,19 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                                 task["project_id"],
                                 watcher_id,
                                 role_by_user_id(db, watcher_id),
-                                "Задача выполнена, нужна приемка",
+                                "Задача отправлена на проверку",
                                 f"{task['project_title']}: {task['title']}",
                                 "task",
                                 task_id,
                                 force_max=force_max,
                             )
                     db.commit()
-                    json_response(self, {"id": task_id, "status": "completed_pending_acceptance"})
+                    json_response(self, {"id": task_id, "status": "waiting_check"})
                     return
 
                 if action == "accept":
+                    if not task_is_waiting_check(task):
+                        raise ValueError("Принять можно только задачу, которая ждёт проверки.")
                     comment = str(data.get("comment") or "").strip() or "Проверяющий принял выполнение."
                     db.execute(
                         """
@@ -7083,6 +7150,8 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     return
 
                 if action == "return":
+                    if not task_is_waiting_check(task):
+                        raise ValueError("Вернуть на доработку можно только задачу, которая ждёт проверки.")
                     comment = data.get("comment") or "Нужно доработать задачу."
                     due_date = data.get("due_date") or task["due_date"]
                     db.execute(
@@ -7124,6 +7193,8 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     return
 
                 if action == "postpone":
+                    if task_status_key(task) not in {"in_progress"}:
+                        raise ValueError("Перенести срок можно только у задачи в работе.")
                     comment = str(data.get("comment") or "").strip()
                     due_date = data.get("due_date") or task["due_date"]
                     if not comment:
@@ -7131,7 +7202,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     db.execute(
                         """
                         UPDATE tasks
-                        SET status = 'in_progress_task',
+                        SET status = 'in_progress',
                             rejection_comment = ?,
                             due_date = ?,
                             updated_at = CURRENT_TIMESTAMP
@@ -7146,7 +7217,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         actor_id=actor_id or task["assignee_id"],
                         action="postpone",
                         status_from=task["status"],
-                        status_to="in_progress_task",
+                        status_to="in_progress",
                         comment=comment,
                         due_date=due_date,
                     )
@@ -7166,7 +7237,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                                 force_max=force_max,
                             )
                     db.commit()
-                    json_response(self, {"id": task_id, "status": "in_progress_task"})
+                    json_response(self, {"id": task_id, "status": "in_progress"})
                     return
 
             task_comment = re.match(r"^/api/tasks/(\d+)/comment$", path)
