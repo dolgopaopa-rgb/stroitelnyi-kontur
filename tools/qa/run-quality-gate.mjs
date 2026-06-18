@@ -256,9 +256,10 @@ function ensureLocalQaFixtures(results) {
   }
   const script = String.raw`
 import sys
+import base64
 from datetime import date, timedelta
 sys.path.insert(0, "app")
-from database import init_db, connect
+from database import DATA_DIR, init_db, connect
 
 init_db()
 with connect() as db:
@@ -339,6 +340,50 @@ with connect() as db:
             """,
             (batch, project, owner, (date.today() + timedelta(days=2)).isoformat()),
         )
+    photo_comment = "QA photo report fixture"
+    report_row = db.execute("SELECT id FROM photo_reports WHERE project_id = ? AND comment = ?", (project, photo_comment)).fetchone()
+    if report_row:
+        report = report_row["id"]
+    else:
+        cur = db.execute(
+            """
+            INSERT INTO photo_reports (project_id, report_date, author_id, stage, zones, comment, status)
+            VALUES (?, ?, ?, 'QA', 'QA zone', ?, 'review')
+            """,
+            (project, date.today().isoformat(), master, photo_comment),
+        )
+        report = cur.lastrowid
+
+    doc_title = "qa-photo-fixture.png"
+    doc_row = db.execute("SELECT id FROM documents WHERE project_id = ? AND title = ? AND type = 'photo_report'", (project, doc_title)).fetchone()
+    if doc_row:
+        doc = doc_row["id"]
+    else:
+        upload_dir = DATA_DIR / "uploads" / f"project_{project}"
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        file_path = upload_dir / doc_title
+        file_path.write_bytes(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="))
+        cur = db.execute(
+            """
+            INSERT INTO documents (
+                project_id, title, type, status, owner_id, related_type, process_type,
+                file_name, file_path, mime_type, file_size
+            )
+            VALUES (?, ?, 'photo_report', 'active', ?, 'photo_report', ?, ?, ?, 'image/png', ?)
+            """,
+            (
+                project,
+                doc_title,
+                master,
+                f"photo_report:{report}",
+                doc_title,
+                str(file_path.relative_to(DATA_DIR)),
+                file_path.stat().st_size,
+            ),
+        )
+        doc = cur.lastrowid
+    if not db.execute("SELECT id FROM photo_report_documents WHERE photo_report_id = ? AND document_id = ?", (report, doc)).fetchone():
+        db.execute("INSERT INTO photo_report_documents (photo_report_id, document_id) VALUES (?, ?)", (report, doc))
     db.commit()
     print(f"fixture ok project={project}")
 `;
@@ -790,10 +835,59 @@ async function runMobile(results, playwright) {
         };
       });
       const estimatesOk = !estimatesLayout.overlapped;
+      await route(page, "photos");
+      await page.waitForTimeout(250);
+      const photosLayout = await page.evaluate(async () => {
+        const visible = (node) => {
+          const style = getComputedStyle(node);
+          return style.display !== "none" && style.visibility !== "hidden" && node.getClientRects().length > 0;
+        };
+        const layoutChildren = [...document.querySelectorAll(".layout-two.photo-reports-layout > *")]
+          .filter(visible)
+          .map((node) => Math.round(node.getBoundingClientRect().width));
+        const cards = [...document.querySelectorAll(".photo-report-card")]
+          .filter(visible)
+          .map((node) => Math.round(node.getBoundingClientRect().width));
+        const thumbs = [...document.querySelectorAll(".photo-report-card .media-thumb")]
+          .filter(visible)
+          .map((node) => Math.round(node.getBoundingClientRect().width));
+        const firstHref = document.querySelector(".photo-report-card .media-thumb")?.getAttribute("href") || "";
+        let responseStatus = 0;
+        let responseType = "";
+        if (firstHref) {
+          try {
+            const response = await fetch(firstHref, { cache: "no-store" });
+            responseStatus = response.status;
+            responseType = response.headers.get("content-type") || "";
+          } catch (error) {
+            responseStatus = -1;
+            responseType = String(error);
+          }
+        }
+        return {
+          layoutChildren: layoutChildren.length,
+          minLayoutWidth: layoutChildren.length ? Math.min(...layoutChildren) : 0,
+          cards: cards.length,
+          minCardWidth: cards.length ? Math.min(...cards) : 0,
+          thumbs: thumbs.length,
+          minThumbWidth: thumbs.length ? Math.min(...thumbs) : 0,
+          responseStatus,
+          responseType,
+        };
+      });
+      const photosOk =
+        photosLayout.layoutChildren > 0 &&
+        photosLayout.minLayoutWidth > minExpectedWidth &&
+        photosLayout.cards > 0 &&
+        photosLayout.minCardWidth > minExpectedWidth &&
+        photosLayout.thumbs > 0 &&
+        photosLayout.minThumbWidth >= 120 &&
+        photosLayout.responseStatus === 200 &&
+        String(photosLayout.responseType || "").startsWith("image/");
       const mobileMenuOk = moreVisible && feedbackMenuVisible && feedbackOpens;
-      const status = navVisible && !overflow && actions > 0 && plusSeparated && mobileMenuOk && todayGridOk && estimatesOk ? "OK" : "FAIL";
+      const status = navVisible && !overflow && actions > 0 && plusSeparated && mobileMenuOk && todayGridOk && estimatesOk && photosOk ? "OK" : "FAIL";
       const plusDetails = plusBox ? `${Math.round(plusBox.width)}x${Math.round(plusBox.height)}@${Math.round(plusBox.x)}` : "missing";
-      add(results, "Mobile QA Agent", `Viewport ${viewport.width}x${viewport.height}`, status, `nav=${navVisible}; horizontalOverflow=${overflow}; actions=${actions}; plusSeparated=${plusSeparated}; plusBox=${plusDetails}; mobileMenuOk=${mobileMenuOk}; moreVisible=${moreVisible}; feedbackMenuVisible=${feedbackMenuVisible}; feedbackOpens=${feedbackOpens}; todayGridOk=${todayGridOk}; minGridChildWidth=${todayLayout.minGridChildWidth}; minDecisionWidth=${todayLayout.minDecisionWidth}; minExpectedWidth=${minExpectedWidth}; estimatesOverlap=${estimatesLayout.overlapped}; estimateRows=${estimatesLayout.rows}; estimateRowBottom=${estimatesLayout.rowBottom}; navTop=${estimatesLayout.navTop}`, status === "FAIL" ? "blocker" : "normal");
+      add(results, "Mobile QA Agent", `Viewport ${viewport.width}x${viewport.height}`, status, `nav=${navVisible}; horizontalOverflow=${overflow}; actions=${actions}; plusSeparated=${plusSeparated}; plusBox=${plusDetails}; mobileMenuOk=${mobileMenuOk}; moreVisible=${moreVisible}; feedbackMenuVisible=${feedbackMenuVisible}; feedbackOpens=${feedbackOpens}; todayGridOk=${todayGridOk}; minGridChildWidth=${todayLayout.minGridChildWidth}; minDecisionWidth=${todayLayout.minDecisionWidth}; minExpectedWidth=${minExpectedWidth}; estimatesOverlap=${estimatesLayout.overlapped}; estimateRows=${estimatesLayout.rows}; estimateRowBottom=${estimatesLayout.rowBottom}; navTop=${estimatesLayout.navTop}; photosOk=${photosOk}; photoLayoutChildren=${photosLayout.layoutChildren}; photoMinLayoutWidth=${photosLayout.minLayoutWidth}; photoCards=${photosLayout.cards}; photoMinCardWidth=${photosLayout.minCardWidth}; photoThumbs=${photosLayout.thumbs}; photoMinThumbWidth=${photosLayout.minThumbWidth}; photoResponse=${photosLayout.responseStatus}; photoType=${photosLayout.responseType}`, status === "FAIL" ? "blocker" : "normal");
     } finally {
       await browser.close().catch(() => {});
     }
@@ -1125,7 +1219,7 @@ async function main() {
     if (["lint", "all", "report"].includes(suite)) await runLint(results);
     if (["typecheck", "all", "report"].includes(suite)) await runTypecheck(results);
     if (["unit", "all", "report"].includes(suite)) await runUnit(results);
-    if (["all", "report"].includes(suite)) ensureLocalQaFixtures(results);
+    if (["all", "report", "mobile"].includes(suite)) ensureLocalQaFixtures(results);
 
     const needsBrowser = ["smoke", "scroll", "buttons", "navigation", "roles", "readonly", "mobile", "all", "report"].includes(suite);
     let playwright = null;

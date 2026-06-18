@@ -2598,6 +2598,29 @@ def yandex_disk_download_url(file_path: str) -> str:
     return str(href)
 
 
+def should_proxy_yandex_inline(file_name: str, content_type: str) -> bool:
+    if str(content_type or "").startswith("image/"):
+        return True
+    return bool(re.search(r"\.(?:png|jpe?g|webp|gif|heic|heif)$", str(file_name or ""), re.IGNORECASE))
+
+
+def stream_inline_bytes(
+    handler: BaseHTTPRequestHandler,
+    raw: bytes,
+    file_name: str,
+    content_type: str,
+) -> None:
+    handler.send_response(200)
+    handler.send_header("Content-Type", content_type)
+    handler.send_header("Content-Length", str(len(raw)))
+    handler.send_header("Content-Disposition", f"inline; filename*=UTF-8''{quote(file_name)}")
+    handler.send_header("Cache-Control", "private, max-age=300")
+    handler.end_headers()
+    if handler.command == "HEAD":
+        return
+    write_response_body(handler, raw)
+
+
 def parse_range_header(range_header: str | None, file_size: int) -> tuple[int, int] | None:
     header = str(range_header or "").strip()
     if not header or not header.startswith("bytes=") or file_size <= 0:
@@ -4757,7 +4780,17 @@ class AppHandler(BaseHTTPRequestHandler):
                 self.send_error(403)
                 return
             stored_path = str(document["file_path"])
+            file_name = document["file_name"] or Path(stored_path).name
+            content_type = document["mime_type"] or mimetypes.guess_type(file_name)[0] or "application/octet-stream"
             if stored_path.startswith(YANDEX_DISK_FILE_PREFIX):
+                if should_proxy_yandex_inline(file_name, content_type):
+                    try:
+                        raw = download_from_yandex_disk(stored_path)
+                    except (HTTPError, URLError, TimeoutError, RuntimeError, OSError):
+                        self.send_error(502)
+                        return
+                    stream_inline_bytes(self, raw, file_name, content_type)
+                    return
                 try:
                     href = yandex_disk_download_url(stored_path)
                 except (HTTPError, URLError, TimeoutError, RuntimeError, OSError):
@@ -4774,7 +4807,7 @@ class AppHandler(BaseHTTPRequestHandler):
                     self.send_error(404)
                     return
                 file_name = document["file_name"] or file_path.name
-            content_type = document["mime_type"] or mimetypes.guess_type(file_name)[0] or "application/octet-stream"
+                content_type = document["mime_type"] or mimetypes.guess_type(file_name)[0] or "application/octet-stream"
             stream_local_file(self, file_path, file_name, content_type)
 
     def serve_estimate_job_file_download(self, file_id: int) -> None:

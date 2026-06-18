@@ -16,6 +16,8 @@ venv/
 
 data/
 backups/
+app/uploads/
+app/construction.db
 app/backups/
 
 .DS_Store

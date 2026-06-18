@@ -4682,6 +4682,43 @@ textarea {
     padding: 10px 10px calc(86px + env(safe-area-inset-bottom));
   }
 
+  .today-grid,
+  .layout-two.object-remarks-layout,
+  .layout-two.photo-reports-layout {
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+  }
+
+  .photo-report-card,
+  .object-remark-card {
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+  }
+
+  .photo-report-main,
+  .object-remark-main {
+    min-width: 0;
+  }
+
+  .media-grid,
+  .remark-media-grid {
+    grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+    width: 100%;
+  }
+
+  .media-thumb {
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .media-thumb span,
+  .media-thumb small {
+    display: block;
+    overflow-wrap: anywhere;
+    word-break: normal;
+    line-height: 1.25;
+  }
+
   .mobile-bottom-nav {
     position: fixed;
     left: 0;
