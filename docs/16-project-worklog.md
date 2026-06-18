@@ -2157,3 +2157,20 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 - `app/static/sw.js`
 - `tools/kontur_quality_agent.py`
 - `docs/16-project-worklog.md`
+### 2026-06-18: baseline перед этапом рабочих циклов
+
+**Запрос.** Перед новыми изменениями зафиксировать текущее рабочее состояние, чтобы не сломать уже работающие функции.
+
+**Что зафиксировано.**
+
+- Текущий production commitHash: `53872e6`.
+- Текущий appVersion: `20260618-media-slides`.
+- Текущий QA-статус: `PARTIAL` только по принятой причине `external_cookieless_viewer`.
+- Создан production backup:
+  - база: `/backups/construction-20260618-161638.db`;
+  - uploads: `/backups/uploads-20260618-161638.zip`.
+- Добавлен baseline-документ: `docs/30-working-cycles-baseline-2026-06-18.md`.
+
+**Правило для следующего этапа.**
+
+Работу вести релизами A/B/C, после каждого релиза запускать полный QA quality gate, обновлять snapshot/qa-report и не ставить `PASS`, если обязательные проверки не запускались или есть непокрытый `PARTIAL`.
