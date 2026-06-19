@@ -99,7 +99,9 @@
     mobileSheetMode: "actions",
     loadingKeys: /* @__PURE__ */ new Set(),
     mediaPreview: { items: [], index: 0, touchX: null },
-    pullRefresh: { tracking: false, startY: 0, distance: 0, ready: false, refreshing: false }
+    pullRefresh: { tracking: false, startY: 0, distance: 0, ready: false, refreshing: false },
+    dataIntegrityReport: null,
+    dataIntegrityFilter: "all"
   };
   var PROJECT_FORM_DRAFT_KEY = "projectFormDraft:v1";
   var PROJECT_TEXT_DRAFT_FIELDS = [
@@ -253,11 +255,15 @@
     decision: "Решение",
     check: "Проверка",
     need_approval: "Нужно согласовать",
+    needs_approval: "Нужно согласовать",
     agreed: "Согласовано",
+    delivered: "На объекте",
     in_transit: "В пути",
     on_site: "На объекте",
     problem: "Проблема",
     closed: "Закрыто",
+    at_risk: "Под риском",
+    requiring_review: "Требует проверки",
     open: "Открыт",
     waiting_external: "Ждём внешнего ответа",
     resolved: "Решён",
@@ -282,8 +288,8 @@
   function statusLevel(value, fallback = "") {
     const key = String(value || "");
     if (["overdue", "danger", "problem", "returned", "revision_requested", "rejected", "receipt_issue", "quality_problem", "no_material", "invalid_empty"].includes(key)) return "danger";
-    if (["warning", "review", "completed_pending_acceptance", "waiting_check", "estimate_question", "estimate_returned", "submitted_to_construction", "decision_required", "need_approval", "estimate_hold", "new", "feedback_new", "open", "waiting_external", "waiting_client_decision", "waiting_owner_decision", "waiting_project_documentation", "estimate_not_approved", "subcontractor_problem", "no_photo_report", "approval", "check"].includes(key)) return "warning";
-    if (["success", "accepted", "approved", "closed", "completed", "received", "on_site", "agreed", "done", "feedback_done", "estimate_done", "resolved", "checked"].includes(key)) return "success";
+    if (["warning", "review", "completed_pending_acceptance", "waiting_check", "estimate_question", "estimate_returned", "submitted_to_construction", "decision_required", "need_approval", "needs_approval", "at_risk", "requiring_review", "estimate_hold", "new", "feedback_new", "open", "waiting_external", "waiting_client_decision", "waiting_owner_decision", "waiting_project_documentation", "estimate_not_approved", "subcontractor_problem", "no_photo_report", "approval", "check"].includes(key)) return "warning";
+    if (["success", "accepted", "approved", "closed", "completed", "received", "on_site", "delivered", "agreed", "done", "feedback_done", "estimate_done", "resolved", "checked"].includes(key)) return "success";
     if (["blue", "in_progress", "in_progress_task", "ordered", "in_transit", "delivery_scheduled", "delivery_confirmed", "estimate_in_work", "in_review", "active", "in_work", "feedback_in_work", "material"].includes(key)) return "blue";
     if (["draft", "archived", "estimate_new", "not_required", "duplicate", "superseded"].includes(key)) return "";
     return fallback;
@@ -1725,6 +1731,14 @@
           needed_at: item.needed_at,
           delivery_urgency: item.batch_delivery_urgency || item.delivery_urgency,
           status: item.batch_status || item.procurement_status,
+          stage: item.batch_stage || "",
+          health: item.batch_health || "normal",
+          health_comment: item.batch_health_comment || "",
+          requiring_review: Number(item.batch_requiring_review || 0) === 1,
+          procurement_responsible_id: item.batch_procurement_responsible_id || "",
+          supplier_comment: item.batch_supplier_comment || "",
+          planned_delivery_date: item.batch_planned_delivery_date || "",
+          received_by: item.batch_received_by || "",
           comment: item.batch_comment || item.comment || "",
           revision_comment: item.batch_revision_comment || "",
           foreman_response: item.batch_foreman_response || "",
@@ -1759,27 +1773,43 @@
   }
   function materialPipelineStatus(batchOrStatus) {
     const batch = typeof batchOrStatus === "object" ? batchOrStatus : { status: batchOrStatus };
+    const health = String(batch.health || "");
+    const stage = String(batch.stage || "");
+    if (health === "problem") return "problem";
+    if (stage) return stage === "draft" ? "needs_approval" : stage;
     const status = String(batch.status || "");
     if (status === "receipt_issue" || status === "returned" || status === "revision_requested" || batch.receipt_status === "problem") return "problem";
     if (status === "archived" || status === "closed") return "closed";
-    if (status === "received" || batch.receipt_status === "ok") return "on_site";
+    if (status === "received" || batch.receipt_status === "ok") return "delivered";
     if (status === "delivery_confirmed" || status === "delivery_scheduled") return "in_transit";
     if (status === "ordered" || status === "delivery") return "ordered";
-    if (status === "in_work" || status === "approved" || status === "agreed") return "agreed";
-    return "need_approval";
+    if (status === "in_work" || status === "approved" || status === "agreed") return "approved";
+    return "needs_approval";
   }
   function materialPipelineLevel(batchOrStatus) {
     return statusLevel(materialPipelineStatus(batchOrStatus));
   }
   function renderMaterialPipeline(batch) {
     const current = materialPipelineStatus(batch);
-    const steps = ["need_approval", "agreed", "ordered", "in_transit", "on_site", "problem", "closed"];
+    const steps = ["needs_approval", "approved", "ordered", "in_transit", "delivered", "closed"];
     return '\n    <div class="material-pipeline">\n      '.concat(steps.map((step) => '<span class="pipeline-step '.concat(step === current ? "active" : "", " ").concat(statusLevel(step), '">').concat(statusLabel(step), "</span>")).join(""), "\n    </div>");
+  }
+  function materialStageLabel(batch) {
+    const stage = String((batch == null ? void 0 : batch.stage) || materialPipelineStatus(batch) || "");
+    return stage === "draft" ? "Черновик" : statusLabel(stage);
+  }
+  function materialHealthLabel(batch) {
+    if (batch == null ? void 0 : batch.requiring_review) return "Требует проверки";
+    return statusLabel(String((batch == null ? void 0 : batch.health) || "normal"));
+  }
+  function materialHealthLevel(batch) {
+    if (batch == null ? void 0 : batch.requiring_review) return "warning";
+    return statusLevel(String((batch == null ? void 0 : batch.health) || "normal"));
   }
   function materialIsRisky(batch) {
     const status = materialPipelineStatus(batch);
     const actualOverrun = Number(batch.actual_purchase_amount || 0) > 0 && Number(batch.actual_purchase_amount || 0) > Number(batch.total_amount || 0);
-    return status === "problem" || ["returned", "revision_requested"].includes(batch.status) || batch.delivery_urgency === "urgent" && !["on_site", "closed"].includes(status) || actualOverrun;
+    return status === "problem" || batch.requiring_review || ["at_risk"].includes(batch.health) || ["returned", "revision_requested"].includes(batch.status) || batch.delivery_urgency === "urgent" && !["delivered", "closed"].includes(status) || actualOverrun;
   }
   function materialReceiptAttachment(batch) {
     if (!batch.receipt_document_id) return "";
@@ -1807,7 +1837,7 @@
     return false;
   }
   function materialBatchHasNoResponsible(batch) {
-    return !batch.procurement_name && !["closed", "on_site"].includes(materialPipelineStatus(batch));
+    return !batch.procurement_name && !["closed", "delivered"].includes(materialPipelineStatus(batch));
   }
   function materialBatchMatchesQuickFilter(batch, filter = state.materialQuickFilter) {
     if (!filter || filter === "all") return true;
@@ -4088,7 +4118,7 @@
       const neededAt = batch.needed_at ? formatDateRu(batch.needed_at) : "не указано";
       const responsible = batch.procurement_name || "Снабжение";
       const firstItem = materialActiveItems(batch)[0] || {};
-      return '\n      <button class="row clickable material-request-row material-batch-row" type="button" data-open-material-batch="'.concat(batch.key, '" data-testid="material-card">\n        <div class="material-main">\n          <strong>').concat(escapeHtml(firstItem.title || materialBatchTitle(batch, currentRoleBase() === "procurement_manager")), '</strong>\n          <div class="material-card-grid">\n            <span><b>Объект:</b> ').concat(escapeHtml(batch.project_title || "не указан"), "</span>\n            <span><b>Позиций:</b> ").concat(activeCount).concat(removedCount ? ", удалено: ".concat(removedCount) : "", "</span>\n            <span><b>Основание:</b> ").concat(escapeHtml(materialBatchBasisSummary(batch) || "не указано"), "</span>\n            <span><b>Кто запросил:</b> ").concat(escapeHtml(batch.creator_name || "не указано"), "</span>\n            <span><b>Когда нужно:</b> ").concat(escapeHtml(neededAt), "</span>\n            <span><b>Ответственный:</b> ").concat(escapeHtml(responsible), '</span>\n          </div>\n          <div class="muted">').concat(escapeHtml(materialBatchTitle(batch, currentRoleBase() === "procurement_manager")), '</div>\n          <div class="muted">Сумма: ').concat(money(batch.total_amount), "</div>\n          ").concat(batch.actual_purchase_amount ? '<div class="muted">Фактическая стоимость закупки: '.concat(money(batch.actual_purchase_amount), "</div>") : "", '\n          <div class="muted">').concat(materialBatchDestination(batch), "</div>\n          ").concat(materialReceiptActionNote(batch), "\n          ").concat(batch.revision_comment ? '<div class="muted">Комментарий по доработке: '.concat(batch.revision_comment, "</div>") : "", "\n          ").concat(state.materialListMode === "archive" && batch.archived_at ? '<div class="muted">В архиве с '.concat(formatDateRu(batch.archived_at), "</div>") : "", '\n        </div>\n        <div class="stack-line">\n          ').concat(pill(urgencyLabel(batch.delivery_urgency), urgencyLevel(batch.delivery_urgency)), "\n          ").concat(pill(statusLabel(materialPipelineStatus(batch)), materialPipelineLevel(batch)), "\n        </div>\n      </button>");
+      return '\n      <button class="row clickable material-request-row material-batch-row" type="button" data-open-material-batch="'.concat(batch.key, '" data-testid="material-card">\n        <div class="material-main">\n          <strong>').concat(escapeHtml(firstItem.title || materialBatchTitle(batch, currentRoleBase() === "procurement_manager")), '</strong>\n          <div class="material-card-grid">\n            <span><b>Объект:</b> ').concat(escapeHtml(batch.project_title || "не указан"), "</span>\n            <span><b>Позиций:</b> ").concat(activeCount).concat(removedCount ? ", удалено: ".concat(removedCount) : "", "</span>\n            <span><b>Основание:</b> ").concat(escapeHtml(materialBatchBasisSummary(batch) || "не указано"), "</span>\n            <span><b>Кто запросил:</b> ").concat(escapeHtml(batch.creator_name || "не указано"), "</span>\n            <span><b>Когда нужно:</b> ").concat(escapeHtml(neededAt), "</span>\n            <span><b>Ответственный:</b> ").concat(escapeHtml(responsible), '</span>\n          </div>\n          <div class="muted">').concat(escapeHtml(materialBatchTitle(batch, currentRoleBase() === "procurement_manager")), '</div>\n          <div class="muted">Сумма: ').concat(money(batch.total_amount), "</div>\n          ").concat(batch.actual_purchase_amount ? '<div class="muted">Фактическая стоимость закупки: '.concat(money(batch.actual_purchase_amount), "</div>") : "", '\n          <div class="muted">').concat(materialBatchDestination(batch), '</div>\n          <div class="muted">Этап: ').concat(escapeHtml(materialStageLabel(batch)), " · Состояние: ").concat(escapeHtml(materialHealthLabel(batch))).concat(batch.health_comment ? " · ".concat(escapeHtml(batch.health_comment)) : "", "</div>\n          ").concat(materialReceiptActionNote(batch), "\n          ").concat(batch.revision_comment ? '<div class="muted">Комментарий по доработке: '.concat(batch.revision_comment, "</div>") : "", "\n          ").concat(state.materialListMode === "archive" && batch.archived_at ? '<div class="muted">В архиве с '.concat(formatDateRu(batch.archived_at), "</div>") : "", '\n        </div>\n        <div class="stack-line">\n          ').concat(pill(urgencyLabel(batch.delivery_urgency), urgencyLevel(batch.delivery_urgency)), "\n          ").concat(pill(materialStageLabel(batch), materialPipelineLevel(batch)), "\n          ").concat(pill(materialHealthLabel(batch), materialHealthLevel(batch)), "\n        </div>\n      </button>");
     };
     if (!batches.length) {
       const filterLabel = state.materialPipelineFilter === "all" ? "" : " со статусом «".concat(statusLabel(state.materialPipelineFilter), "»");
@@ -4151,7 +4181,7 @@
     const canReceive = canReceiveMaterialBatch(batch);
     const activeItems = materialActiveItems(batch);
     const removedItems = materialRemovedItems(batch);
-    qs("#materialReviewContent").innerHTML = '\n    <section class="workflow-panel compact-workflow">\n      <div class="stack-line">\n        <h3>'.concat(batch.project_title || "Объект не указан", "</h3>\n        ").concat(pill(urgencyLabel(batch.delivery_urgency), urgencyLevel(batch.delivery_urgency)), "\n        ").concat(pill(statusLabel(materialPipelineStatus(batch)), materialPipelineLevel(batch)), '\n      </div>\n      <p class="muted">Кто заказал: ').concat(batch.creator_name || "не указано", " · желаемая доставка: ").concat(batch.needed_at || "не указана", " · позиций: ").concat(activeItems.length).concat(removedItems.length ? " · удалено при исправлении: ".concat(removedItems.length) : "", "</p>\n      ").concat(batch.actual_purchase_amount ? '<p class="muted">Фактическая стоимость закупки: '.concat(money(batch.actual_purchase_amount), " · сметная сумма заявки: ").concat(money(batch.total_amount), "</p>") : "", '\n      <p class="muted">Основания: ').concat(materialBatchBasisSummary(batch), '</p>\n      <p class="muted">').concat(materialBatchDestination(batch), "</p>\n      ").concat(batch.comment ? "<p>".concat(batch.comment, "</p>") : "", "\n      ").concat(batch.revision_comment ? '<p class="muted">Комментарий по доработке: '.concat(batch.revision_comment, "</p>") : "", "\n      ").concat(batch.foreman_response ? '<p class="muted">Ответ прораба: '.concat(batch.foreman_response, "</p>") : "", "\n      ").concat(batch.scheduled_delivery_date ? '<p class="muted">Назначенная доставка: '.concat(formatDateRu(batch.scheduled_delivery_date), "</p>") : "", "\n      ").concat(batch.procurement_comment ? '<p class="muted">Комментарий снабжения: '.concat(batch.procurement_comment, "</p>") : "", "\n      ").concat(batch.receipt_comment ? '<p class="muted">Приемка: '.concat(batch.receipt_comment, "</p>") : "", "\n      ").concat(batch.variation_id ? '<p class="muted">Связана с допработой: '.concat(batch.variation_title || "#".concat(batch.variation_id), " · ").concat(label(batch.variation_status), "</p>") : "", "\n      ").concat(materialReceiptAttachment(batch), '\n    </section>\n    <div class="table material-review-items">\n      ').concat(batch.items.map(
+    qs("#materialReviewContent").innerHTML = '\n    <section class="workflow-panel compact-workflow">\n      <div class="stack-line">\n        <h3>'.concat(batch.project_title || "Объект не указан", "</h3>\n        ").concat(pill(urgencyLabel(batch.delivery_urgency), urgencyLevel(batch.delivery_urgency)), "\n        ").concat(pill(materialStageLabel(batch), materialPipelineLevel(batch)), "\n        ").concat(pill(materialHealthLabel(batch), materialHealthLevel(batch)), '\n      </div>\n      <p class="muted">Кто заказал: ').concat(batch.creator_name || "не указано", " · желаемая доставка: ").concat(batch.needed_at || "не указана", " · позиций: ").concat(activeItems.length).concat(removedItems.length ? " · удалено при исправлении: ".concat(removedItems.length) : "", "</p>\n      ").concat(batch.actual_purchase_amount ? '<p class="muted">Фактическая стоимость закупки: '.concat(money(batch.actual_purchase_amount), " · сметная сумма заявки: ").concat(money(batch.total_amount), "</p>") : "", '\n      <p class="muted">Основания: ').concat(materialBatchBasisSummary(batch), '</p>\n      <p class="muted">').concat(materialBatchDestination(batch), "</p>\n      ").concat(batch.comment ? "<p>".concat(batch.comment, "</p>") : "", "\n      ").concat(batch.revision_comment ? '<p class="muted">Комментарий по доработке: '.concat(batch.revision_comment, "</p>") : "", "\n      ").concat(batch.foreman_response ? '<p class="muted">Ответ прораба: '.concat(batch.foreman_response, "</p>") : "", "\n      ").concat(batch.scheduled_delivery_date ? '<p class="muted">Назначенная доставка: '.concat(formatDateRu(batch.scheduled_delivery_date), "</p>") : "", "\n      ").concat(batch.procurement_comment ? '<p class="muted">Комментарий снабжения: '.concat(batch.procurement_comment, "</p>") : "", "\n      ").concat(batch.receipt_comment ? '<p class="muted">Приемка: '.concat(batch.receipt_comment, "</p>") : "", "\n      ").concat(batch.variation_id ? '<p class="muted">Связана с допработой: '.concat(batch.variation_title || "#".concat(batch.variation_id), " · ").concat(label(batch.variation_status), "</p>") : "", "\n      ").concat(materialReceiptAttachment(batch), '\n    </section>\n    <div class="table material-review-items">\n      ').concat(batch.items.map(
       (item) => '\n          <div class="row estimate-material-row'.concat(materialItemChangeClass(item), '">\n            <div class="material-main">\n              <div class="stack-line">\n                <strong>').concat(item.title, "</strong>\n                ").concat(materialChangePill(item), '\n              </div>\n              <div class="muted">').concat(item.estimate_section || "без раздела", "</div>\n              ").concat(item.comment ? '<div class="muted">'.concat(item.comment, "</div>") : "", '\n            </div>\n            <div class="stack-line">\n              ').concat(pill("".concat(item.requested_quantity || item.estimated_quantity || 0, " ").concat(item.requested_unit || item.estimate_material_unit || ""), "blue"), "\n              ").concat(pill(materialBasisLabel(item.basis_type), materialBasisLevel(item.basis_type)), "\n              ").concat(pill(money(item.total_amount), "success"), "\n              ").concat(materialActualTotal(item) ? pill("Закупка: ".concat(money(materialActualTotal(item))), materialActualOverrun(item) ? "danger" : "blue") : "", "\n            </div>\n          </div>")
     ).join(""), "\n    </div>\n    ").concat(canCreateVariation ? '<section class="workflow-panel">\n            <h3>Допработа / отклонение</h3>\n            <p class="muted">В заявке есть позиции сверх основной сметы. Можно создать связанную запись в разделе “Допработы”, чтобы решить, кто оплачивает и как оформляем.</p>\n            '.concat(personalNotifyControl(), '\n            <div class="form-actions">\n              <button class="primary" type="button" data-material-batch-action="create_variation" data-material-batch-id="').concat(batch.id, '">Создать допработу</button>\n            </div>\n          </section>') : "", "\n    ").concat(canReview ? '<section class="workflow-panel">\n            <h3>Решение снабжения</h3>\n            <label>Комментарий при возврате <textarea id="materialBatchReturnComment" rows="3" placeholder="Например: не понятно количество, уточните позицию"></textarea></label>\n            '.concat(personalNotifyControl(), '\n            <div class="form-actions">\n              <button class="primary" type="button" data-material-batch-action="accept" data-material-batch-id="').concat(batch.id, '">Принять в работу</button>\n              <button class="secondary" type="button" data-material-batch-action="return" data-material-batch-id="').concat(batch.id, '">Вернуть на доработку</button>\n            </div>\n          </section>') : "", "\n    ").concat(canSchedule ? '<section class="workflow-panel">\n            <h3>Доставка</h3>\n            <label>Дата доставки <input id="materialBatchDeliveryDate" type="date" value="'.concat(batch.scheduled_delivery_date || batch.needed_at || "", '" /></label>\n            <div class="table material-review-items">\n              ').concat(activeItems.map(
       (item) => '\n                  <div class="row estimate-material-row">\n                    <div class="material-main">\n                      <strong>'.concat(item.title, '</strong>\n                      <div class="muted">Смета: ').concat(money(item.total_amount), " · ").concat(item.requested_quantity || item.estimated_quantity || 0, " ").concat(item.requested_unit || item.estimate_material_unit || "", '</div>\n                    </div>\n                    <label>Цена закупки за ед., ₽ <input type="text" inputmode="decimal" data-material-actual-unit="').concat(item.id, '" value="').concat(item.actual_unit_price || "", '" placeholder="0" /></label>\n                    <label>Сумма закупки, ₽ <input type="text" inputmode="decimal" data-material-actual-total="').concat(item.id, '" value="').concat(item.actual_total_amount || "", '" placeholder="0" /></label>\n                  </div>')
@@ -4676,8 +4706,47 @@
     };
   }
   async function renderEvents() {
+    await renderDataIntegrity();
     const events = await api("/api/events");
     qs("#eventTimeline").innerHTML = events.map((event) => '\n    <article class="timeline-item">\n      <div class="stack-line"><strong>'.concat(eventType(event.type), "</strong>").concat(pill(event.visibility === "customer_allowed" ? "Можно заказчику" : "Внутреннее", event.visibility === "customer_allowed" ? "success" : ""), "</div>\n      <p>").concat(event.text, '</p>\n      <div class="muted">').concat(event.project_title, " · ").concat(event.author_name || "автор не указан", " · ").concat(event.created_at, "</div>\n    </article>")).join("");
+  }
+  function canViewDataIntegrity() {
+    return ["owner", "construction_manager", "finance_director"].includes(currentRoleBase()) || currentRoleBase() === "ai_auditor";
+  }
+  function integrityEntityGroup(entityType) {
+    if (["material_request_batch", "material_request"].includes(entityType)) return "material";
+    return entityType || "other";
+  }
+  function integritySeverityLevel(severity) {
+    return severity === "critical" ? "danger" : severity === "warning" ? "warning" : "blue";
+  }
+  async function renderDataIntegrity(force = false) {
+    const panel = qs("#dataIntegrityPanel");
+    if (!panel) return;
+    panel.hidden = !canViewDataIntegrity();
+    if (panel.hidden) return;
+    if (!state.dataIntegrityReport || force) {
+      state.dataIntegrityReport = await api("/api/data-integrity", { silentLoading: !force, loadingMessage: "Проверяем целостность данных" });
+    }
+    const report = state.dataIntegrityReport || {};
+    const summary = report.summary || {};
+    const stats = [
+      ["Критические", summary.critical || 0, "danger"],
+      ["Предупреждения", summary.warnings || 0, "warning"],
+      ["Инфо", summary.info || 0, "blue"],
+      ["Всего", summary.total || 0, ""]
+    ];
+    qs("#dataIntegrityStats").innerHTML = stats.map(([labelText, count, level]) => '<button class="metric '.concat(Number(count) ? level : "is-zero", '" type="button"><span>').concat(labelText, "</span><strong>").concat(count, "</strong></button>")).join("");
+    qsa("[data-integrity-filter]").forEach((button) => {
+      button.classList.toggle("active", button.dataset.integrityFilter === state.dataIntegrityFilter);
+    });
+    const violations = (report.violations || []).filter((item) => {
+      if (state.dataIntegrityFilter === "all") return true;
+      return integrityEntityGroup(item.entity_type) === state.dataIntegrityFilter;
+    });
+    qs("#dataIntegrityRows").innerHTML = violations.length ? violations.map(
+      (item) => '\n          <div class="row dense-row">\n            <div class="material-main">\n              <div class="stack-line">\n                <strong>'.concat(escapeHtml(item.violation_type || "Нарушение"), "</strong>\n                ").concat(pill(item.severity === "critical" ? "Критично" : item.severity === "warning" ? "Предупреждение" : "Инфо", integritySeverityLevel(item.severity)), '\n              </div>\n              <div class="muted">').concat(escapeHtml(item.entity_type || "entity"), " #").concat(escapeHtml(String(item.entity_id || ""))).concat(item.object ? " · ".concat(escapeHtml(item.object)) : "", "</div>\n              <div>").concat(escapeHtml(item.reason || ""), '</div>\n              <div class="muted">Рекомендация: ').concat(escapeHtml(item.recommendation || "Проверить вручную."), "</div>\n            </div>\n            ").concat(pill(item.auto_fix_safe ? "можно авто после команды" : "ручная проверка", item.auto_fix_safe ? "blue" : "warning"), "\n          </div>")
+    ).join("") : '<div class="empty-state"><strong>Нарушений по фильтру нет</strong><p class="muted">Data Integrity Agent не нашёл проблем в выбранной группе.</p></div>';
   }
   function eventType(type) {
     return {
@@ -5143,7 +5212,7 @@
     }
   }
   function bindEvents() {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D;
     bindStableDetailsTouchGuard();
     bindWheelPageScroll();
     initPullToRefresh();
@@ -5171,6 +5240,7 @@
       await renderObjectRemarks();
       await renderPhotoReports();
       await renderDocuments();
+      await renderEvents();
       fillMaterialProjectSelect();
       updateMaterialActorHint();
       showToast("Роль: ".concat(roleLabel(state.currentRole)));
@@ -5230,7 +5300,17 @@
       qs("#documentDialog").showModal();
     });
     qs("#newEventButton").addEventListener("click", () => qs("#eventDialog").showModal());
-    (_m = qs("#refreshFeedbackButton")) == null ? void 0 : _m.addEventListener("click", async () => {
+    (_m = qs("#refreshIntegrityButton")) == null ? void 0 : _m.addEventListener("click", async () => {
+      await renderDataIntegrity(true);
+      showToast("Проверка целостности обновлена");
+    });
+    qsa("[data-integrity-filter]").forEach(
+      (button) => button.addEventListener("click", async () => {
+        state.dataIntegrityFilter = button.dataset.integrityFilter || "all";
+        await renderDataIntegrity();
+      })
+    );
+    (_n = qs("#refreshFeedbackButton")) == null ? void 0 : _n.addEventListener("click", async () => {
       try {
         await renderFeedback();
         showToast("Обратная связь обновлена");
@@ -5238,7 +5318,7 @@
         showToast(error.message || "Не удалось обновить обратную связь");
       }
     });
-    (_n = qs("#deleteSelectedFeedbackButton")) == null ? void 0 : _n.addEventListener("click", async () => {
+    (_o = qs("#deleteSelectedFeedbackButton")) == null ? void 0 : _o.addEventListener("click", async () => {
       if (!canDeleteFeedback()) {
         showToast("Удаление сообщений недоступно для текущей роли");
         return;
@@ -5259,16 +5339,16 @@
       showToast("Удалено сообщений: ".concat(result.deleted || ids.length));
     });
     qsa("[data-close]").forEach((button) => button.addEventListener("click", () => qs("#".concat(button.dataset.close)).close()));
-    (_o = qs("#mediaPreviewClose")) == null ? void 0 : _o.addEventListener("click", closeMediaPreview);
-    (_p = qs("#mediaPreviewCloseBottom")) == null ? void 0 : _p.addEventListener("click", closeMediaPreview);
-    (_q = qs("#mediaPreviewPrev")) == null ? void 0 : _q.addEventListener("click", () => moveMediaPreview(-1));
-    (_r = qs("#mediaPreviewNext")) == null ? void 0 : _r.addEventListener("click", () => moveMediaPreview(1));
-    (_s = qs("#mediaPreviewDialog")) == null ? void 0 : _s.addEventListener("close", () => {
+    (_p = qs("#mediaPreviewClose")) == null ? void 0 : _p.addEventListener("click", closeMediaPreview);
+    (_q = qs("#mediaPreviewCloseBottom")) == null ? void 0 : _q.addEventListener("click", closeMediaPreview);
+    (_r = qs("#mediaPreviewPrev")) == null ? void 0 : _r.addEventListener("click", () => moveMediaPreview(-1));
+    (_s = qs("#mediaPreviewNext")) == null ? void 0 : _s.addEventListener("click", () => moveMediaPreview(1));
+    (_t = qs("#mediaPreviewDialog")) == null ? void 0 : _t.addEventListener("close", () => {
       const body = qs("#mediaPreviewBody");
       if (body) body.innerHTML = "";
       state.mediaPreview = { items: [], index: 0, touchX: null };
     });
-    (_t = qs("#mediaPreviewBody")) == null ? void 0 : _t.addEventListener(
+    (_u = qs("#mediaPreviewBody")) == null ? void 0 : _u.addEventListener(
       "touchstart",
       (event) => {
         var _a2, _b2, _c2;
@@ -5276,7 +5356,7 @@
       },
       { passive: true }
     );
-    (_u = qs("#mediaPreviewBody")) == null ? void 0 : _u.addEventListener(
+    (_v = qs("#mediaPreviewBody")) == null ? void 0 : _v.addEventListener(
       "touchend",
       (event) => {
         var _a2, _b2, _c2;
@@ -5288,14 +5368,14 @@
       },
       { passive: true }
     );
-    (_v = qs("#mediaPreviewDialog")) == null ? void 0 : _v.addEventListener("keydown", (event) => {
+    (_w = qs("#mediaPreviewDialog")) == null ? void 0 : _w.addEventListener("keydown", (event) => {
       if (event.key === "ArrowLeft") moveMediaPreview(-1);
       if (event.key === "ArrowRight") moveMediaPreview(1);
     });
-    (_w = qs("#estimateImagePrev")) == null ? void 0 : _w.addEventListener("click", () => moveEstimateGallery(-1));
-    (_x = qs("#estimateImageNext")) == null ? void 0 : _x.addEventListener("click", () => moveEstimateGallery(1));
+    (_x = qs("#estimateImagePrev")) == null ? void 0 : _x.addEventListener("click", () => moveEstimateGallery(-1));
+    (_y = qs("#estimateImageNext")) == null ? void 0 : _y.addEventListener("click", () => moveEstimateGallery(1));
     let estimateGalleryTouchX = null;
-    (_y = qs("#estimateImageStage")) == null ? void 0 : _y.addEventListener(
+    (_z = qs("#estimateImageStage")) == null ? void 0 : _z.addEventListener(
       "touchstart",
       (event) => {
         var _a2, _b2, _c2;
@@ -5303,7 +5383,7 @@
       },
       { passive: true }
     );
-    (_z = qs("#estimateImageStage")) == null ? void 0 : _z.addEventListener(
+    (_A = qs("#estimateImageStage")) == null ? void 0 : _A.addEventListener(
       "touchend",
       (event) => {
         var _a2, _b2, _c2;
@@ -6029,8 +6109,8 @@
       qs('#taskForm input[name="creator_id"]').value = currentUserId() || "";
       submitForm("taskDialog", "taskForm", "/api/tasks", "Задача создана");
     });
-    (_A = qs("#photoReportForm")) == null ? void 0 : _A.addEventListener("submit", submitPhotoReportForm);
-    (_B = qs("#objectRemarkForm")) == null ? void 0 : _B.addEventListener("submit", submitObjectRemarkForm);
+    (_B = qs("#photoReportForm")) == null ? void 0 : _B.addEventListener("submit", submitPhotoReportForm);
+    (_C = qs("#objectRemarkForm")) == null ? void 0 : _C.addEventListener("submit", submitObjectRemarkForm);
     qs("#estimateJobForm").addEventListener("submit", async (event) => {
       var _a2;
       event.preventDefault();
@@ -6218,7 +6298,7 @@
       switchView("materials");
       showToast("Материалы сметы загружены в объект");
     });
-    (_C = qs("#knowledgeFolderForm")) == null ? void 0 : _C.addEventListener("submit", async (event) => {
+    (_D = qs("#knowledgeFolderForm")) == null ? void 0 : _D.addEventListener("submit", async (event) => {
       event.preventDefault();
       const form = qs("#knowledgeFolderForm");
       try {

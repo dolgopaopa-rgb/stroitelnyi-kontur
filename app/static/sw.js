@@ -1,9 +1,9 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260618-task-groups-b1";
+const CACHE_NAME = "stroitelnyi-kontur-20260619-a3-data-integrity";
 const CORE_ASSETS = [
   "/",
-  "/static/styles.css?v=20260618-task-groups-b1",
-  "/static/app.compat.js?v=20260618-task-groups-b1",
-  "/static/manifest.webmanifest?v=20260618-task-groups-b1",
+  "/static/styles.css?v=20260619-a3-data-integrity",
+  "/static/app.compat.js?v=20260619-a3-data-integrity",
+  "/static/manifest.webmanifest?v=20260619-a3-data-integrity",
   "/static/assets/g2-logo-192.png",
   "/static/assets/g2-logo-512.png"
 ];

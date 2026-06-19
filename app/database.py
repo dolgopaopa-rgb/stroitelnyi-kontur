@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 import os
 from pathlib import Path
@@ -249,6 +250,15 @@ def init_db() -> None:
                 needed_at TEXT,
                 delivery_urgency TEXT NOT NULL DEFAULT 'standard',
                 status TEXT NOT NULL DEFAULT 'new',
+                stage TEXT NOT NULL DEFAULT 'needs_approval',
+                health TEXT NOT NULL DEFAULT 'normal',
+                health_comment TEXT,
+                requiring_review INTEGER NOT NULL DEFAULT 0,
+                previous_status TEXT,
+                procurement_responsible_id INTEGER,
+                supplier_comment TEXT,
+                planned_delivery_date TEXT,
+                received_by INTEGER,
                 comment TEXT,
                 revision_comment TEXT,
                 foreman_response TEXT,
@@ -264,7 +274,19 @@ def init_db() -> None:
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
                 FOREIGN KEY (creator_id) REFERENCES users(id),
+                FOREIGN KEY (procurement_responsible_id) REFERENCES users(id),
+                FOREIGN KEY (received_by) REFERENCES users(id),
                 FOREIGN KEY (receipt_document_id) REFERENCES documents(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS material_stage_migration_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                migration_key TEXT NOT NULL UNIQUE,
+                old_status_counts TEXT NOT NULL DEFAULT '{}',
+                stage_counts TEXT NOT NULL DEFAULT '{}',
+                health_counts TEXT NOT NULL DEFAULT '{}',
+                requiring_review_count INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
 
             CREATE TABLE IF NOT EXISTS estimate_materials (
@@ -615,6 +637,15 @@ def init_db() -> None:
         ensure_column(db, "material_request_batches", "procurement_comment", "TEXT")
         ensure_column(db, "material_request_batches", "actual_purchase_amount", "REAL NOT NULL DEFAULT 0")
         ensure_column(db, "material_request_batches", "received_at", "TEXT")
+        ensure_column(db, "material_request_batches", "stage", "TEXT NOT NULL DEFAULT 'needs_approval'")
+        ensure_column(db, "material_request_batches", "health", "TEXT NOT NULL DEFAULT 'normal'")
+        ensure_column(db, "material_request_batches", "health_comment", "TEXT")
+        ensure_column(db, "material_request_batches", "requiring_review", "INTEGER NOT NULL DEFAULT 0")
+        ensure_column(db, "material_request_batches", "previous_status", "TEXT")
+        ensure_column(db, "material_request_batches", "procurement_responsible_id", "INTEGER")
+        ensure_column(db, "material_request_batches", "supplier_comment", "TEXT")
+        ensure_column(db, "material_request_batches", "planned_delivery_date", "TEXT")
+        ensure_column(db, "material_request_batches", "received_by", "INTEGER")
         ensure_column(db, "material_request_batches", "receipt_status", "TEXT")
         ensure_column(db, "material_request_batches", "receipt_comment", "TEXT")
         ensure_column(db, "material_request_batches", "receipt_document_id", "INTEGER")
@@ -639,6 +670,7 @@ def init_db() -> None:
         backfill_task_titles(db)
         backfill_photo_report_files_count(db)
         dedupe_photo_reports(db)
+        migrate_material_stage_health(db)
         db.execute(
             """
             CREATE UNIQUE INDEX IF NOT EXISTS idx_photo_reports_one_active_task
@@ -653,6 +685,106 @@ def ensure_column(db: sqlite3.Connection, table: str, column: str, definition: s
     columns = {row["name"] for row in db.execute(f"PRAGMA table_info({table})").fetchall()}
     if column not in columns:
         db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
+def count_material_values(db: sqlite3.Connection, column: str) -> dict[str, int]:
+    rows = db.execute(
+        f"""
+        SELECT COALESCE(NULLIF({column}, ''), 'empty') AS key, COUNT(*) AS count
+        FROM material_request_batches
+        GROUP BY COALESCE(NULLIF({column}, ''), 'empty')
+        ORDER BY key
+        """
+    ).fetchall()
+    return {str(row["key"]): int(row["count"]) for row in rows}
+
+
+def material_stage_health_from_legacy(status: str, receipt_status: str = "") -> tuple[str, str, int]:
+    key = (status or "").strip()
+    receipt = (receipt_status or "").strip()
+    mapping = {
+        "new": ("needs_approval", "normal", 0),
+        "revision_requested": ("needs_approval", "at_risk", 0),
+        "returned": ("needs_approval", "at_risk", 0),
+        "in_work": ("approved", "normal", 0),
+        "approved": ("approved", "normal", 0),
+        "agreed": ("approved", "normal", 0),
+        "ordered": ("ordered", "normal", 0),
+        "delivery": ("in_transit", "normal", 0),
+        "delivery_scheduled": ("in_transit", "normal", 0),
+        "delivery_confirmed": ("delivered", "normal", 0),
+        "received": ("delivered", "normal", 0),
+        "receipt_issue": ("delivered", "problem", 0),
+        "closed": ("closed", "normal", 0),
+        "archived": ("closed", "normal", 0),
+        "cancelled": ("cancelled", "normal", 0),
+    }
+    if key == "problem" or receipt in {"issue", "problem"}:
+        return ("delivered" if key == "receipt_issue" else "needs_approval", "problem", 0)
+    return mapping.get(key, ("needs_approval", "normal", 1))
+
+
+def migrate_material_stage_health(db: sqlite3.Connection) -> None:
+    old_counts = count_material_values(db, "status")
+    rows = db.execute(
+        """
+        SELECT id, status, receipt_status, stage, health, previous_status, scheduled_delivery_date, received_at
+        FROM material_request_batches
+        """
+    ).fetchall()
+    for row in rows:
+        stage = (row["stage"] or "").strip()
+        health = (row["health"] or "").strip()
+        needs_migration = not stage or not health or not row["previous_status"]
+        if not needs_migration:
+            continue
+        next_stage, next_health, requiring_review = material_stage_health_from_legacy(row["status"], row["receipt_status"])
+        planned_delivery_date = row["scheduled_delivery_date"] if next_stage == "in_transit" else None
+        received_by = None
+        db.execute(
+            """
+            UPDATE material_request_batches
+            SET stage = CASE WHEN COALESCE(previous_status, '') = '' THEN ? ELSE COALESCE(NULLIF(stage, ''), ?) END,
+                health = CASE WHEN COALESCE(previous_status, '') = '' THEN ? ELSE COALESCE(NULLIF(health, ''), ?) END,
+                requiring_review = CASE WHEN ? = 1 THEN 1 ELSE requiring_review END,
+                previous_status = COALESCE(previous_status, ?),
+                planned_delivery_date = COALESCE(planned_delivery_date, ?),
+                health_comment = CASE
+                    WHEN ? = 'problem' AND COALESCE(health_comment, '') = ''
+                    THEN COALESCE(NULLIF(receipt_comment, ''), NULLIF(procurement_comment, ''), NULLIF(revision_comment, ''), NULLIF(comment, ''), 'Проблема перенесена из прежнего статуса.')
+                    ELSE health_comment
+                END,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (next_stage, next_stage, next_health, next_health, requiring_review, row["status"] or "", planned_delivery_date, next_health, row["id"]),
+        )
+        if row["received_at"] and next_stage == "delivered":
+            db.execute(
+                """
+                UPDATE material_request_batches
+                SET received_by = COALESCE(received_by, creator_id)
+                WHERE id = ?
+                """,
+                (row["id"],),
+            )
+    stage_counts = count_material_values(db, "stage")
+    health_counts = count_material_values(db, "health")
+    review_count = db.execute("SELECT COUNT(*) AS count FROM material_request_batches WHERE requiring_review = 1").fetchone()["count"]
+    db.execute(
+        """
+        INSERT OR REPLACE INTO material_stage_migration_log (
+            migration_key, old_status_counts, stage_counts, health_counts, requiring_review_count, created_at
+        )
+        VALUES ('a3_stage_health_v1', ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        """,
+        (
+            json.dumps(old_counts, ensure_ascii=False),
+            json.dumps(stage_counts, ensure_ascii=False),
+            json.dumps(health_counts, ensure_ascii=False),
+            int(review_count or 0),
+        ),
+    )
 
 
 def backfill_task_titles(db: sqlite3.Connection) -> None:

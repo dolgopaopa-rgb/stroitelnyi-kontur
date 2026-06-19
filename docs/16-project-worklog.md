@@ -2332,6 +2332,94 @@ Production backup was created before A2 implementation:
 
 Local QA result is `PARTIAL` only for the accepted external cookieless viewer limitation. Production deployment and production `/version` verification must still be completed for this release.
 
+### 2026-06-19: Release A3 - materials stage/health and Data Integrity Agent
+
+**Request.** Continue the release-by-release workflow. Do not start D1 until A3 is implemented, tested, committed, deployed and verified on production. A3 must separate material movement stage from problem health, add a permanent Data Integrity Agent, and expose a read-only diagnostics screen for administrators.
+
+**Backup before changes.**
+
+Production container backup was created before A3 implementation:
+
+- `/backups/stroitelnyi-kontur-before-a3-container-20260619T182517Z`;
+- contains `construction.db`, uploads, environment/config files and deploy files.
+
+**What changed.**
+
+- Added separate material batch fields:
+  - `stage`: `draft`, `needs_approval`, `approved`, `ordered`, `in_transit`, `delivered`, `closed`, `cancelled`;
+  - `health`: `normal`, `at_risk`, `problem`;
+  - `requiring_review`, `health_comment`, responsible/procurement and delivery metadata.
+- Added a repeatable migration from legacy material statuses to `stage` and `health`.
+- Preserved legacy `status` while making UI and QA use `stage` and `health` separately.
+- Updated material pipeline tabs to the canonical values:
+  - `needs_approval`;
+  - `approved`;
+  - `ordered`;
+  - `in_transit`;
+  - `delivered`;
+  - `problem`;
+  - `closed`.
+- Added validation before procurement can accept/order a material request:
+  - object;
+  - material title;
+  - quantity;
+  - unit;
+  - requester;
+  - needed date.
+- Added `Data Integrity Agent` in `app/data_integrity.py`.
+- Added read-only endpoint `GET /api/data-integrity`.
+- Added admin diagnostics panel on the journal/settings screen:
+  - visible to `owner`, `construction_manager`, `finance_director`, `ai_auditor`;
+  - hidden from ordinary staff;
+  - filters violations by tasks, photo reports, materials, signals, documents and blockers.
+- Data Integrity Agent checks:
+  - task/status consistency;
+  - empty and duplicate photo reports;
+  - task/photo report links;
+  - material stage/health vocabulary and required fields;
+  - orphan notifications/signals/documents/blockers;
+  - duplicate signals.
+- The agent is read-only: it reports violations and recommendations, but does not silently fix production data.
+- Updated snapshot QA keys for:
+  - `material_stage_and_health`;
+  - `data_integrity_agent`.
+- Rebuilt `app.compat.js`.
+- Updated frontend and service-worker cache version to `20260619-a3-data-integrity`.
+
+**Tests added.**
+
+- `tests/e2e/material-stage-health.spec.ts`;
+- `tests/e2e/material-required-fields.spec.ts`;
+- `tests/e2e/data-integrity-agent.spec.ts`;
+- `tests/e2e/manual-photo-report-duplicates.spec.ts`;
+- `tests/e2e/integrity-admin-screen.spec.ts`.
+
+**Checks.**
+
+- Python syntax: OK.
+- JS syntax for `app.js`, `app.compat.js`, QA runner: OK.
+- Targeted A3 Playwright tests: 5/5 passed.
+- Full Playwright suite: 117 passed, 5 skipped, 0 failed.
+- Full QA runner:
+  - lint: OK;
+  - typecheck: OK;
+  - unit: OK;
+  - e2e: OK;
+  - scroll: OK;
+  - buttons: OK;
+  - navigation: OK;
+  - mobile: OK;
+  - workflow: OK;
+  - photo_report_integrity: OK;
+  - material_stage_and_health: OK;
+  - readonly: PARTIAL only because `external_cookieless_viewer` is intentionally unsupported;
+  - data_integrity: PARTIAL because the new read-only agent found existing data warnings and did not auto-fix them;
+  - critical errors: 0.
+
+**Result.**
+
+Local A3 QA result is `PARTIAL` with no critical errors. The PARTIAL state is expected at this point: external cookie-limited viewers remain unsupported for live audit-login, and Data Integrity Agent is reporting existing warnings without modifying data. Production deployment and production `/version` verification must still be completed for this release before starting D1.
+
 ### 2026-06-18: Release B1 - task ownership groups
 
 **Request.** Make the task list explain what the current user needs to do next, instead of showing one flat list.

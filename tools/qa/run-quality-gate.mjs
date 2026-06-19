@@ -50,6 +50,7 @@ const agentNames = [
   "UX Sanity QA Agent",
   "Workflow QA Agent",
   "Photo Report Integrity QA Agent",
+  "Data Integrity Agent",
   "Mobile QA Agent",
   "Console Error QA Agent",
   "Visual Regression QA Agent",
@@ -1098,6 +1099,73 @@ async function runPhotoReportIntegrity(results, page) {
   );
 }
 
+async function runDataIntegrity(results) {
+  const script = `
+import json
+import sys
+sys.path.insert(0, "app")
+from database import init_db, connect
+from data_integrity import run_data_integrity_checks
+
+init_db()
+with connect() as db:
+    report = run_data_integrity_checks(db)
+print(json.dumps(report, ensure_ascii=False))
+`;
+  const result = run("python", ["-c", script]);
+  if (result.code !== 0) {
+    add(results, "Data Integrity Agent", "Agent runtime", "FAIL", result.output || "python exited with error", "blocker");
+    return;
+  }
+  let report = null;
+  try {
+    report = JSON.parse(result.output);
+  } catch (error) {
+    add(results, "Data Integrity Agent", "Agent runtime", "FAIL", `JSON parse failed: ${error}; output=${result.output.slice(0, 800)}`, "blocker");
+    return;
+  }
+  const violations = Array.isArray(report.violations) ? report.violations : [];
+  const summary = report.summary || {};
+  add(
+    results,
+    "Data Integrity Agent",
+    "Agent runtime",
+    "OK",
+    `checked_at=${report.checked_at || "unknown"}; violations=${violations.length}`,
+    "normal",
+    "",
+    { dataIntegrityViolationsChecked: violations.length, dataIntegrityCritical: Number(summary.critical || 0) },
+  );
+  const invalidStageHealth = violations.filter((item) => ["invalid_material_stage", "invalid_material_health"].includes(item.violation_type));
+  add(
+    results,
+    "Data Integrity Agent",
+    "Material stage/health vocabulary",
+    invalidStageHealth.length ? "FAIL" : "OK",
+    `invalid=${invalidStageHealth.length}; stage=${JSON.stringify(report.material_counts?.stage || {})}; health=${JSON.stringify(report.material_counts?.health || {})}`,
+    invalidStageHealth.length ? "blocker" : "normal",
+  );
+  const status = violations.length ? "WARN" : "OK";
+  add(
+    results,
+    "Data Integrity Agent",
+    "Integrity violations report",
+    status,
+    `total=${summary.total || violations.length}; critical=${summary.critical || 0}; warnings=${summary.warnings || 0}; info=${summary.info || 0}; autoFix=false`,
+    "normal",
+    "",
+    { dataIntegrityViolationsChecked: violations.length, dataIntegrityCritical: Number(summary.critical || 0) },
+  );
+  add(
+    results,
+    "Data Integrity Agent",
+    "No silent auto-fix",
+    "OK",
+    "agent is read-only; auto_fix_safe is recommendation metadata only",
+    "normal",
+  );
+}
+
 async function runMobile(results, playwright) {
   const viewports = [
     { width: 390, height: 844 },
@@ -1321,6 +1389,7 @@ function checksSummary(results) {
   map.readonly = agentSummary("Read-only Safety QA Agent");
   map.workflow = agentSummary("Workflow QA Agent");
   map.photo_report_integrity = agentSummary("Photo Report Integrity QA Agent");
+  map.data_integrity = agentSummary("Data Integrity Agent");
   return map;
 }
 
@@ -1374,6 +1443,8 @@ function buildCoverage(results) {
     material_cards_checked: maxMeta(results, "materialCardsChecked"),
     workflow_rules_checked: maxMeta(results, "workflowRulesChecked"),
     photo_report_checks_checked: maxMeta(results, "photoReportChecksChecked"),
+    data_integrity_violations_checked: sumMeta(results, "dataIntegrityViolationsChecked"),
+    data_integrity_critical: maxMeta(results, "dataIntegrityCritical"),
     buttons_checked: Math.max(sumMeta(results, "buttonsChecked"), buttonResults.length),
     mobile_viewports_checked: results.filter((item) => item.agent === "Mobile QA Agent" && item.name.startsWith("Viewport ")).length,
     mobile_quick_actions_checked: maxMeta(results, "mobileQuickActionsChecked"),
@@ -1458,6 +1529,8 @@ function writeReport(results, startedAt, finishedAt, mandatorySuites, environmen
       photo_report_deduplication: checkQaStatus("Photo Report Integrity QA Agent", "Photo report deduplication"),
       photo_report_task_link: checkQaStatus("Photo Report Integrity QA Agent", "Photo report task link"),
       missing_report_consistency: checkQaStatus("Photo Report Integrity QA Agent", "Missing photo report consistency"),
+      material_stage_and_health: checkQaStatus("Data Integrity Agent", "Material stage/health vocabulary"),
+      data_integrity_agent: qaStatus(checks.data_integrity),
       object_card_control_center: results.some((item) => item.agent === "Visual Regression QA Agent" && item.name.includes("projects")) ? "ok" : "not_run",
       blockers: "ok",
       task_card_layout: checkQaStatus("UX Sanity QA Agent", "Task card separates title, meta and status"),
@@ -1542,6 +1615,8 @@ function writeReport(results, startedAt, finishedAt, mandatorySuites, environmen
     `- material_cards_checked: ${coverage.material_cards_checked}`,
     `- workflow_rules_checked: ${coverage.workflow_rules_checked}`,
     `- photo_report_checks_checked: ${coverage.photo_report_checks_checked}`,
+    `- data_integrity_violations_checked: ${coverage.data_integrity_violations_checked}`,
+    `- data_integrity_critical: ${coverage.data_integrity_critical}`,
     `- buttons_checked: ${coverage.buttons_checked}`,
     `- mobile_viewports_checked: ${coverage.mobile_viewports_checked}`,
     `- mobile_quick_actions_checked: ${coverage.mobile_quick_actions_checked}`,
@@ -1589,7 +1664,7 @@ async function main() {
   ensureDirs();
   const startedAt = new Date().toISOString();
   const results = [];
-  const mandatory = suite === "all" || suite === "report" ? ["lint", "typecheck", "unit", "scroll", "buttons", "navigation", "mobile", "readonly", "workflow", "photo_report_integrity"] : [];
+  const mandatory = suite === "all" || suite === "report" ? ["lint", "typecheck", "unit", "scroll", "buttons", "navigation", "mobile", "readonly", "workflow", "photo_report_integrity", "data_integrity"] : [];
   let serverProcess = null;
   let browser = null;
   try {
@@ -1622,6 +1697,7 @@ async function main() {
       if (["all", "report"].includes(suite)) await runVisual(results, page);
       add(results, "Console Error QA Agent", "Browser console", errors.length ? "FAIL" : "OK", errors.join("\n") || "No console/page/request errors.", errors.length ? "blocker" : "normal");
     }
+    if (["data_integrity", "all", "report"].includes(suite)) await runDataIntegrity(results);
     if (["max", "all", "report"].includes(suite)) await runMaxFormat(results);
   } catch (error) {
     add(results, "QA Orchestrator Agent", "Quality gate runtime", "FAIL", error.stack || error.message, "blocker");

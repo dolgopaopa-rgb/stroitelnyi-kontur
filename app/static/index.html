@@ -9,10 +9,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Строительный контур</title>
-    <link rel="manifest" href="/static/manifest.webmanifest?v=20260618-task-groups-b1" />
+    <link rel="manifest" href="/static/manifest.webmanifest?v=20260619-a3-data-integrity" />
     <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260618-task-groups-b1" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260619-a3-data-integrity" />
   </head>
   <body>
     <div class="app" data-testid="qa-scroll-root">
@@ -228,11 +228,11 @@
               </div>
               <div class="material-pipeline-tabs" role="tablist" aria-label="Статус материалов" data-testid="material-status-tabs">
                 <button class="pipeline-filter active" type="button" data-material-pipeline-filter="all">Все</button>
-                <button class="pipeline-filter" type="button" data-material-pipeline-filter="need_approval">Нужно согласовать</button>
-                <button class="pipeline-filter" type="button" data-material-pipeline-filter="agreed">Согласовано</button>
+                <button class="pipeline-filter" type="button" data-material-pipeline-filter="needs_approval">Нужно согласовать</button>
+                <button class="pipeline-filter" type="button" data-material-pipeline-filter="approved">Согласовано</button>
                 <button class="pipeline-filter" type="button" data-material-pipeline-filter="ordered">Заказано</button>
                 <button class="pipeline-filter" type="button" data-material-pipeline-filter="in_transit">В пути</button>
-                <button class="pipeline-filter" type="button" data-material-pipeline-filter="on_site">На объекте</button>
+                <button class="pipeline-filter" type="button" data-material-pipeline-filter="delivered">На объекте</button>
                 <button class="pipeline-filter" type="button" data-material-pipeline-filter="problem">Проблема</button>
                 <button class="pipeline-filter" type="button" data-material-pipeline-filter="closed">Закрыто</button>
               </div>
@@ -454,6 +454,26 @@
         </section>
 
         <section class="view" id="eventsView">
+          <div class="panel" id="dataIntegrityPanel" data-testid="data-integrity-panel" hidden>
+            <div class="panel-head">
+              <div>
+                <h2>Целостность данных</h2>
+                <p class="muted">Read-only проверка задач, фотоотчётов, материалов, сигналов, документов и блокеров.</p>
+              </div>
+              <button class="secondary" id="refreshIntegrityButton" type="button">Запустить проверку</button>
+            </div>
+            <div class="compact-stats" id="dataIntegrityStats"></div>
+            <div class="material-quick-filters" id="dataIntegrityFilters" role="tablist" aria-label="Фильтры целостности данных">
+              <button class="quick-filter active" type="button" data-integrity-filter="all">Все</button>
+              <button class="quick-filter" type="button" data-integrity-filter="task">Задачи</button>
+              <button class="quick-filter" type="button" data-integrity-filter="photo_report">Фотоотчёты</button>
+              <button class="quick-filter" type="button" data-integrity-filter="material">Материалы</button>
+              <button class="quick-filter" type="button" data-integrity-filter="notification">Сигналы</button>
+              <button class="quick-filter" type="button" data-integrity-filter="document">Документы</button>
+              <button class="quick-filter" type="button" data-integrity-filter="blocker">Блокеры</button>
+            </div>
+            <div class="table" id="dataIntegrityRows"></div>
+          </div>
           <div class="panel">
             <div class="panel-head">
               <h2>Журнал событий</h2>
@@ -1093,6 +1113,6 @@
       </div>
     </div>
     <div class="toast" id="toast"></div>
-    <script src="/static/app.compat.js?v=20260618-task-groups-b1"></script>
+    <script src="/static/app.compat.js?v=20260619-a3-data-integrity"></script>
   </body>
 </html>

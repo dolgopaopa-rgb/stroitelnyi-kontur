@@ -66,6 +66,8 @@ const state = {
   loadingKeys: new Set(),
   mediaPreview: { items: [], index: 0, touchX: null },
   pullRefresh: { tracking: false, startY: 0, distance: 0, ready: false, refreshing: false },
+  dataIntegrityReport: null,
+  dataIntegrityFilter: "all",
 };
 
 const PROJECT_FORM_DRAFT_KEY = "projectFormDraft:v1";
@@ -223,11 +225,15 @@ const statusLabelMap = {
   decision: "Решение",
   check: "Проверка",
   need_approval: "Нужно согласовать",
+  needs_approval: "Нужно согласовать",
   agreed: "Согласовано",
+  delivered: "На объекте",
   in_transit: "В пути",
   on_site: "На объекте",
   problem: "Проблема",
   closed: "Закрыто",
+  at_risk: "Под риском",
+  requiring_review: "Требует проверки",
   open: "Открыт",
   waiting_external: "Ждём внешнего ответа",
   resolved: "Решён",
@@ -256,8 +262,8 @@ function statusLabel(value) {
 function statusLevel(value, fallback = "") {
   const key = String(value || "");
   if (["overdue", "danger", "problem", "returned", "revision_requested", "rejected", "receipt_issue", "quality_problem", "no_material", "invalid_empty"].includes(key)) return "danger";
-  if (["warning", "review", "completed_pending_acceptance", "waiting_check", "estimate_question", "estimate_returned", "submitted_to_construction", "decision_required", "need_approval", "estimate_hold", "new", "feedback_new", "open", "waiting_external", "waiting_client_decision", "waiting_owner_decision", "waiting_project_documentation", "estimate_not_approved", "subcontractor_problem", "no_photo_report", "approval", "check"].includes(key)) return "warning";
-  if (["success", "accepted", "approved", "closed", "completed", "received", "on_site", "agreed", "done", "feedback_done", "estimate_done", "resolved", "checked"].includes(key)) return "success";
+  if (["warning", "review", "completed_pending_acceptance", "waiting_check", "estimate_question", "estimate_returned", "submitted_to_construction", "decision_required", "need_approval", "needs_approval", "at_risk", "requiring_review", "estimate_hold", "new", "feedback_new", "open", "waiting_external", "waiting_client_decision", "waiting_owner_decision", "waiting_project_documentation", "estimate_not_approved", "subcontractor_problem", "no_photo_report", "approval", "check"].includes(key)) return "warning";
+  if (["success", "accepted", "approved", "closed", "completed", "received", "on_site", "delivered", "agreed", "done", "feedback_done", "estimate_done", "resolved", "checked"].includes(key)) return "success";
   if (["blue", "in_progress", "in_progress_task", "ordered", "in_transit", "delivery_scheduled", "delivery_confirmed", "estimate_in_work", "in_review", "active", "in_work", "feedback_in_work", "material"].includes(key)) return "blue";
   if (["draft", "archived", "estimate_new", "not_required", "duplicate", "superseded"].includes(key)) return "";
   return fallback;
@@ -2060,6 +2066,14 @@ function buildMaterialBatches(items) {
         needed_at: item.needed_at,
         delivery_urgency: item.batch_delivery_urgency || item.delivery_urgency,
         status: item.batch_status || item.procurement_status,
+        stage: item.batch_stage || "",
+        health: item.batch_health || "normal",
+        health_comment: item.batch_health_comment || "",
+        requiring_review: Number(item.batch_requiring_review || 0) === 1,
+        procurement_responsible_id: item.batch_procurement_responsible_id || "",
+        supplier_comment: item.batch_supplier_comment || "",
+        planned_delivery_date: item.batch_planned_delivery_date || "",
+        received_by: item.batch_received_by || "",
         comment: item.batch_comment || item.comment || "",
         revision_comment: item.batch_revision_comment || "",
         foreman_response: item.batch_foreman_response || "",
@@ -2100,14 +2114,18 @@ function materialBatchLevel(status) {
 
 function materialPipelineStatus(batchOrStatus) {
   const batch = typeof batchOrStatus === "object" ? batchOrStatus : { status: batchOrStatus };
+  const health = String(batch.health || "");
+  const stage = String(batch.stage || "");
+  if (health === "problem") return "problem";
+  if (stage) return stage === "draft" ? "needs_approval" : stage;
   const status = String(batch.status || "");
   if (status === "receipt_issue" || status === "returned" || status === "revision_requested" || batch.receipt_status === "problem") return "problem";
   if (status === "archived" || status === "closed") return "closed";
-  if (status === "received" || batch.receipt_status === "ok") return "on_site";
+  if (status === "received" || batch.receipt_status === "ok") return "delivered";
   if (status === "delivery_confirmed" || status === "delivery_scheduled") return "in_transit";
   if (status === "ordered" || status === "delivery") return "ordered";
-  if (status === "in_work" || status === "approved" || status === "agreed") return "agreed";
-  return "need_approval";
+  if (status === "in_work" || status === "approved" || status === "agreed") return "approved";
+  return "needs_approval";
 }
 
 function materialPipelineLevel(batchOrStatus) {
@@ -2116,7 +2134,7 @@ function materialPipelineLevel(batchOrStatus) {
 
 function renderMaterialPipeline(batch) {
   const current = materialPipelineStatus(batch);
-  const steps = ["need_approval", "agreed", "ordered", "in_transit", "on_site", "problem", "closed"];
+  const steps = ["needs_approval", "approved", "ordered", "in_transit", "delivered", "closed"];
   return `
     <div class="material-pipeline">
       ${steps
@@ -2125,10 +2143,25 @@ function renderMaterialPipeline(batch) {
     </div>`;
 }
 
+function materialStageLabel(batch) {
+  const stage = String(batch?.stage || materialPipelineStatus(batch) || "");
+  return stage === "draft" ? "Черновик" : statusLabel(stage);
+}
+
+function materialHealthLabel(batch) {
+  if (batch?.requiring_review) return "Требует проверки";
+  return statusLabel(String(batch?.health || "normal"));
+}
+
+function materialHealthLevel(batch) {
+  if (batch?.requiring_review) return "warning";
+  return statusLevel(String(batch?.health || "normal"));
+}
+
 function materialIsRisky(batch) {
   const status = materialPipelineStatus(batch);
   const actualOverrun = Number(batch.actual_purchase_amount || 0) > 0 && Number(batch.actual_purchase_amount || 0) > Number(batch.total_amount || 0);
-  return status === "problem" || ["returned", "revision_requested"].includes(batch.status) || (batch.delivery_urgency === "urgent" && !["on_site", "closed"].includes(status)) || actualOverrun;
+  return status === "problem" || batch.requiring_review || ["at_risk"].includes(batch.health) || ["returned", "revision_requested"].includes(batch.status) || (batch.delivery_urgency === "urgent" && !["delivered", "closed"].includes(status)) || actualOverrun;
 }
 
 function materialReceiptAttachment(batch) {
@@ -2166,7 +2199,7 @@ function materialBatchIsMine(batch) {
 }
 
 function materialBatchHasNoResponsible(batch) {
-  return !batch.procurement_name && !["closed", "on_site"].includes(materialPipelineStatus(batch));
+  return !batch.procurement_name && !["closed", "delivered"].includes(materialPipelineStatus(batch));
 }
 
 function materialBatchMatchesQuickFilter(batch, filter = state.materialQuickFilter) {
@@ -5650,13 +5683,15 @@ async function renderMaterials() {
           <div class="muted">Сумма: ${money(batch.total_amount)}</div>
           ${batch.actual_purchase_amount ? `<div class="muted">Фактическая стоимость закупки: ${money(batch.actual_purchase_amount)}</div>` : ""}
           <div class="muted">${materialBatchDestination(batch)}</div>
+          <div class="muted">Этап: ${escapeHtml(materialStageLabel(batch))} · Состояние: ${escapeHtml(materialHealthLabel(batch))}${batch.health_comment ? ` · ${escapeHtml(batch.health_comment)}` : ""}</div>
           ${materialReceiptActionNote(batch)}
           ${batch.revision_comment ? `<div class="muted">Комментарий по доработке: ${batch.revision_comment}</div>` : ""}
           ${state.materialListMode === "archive" && batch.archived_at ? `<div class="muted">В архиве с ${formatDateRu(batch.archived_at)}</div>` : ""}
         </div>
         <div class="stack-line">
           ${pill(urgencyLabel(batch.delivery_urgency), urgencyLevel(batch.delivery_urgency))}
-          ${pill(statusLabel(materialPipelineStatus(batch)), materialPipelineLevel(batch))}
+          ${pill(materialStageLabel(batch), materialPipelineLevel(batch))}
+          ${pill(materialHealthLabel(batch), materialHealthLevel(batch))}
         </div>
       </button>`;
   };
@@ -5735,7 +5770,8 @@ async function openMaterialBatchDialog(batchKey) {
       <div class="stack-line">
         <h3>${batch.project_title || "Объект не указан"}</h3>
         ${pill(urgencyLabel(batch.delivery_urgency), urgencyLevel(batch.delivery_urgency))}
-        ${pill(statusLabel(materialPipelineStatus(batch)), materialPipelineLevel(batch))}
+        ${pill(materialStageLabel(batch), materialPipelineLevel(batch))}
+        ${pill(materialHealthLabel(batch), materialHealthLevel(batch))}
       </div>
       <p class="muted">Кто заказал: ${batch.creator_name || "не указано"} · желаемая доставка: ${batch.needed_at || "не указана"} · позиций: ${activeItems.length}${removedItems.length ? ` · удалено при исправлении: ${removedItems.length}` : ""}</p>
       ${batch.actual_purchase_amount ? `<p class="muted">Фактическая стоимость закупки: ${money(batch.actual_purchase_amount)} · сметная сумма заявки: ${money(batch.total_amount)}</p>` : ""}
@@ -6682,6 +6718,7 @@ function saveMaxBindingDraft(row) {
 }
 
 async function renderEvents() {
+  await renderDataIntegrity();
   const events = await api("/api/events");
   qs("#eventTimeline").innerHTML = events.map((event) => `
     <article class="timeline-item">
@@ -6689,6 +6726,66 @@ async function renderEvents() {
       <p>${event.text}</p>
       <div class="muted">${event.project_title} · ${event.author_name || "автор не указан"} · ${event.created_at}</div>
     </article>`).join("");
+}
+
+function canViewDataIntegrity() {
+  return ["owner", "construction_manager", "finance_director"].includes(currentRoleBase()) || currentRoleBase() === "ai_auditor";
+}
+
+function integrityEntityGroup(entityType) {
+  if (["material_request_batch", "material_request"].includes(entityType)) return "material";
+  return entityType || "other";
+}
+
+function integritySeverityLevel(severity) {
+  return severity === "critical" ? "danger" : severity === "warning" ? "warning" : "blue";
+}
+
+async function renderDataIntegrity(force = false) {
+  const panel = qs("#dataIntegrityPanel");
+  if (!panel) return;
+  panel.hidden = !canViewDataIntegrity();
+  if (panel.hidden) return;
+  if (!state.dataIntegrityReport || force) {
+    state.dataIntegrityReport = await api("/api/data-integrity", { silentLoading: !force, loadingMessage: "Проверяем целостность данных" });
+  }
+  const report = state.dataIntegrityReport || {};
+  const summary = report.summary || {};
+  const stats = [
+    ["Критические", summary.critical || 0, "danger"],
+    ["Предупреждения", summary.warnings || 0, "warning"],
+    ["Инфо", summary.info || 0, "blue"],
+    ["Всего", summary.total || 0, ""],
+  ];
+  qs("#dataIntegrityStats").innerHTML = stats
+    .map(([labelText, count, level]) => `<button class="metric ${Number(count) ? level : "is-zero"}" type="button"><span>${labelText}</span><strong>${count}</strong></button>`)
+    .join("");
+  qsa("[data-integrity-filter]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.integrityFilter === state.dataIntegrityFilter);
+  });
+  const violations = (report.violations || []).filter((item) => {
+    if (state.dataIntegrityFilter === "all") return true;
+    return integrityEntityGroup(item.entity_type) === state.dataIntegrityFilter;
+  });
+  qs("#dataIntegrityRows").innerHTML = violations.length
+    ? violations
+        .map(
+          (item) => `
+          <div class="row dense-row">
+            <div class="material-main">
+              <div class="stack-line">
+                <strong>${escapeHtml(item.violation_type || "Нарушение")}</strong>
+                ${pill(item.severity === "critical" ? "Критично" : item.severity === "warning" ? "Предупреждение" : "Инфо", integritySeverityLevel(item.severity))}
+              </div>
+              <div class="muted">${escapeHtml(item.entity_type || "entity")} #${escapeHtml(String(item.entity_id || ""))}${item.object ? ` · ${escapeHtml(item.object)}` : ""}</div>
+              <div>${escapeHtml(item.reason || "")}</div>
+              <div class="muted">Рекомендация: ${escapeHtml(item.recommendation || "Проверить вручную.")}</div>
+            </div>
+            ${pill(item.auto_fix_safe ? "можно авто после команды" : "ручная проверка", item.auto_fix_safe ? "blue" : "warning")}
+          </div>`
+        )
+        .join("")
+    : `<div class="empty-state"><strong>Нарушений по фильтру нет</strong><p class="muted">Data Integrity Agent не нашёл проблем в выбранной группе.</p></div>`;
 }
 
 function eventType(type) {
@@ -7201,6 +7298,7 @@ function bindEvents() {
     await renderObjectRemarks();
     await renderPhotoReports();
     await renderDocuments();
+    await renderEvents();
     fillMaterialProjectSelect();
     updateMaterialActorHint();
     showToast(`Роль: ${roleLabel(state.currentRole)}`);
@@ -7260,6 +7358,16 @@ function bindEvents() {
     qs("#documentDialog").showModal();
   });
   qs("#newEventButton").addEventListener("click", () => qs("#eventDialog").showModal());
+  qs("#refreshIntegrityButton")?.addEventListener("click", async () => {
+    await renderDataIntegrity(true);
+    showToast("Проверка целостности обновлена");
+  });
+  qsa("[data-integrity-filter]").forEach((button) =>
+    button.addEventListener("click", async () => {
+      state.dataIntegrityFilter = button.dataset.integrityFilter || "all";
+      await renderDataIntegrity();
+    })
+  );
   qs("#refreshFeedbackButton")?.addEventListener("click", async () => {
     try {
       await renderFeedback();

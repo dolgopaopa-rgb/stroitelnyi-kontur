@@ -24,6 +24,7 @@ from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse
 from urllib.request import Request, urlopen
 
 from database import DATA_DIR, connect, init_db, row_to_dict, rows_to_dicts
+from data_integrity import run_data_integrity_checks
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -696,7 +697,10 @@ def archive_completed_material_batches(db) -> None:
     db.execute(
         """
         UPDATE material_request_batches
-        SET archived_at = CURRENT_TIMESTAMP
+        SET archived_at = CURRENT_TIMESTAMP,
+            stage = CASE WHEN stage = 'cancelled' THEN stage ELSE 'closed' END,
+            health = CASE WHEN health = 'problem' THEN health ELSE 'normal' END,
+            updated_at = CURRENT_TIMESTAMP
         WHERE archived_at IS NULL
           AND status = 'received'
           AND received_at IS NOT NULL
@@ -931,9 +935,9 @@ def create_material_batch(
     cursor = db.execute(
         """
         INSERT INTO material_request_batches (
-            project_id, creator_id, needed_at, delivery_urgency, status, comment
+            project_id, creator_id, needed_at, delivery_urgency, status, stage, health, comment
         )
-        VALUES (?, ?, ?, ?, 'new', ?)
+        VALUES (?, ?, ?, ?, 'new', 'needs_approval', 'normal', ?)
         """,
         (project_id, creator_id, needed_at or None, urgency, comment),
     )
@@ -1721,6 +1725,12 @@ def snapshot_clean_text(value: object, status_map: dict[str, str]) -> str:
 
 
 def snapshot_material_pipeline_status(row: dict) -> str:
+    health = str(row.get("batch_health") or row.get("health") or "")
+    stage = str(row.get("batch_stage") or row.get("stage") or "")
+    if health == "problem":
+        return "problem"
+    if stage:
+        return "needs_approval" if stage == "draft" else stage
     status = str(row.get("batch_status") or row.get("status") or row.get("procurement_status") or "")
     receipt_status = str(row.get("receipt_status") or "")
     if status in {"receipt_issue", "returned", "revision_requested"} or receipt_status == "problem":
@@ -1728,14 +1738,14 @@ def snapshot_material_pipeline_status(row: dict) -> str:
     if status in {"archived", "closed"}:
         return "closed"
     if status == "received" or receipt_status == "ok":
-        return "on_site"
+        return "delivered"
     if status in {"delivery_confirmed", "delivery_scheduled"}:
         return "in_transit"
     if status in {"ordered", "delivery"}:
         return "ordered"
     if status in {"in_work", "approved", "agreed"}:
-        return "agreed"
-    return "need_approval"
+        return "approved"
+    return "needs_approval"
 
 
 TASK_STATUS_ALIASES = {
@@ -3591,7 +3601,13 @@ def get_project_detail(project_id: int, account: dict | None = None) -> dict | N
                        em.estimated_quantity, em.unit_price,
                        creator.name AS creator_name, creator.role AS creator_role,
                        p.foreman_id AS project_foreman_id, p.title AS project_title,
-                       b.status AS batch_status, b.comment AS batch_comment,
+                       b.status AS batch_status, b.stage AS batch_stage, b.health AS batch_health,
+                       b.health_comment AS batch_health_comment, b.requiring_review AS batch_requiring_review,
+                       b.procurement_responsible_id AS batch_procurement_responsible_id,
+                       b.supplier_comment AS batch_supplier_comment,
+                       b.planned_delivery_date AS batch_planned_delivery_date,
+                       b.received_by AS batch_received_by,
+                       b.comment AS batch_comment,
                        b.revision_comment AS batch_revision_comment,
                        b.foreman_response AS batch_foreman_response,
                        b.scheduled_delivery_date AS batch_scheduled_delivery_date,
@@ -4087,6 +4103,13 @@ class AppHandler(BaseHTTPRequestHandler):
                 db.execute(
                     """
                     SELECT m.*, p.title AS project_title, b.status AS batch_status,
+                           b.stage AS batch_stage, b.health AS batch_health,
+                           b.health_comment AS batch_health_comment,
+                           b.requiring_review AS batch_requiring_review,
+                           b.procurement_responsible_id AS batch_procurement_responsible_id,
+                           b.supplier_comment AS batch_supplier_comment,
+                           b.planned_delivery_date AS batch_planned_delivery_date,
+                           b.received_by AS batch_received_by,
                            b.delivery_urgency AS batch_delivery_urgency,
                            b.receipt_status AS receipt_status,
                            b.actual_purchase_amount AS actual_purchase_amount,
@@ -4174,9 +4197,9 @@ class AppHandler(BaseHTTPRequestHandler):
             key = str(value or "")
             if key in {"overdue", "danger", "problem", "returned", "revision_requested", "rejected", "receipt_issue", "no_material", "quality_problem", "critical", "high"}:
                 return "danger"
-            if key in {"warning", "review", "completed_pending_acceptance", "waiting_check", "estimate_question", "estimate_returned", "submitted_to_construction", "decision_required", "need_approval", "estimate_hold", "new", "feedback_new", "open", "waiting_external", "waiting_client_decision", "waiting_owner_decision", "waiting_project_documentation", "estimate_not_approved", "subcontractor_problem", "no_photo_report", "medium", "check", "approval"}:
+            if key in {"warning", "review", "completed_pending_acceptance", "waiting_check", "estimate_question", "estimate_returned", "submitted_to_construction", "decision_required", "need_approval", "needs_approval", "at_risk", "requiring_review", "estimate_hold", "new", "feedback_new", "open", "waiting_external", "waiting_client_decision", "waiting_owner_decision", "waiting_project_documentation", "estimate_not_approved", "subcontractor_problem", "no_photo_report", "medium", "check", "approval"}:
                 return "warning"
-            if key in {"success", "accepted", "approved", "closed", "completed", "received", "on_site", "agreed", "done", "feedback_done", "estimate_done"}:
+            if key in {"success", "accepted", "approved", "closed", "completed", "received", "on_site", "delivered", "agreed", "done", "feedback_done", "estimate_done"}:
                 return "success"
             if key in {"blue", "in_progress", "in_progress_task", "ordered", "in_transit", "delivery_scheduled", "delivery_confirmed", "estimate_in_work", "in_review", "active", "in_work", "feedback_in_work"}:
                 return "blue"
@@ -4867,6 +4890,8 @@ class AppHandler(BaseHTTPRequestHandler):
           {qa_row("console_errors", "Ошибки консоли")}
           {qa_row("visual_regression", "Визуальная проверка")}
           {qa_row("max_report_format", "Формат MAX-отчёта")}
+          {qa_row("material_stage_and_health", "A3: stage и health материалов")}
+          {qa_row("data_integrity_agent", "A3: Data Integrity Agent")}
         </section>
         <section class="meta-panel">
           <h2>QA coverage</h2>
@@ -4877,6 +4902,8 @@ class AppHandler(BaseHTTPRequestHandler):
           {coverage_row("object_cards_checked", "карточек объектов")}
           {coverage_row("blocker_cards_checked", "карточек блокеров")}
           {coverage_row("material_cards_checked", "карточек материалов")}
+          {coverage_row("data_integrity_violations_checked", "проверенных integrity-нарушений")}
+          {coverage_row("data_integrity_critical", "критических integrity-нарушений")}
           {coverage_row("buttons_checked", "кнопок/действий")}
           {coverage_row("mobile_viewports_checked", "мобильных viewport")}
           {coverage_row("mobile_quick_actions_checked", "быстрых мобильных действий")}
@@ -5331,6 +5358,15 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 json_response(self, blockers_payload(db, account, project_id or None))
                 return
 
+            if path == "/api/data-integrity":
+                if account_role(account) not in {"owner", "construction_manager", "finance_director", "ai_auditor"}:
+                    json_response(self, {"error": "Forbidden"}, 403)
+                    return
+                report = run_data_integrity_checks(db)
+                report["commitHash"] = app_metadata(self).get("commitHash")
+                json_response(self, report)
+                return
+
             if path == "/api/feedback":
                 if not can_manage_feedback(account):
                     json_response(self, [], 200)
@@ -5595,7 +5631,13 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                            em.unit AS estimate_material_unit, em.estimated_quantity, em.unit_price,
                            p.foreman_id AS project_foreman_id, creator.name AS creator_name,
                            creator.role AS creator_role,
-                           b.status AS batch_status, b.comment AS batch_comment,
+                           b.status AS batch_status, b.stage AS batch_stage, b.health AS batch_health,
+                           b.health_comment AS batch_health_comment, b.requiring_review AS batch_requiring_review,
+                           b.procurement_responsible_id AS batch_procurement_responsible_id,
+                           b.supplier_comment AS batch_supplier_comment,
+                           b.planned_delivery_date AS batch_planned_delivery_date,
+                           b.received_by AS batch_received_by,
+                           b.comment AS batch_comment,
                            b.revision_comment AS batch_revision_comment, b.created_at AS batch_created_at,
                            b.delivery_urgency AS batch_delivery_urgency,
                            b.foreman_response AS batch_foreman_response,
@@ -7827,6 +7869,10 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         """
                         UPDATE material_request_batches
                         SET status = 'new',
+                            stage = 'needs_approval',
+                            health = 'normal',
+                            health_comment = NULL,
+                            requiring_review = 0,
                             needed_at = ?,
                             delivery_urgency = ?,
                             foreman_response = ?,
@@ -7865,13 +7911,47 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     json_response(self, {"id": batch_id, "status": "new"})
                     return
                 if action == "accept":
+                    active_items = db.execute(
+                        """
+                        SELECT title, requested_quantity, requested_unit
+                        FROM material_requests
+                        WHERE batch_id = ?
+                          AND COALESCE(change_type, '') != 'removed'
+                        """,
+                        (batch_id,),
+                    ).fetchall()
+                    missing = []
+                    if not batch["project_id"]:
+                        missing.append("объект")
+                    if not active_items:
+                        missing.append("позиции материалов")
+                    if not batch["creator_id"]:
+                        missing.append("кто запросил")
+                    if not batch["needed_at"]:
+                        missing.append("дата, когда материал нужен")
+                    for item in active_items:
+                        if not str(item["title"] or "").strip():
+                            missing.append("материал")
+                        if number_value(item["requested_quantity"]) <= 0:
+                            missing.append("количество")
+                        if not str(item["requested_unit"] or "").strip():
+                            missing.append("единица измерения")
+                    if missing:
+                        raise ValueError("Нельзя принять заявку: не заполнено " + ", ".join(sorted(set(missing))) + ".")
                     db.execute(
                         """
                         UPDATE material_request_batches
-                        SET status = 'in_work', revision_comment = NULL, updated_at = CURRENT_TIMESTAMP
+                        SET status = 'in_work',
+                            stage = 'ordered',
+                            health = 'normal',
+                            health_comment = NULL,
+                            procurement_responsible_id = COALESCE(?, procurement_responsible_id),
+                            supplier_comment = COALESCE(NULLIF(supplier_comment, ''), 'Поставщик будет выбран при обработке заявки.'),
+                            revision_comment = NULL,
+                            updated_at = CURRENT_TIMESTAMP
                         WHERE id = ?
                         """,
-                        (batch_id,),
+                        (user_id_by_role(db, "procurement_manager") or account_user_id(account), batch_id),
                     )
                     db.execute(
                         """
@@ -7910,6 +7990,10 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         """
                         UPDATE material_request_batches
                         SET status = 'new',
+                            stage = 'needs_approval',
+                            health = 'normal',
+                            health_comment = NULL,
+                            requiring_review = 0,
                             foreman_response = ?,
                             revision_comment = NULL,
                             updated_at = CURRENT_TIMESTAMP
@@ -8004,13 +8088,17 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         """
                         UPDATE material_request_batches
                         SET status = 'delivery_scheduled',
+                            stage = 'in_transit',
+                            health = 'normal',
+                            health_comment = NULL,
                             scheduled_delivery_date = ?,
+                            planned_delivery_date = ?,
                             procurement_comment = ?,
                             actual_purchase_amount = ?,
                             updated_at = CURRENT_TIMESTAMP
                         WHERE id = ?
                         """,
-                        (delivery_date, comment, actual_purchase_amount, batch_id),
+                        (delivery_date, delivery_date, comment, actual_purchase_amount, batch_id),
                     )
                     db.execute(
                         """
@@ -8060,12 +8148,16 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         """
                         UPDATE material_request_batches
                         SET status = 'delivery_scheduled',
+                            stage = 'in_transit',
+                            health = 'at_risk',
+                            health_comment = ?,
                             scheduled_delivery_date = ?,
+                            planned_delivery_date = ?,
                             procurement_comment = ?,
                             updated_at = CURRENT_TIMESTAMP
                         WHERE id = ?
                         """,
-                        (delivery_date, procurement_comment, batch_id),
+                        (comment or "Проблема принята снабжением в исправление.", delivery_date, delivery_date, procurement_comment, batch_id),
                     )
                     db.execute(
                         """
@@ -8130,14 +8222,27 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         """
                         UPDATE material_request_batches
                         SET status = ?,
+                            stage = 'delivered',
+                            health = ?,
+                            health_comment = ?,
                             received_at = CURRENT_TIMESTAMP,
+                            received_by = COALESCE(?, received_by),
                             receipt_status = ?,
                             receipt_comment = ?,
                             receipt_document_id = COALESCE(?, receipt_document_id),
                             updated_at = CURRENT_TIMESTAMP
                         WHERE id = ?
                         """,
-                        (new_status, receipt_status, comment, document_id, batch_id),
+                        (
+                            new_status,
+                            "normal" if receipt_status == "received" else "problem",
+                            comment or ("" if receipt_status == "received" else "Проблема при приемке без текстового комментария."),
+                            actor_id,
+                            receipt_status,
+                            comment,
+                            document_id,
+                            batch_id,
+                        ),
                     )
                     db.execute(
                         """
@@ -8183,10 +8288,15 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 db.execute(
                     """
                     UPDATE material_request_batches
-                    SET status = 'revision_requested', revision_comment = ?, updated_at = CURRENT_TIMESTAMP
+                    SET status = 'revision_requested',
+                        stage = 'needs_approval',
+                        health = 'at_risk',
+                        health_comment = ?,
+                        revision_comment = ?,
+                        updated_at = CURRENT_TIMESTAMP
                     WHERE id = ?
                     """,
-                    (comment, batch_id),
+                    (comment, comment, batch_id),
                 )
                 db.execute(
                     """
@@ -8249,6 +8359,21 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     """,
                     (actual_date or None, comment, request_id),
                 )
+                if material["batch_id"]:
+                    db.execute(
+                        """
+                        UPDATE material_request_batches
+                        SET status = 'delivery_scheduled',
+                            stage = 'in_transit',
+                            health = CASE WHEN health = 'problem' THEN health ELSE 'normal' END,
+                            planned_delivery_date = COALESCE(?, planned_delivery_date),
+                            scheduled_delivery_date = COALESCE(?, scheduled_delivery_date),
+                            procurement_comment = COALESCE(NULLIF(?, ''), procurement_comment),
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (actual_date or None, actual_date or None, comment, material["batch_id"]),
+                    )
                 message = f"{material['project_title']}: {material['title']}. Доставка: {actual_date or 'дата не указана'}"
                 if comment:
                     message += f". Комментарий снабжения: {comment}"
