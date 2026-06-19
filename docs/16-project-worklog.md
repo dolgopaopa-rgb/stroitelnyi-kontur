@@ -2420,6 +2420,29 @@ Production container backup was created before A3 implementation:
 
 Local A3 QA result is `PARTIAL` with no critical errors. The PARTIAL state is expected at this point: external cookie-limited viewers remain unsupported for live audit-login, and Data Integrity Agent is reporting existing warnings without modifying data. Production deployment and production `/version` verification must still be completed for this release before starting D1.
 
+### 2026-06-19: Release A3 production finalization
+
+**Reason.** Before starting D1, A3 must be independently verifiable after deployment: production `/version`, snapshot, and public `qa-report.md` must point to the same released commit.
+
+**What changed.**
+
+- Added `KONTUR_AUDIT_LOGIN_URL` support to the QA runner so production read-only checks can use an audit token created in the production database instead of accidentally creating a local token for a production URL.
+- Confirmed the accepted QA rule remains unchanged:
+  - full live audit-login is supported in a normal browser / Playwright context;
+  - external cookie-limited viewers remain `PARTIAL / unsupported`;
+  - such viewers should use snapshot.
+
+**Release rule.**
+
+A3 is considered production-ready only after:
+
+- full local QA gate runs on the final A3 commit;
+- production `/version` shows the same commit;
+- production snapshot shows the same commit;
+- `/qa-artifacts/latest/qa-report.md` is available through the app;
+- MAX receives a separate A3 report;
+- D1 is not started until all A3 verification is complete.
+
 ### 2026-06-18: Release B1 - task ownership groups
 
 **Request.** Make the task list explain what the current user needs to do next, instead of showing one flat list.

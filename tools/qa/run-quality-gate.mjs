@@ -632,6 +632,7 @@ async function runRoles(results, page) {
 }
 
 async function createAuditLoginUrl() {
+  if (process.env.KONTUR_AUDIT_LOGIN_URL) return process.env.KONTUR_AUDIT_LOGIN_URL;
   const result = run("python", ["tools/create_ai_audit_token.py", "--public-url", baseUrl], { timeout: 30_000 });
   const match = result.output.match(/login_url=(\S+)/);
   if (!match) throw new Error(`Could not create audit token: ${result.output}`);
