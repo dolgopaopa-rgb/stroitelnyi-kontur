@@ -2248,11 +2248,18 @@ Local QA result is `PARTIAL` only for the accepted external cookieless viewer li
 **Checks.**
 
 - Python syntax: OK.
-- Full quality gate must be rerun after this commit because the deployed commit hash will change.
+- Full quality gate after deploy: PARTIAL only for the accepted `external_cookieless_viewer` limitation.
+- Production `/version`: `606716c`.
+- Production snapshot: `606716c`, QA status `PARTIAL`, Release A2 block visible.
+- Production `qa-report.md`: published through the app and points to `606716c`.
+- Production DB integrity:
+  - active empty photo reports: 0;
+  - duplicate active reports per task: 0;
+  - old duplicate reports marked as `duplicate`: 1.
 
 **Result.**
 
-Pending final commit, deploy, production `/version`, production snapshot, refreshed `qa-report.md`, and MAX report.
+Release A2 is deployed and verified on production. Overall QA remains `PARTIAL` only because external cookie-limited viewers cannot keep live audit sessions; normal browser and Playwright audit-login pass.
 
 ### 2026-06-19: Release A2 - photo report integrity
 
