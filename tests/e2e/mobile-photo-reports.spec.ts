@@ -15,6 +15,8 @@ async function ensurePhotoReportFixture(page: Page) {
     if (!project) throw new Error("No project with a foreman was found for mobile photo report test.");
 
     const stamp = Date.now();
+    const reportDate = new Date().toISOString().slice(0, 10);
+    const comment = `QA fixture: mobile photo report must stay readable and open the image. ${stamp}`;
     const fileName = `qa-mobile-photo-report-${stamp}-1.png`;
     const secondFileName = `qa-mobile-photo-report-${stamp}-2.png`;
     const createResponse = await fetch("/api/photo-reports", {
@@ -22,11 +24,11 @@ async function ensurePhotoReportFixture(page: Page) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         project_id: project.id,
-        report_date: "2026-06-18",
+        report_date: reportDate,
         author_id: Number(project.foreman_id || 7),
         stage: "QA",
         zones: "Mobile QA",
-        comment: "QA fixture: mobile photo report must stay readable and open the image.",
+        comment,
         status: "review",
         attachments: [
           {

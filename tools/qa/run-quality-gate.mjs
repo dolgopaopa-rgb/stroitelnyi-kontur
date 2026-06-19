@@ -425,9 +425,18 @@ async function runScroll(results, page) {
     const before = await scrollMetric(page);
     const mainBox = await page.locator('[data-testid="qa-main-content"]').boundingBox().catch(() => null);
     if (mainBox) {
+      const viewport = page.viewportSize() || { width: 1280, height: 720 };
+      const targetX = Math.min(
+        viewport.width - 12,
+        Math.max(12, mainBox.x + Math.min(mainBox.width - 8, Math.max(8, mainBox.width / 2))),
+      );
+      const targetY = Math.min(
+        viewport.height - 12,
+        Math.max(12, mainBox.y + Math.min(mainBox.height - 8, Math.max(8, mainBox.height / 2))),
+      );
       await page.mouse.move(
-        mainBox.x + Math.min(mainBox.width - 8, Math.max(8, mainBox.width / 2)),
-        mainBox.y + Math.min(mainBox.height - 8, Math.max(8, mainBox.height / 2)),
+        targetX,
+        targetY,
       );
     } else {
       await page.mouse.move(900, 450);
