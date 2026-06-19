@@ -2231,6 +2231,77 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 
 Local QA result is `PARTIAL` only for the accepted external cookieless viewer limitation. No production deploy has been done in this step yet.
 
+### 2026-06-19: Release A2 - photo report integrity
+
+**Request.** Continue the working-cycles stage by release, without claiming the whole stage is complete. Release A2 must close the photo-report data contradictions:
+
+- reject photo reports without files;
+- link `task` and `photo_report`;
+- allow no more than one active report per task;
+- deduplicate repeated reports;
+- use one `PhotoReportStatusService`;
+- remove contradictions where an object has a report for a date and still receives a "no photo report" signal.
+
+**Backup before changes.**
+
+Production backup was created before A2 implementation:
+
+- database: `/backups/construction-20260619-033227.db`;
+- uploads: `/backups/uploads-20260619-033227.zip`.
+
+**What changed.**
+
+- Added `task_id` and `files_count` to `photo_reports`.
+- Added data backfill:
+  - recalculates `files_count` from `photo_report_documents`;
+  - marks old active reports with zero files as `invalid_empty`;
+  - marks repeated active reports as `duplicate`.
+- Added a unique SQLite index that prevents more than one active report for the same task after dedupe has run.
+- Added `PhotoReportStatusService` in the server:
+  - normalizes report statuses;
+  - decides whether a report counts as a real present photo report;
+  - excludes `invalid_empty`, `duplicate`, `superseded`, cancelled/rejected/returned reports from "report exists" logic.
+- Updated `POST /api/photo-reports`:
+  - rejects empty uploads with HTTP 400;
+  - validates that a linked task belongs to the same object;
+  - stores `task_id`;
+  - returns an existing active report on retry instead of creating a duplicate;
+  - updates `files_count`;
+  - moves the linked task to `waiting_check`.
+- Updated frontend "latest photo report" logic so empty/duplicate/returned reports do not clear the "no photo report today" signal.
+- Added `tests/e2e/photo-report-integrity.spec.ts`.
+- Added `Photo Report Integrity QA Agent` to the permanent QA runner and made it mandatory for full QA.
+- Updated snapshot so Release A2 shows:
+  - `photo_report_integrity`;
+  - `photo_report_deduplication`;
+  - `photo_report_task_link`;
+  - `missing_report_consistency`.
+- Updated `CODEX_RULES.md` with mandatory Release A2 QA rules.
+
+**Checks.**
+
+- Python syntax: OK.
+- JS syntax: OK.
+- Compat frontend bundle rebuilt.
+- Targeted A2 QA runner: PASS.
+- Targeted Playwright test `photo-report-integrity.spec.ts`: 2/2 passed on desktop and mobile.
+- Full QA report:
+  - lint: OK;
+  - typecheck: OK;
+  - unit: OK;
+  - scroll: OK;
+  - buttons: OK;
+  - navigation: OK;
+  - mobile: OK;
+  - readonly: PARTIAL only because `external_cookieless_viewer` is intentionally unsupported;
+  - workflow: OK;
+  - photo_report_integrity: OK;
+  - critical errors: 0.
+
+**Result.**
+
+Local QA result is `PARTIAL` only for the accepted external cookieless viewer limitation. Production deployment and production `/version` verification must still be completed for this release.
+
 ### 2026-06-18: Release B1 - task ownership groups
 
 **Request.** Make the task list explain what the current user needs to do next, instead of showing one flat list.

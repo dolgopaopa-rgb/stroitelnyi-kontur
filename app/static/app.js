@@ -134,6 +134,11 @@ const statusLabelMap = {
   waiting_check: "Ждёт проверки",
   in_progress_task: "В работе",
   review: "На проверке",
+  uploaded: "Загружен",
+  checked: "Проверен",
+  invalid_empty: "Без файлов",
+  duplicate: "Дубликат",
+  superseded: "Заменён",
   completed_pending_acceptance: "Ждёт проверки",
   accepted: "Выполнение принято",
   cancelled: "Отменена",
@@ -250,11 +255,11 @@ function statusLabel(value) {
 
 function statusLevel(value, fallback = "") {
   const key = String(value || "");
-  if (["overdue", "danger", "problem", "returned", "revision_requested", "rejected", "receipt_issue", "quality_problem", "no_material"].includes(key)) return "danger";
+  if (["overdue", "danger", "problem", "returned", "revision_requested", "rejected", "receipt_issue", "quality_problem", "no_material", "invalid_empty"].includes(key)) return "danger";
   if (["warning", "review", "completed_pending_acceptance", "waiting_check", "estimate_question", "estimate_returned", "submitted_to_construction", "decision_required", "need_approval", "estimate_hold", "new", "feedback_new", "open", "waiting_external", "waiting_client_decision", "waiting_owner_decision", "waiting_project_documentation", "estimate_not_approved", "subcontractor_problem", "no_photo_report", "approval", "check"].includes(key)) return "warning";
-  if (["success", "accepted", "approved", "closed", "completed", "received", "on_site", "agreed", "done", "feedback_done", "estimate_done", "resolved"].includes(key)) return "success";
+  if (["success", "accepted", "approved", "closed", "completed", "received", "on_site", "agreed", "done", "feedback_done", "estimate_done", "resolved", "checked"].includes(key)) return "success";
   if (["blue", "in_progress", "in_progress_task", "ordered", "in_transit", "delivery_scheduled", "delivery_confirmed", "estimate_in_work", "in_review", "active", "in_work", "feedback_in_work", "material"].includes(key)) return "blue";
-  if (["draft", "archived", "estimate_new", "not_required"].includes(key)) return "";
+  if (["draft", "archived", "estimate_new", "not_required", "duplicate", "superseded"].includes(key)) return "";
   return fallback;
 }
 
@@ -3472,8 +3477,15 @@ function projectPhotoReports(projectId) {
   return (state.photoReports || []).filter((report) => Number(report.project_id) === Number(projectId));
 }
 
+function photoReportCountsAsPresent(report) {
+  const status = String(report.status_normalized || report.status || "");
+  const filesCount = Number(report.files_count || (report.attachments || []).length || 0);
+  return Boolean(report.is_valid_report !== false && filesCount > 0 && !["invalid_empty", "duplicate", "superseded", "cancelled", "rejected", "returned"].includes(status));
+}
+
 function latestPhotoReportDate(projectId) {
   return projectPhotoReports(projectId)
+    .filter(photoReportCountsAsPresent)
     .map((report) => dateOnly(report.report_date || report.created_at))
     .filter(Boolean)
     .sort()
@@ -4467,6 +4479,7 @@ function projectDetailBatches(project) {
 function projectLatestPhoto(project) {
   const reports = project.photo_reports || [];
   return reports
+    .filter(photoReportCountsAsPresent)
     .map((report) => dateOnly(report.report_date || report.created_at))
     .filter(Boolean)
     .sort()

@@ -16,6 +16,7 @@ const suite = arg("--suite", "all");
 const localQaPort = process.env.KONTUR_QA_PORT || "8765";
 const baseUrl = (process.env.KONTUR_BASE_URL || `http://127.0.0.1:${localQaPort}`).replace(/\/$/, "");
 const externalBaseUrl = (process.env.KONTUR_EXTERNAL_BASE_URL || "https://kontur.derevgroup.ru").replace(/\/$/, "");
+const isLocalBaseUrl = /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(?::|\/|$)/i.test(baseUrl);
 
 const rolePanelChecks = [
   ["owner", "today-role-owner", "owner"],
@@ -48,11 +49,15 @@ const agentNames = [
   "Read-only Safety QA Agent",
   "UX Sanity QA Agent",
   "Workflow QA Agent",
+  "Photo Report Integrity QA Agent",
   "Mobile QA Agent",
   "Console Error QA Agent",
   "Visual Regression QA Agent",
   "MAX Report Format QA Agent",
 ];
+
+const tinyPngBase64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
 
 function arg(name, fallback = "") {
   const index = process.argv.indexOf(name);
@@ -183,11 +188,13 @@ async function preparePage(playwright, viewport = { width: 1366, height: 900 }) 
   const errors = [];
   const page = await context.newPage();
   page.on("console", (message) => {
+    if (message.type() === "error" && /Failed to load resource: the server responded with a status of 400/.test(message.text())) return;
     if (message.type() === "error") errors.push(`console.error: ${message.text()}`);
   });
   page.on("pageerror", (error) => errors.push(`pageerror: ${error.message}`));
   page.on("response", (response) => {
     const url = response.url();
+    if (response.status() === 400 && response.request().method() === "POST" && url.includes("/api/photo-reports")) return;
     if (response.status() >= 400 && response.status() !== 403) errors.push(`response: ${response.status()} ${url}`);
   });
   page.on("requestfailed", (request) => {
@@ -387,6 +394,7 @@ with connect() as db:
     for doc in doc_ids:
         if not db.execute("SELECT id FROM photo_report_documents WHERE photo_report_id = ? AND document_id = ?", (report, doc)).fetchone():
             db.execute("INSERT INTO photo_report_documents (photo_report_id, document_id) VALUES (?, ?)", (report, doc))
+    db.execute("UPDATE photo_reports SET files_count = ? WHERE id = ?", (len(doc_ids), report))
     db.commit()
     print(f"fixture ok project={project}")
 `;
@@ -406,6 +414,14 @@ async function runScroll(results, page) {
   const routes = ["today", "projects", "tasks", "materials", "photos", "object_remarks", "documents", "dashboard", "feedback"];
   for (const view of routes) {
     await route(page, view);
+    await page
+      .evaluate(() => {
+        for (const node of [document.scrollingElement, document.documentElement, document.body, document.querySelector('[data-testid="qa-main-content"]'), document.querySelector('[data-testid="qa-scroll-root"]')].filter(Boolean)) {
+          node.scrollTop = 0;
+        }
+        window.scrollTo(0, 0);
+      })
+      .catch(() => {});
     const before = await scrollMetric(page);
     const mainBox = await page.locator('[data-testid="qa-main-content"]').boundingBox().catch(() => null);
     if (mainBox) {
@@ -896,6 +912,183 @@ async function runWorkflow(results, page) {
   );
 }
 
+async function runPhotoReportIntegrity(results, page) {
+  await route(page, "today");
+  const scenario = await page
+    .evaluate(async (imageBase64) => {
+      const today = new Date().toISOString().slice(0, 10);
+      const projectsResponse = await fetch("/api/projects", { cache: "no-store" });
+      if (!projectsResponse.ok) return { setupError: `projects:${projectsResponse.status}` };
+      const projects = await projectsResponse.json();
+      const project = projects.find((item) => item.status !== "archived") || projects[0];
+      if (!project) return { setupError: "no_project" };
+
+      const taskResponse = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project_id: project.id,
+          title: `QA A2 photo report ${Date.now()}`,
+          task_type: "photo_report",
+          assignee_id: Number(project.foreman_id || 7),
+          reviewer_id: 2,
+          due_date: today,
+          priority: "high",
+          description: "QA A2: photo report integrity fixture.",
+        }),
+      });
+      if (!taskResponse.ok) return { setupError: `task:${taskResponse.status}` };
+      const task = await taskResponse.json();
+
+      const emptyResponse = await fetch("/api/photo-reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project_id: project.id,
+          report_date: today,
+          related_task_ids: [task.id],
+          task_id: task.id,
+          comment: "QA A2 empty report must be rejected",
+          attachments: [],
+        }),
+      });
+
+      const fileName = `qa-a2-photo-${Date.now()}.png`;
+      const validPayload = {
+        project_id: project.id,
+        report_date: today,
+        related_task_ids: [task.id],
+        task_id: task.id,
+        stage: "QA A2",
+        zones: "Integrity",
+        comment: "QA A2 valid photo report",
+        status: "review",
+        attachments: [
+          {
+            title: fileName,
+            file_name: fileName,
+            mime_type: "image/png",
+            file_base64: imageBase64,
+          },
+        ],
+      };
+      const validResponse = await fetch("/api/photo-reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(validPayload),
+      });
+      const validJson = await validResponse.json().catch(() => ({}));
+
+      const duplicateResponse = await fetch("/api/photo-reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...validPayload,
+          comment: "QA A2 valid photo report retry",
+          attachments: [
+            {
+              title: `retry-${fileName}`,
+              file_name: `retry-${fileName}`,
+              mime_type: "image/png",
+              file_base64: imageBase64,
+            },
+          ],
+        }),
+      });
+      const duplicateJson = await duplicateResponse.json().catch(() => ({}));
+
+      const reportsResponse = await fetch(`/api/photo-reports?project_id=${project.id}`, { cache: "no-store" });
+      const reports = reportsResponse.ok ? await reportsResponse.json() : [];
+      const reportsForTask = reports.filter((report) => Number(report.task_id || 0) === Number(task.id));
+      const visibleInvalidEmpty = reports.some(
+        (report) => report.status_normalized === "invalid_empty" || Number(report.files_count || report.attachments?.length || 0) <= 0,
+      );
+
+      const tasksResponse = await fetch("/api/tasks", { cache: "no-store" });
+      const tasks = tasksResponse.ok ? await tasksResponse.json() : [];
+      const taskAfter = tasks.find((item) => Number(item.id) === Number(task.id));
+
+      return {
+        projectTitle: project.title,
+        taskId: task.id,
+        emptyStatus: emptyResponse.status,
+        validStatus: validResponse.status,
+        validId: Number(validJson.id || 0),
+        validTaskId: Number(validJson.task_id || 0),
+        duplicateStatus: duplicateResponse.status,
+        duplicate: Boolean(duplicateJson.duplicate),
+        duplicateSameId: Number(duplicateJson.id || 0) === Number(validJson.id || 0),
+        reportsForTask: reportsForTask.length,
+        validReportsForTask: reportsForTask.filter(
+          (report) => report.is_valid_report !== false && Number(report.files_count || report.attachments?.length || 0) > 0,
+        ).length,
+        visibleInvalidEmpty,
+        taskStatus: taskAfter?.status || "",
+      };
+    }, tinyPngBase64)
+    .catch((error) => ({ setupError: String(error) }));
+
+  if (scenario.setupError) {
+    add(results, "Photo Report Integrity QA Agent", "Photo report scenario setup", "FAIL", scenario.setupError, "blocker");
+    return;
+  }
+
+  const integrityOk =
+    scenario.emptyStatus === 400 &&
+    scenario.validStatus === 201 &&
+    scenario.validId > 0 &&
+    scenario.validReportsForTask === 1 &&
+    scenario.visibleInvalidEmpty === false;
+  add(
+    results,
+    "Photo Report Integrity QA Agent",
+    "Photo report integrity",
+    integrityOk ? "OK" : "FAIL",
+    `emptyStatus=${scenario.emptyStatus}; validStatus=${scenario.validStatus}; validId=${scenario.validId}; validReportsForTask=${scenario.validReportsForTask}; visibleInvalidEmpty=${scenario.visibleInvalidEmpty}`,
+    integrityOk ? "normal" : "blocker",
+    "",
+    { photoReportChecksChecked: 1 },
+  );
+
+  const linkOk = scenario.validTaskId === Number(scenario.taskId) && scenario.taskStatus === "waiting_check";
+  add(
+    results,
+    "Photo Report Integrity QA Agent",
+    "Photo report task link",
+    linkOk ? "OK" : "FAIL",
+    `taskId=${scenario.taskId}; validTaskId=${scenario.validTaskId}; taskStatus=${scenario.taskStatus}`,
+    linkOk ? "normal" : "blocker",
+    "",
+    { photoReportChecksChecked: 1 },
+  );
+
+  const dedupeOk = scenario.duplicateStatus === 200 && scenario.duplicate && scenario.duplicateSameId && scenario.reportsForTask === 1;
+  add(
+    results,
+    "Photo Report Integrity QA Agent",
+    "Photo report deduplication",
+    dedupeOk ? "OK" : "FAIL",
+    `duplicateStatus=${scenario.duplicateStatus}; duplicate=${scenario.duplicate}; duplicateSameId=${scenario.duplicateSameId}; reportsForTask=${scenario.reportsForTask}`,
+    dedupeOk ? "normal" : "blocker",
+    "",
+    { photoReportChecksChecked: 1 },
+  );
+
+  await route(page, "today");
+  const noPhotoText = await page.locator("#todayNoPhoto").innerText().catch(() => "");
+  const consistencyOk = !String(noPhotoText || "").includes(scenario.projectTitle || "__missing__");
+  add(
+    results,
+    "Photo Report Integrity QA Agent",
+    "Missing photo report consistency",
+    consistencyOk ? "OK" : "FAIL",
+    `project=${scenario.projectTitle}; noPhotoContainsProject=${!consistencyOk}`,
+    consistencyOk ? "normal" : "blocker",
+    "",
+    { photoReportChecksChecked: 1 },
+  );
+}
+
 async function runMobile(results, playwright) {
   const viewports = [
     { width: 390, height: 844 },
@@ -1118,6 +1311,7 @@ function checksSummary(results) {
   map.mobile = agentSummary("Mobile QA Agent");
   map.readonly = agentSummary("Read-only Safety QA Agent");
   map.workflow = agentSummary("Workflow QA Agent");
+  map.photo_report_integrity = agentSummary("Photo Report Integrity QA Agent");
   return map;
 }
 
@@ -1170,6 +1364,7 @@ function buildCoverage(results) {
     blocker_cards_checked: maxMeta(results, "blockerCardsChecked"),
     material_cards_checked: maxMeta(results, "materialCardsChecked"),
     workflow_rules_checked: maxMeta(results, "workflowRulesChecked"),
+    photo_report_checks_checked: maxMeta(results, "photoReportChecksChecked"),
     buttons_checked: Math.max(sumMeta(results, "buttonsChecked"), buttonResults.length),
     mobile_viewports_checked: results.filter((item) => item.agent === "Mobile QA Agent" && item.name.startsWith("Viewport ")).length,
     mobile_quick_actions_checked: maxMeta(results, "mobileQuickActionsChecked"),
@@ -1250,6 +1445,10 @@ function writeReport(results, startedAt, finishedAt, mandatorySuites, environmen
       console_errors: results.some((item) => item.agent === "Console Error QA Agent" && item.status === "FAIL") ? "failed" : results.some((item) => item.agent === "Console Error QA Agent") ? "ok" : "not_run",
       visual_regression: results.some((item) => item.agent === "Visual Regression QA Agent") ? "ok" : "not_run",
       max_report_format: results.some((item) => item.agent === "MAX Report Format QA Agent" && item.status === "FAIL") ? "failed" : results.some((item) => item.agent === "MAX Report Format QA Agent") ? "ok" : "not_run",
+      photo_report_integrity: checkQaStatus("Photo Report Integrity QA Agent", "Photo report integrity"),
+      photo_report_deduplication: checkQaStatus("Photo Report Integrity QA Agent", "Photo report deduplication"),
+      photo_report_task_link: checkQaStatus("Photo Report Integrity QA Agent", "Photo report task link"),
+      missing_report_consistency: checkQaStatus("Photo Report Integrity QA Agent", "Missing photo report consistency"),
       object_card_control_center: results.some((item) => item.agent === "Visual Regression QA Agent" && item.name.includes("projects")) ? "ok" : "not_run",
       blockers: "ok",
       task_card_layout: checkQaStatus("UX Sanity QA Agent", "Task card separates title, meta and status"),
@@ -1333,6 +1532,7 @@ function writeReport(results, startedAt, finishedAt, mandatorySuites, environmen
     `- blocker_cards_checked: ${coverage.blocker_cards_checked}`,
     `- material_cards_checked: ${coverage.material_cards_checked}`,
     `- workflow_rules_checked: ${coverage.workflow_rules_checked}`,
+    `- photo_report_checks_checked: ${coverage.photo_report_checks_checked}`,
     `- buttons_checked: ${coverage.buttons_checked}`,
     `- mobile_viewports_checked: ${coverage.mobile_viewports_checked}`,
     `- mobile_quick_actions_checked: ${coverage.mobile_quick_actions_checked}`,
@@ -1380,16 +1580,16 @@ async function main() {
   ensureDirs();
   const startedAt = new Date().toISOString();
   const results = [];
-  const mandatory = suite === "all" || suite === "report" ? ["lint", "typecheck", "unit", "scroll", "buttons", "navigation", "mobile", "readonly", "workflow"] : [];
+  const mandatory = suite === "all" || suite === "report" ? ["lint", "typecheck", "unit", "scroll", "buttons", "navigation", "mobile", "readonly", "workflow", "photo_report_integrity"] : [];
   let serverProcess = null;
   let browser = null;
   try {
     if (["lint", "all", "report"].includes(suite)) await runLint(results);
     if (["typecheck", "all", "report"].includes(suite)) await runTypecheck(results);
     if (["unit", "all", "report"].includes(suite)) await runUnit(results);
-    if (["all", "report", "mobile"].includes(suite)) ensureLocalQaFixtures(results);
+    if (isLocalBaseUrl && ["all", "report", "mobile"].includes(suite)) ensureLocalQaFixtures(results);
 
-    const needsBrowser = ["smoke", "scroll", "buttons", "navigation", "roles", "readonly", "mobile", "all", "report"].includes(suite);
+    const needsBrowser = ["smoke", "scroll", "buttons", "navigation", "roles", "readonly", "mobile", "photo_report_integrity", "all", "report"].includes(suite);
     let playwright = null;
     let page = null;
     let errors = [];
@@ -1409,6 +1609,7 @@ async function main() {
       if (["mobile", "all", "report"].includes(suite)) await runMobile(results, playwright);
       if (["all", "report"].includes(suite)) await runUx(results, page);
       if (["all", "report"].includes(suite)) await runWorkflow(results, page);
+      if (["photo_report_integrity", "all", "report"].includes(suite)) await runPhotoReportIntegrity(results, page);
       if (["all", "report"].includes(suite)) await runVisual(results, page);
       add(results, "Console Error QA Agent", "Browser console", errors.length ? "FAIL" : "OK", errors.join("\n") || "No console/page/request errors.", errors.length ? "blocker" : "normal");
     }

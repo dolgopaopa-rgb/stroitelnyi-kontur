@@ -132,3 +132,18 @@ For the "working cycles and real-use UX" stage, QA must verify business logic, n
 6. If these tests do not run, Release A cannot be marked PASS.
 7. `Workflow QA Agent` must run inside `npm run test:qa` / `npm run test:qa:report`; if workflow checks are not run or fail, the task lifecycle release cannot be marked PASS.
 8. The test `role-task-ownership.spec.ts` is mandatory for Release B1 changes that group tasks by role responsibility.
+
+## Release A2 photo report QA
+
+Release A2 changes are not complete until the following checks are present in `qa-report.json` and snapshot:
+
+1. `photo_report_integrity`: a photo report without files must be rejected with 400; a report with at least one file must be accepted.
+2. `photo_report_task_link`: a photo report tied to a task must store `task_id` and move the task to `waiting_check`.
+3. `photo_report_deduplication`: repeating upload for the same task must return the existing active report instead of creating a duplicate.
+4. `missing_report_consistency`: an object with a valid photo report for today must not appear in the "no photo report today" signal.
+5. Existing empty reports must be marked `invalid_empty`; existing repeated active reports must be marked `duplicate`.
+6. `Photo Report Integrity QA Agent` is mandatory in `npm run test:qa` / `npm run test:qa:report`.
+7. `tests/e2e/photo-report-integrity.spec.ts` must pass on desktop and mobile.
+8. If `photo_report_integrity`, `photo_report_deduplication`, `photo_report_task_link`, or `missing_report_consistency` is `not_run`, `partial`, or `failed`, Release A2 cannot be marked production-ready.
+
+Scroll QA must reset scroll positions before measuring wheel movement. A page that is already at the bottom must not produce a false scroll failure, but a genuinely non-scrollable long page is still a BLOCKER.

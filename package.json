@@ -14,6 +14,7 @@
     "test:qa:buttons": "node tools/qa/run-quality-gate.mjs --suite buttons",
     "test:qa:mobile": "node tools/qa/run-quality-gate.mjs --suite mobile",
     "test:qa:readonly": "node tools/qa/run-quality-gate.mjs --suite readonly",
+    "test:qa:photo-report": "node tools/qa/run-quality-gate.mjs --suite photo_report_integrity",
     "test:qa:report": "node tools/qa/run-quality-gate.mjs --suite report"
   },
   "devDependencies": {

@@ -168,15 +168,18 @@ def init_db() -> None:
                 project_id INTEGER NOT NULL,
                 report_date TEXT NOT NULL,
                 author_id INTEGER,
+                task_id INTEGER,
                 stage TEXT,
                 zones TEXT,
                 comment TEXT,
                 related_task_ids TEXT,
+                files_count INTEGER NOT NULL DEFAULT 0,
                 status TEXT NOT NULL DEFAULT 'review',
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
-                FOREIGN KEY (author_id) REFERENCES users(id)
+                FOREIGN KEY (author_id) REFERENCES users(id),
+                FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL
             );
 
             CREATE TABLE IF NOT EXISTS photo_report_documents (
@@ -593,6 +596,9 @@ def init_db() -> None:
         ensure_column(db, "documents", "file_size", "INTEGER")
         ensure_column(db, "documents", "folder_id", "INTEGER")
         db.execute("CREATE INDEX IF NOT EXISTS idx_documents_folder ON documents(folder_id)")
+        ensure_column(db, "photo_reports", "task_id", "INTEGER")
+        ensure_column(db, "photo_reports", "files_count", "INTEGER NOT NULL DEFAULT 0")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_photo_reports_task ON photo_reports(task_id)")
         ensure_column(db, "documents", "related_section", "TEXT")
         ensure_column(db, "documents", "contract_id", "INTEGER")
         ensure_column(db, "documents", "process_type", "TEXT")
@@ -631,6 +637,16 @@ def init_db() -> None:
         backfill_material_request_batches(db)
         backfill_project_customers(db)
         backfill_task_titles(db)
+        backfill_photo_report_files_count(db)
+        dedupe_photo_reports(db)
+        db.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_photo_reports_one_active_task
+            ON photo_reports(task_id)
+            WHERE task_id IS NOT NULL
+              AND status NOT IN ('archived', 'cancelled', 'duplicate', 'invalid_empty', 'rejected', 'superseded')
+            """
+        )
 
 
 def ensure_column(db: sqlite3.Connection, table: str, column: str, definition: str) -> None:
@@ -662,6 +678,76 @@ def backfill_task_titles(db: sqlite3.Connection) -> None:
             WHERE id = ?
             """,
             (next_description, row["id"]),
+        )
+
+
+def backfill_photo_report_files_count(db: sqlite3.Connection) -> None:
+    db.execute(
+        """
+        UPDATE photo_reports
+        SET files_count = (
+            SELECT COUNT(*)
+            FROM photo_report_documents prd
+            WHERE prd.photo_report_id = photo_reports.id
+        )
+        WHERE files_count IS NULL
+           OR files_count != (
+               SELECT COUNT(*)
+               FROM photo_report_documents prd
+               WHERE prd.photo_report_id = photo_reports.id
+           )
+        """
+    )
+    db.execute(
+        """
+        UPDATE photo_reports
+        SET status = 'invalid_empty',
+            updated_at = CURRENT_TIMESTAMP
+        WHERE COALESCE(files_count, 0) <= 0
+          AND status NOT IN ('archived', 'cancelled', 'duplicate', 'invalid_empty', 'rejected', 'superseded')
+        """
+    )
+
+
+def dedupe_photo_reports(db: sqlite3.Connection) -> None:
+    rows = db.execute(
+        """
+        SELECT id, task_id, project_id, report_date, author_id, stage, zones, comment, created_at
+        FROM photo_reports
+        WHERE COALESCE(files_count, 0) > 0
+          AND status NOT IN ('archived', 'cancelled', 'duplicate', 'invalid_empty', 'rejected', 'superseded')
+        ORDER BY datetime(COALESCE(created_at, '1970-01-01')) DESC, id DESC
+        """
+    ).fetchall()
+    seen: set[tuple] = set()
+    duplicate_ids: list[int] = []
+    for row in rows:
+        task_id = row["task_id"]
+        if task_id:
+            key = ("task", int(task_id))
+        else:
+            key = (
+                "project-date-author-text",
+                int(row["project_id"] or 0),
+                str(row["report_date"] or "")[:10],
+                int(row["author_id"] or 0),
+                str(row["stage"] or "").strip().lower(),
+                str(row["zones"] or "").strip().lower(),
+                str(row["comment"] or "").strip().lower(),
+            )
+        if key in seen:
+            duplicate_ids.append(int(row["id"]))
+        else:
+            seen.add(key)
+    if duplicate_ids:
+        db.executemany(
+            """
+            UPDATE photo_reports
+            SET status = 'duplicate',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            [(report_id,) for report_id in duplicate_ids],
         )
 
 

@@ -2892,6 +2892,171 @@ def save_process_attachments(
     return document_ids
 
 
+class PhotoReportStatusService:
+    INACTIVE_STATUSES = {"archived", "cancelled", "duplicate", "invalid_empty", "rejected", "superseded"}
+    PRESENT_STATUSES = {"accepted", "checked", "review", "uploaded", "in_review", "waiting_check"}
+
+    @classmethod
+    def file_count(cls, row: dict) -> int:
+        try:
+            return int(row.get("files_count") or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    @classmethod
+    def normalize(cls, status: object, files_count: object = 0) -> str:
+        raw = str(status or "review").strip() or "review"
+        try:
+            count = int(files_count or 0)
+        except (TypeError, ValueError):
+            count = 0
+        if count <= 0:
+            return "invalid_empty"
+        if raw in {"new", "review", "in_review", "waiting_check", "uploaded"}:
+            return "uploaded"
+        if raw in {"accepted", "checked"}:
+            return "checked"
+        if raw in {"returned", "rejected"}:
+            return "returned"
+        if raw in cls.INACTIVE_STATUSES:
+            return raw
+        return raw
+
+    @classmethod
+    def counts_as_present(cls, row: dict) -> bool:
+        normalized = cls.normalize(row.get("status"), row.get("files_count"))
+        return cls.file_count(row) > 0 and normalized not in cls.INACTIVE_STATUSES | {"required", "returned"}
+
+    @classmethod
+    def is_active_for_task(cls, row: dict) -> bool:
+        return cls.file_count(row) > 0 and str(row.get("status") or "") not in cls.INACTIVE_STATUSES
+
+
+def parse_id_list(value: object) -> list[int]:
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return []
+        try:
+            value = json.loads(text)
+        except json.JSONDecodeError:
+            value = [item for item in re.split(r"[,;\s]+", text) if item]
+    if not isinstance(value, list):
+        value = [value]
+    ids: list[int] = []
+    for item in value:
+        try:
+            number = int(item or 0)
+        except (TypeError, ValueError):
+            continue
+        if number and number not in ids:
+            ids.append(number)
+    return ids
+
+
+def photo_report_task_id_from_payload(db, data: dict, project_id: int) -> int | None:
+    task_ids = parse_id_list(data.get("task_id") or data.get("related_task_ids"))
+    if not task_ids:
+        return None
+    task_id = int(task_ids[0])
+    task = db.execute("SELECT id, project_id FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    if not task:
+        raise ValueError("Связанная задача для фотоотчёта не найдена.")
+    if int(task["project_id"]) != int(project_id):
+        raise ValueError("Фотоотчёт нельзя привязать к задаче другого объекта.")
+    return task_id
+
+
+def active_photo_report_for_task(db, task_id: int | None) -> dict | None:
+    if not task_id:
+        return None
+    row = db.execute(
+        """
+        SELECT *
+        FROM photo_reports
+        WHERE task_id = ?
+          AND COALESCE(files_count, 0) > 0
+          AND status NOT IN ('archived', 'cancelled', 'duplicate', 'invalid_empty', 'rejected', 'superseded')
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+        """,
+        (task_id,),
+    ).fetchone()
+    return row_to_dict(row) if row else None
+
+
+def duplicate_photo_report_without_task(
+    db,
+    *,
+    project_id: int,
+    report_date: str,
+    author_id: int | None,
+    comment: str,
+    stage: str,
+    zones: str,
+) -> dict | None:
+    row = db.execute(
+        """
+        SELECT *
+        FROM photo_reports
+        WHERE project_id = ?
+          AND report_date = ?
+          AND COALESCE(author_id, 0) = COALESCE(?, 0)
+          AND COALESCE(comment, '') = ?
+          AND COALESCE(stage, '') = ?
+          AND COALESCE(zones, '') = ?
+          AND COALESCE(files_count, 0) > 0
+          AND status NOT IN ('archived', 'cancelled', 'duplicate', 'invalid_empty', 'rejected', 'superseded')
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+        """,
+        (project_id, report_date, author_id, comment, stage, zones),
+    ).fetchone()
+    return row_to_dict(row) if row else None
+
+
+def mark_photo_task_waiting_check(db, *, task_id: int | None, report_id: int, actor_id: int | None) -> None:
+    if not task_id:
+        return
+    task = db.execute(
+        """
+        SELECT t.*, p.title AS project_title
+        FROM tasks t
+        JOIN projects p ON p.id = t.project_id
+        WHERE t.id = ?
+        """,
+        (task_id,),
+    ).fetchone()
+    if not task:
+        return
+    task = row_to_dict(task)
+    if task_status_key(task) not in {"new", "in_progress", "returned"}:
+        return
+    db.execute(
+        """
+        UPDATE tasks
+        SET status = 'waiting_check',
+            completed_at = CURRENT_TIMESTAMP,
+            submitted_at = CURRENT_TIMESTAMP,
+            review_due_at = COALESCE(review_due_at, date('now', '+1 day')),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (task_id,),
+    )
+    create_task_event(
+        db,
+        task_id=task_id,
+        project_id=task["project_id"],
+        actor_id=actor_id or task["assignee_id"],
+        action="photo_report_submitted",
+        status_from=task["status"],
+        status_to="waiting_check",
+        comment=f"Фотоотчёт #{report_id} прикреплён к задаче и отправлен на проверку.",
+        due_date=task["due_date"],
+    )
+
+
 def photo_reports_payload(db, account: dict | None, project_id: int | None = None) -> list[dict]:
     params: list[object] = []
     where = "WHERE p.status != 'archived'"
@@ -2902,10 +3067,16 @@ def photo_reports_payload(db, account: dict | None, project_id: int | None = Non
         db.execute(
             f"""
             SELECT r.*, p.title AS project_title, p.foreman_id, p.foreman_id AS project_foreman_id,
+                   COALESCE(doc_counts.files_count, 0) AS attachment_count,
                    author.name AS author_name, author.role AS author_role
             FROM photo_reports r
             JOIN projects p ON p.id = r.project_id
             LEFT JOIN users author ON author.id = r.author_id
+            LEFT JOIN (
+                SELECT photo_report_id, COUNT(*) AS files_count
+                FROM photo_report_documents
+                GROUP BY photo_report_id
+            ) doc_counts ON doc_counts.photo_report_id = r.id
             {where}
             ORDER BY r.report_date DESC, r.created_at DESC, r.id DESC
             """,
@@ -2932,9 +3103,36 @@ def photo_reports_payload(db, account: dict | None, project_id: int | None = Non
     docs_by_report: dict[int, list[dict]] = {}
     for doc in document_rows:
         docs_by_report.setdefault(int(doc["photo_report_id"]), []).append(doc)
+    normalized_rows: list[dict] = []
+    seen_active_keys: set[tuple] = set()
     for row in rows:
-        row["attachments"] = filter_documents_for_account(docs_by_report.get(int(row["id"]), []), account)
-    return rows
+        attachments = filter_documents_for_account(docs_by_report.get(int(row["id"]), []), account)
+        file_count = int(row.get("attachment_count") or row.get("files_count") or len(attachments) or 0)
+        row["files_count"] = file_count
+        row["attachments"] = attachments
+        row["status_normalized"] = PhotoReportStatusService.normalize(row.get("status"), file_count)
+        row["is_valid_report"] = PhotoReportStatusService.counts_as_present(row)
+        if row["status_normalized"] in {"duplicate", "invalid_empty", "superseded"}:
+            continue
+        if row["is_valid_report"]:
+            task_key = int(row.get("task_id") or 0)
+            key = (
+                "task",
+                task_key,
+            ) if task_key else (
+                "project-date-author-text",
+                int(row.get("project_id") or 0),
+                str(row.get("report_date") or "")[:10],
+                int(row.get("author_id") or 0),
+                str(row.get("stage") or "").strip().lower(),
+                str(row.get("zones") or "").strip().lower(),
+                str(row.get("comment") or "").strip().lower(),
+            )
+            if key in seen_active_keys:
+                continue
+            seen_active_keys.add(key)
+        normalized_rows.append(row)
+    return normalized_rows
 
 
 def object_remarks_payload(db, account: dict | None, project_id: int | None = None) -> list[dict]:
@@ -3759,6 +3957,7 @@ class AppHandler(BaseHTTPRequestHandler):
             <h1>{html.escape(title)}</h1>
             <p class="muted">Токен в открытом виде не показывается и не записывается в журнал.</p>
             <div class="grid">
+              {block("Release A2: photo reports", ["Reject empty report", "Check task link", "Check duplicates"], ["A2", "PhotoReportStatusService", "Consistency"], release_a2_body)}
               <div class="row"><span>reason</span><strong>{html.escape(str(reason))}</strong></div>
               <div class="row"><span>expires_at</span><strong>{html.escape(str(diagnostic.get('expires_at') or 'не задан'))}</strong></div>
               <div class="row"><span>uses_left</span><strong>{html.escape(str(diagnostic.get('uses_left') or 0))}</strong></div>
@@ -4347,7 +4546,13 @@ class AppHandler(BaseHTTPRequestHandler):
         returned_tasks = [task for task in task_rows if str(task.get("status") or "") == "returned"]
         waiting_tasks = [task for task in task_rows if task_is_waiting_check(task)]
         risky_materials = [row for row in material_rows if material_is_risky(row)]
-        no_photo_projects = [project for project in project_rows if int(project.get("id") or 0) not in {int(row.get("project_id") or 0) for row in photo_rows if str(row.get("report_date") or row.get("created_at") or "")[:10] == today}]
+        valid_photo_project_ids_today = {
+            int(row.get("project_id") or 0)
+            for row in photo_rows
+            if str(row.get("report_date") or row.get("created_at") or "")[:10] == today
+            and PhotoReportStatusService.counts_as_present(row)
+        }
+        no_photo_projects = [project for project in project_rows if int(project.get("id") or 0) not in valid_photo_project_ids_today]
 
         def decision_card(item: dict) -> str:
             return f"""
@@ -4532,6 +4737,16 @@ class AppHandler(BaseHTTPRequestHandler):
         stage3_body = "".join(
             f'<div class="meta-row"><span><code>{e(key)}</code></span><strong>{e(value)}</strong></div>'
             for key, value in stage3_checks.items()
+        )
+        release_a2_checks = {
+            "photo_report_integrity": qa_snapshot_status(qa_report, "photo_report_integrity"),
+            "photo_report_deduplication": qa_snapshot_status(qa_report, "photo_report_deduplication"),
+            "photo_report_task_link": qa_snapshot_status(qa_report, "photo_report_task_link"),
+            "missing_report_consistency": qa_snapshot_status(qa_report, "missing_report_consistency"),
+        }
+        release_a2_body = "".join(
+            f'<div class="meta-row"><span><code>{e(key)}</code></span><strong>{e(value)}</strong></div>'
+            for key, value in release_a2_checks.items()
         )
         def role_today_sample(role_title: str, question: str, body: str, actions: list[str]) -> str:
             return f"""
@@ -5633,22 +5848,59 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 if not project or not project_visible_for_account(row_to_dict(project), account):
                     json_response(self, {"error": "Project not found"}, 404)
                     return
+                attachments_payload = [
+                    item for item in (data.get("attachments") or [])
+                    if isinstance(item, dict) and str(item.get("file_base64") or "").strip()
+                ]
+                if not attachments_payload:
+                    json_response(self, {"error": "Фотоотчёт нельзя отправить без фото или видео."}, 400)
+                    return
                 actor_id = int(data.get("author_id") or 0) or account_user_id(account) or user_id_by_role(db, "construction_manager")
+                report_date = data.get("report_date") or datetime.utcnow().date().isoformat()
+                stage = str(data.get("stage") or "")
+                zones = str(data.get("zones") or "")
+                comment = str(data.get("comment") or "")
+                try:
+                    task_id = photo_report_task_id_from_payload(db, data, project_id)
+                except ValueError as error:
+                    json_response(self, {"error": str(error)}, 400)
+                    return
+                related_task_ids = parse_id_list(data.get("related_task_ids"))
+                if task_id and task_id not in related_task_ids:
+                    related_task_ids.insert(0, task_id)
+                existing_report = active_photo_report_for_task(db, task_id)
+                if existing_report:
+                    json_response(self, {"id": existing_report["id"], "duplicate": True, "task_id": task_id}, 200)
+                    return
+                if not task_id:
+                    existing_report = duplicate_photo_report_without_task(
+                        db,
+                        project_id=project_id,
+                        report_date=report_date,
+                        author_id=actor_id,
+                        comment=comment,
+                        stage=stage,
+                        zones=zones,
+                    )
+                    if existing_report:
+                        json_response(self, {"id": existing_report["id"], "duplicate": True}, 200)
+                        return
                 cursor = db.execute(
                     """
                     INSERT INTO photo_reports (
-                        project_id, report_date, author_id, stage, zones, comment, related_task_ids, status
+                        project_id, report_date, author_id, task_id, stage, zones, comment, related_task_ids, files_count, status
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
                     """,
                     (
                         project_id,
-                        data.get("report_date") or datetime.utcnow().date().isoformat(),
+                        report_date,
                         actor_id,
-                        str(data.get("stage") or ""),
-                        str(data.get("zones") or ""),
-                        str(data.get("comment") or ""),
-                        json.dumps(data.get("related_task_ids") or [], ensure_ascii=False),
+                        task_id,
+                        stage,
+                        zones,
+                        comment,
+                        json.dumps(related_task_ids, ensure_ascii=False),
                         data.get("status") or "review",
                     ),
                 )
@@ -5656,17 +5908,24 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 document_ids = save_process_attachments(
                     db,
                     project_id=project_id,
-                    attachments=data.get("attachments") or [],
+                    attachments=attachments_payload,
                     related_type="photo_report",
                     doc_type="photo_report",
                     process_type=f"photo_report:{report_id}",
                     owner_id=actor_id,
                 )
+                if not document_ids:
+                    raise ValueError("Не удалось сохранить файлы фотоотчёта. Отчёт не создан.")
                 for document_id in document_ids:
                     db.execute(
                         "INSERT INTO photo_report_documents (photo_report_id, document_id) VALUES (?, ?)",
                         (report_id, document_id),
                     )
+                db.execute(
+                    "UPDATE photo_reports SET files_count = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (len(document_ids), report_id),
+                )
+                mark_photo_task_waiting_check(db, task_id=task_id, report_id=report_id, actor_id=actor_id)
                 db.execute(
                     """
                     INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
@@ -5691,7 +5950,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             report_id,
                             force_max=force_max,
                         )
-                json_response(self, {"id": report_id, "documents": document_ids}, 201)
+                json_response(self, {"id": report_id, "documents": document_ids, "task_id": task_id}, 201)
                 return
 
             if path == "/api/object-remarks":
