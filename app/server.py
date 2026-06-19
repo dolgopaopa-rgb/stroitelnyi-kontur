@@ -3957,7 +3957,6 @@ class AppHandler(BaseHTTPRequestHandler):
             <h1>{html.escape(title)}</h1>
             <p class="muted">Токен в открытом виде не показывается и не записывается в журнал.</p>
             <div class="grid">
-              {block("Release A2: photo reports", ["Reject empty report", "Check task link", "Check duplicates"], ["A2", "PhotoReportStatusService", "Consistency"], release_a2_body)}
               <div class="row"><span>reason</span><strong>{html.escape(str(reason))}</strong></div>
               <div class="row"><span>expires_at</span><strong>{html.escape(str(diagnostic.get('expires_at') or 'не задан'))}</strong></div>
               <div class="row"><span>uses_left</span><strong>{html.escape(str(diagnostic.get('uses_left') or 0))}</strong></div>
@@ -4972,6 +4971,7 @@ class AppHandler(BaseHTTPRequestHandler):
               {block("QA-проверки", ["Открыть qa-report", "Посмотреть скриншоты", "Разобрать FAIL/PARTIAL"], ["Фактический прогон", "Quality gate", "Без фальшивого ok"], qa_body)}
               {block("Проверка первого ТЗ", ["Сверить контракт", "Найти частичные пункты"], ["UX-контракт", "Аудит", "Статусы"], first_tz_body)}
               {block("Проверка этапа UX-логики", ["Сверить ролевые сценарии", "Проверить мобильный UX", "Проверить блокеры"], ["Роли", "Сигналы", "Блокеры", "Мобильный UX"], stage3_body)}
+              {block("Release A2: photo reports", ["Reject empty report", "Check task link", "Check duplicates"], ["A2", "PhotoReportStatusService", "Consistency"], release_a2_body)}
               {block("1. Сегодня", ["Открыть задачи", "Открыть материалы", "Открыть фотоотчёты"], ["Мои задачи", "Требует решения", "Активные объекты"], today_body)}
               {block("2. Сегодня для руководителя", ["Открыть проблемный объект", "Открыть задачу", "Посмотреть сигналы"], ["Руководитель", "Решения", "Блокеры"], today_owner_body)}
               {block("3. Сегодня для руководителя проекта", ["Открыть объект", "Создать задачу", "Запросить фотоотчёт"], ["Руководитель проекта", "Мои объекты", "Материалы"], today_project_manager_body)}

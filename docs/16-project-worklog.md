@@ -2231,6 +2231,29 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 
 Local QA result is `PARTIAL` only for the accepted external cookieless viewer limitation. No production deploy has been done in this step yet.
 
+### 2026-06-19: Release A2 production follow-up - snapshot visibility
+
+**Request.** Do not count Release A2 as done until production, `/version`, snapshot and `qa-report.md` prove the same deployed commit and show the A2 checks explicitly.
+
+**What changed.**
+
+- Moved the Release A2 snapshot block out of the audit-login diagnostic page and into the real `/ai-audit-snapshot/:token` grid.
+- The snapshot now exposes the Release A2 QA keys:
+  - `photo_report_integrity`;
+  - `photo_report_deduplication`;
+  - `photo_report_task_link`;
+  - `missing_report_consistency`.
+- The audit-login diagnostic page no longer references snapshot-only variables.
+
+**Checks.**
+
+- Python syntax: OK.
+- Full quality gate must be rerun after this commit because the deployed commit hash will change.
+
+**Result.**
+
+Pending final commit, deploy, production `/version`, production snapshot, refreshed `qa-report.md`, and MAX report.
+
 ### 2026-06-19: Release A2 - photo report integrity
 
 **Request.** Continue the working-cycles stage by release, without claiming the whole stage is complete. Release A2 must close the photo-report data contradictions:
