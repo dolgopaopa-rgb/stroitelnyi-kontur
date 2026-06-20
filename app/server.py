@@ -3689,6 +3689,10 @@ class AppHandler(BaseHTTPRequestHandler):
         if qa_artifact:
             self.serve_qa_artifact(qa_artifact.group(1))
             return
+        qa_screenshot = re.match(r"^/qa-artifacts/latest/screenshots/([A-Za-z0-9_.-]+\.png)$", path)
+        if qa_screenshot:
+            self.serve_qa_artifact(f"screenshots/{qa_screenshot.group(1)}")
+            return
         if path not in {"/health", "/version"} and not is_authorized(self):
             if path.startswith("/api/"):
                 self.send_response(401)
@@ -3748,6 +3752,10 @@ class AppHandler(BaseHTTPRequestHandler):
         qa_artifact = re.match(r"^/qa-artifacts/latest/(qa-report\.(?:md|json))$", path)
         if qa_artifact:
             self.serve_qa_artifact(qa_artifact.group(1))
+            return
+        qa_screenshot = re.match(r"^/qa-artifacts/latest/screenshots/([A-Za-z0-9_.-]+\.png)$", path)
+        if qa_screenshot:
+            self.serve_qa_artifact(f"screenshots/{qa_screenshot.group(1)}")
             return
         if path == "/logout":
             logout_response(self)
@@ -3869,7 +3877,9 @@ class AppHandler(BaseHTTPRequestHandler):
         return
 
     def serve_qa_artifact(self, file_name: str) -> None:
-        if file_name not in {"qa-report.md", "qa-report.json"}:
+        is_report = file_name in {"qa-report.md", "qa-report.json"}
+        is_screenshot = bool(re.match(r"^screenshots/[A-Za-z0-9_.-]+\.png$", file_name))
+        if not is_report and not is_screenshot:
             self.send_error(404)
             return
         file_path = (APP_DIR.parent / "qa-artifacts" / "latest" / file_name).resolve()
@@ -3877,7 +3887,12 @@ class AppHandler(BaseHTTPRequestHandler):
         if allowed_dir not in file_path.parents or not file_path.exists() or not file_path.is_file():
             self.send_error(404)
             return
-        content_type = "text/markdown; charset=utf-8" if file_name.endswith(".md") else "application/json; charset=utf-8"
+        if file_name.endswith(".md"):
+            content_type = "text/markdown; charset=utf-8"
+        elif file_name.endswith(".json"):
+            content_type = "application/json; charset=utf-8"
+        else:
+            content_type = "image/png"
         body = file_path.read_bytes()
         self.send_response(200)
         self.send_header("Content-Type", content_type)
