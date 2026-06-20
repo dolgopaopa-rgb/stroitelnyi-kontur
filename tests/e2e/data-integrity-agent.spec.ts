@@ -17,6 +17,8 @@ test("Data Integrity Agent returns read-only structured report", async ({ page }
   expect(first.body.agent).toBe("Data Integrity Agent");
   expect(Array.isArray(first.body.violations)).toBeTruthy();
   expect(first.body.summary).toBeTruthy();
+  expect(first.body.violation_counts).toBeTruthy();
+  expect(first.body.warning_counts_by_type).toBeTruthy();
   expect(first.body.material_counts?.stage).toBeTruthy();
   expect(first.body.material_counts?.health).toBeTruthy();
   expect(second.status).toBe(200);

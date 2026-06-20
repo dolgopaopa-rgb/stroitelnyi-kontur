@@ -59,18 +59,34 @@ def _count_by(db: sqlite3.Connection, table: str, column: str) -> dict[str, int]
     return {str(row["key"]): int(row["count"]) for row in rows}
 
 
+def _truthy(value: object) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _violation_type_counts(violations: list[Violation], severity: str | None = None) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in violations:
+        if severity and item.get("severity") != severity:
+            continue
+        key = str(item.get("violation_type") or "unknown")
+        counts[key] = counts.get(key, 0) + 1
+    return dict(sorted(counts.items()))
+
+
 def _task_violations(db: sqlite3.Connection, violations: list[Violation]) -> None:
-    today = date.today().isoformat()
+    task_columns = _table_columns(db, "tasks")
+    execution_overdue_select = "COALESCE(t.is_execution_overdue, 0)" if "is_execution_overdue" in task_columns else "0"
     rows = db.execute(
-        """
-        SELECT t.*, p.title AS project_title, p.id AS existing_project_id
+        f"""
+        SELECT t.*, {execution_overdue_select} AS integrity_is_execution_overdue,
+               p.title AS project_title, p.id AS existing_project_id
         FROM tasks t
         LEFT JOIN projects p ON p.id = t.project_id
         """
     ).fetchall()
     for row in rows:
         status = str(row["status"] or "")
-        if status == "accepted" and row["due_date"] and str(row["due_date"]) < today:
+        if status == "accepted" and _truthy(row["integrity_is_execution_overdue"]):
             _add(
                 violations,
                 violation_type="accepted_task_in_overdue",
@@ -549,6 +565,8 @@ def run_data_integrity_checks(db: sqlite3.Connection) -> dict[str, Any]:
             "documents": sum(1 for item in violations if item["entity_type"] == "document"),
             "blockers": sum(1 for item in violations if item["entity_type"] == "blocker"),
         },
+        "violation_counts": _violation_type_counts(violations),
+        "warning_counts_by_type": _violation_type_counts(violations, "warning"),
         "material_counts": {
             "stage": _count_by(db, "material_request_batches", "stage"),
             "health": _count_by(db, "material_request_batches", "health"),

@@ -1127,6 +1127,7 @@ print(json.dumps(report, ensure_ascii=False))
   }
   const violations = Array.isArray(report.violations) ? report.violations : [];
   const summary = report.summary || {};
+  const warningTypes = report.warning_counts_by_type || {};
   add(
     results,
     "Data Integrity Agent",
@@ -1152,10 +1153,10 @@ print(json.dumps(report, ensure_ascii=False))
     "Data Integrity Agent",
     "Integrity violations report",
     status,
-    `total=${summary.total || violations.length}; critical=${summary.critical || 0}; warnings=${summary.warnings || 0}; info=${summary.info || 0}; autoFix=false`,
+    `total=${summary.total || violations.length}; critical=${summary.critical || 0}; warnings=${summary.warnings || 0}; info=${summary.info || 0}; warning_types=${JSON.stringify(warningTypes)}; autoFix=false`,
     "normal",
     "",
-    { dataIntegrityViolationsChecked: violations.length, dataIntegrityCritical: Number(summary.critical || 0) },
+    { dataIntegrityViolationsChecked: violations.length, dataIntegrityCritical: Number(summary.critical || 0), dataIntegrityWarningTypes: warningTypes },
   );
   add(
     results,
@@ -1418,6 +1419,18 @@ function sumMeta(results, key) {
   return results.reduce((sum, item) => sum + Number(item.meta?.[key] || 0), 0);
 }
 
+function mergeMetaCounts(results, key) {
+  const counts = {};
+  for (const item of results) {
+    const value = item.meta?.[key];
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    for (const [countKey, countValue] of Object.entries(value)) {
+      counts[countKey] = (counts[countKey] || 0) + Number(countValue || 0);
+    }
+  }
+  return Object.fromEntries(Object.entries(counts).sort(([left], [right]) => left.localeCompare(right)));
+}
+
 function buildCoverage(results) {
   const roleAware = results.find((item) => item.agent === "UX Sanity QA Agent" && item.name === "Today screen is role-aware");
   const roleMatch = String(roleAware?.details || "").match(/role-panels=([0-9]+)\/([0-9]+)/);
@@ -1432,6 +1445,7 @@ function buildCoverage(results) {
   const visualResults = results.filter((item) => item.agent === "Visual Regression QA Agent" && item.name.startsWith("Screenshot "));
   const screenshotCount = visualResults.filter((item) => item.screenshot && fs.existsSync(item.screenshot)).length;
   const buttonResults = results.filter((item) => item.agent === "Button QA Agent" && item.status !== "WARN");
+  const dataIntegrityWarningTypes = mergeMetaCounts(results, "dataIntegrityWarningTypes");
   return {
     pages_checked: visualResults.length,
     pages_verified_ok: visualResults.filter((item) => item.status === "OK").length,
@@ -1446,6 +1460,7 @@ function buildCoverage(results) {
     photo_report_checks_checked: maxMeta(results, "photoReportChecksChecked"),
     data_integrity_violations_checked: sumMeta(results, "dataIntegrityViolationsChecked"),
     data_integrity_critical: maxMeta(results, "dataIntegrityCritical"),
+    data_integrity_warning_types: dataIntegrityWarningTypes,
     buttons_checked: Math.max(sumMeta(results, "buttonsChecked"), buttonResults.length),
     mobile_viewports_checked: results.filter((item) => item.agent === "Mobile QA Agent" && item.name.startsWith("Viewport ")).length,
     mobile_quick_actions_checked: maxMeta(results, "mobileQuickActionsChecked"),
@@ -1618,6 +1633,7 @@ function writeReport(results, startedAt, finishedAt, mandatorySuites, environmen
     `- photo_report_checks_checked: ${coverage.photo_report_checks_checked}`,
     `- data_integrity_violations_checked: ${coverage.data_integrity_violations_checked}`,
     `- data_integrity_critical: ${coverage.data_integrity_critical}`,
+    `- data_integrity_warning_types: ${JSON.stringify(coverage.data_integrity_warning_types || {})}`,
     `- buttons_checked: ${coverage.buttons_checked}`,
     `- mobile_viewports_checked: ${coverage.mobile_viewports_checked}`,
     `- mobile_quick_actions_checked: ${coverage.mobile_quick_actions_checked}`,
