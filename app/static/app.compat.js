@@ -101,7 +101,11 @@
     mediaPreview: { items: [], index: 0, touchX: null },
     pullRefresh: { tracking: false, startY: 0, distance: 0, ready: false, refreshing: false },
     dataIntegrityReport: null,
-    dataIntegrityFilter: "all"
+    dataIntegrityFilter: "all",
+    compactUiV1: true,
+    densityMode: localStorage.getItem("uiDensityMode") || "",
+    sidebarCollapsed: localStorage.getItem("sidebarCollapsed") === "1",
+    projectDisplayMode: localStorage.getItem("projectDisplayMode") || "table"
   };
   var PROJECT_FORM_DRAFT_KEY = "projectFormDraft:v1";
   var PROJECT_TEXT_DRAFT_FIELDS = [
@@ -624,6 +628,7 @@
     if (logoutButton) logoutButton.hidden = false;
     if (newProjectButton) newProjectButton.hidden = !canEditProject() || ownerOnlyPageActions;
     syncInstallButton();
+    applyUiShellPreferences();
     if (actions) {
       actions.classList.toggle("role-tools-hidden", !canUseRoleTools);
       actions.classList.toggle("manager-actions", currentRoleBase() === "sales_manager" && !canUseRoleTools);
@@ -728,6 +733,48 @@
     if (String(state.currentRole || "").includes(":")) return Number(String(state.currentRole).split(":")[1]);
     if (((_b = (_a = state.session) == null ? void 0 : _a.user) == null ? void 0 : _b.role) === currentRoleBase()) return Number(state.session.user.id || 0) || null;
     return ((_c = state.users.find((user) => user.role === currentRoleBase())) == null ? void 0 : _c.id) || null;
+  }
+  function defaultDensityMode() {
+    return ["owner", "ai_auditor"].includes(currentRoleBase()) ? "compact" : "comfortable";
+  }
+  function effectiveDensityMode() {
+    return state.densityMode || defaultDensityMode();
+  }
+  function syncDensitySelect() {
+    const select = qs("#densitySelect");
+    if (select) select.value = effectiveDensityMode();
+  }
+  function applyUiShellPreferences() {
+    const density = effectiveDensityMode();
+    document.body.dataset.featureFlag = "compact_ui_v1";
+    document.body.classList.toggle("compact-ui-v1", Boolean(state.compactUiV1));
+    document.body.classList.toggle("density-compact", density === "compact");
+    document.body.classList.toggle("density-comfortable", density !== "compact");
+    document.body.classList.toggle("sidebar-collapsed", Boolean(state.sidebarCollapsed));
+    syncDensitySelect();
+    const sidebarToggle = qs("#sidebarToggle");
+    if (sidebarToggle) {
+      sidebarToggle.setAttribute("aria-pressed", state.sidebarCollapsed ? "true" : "false");
+      sidebarToggle.title = state.sidebarCollapsed ? "Развернуть меню" : "Свернуть меню";
+    }
+  }
+  function setDensityMode(mode) {
+    state.densityMode = mode === "comfortable" ? "comfortable" : "compact";
+    localStorage.setItem("uiDensityMode", state.densityMode);
+    applyUiShellPreferences();
+  }
+  function toggleSidebarCollapsed() {
+    state.sidebarCollapsed = !state.sidebarCollapsed;
+    localStorage.setItem("sidebarCollapsed", state.sidebarCollapsed ? "1" : "0");
+    applyUiShellPreferences();
+  }
+  function fillTopbarProjectSelect() {
+    const select = qs("#topbarProjectSelect");
+    if (!select) return;
+    const selected = state.selectedProjectId ? String(state.selectedProjectId) : "";
+    const projects = roleScopedProjects(state.projects || []);
+    select.innerHTML = '<option value="">Все объекты</option>' + projects.map((project) => '<option value="'.concat(project.id, '">').concat(escapeHtml(project.title || "Объект"), "</option>")).join("");
+    select.value = projects.some((project) => String(project.id) === selected) ? selected : "";
   }
   function roleValueForUser(user, fallbackRole = "owner") {
     if (!user) return fallbackRole || "owner";
@@ -1499,6 +1546,7 @@
     if (photoDate && !photoDate.value) photoDate.value = todayIso();
     updateEstimateMaterialSelect();
     fillRoleSwitcher();
+    fillTopbarProjectSelect();
     fillMaterialProjectSelect();
     updateMaterialActorHint();
   }
@@ -2893,6 +2941,21 @@
     const blockers = roleScopedBlockers(state.blockers || []).filter((blocker) => Number(blocker.project_id || 0) === Number(project.id) && !["resolved", "closed"].includes(blocker.status));
     return taskRows.filter((task) => task.status === "returned" || taskCountsAsOverdue(task)).length + materialRowsForProject.filter(materialIsRisky).length + remarks.filter((remark) => !["accepted", "closed"].includes(remark.status)).length + blockers.length;
   }
+  function renderTodayKpis(items = []) {
+    return items.slice(0, 6).map(
+      (item) => {
+        var _a;
+        return '\n      <button class="metric compact-kpi '.concat(item.level || "", " ").concat(Number(item.value || 0) === 0 ? "is-zero" : "", '" type="button" ').concat(item.attrs || 'data-view-target="today"', '>\n        <span class="kpi-icon">').concat(escapeHtml(item.icon || "•"), "</span>\n        <strong>").concat(escapeHtml(String((_a = item.value) != null ? _a : 0)), "</strong>\n        <span>").concat(escapeHtml(item.label || ""), "</span>\n      </button>");
+      }
+    ).join("");
+  }
+  function renderLimitedRows(items, renderer, { limit = 5, empty = "", moreTarget = "" } = {}) {
+    if (!items.length) return empty;
+    const visible = items.slice(0, limit).map(renderer).join("");
+    const hidden = items.length - limit;
+    if (hidden <= 0) return visible;
+    return "".concat(visible, '<button class="show-all-link" type="button" ').concat(moreTarget || 'data-view-target="today"', ">Показать все ").concat(items.length, "</button>");
+  }
   function renderTodayTaskCard(task) {
     return '\n    <button class="row clickable today-task-card" type="button" data-open-task="'.concat(task.id, '" data-testid="task-card">\n      <div class="stack-line">\n        <span data-testid="task-type-badge">').concat(pill(taskTypeLabel(task), taskTypeLevel(task)), '</span>\n        <span data-testid="task-status-badge">').concat(pill(statusLabel(taskStatusKey(task)), taskStatusLevel(taskStatusKey(task))), '</span>\n        <span data-testid="task-priority-badge">').concat(pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority)), "</span>\n        ").concat(pill(task.due_date || "без срока", levelByDate(task.due_date)), '\n      </div>\n      <strong class="task-card-title" data-testid="task-title">').concat(escapeHtml(taskDisplayTitle(task)), '</strong>\n      <div class="muted" data-testid="task-meta">').concat(escapeHtml(task.project_title || "Объект не указан"), " · ответственный: ").concat(escapeHtml(task.assignee_name || "не назначен"), " · срок: ").concat(task.due_date ? formatDateRu(task.due_date) : "без срока", "</div>\n    </button>");
   }
@@ -3151,18 +3214,30 @@
     const activeProjects = todayProjectsForProfile(roleProjects, roleTasks, roleMaterialRows, profile);
     const noPhotoProjects = activeProjects.filter((project) => !isTodayDate(latestPhotoReportDate(project.id)));
     const openRemarks = roleRemarks.filter((remark) => !["accepted", "closed"].includes(remark.status)).sort((a, b) => Number(isDateOverdue(b.due_date)) - Number(isDateOverdue(a.due_date)) || String(a.due_date || "9999").localeCompare(String(b.due_date || "9999")));
-    const recentComments = notifications.filter((row) => isLast24Hours(row.created_at)).filter((row) => !row.project_id || isLeadershipRole() || roleProjectIds.has(Number(row.project_id || 0))).slice(0, 8);
-    qs("#todayTasks").innerHTML = todayTasks.length ? todayTasks.slice(0, 6).map(renderTodayTaskCard).join("") : '<div class="empty-state"><strong>На сегодня задач нет</strong><p class="muted">Проверьте просроченные или откройте объект.</p></div>';
-    const decisionItems = todayDecisionItems({ overdueTasks, returnedTasks, waitingTasks, riskyMaterials, noPhotoProjects, blockers: roleBlockers, remarks: openRemarks }).slice(0, 12);
-    qs("#todayAttention").innerHTML = decisionItems.length ? decisionItems.map(renderTodayDecisionItem).join("") : '<div class="attention-empty"><strong>Критичных сигналов нет</strong><span>На сейчас ничего срочного не найдено.</span></div>';
-    qs("#todayMaterials").innerHTML = riskyMaterials.length ? riskyMaterials.slice(0, 8).map(renderTodayMaterialCard).join("") : '<div class="empty-state"><strong>Заявок под риском нет</strong><p class="muted">Заявки появятся здесь, когда прораб или руководитель запросит материалы.</p>'.concat(canView("materials") ? '<button class="secondary tiny" type="button" data-view-target="materials">Открыть материалы</button>' : "", "</div>");
-    qs("#todayComments").innerHTML = recentComments.length ? recentComments.map(
-      (row) => '\n          <button class="row clickable" type="button" '.concat(notificationTargetAttrs(row), ">\n            <strong>").concat(escapeHtml(row.title || "Событие"), '</strong>\n            <div class="muted">').concat(escapeHtml(row.project_title || "без объекта"), " · ").concat(formatDateRu(row.created_at), "</div>\n            <p>").concat(escapeHtml(row.text || ""), "</p>\n          </button>")
-    ).join("") : '<p class="muted">Новых комментариев за 24 часа нет.</p>';
-    qs("#todayObjects").innerHTML = activeProjects.length ? activeProjects.map((project) => renderTodayObjectCard(project, roleTasks, roleMaterialRows)).join("") : '<p class="muted">Активных объектов пока нет.</p>';
-    qs("#todayNoPhoto").innerHTML = noPhotoProjects.length ? noPhotoProjects.slice(0, 8).map(
-      (project) => '\n          <button class="row clickable" type="button" data-open-project="'.concat(project.id, '">\n            <strong>').concat(escapeHtml(project.title), '</strong>\n            <div class="muted">последний фотоотчёт: ').concat(latestPhotoReportDate(project.id) ? formatDateRu(latestPhotoReportDate(project.id)) : "не найден", "</div>\n          </button>")
-    ).join("") : '<p class="muted">По всем активным объектам есть фотоотчёт за сегодня.</p>';
+    const recentComments = notifications.filter((row) => isLast24Hours(row.created_at)).filter((row) => !row.project_id || isLeadershipRole() || roleProjectIds.has(Number(row.project_id || 0))).slice(0, 12);
+    const decisionItems = todayDecisionItems({ overdueTasks, returnedTasks, waitingTasks, riskyMaterials, noPhotoProjects, blockers: roleBlockers, remarks: openRemarks });
+    qs("#todayKpis").innerHTML = renderTodayKpis([
+      ["Требует действия", decisionItems.length, "!", decisionItems.length ? "danger" : "", 'data-view-target="tasks"'],
+      ["Просрочено", overdueTasks.length, "⏱", overdueTasks.length ? "danger" : "", 'data-view-target="tasks"'],
+      ["Ждёт проверки", waitingTasks.length, "✓", waitingTasks.length ? "blue" : "", 'data-view-target="tasks"'],
+      ["Блокеры", roleBlockers.length, "◆", roleBlockers.length ? "danger" : "", 'data-view-target="dashboard"'],
+      ["Без фотоотчёта", noPhotoProjects.length, "▣", noPhotoProjects.length ? "warning" : "", 'data-view-target="photos"'],
+      ["Материалы под риском", riskyMaterials.length, "◫", riskyMaterials.length ? "warning" : "", 'data-view-target="materials"']
+    ].map(([label2, value, icon, level, attrs]) => ({ label: label2, value, icon, level, attrs })));
+    qs("#todayTasks").innerHTML = todayTasks.length ? renderLimitedRows(todayTasks, renderTodayTaskCard, { limit: 5, moreTarget: 'data-view-target="tasks"' }) : '<div class="empty-state"><strong>На сегодня задач нет</strong><p class="muted">Проверьте просроченные или откройте объект.</p></div>';
+    qs("#todayAttention").innerHTML = decisionItems.length ? renderLimitedRows(decisionItems, renderTodayDecisionItem, { limit: 5, moreTarget: 'data-view-target="tasks"' }) : '<div class="attention-empty"><strong>Критичных сигналов нет</strong><span>На сейчас ничего срочного не найдено.</span></div>';
+    qs("#todayMaterials").innerHTML = riskyMaterials.length ? renderLimitedRows(riskyMaterials, renderTodayMaterialCard, { limit: 5, moreTarget: 'data-view-target="materials"' }) : '<div class="empty-state"><strong>Заявок под риском нет</strong><p class="muted">Заявки появятся здесь, когда прораб или руководитель запросит материалы.</p>'.concat(canView("materials") ? '<button class="secondary tiny" type="button" data-view-target="materials">Открыть материалы</button>' : "", "</div>");
+    qs("#todayComments").innerHTML = recentComments.length ? renderLimitedRows(
+      recentComments,
+      (row) => '\n          <button class="row clickable" type="button" '.concat(notificationTargetAttrs(row), ">\n            <strong>").concat(escapeHtml(row.title || "Событие"), '</strong>\n            <div class="muted">').concat(escapeHtml(row.project_title || "без объекта"), " · ").concat(formatDateRu(row.created_at), "</div>\n            <p>").concat(escapeHtml(row.text || ""), "</p>\n          </button>"),
+      { limit: 5, moreTarget: 'data-view-target="dashboard"' }
+    ) : '<p class="muted">Новых комментариев за 24 часа нет.</p>';
+    qs("#todayObjects").innerHTML = activeProjects.length ? renderLimitedRows(activeProjects, (project) => renderTodayObjectCard(project, roleTasks, roleMaterialRows), { limit: 5, moreTarget: 'data-view-target="projects"' }) : '<p class="muted">Активных объектов пока нет.</p>';
+    qs("#todayNoPhoto").innerHTML = noPhotoProjects.length ? renderLimitedRows(
+      noPhotoProjects,
+      (project) => '\n          <button class="row clickable" type="button" data-open-project="'.concat(project.id, '">\n            <strong>').concat(escapeHtml(project.title), '</strong>\n            <div class="muted">последний фотоотчёт: ').concat(latestPhotoReportDate(project.id) ? formatDateRu(latestPhotoReportDate(project.id)) : "не найден", "</div>\n          </button>"),
+      { limit: 5, moreTarget: 'data-view-target="photos"' }
+    ) : '<p class="muted">По всем активным объектам есть фотоотчёт за сегодня.</p>';
   }
   async function renderEstimateJobs() {
     const statsNode = qs("#estimateJobStats");
@@ -3460,6 +3535,12 @@
     const projects = state.projectListMode === "archive" ? state.archivedProjects : state.projects;
     qs("#projectListTitle").textContent = state.projectListMode === "archive" ? "Архив объектов" : "Список объектов";
     qsa("[data-project-list]").forEach((button) => button.classList.toggle("active", button.dataset.projectList === state.projectListMode));
+    const rowsNode = qs("#projectRows");
+    if (rowsNode) {
+      rowsNode.classList.toggle("project-table-mode", state.projectDisplayMode === "table");
+      rowsNode.classList.toggle("project-card-mode", state.projectDisplayMode !== "table");
+    }
+    qsa("[data-project-display]").forEach((button) => button.classList.toggle("active", button.dataset.projectDisplay === state.projectDisplayMode));
     qs("#projectRows").innerHTML = projects.length ? projects.map(
       (project) => '\n          <div class="row clickable" data-open-project="'.concat(project.id, '" data-testid="object-card">\n            <div class="row-grid project-list-card">\n              <div class="project-card-main">\n                <strong>').concat(project.title, '</strong>\n                <div class="muted">').concat(project.customer_name || "", '</div>\n              </div>\n              <div class="project-card-badges">\n                ').concat(pill(label(project.status), project.status === "revision_requested" ? "danger" : project.status === "submitted_to_construction" ? "warning" : "blue"), "\n                ").concat(state.projectListMode === "archive" ? pill(project.archive_reason || "архив", "success") : canViewFinancials() ? pill("Смета: ".concat(money(project.main_estimate_amount)), "success") : "", '\n              </div>\n              <div class="project-meta-line">\n                <span>').concat(state.projectListMode === "archive" ? project.archived_at || "без даты" : "Прораб: ".concat(project.foreman_name || "не назначен"), "</span>\n                ").concat(mapLink(project.address, project.navigator_url, "Я.Карты"), "\n              </div>\n            </div>\n          </div>")
     ).join("") : '<p class="muted">'.concat(state.projectListMode === "archive" ? "В архиве пока пусто." : "Объектов пока нет.", "</p>");
@@ -5211,18 +5292,81 @@
       button.disabled = false;
     }
   }
+  async function runGlobalSearch(rawQuery) {
+    const query = String(rawQuery || "").trim().toLowerCase();
+    if (!query) {
+      showToast("Введите, что найти: объект, задачу или материал");
+      return;
+    }
+    const project = [...state.projects || [], ...state.archivedProjects || []].find(
+      (item) => [item.title, item.customer_name, item.address].some((value) => String(value || "").toLowerCase().includes(query))
+    );
+    if (project) {
+      state.selectedProjectId = project.id;
+      await switchView("projects");
+      await renderProjectDetail(project.id);
+      showToast("Открыт найденный объект");
+      return;
+    }
+    const task = (state.lastTasks || []).find(
+      (item) => [item.title, item.description, item.project_title, item.assignee_name].some((value) => String(value || "").toLowerCase().includes(query))
+    );
+    if (task) {
+      state.selectedTaskProjectId = task.project_id || null;
+      await switchView("tasks");
+      openTaskDetail(task.id);
+      showToast("Открыта найденная задача");
+      return;
+    }
+    const batch = buildMaterialBatches(state.materialRequests || []).find(
+      (item) => [materialBatchTitle(item), item.project_title, item.creator_name].some((value) => String(value || "").toLowerCase().includes(query))
+    );
+    if (batch) {
+      await switchView("materials");
+      await openMaterialBatchDialog(batch.key);
+      showToast("Открыта найденная заявка");
+      return;
+    }
+    showToast("Ничего не найдено. Попробуйте другое слово.");
+  }
   function bindEvents() {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H;
     bindStableDetailsTouchGuard();
     bindWheelPageScroll();
     initPullToRefresh();
+    (_a = qs("#sidebarToggle")) == null ? void 0 : _a.addEventListener("click", () => toggleSidebarCollapsed());
+    (_b = qs("#densitySelect")) == null ? void 0 : _b.addEventListener("change", (event) => setDensityMode(event.target.value));
+    (_c = qs("#topbarProjectSelect")) == null ? void 0 : _c.addEventListener("change", async (event) => {
+      const projectId = Number(event.target.value || 0) || null;
+      state.selectedProjectId = projectId;
+      state.selectedTaskProjectId = projectId;
+      localStorage.setItem("selectedTopbarProjectId", projectId ? String(projectId) : "");
+      if (projectId) {
+        await switchView("projects");
+        await renderProjectDetail(projectId);
+      } else if (state.view === "projects") {
+        await renderProjects();
+      }
+    });
+    (_d = qs("#globalSearchInput")) == null ? void 0 : _d.addEventListener("keydown", async (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      await runGlobalSearch(event.currentTarget.value);
+    });
     qsa("[data-view]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
     qsa("[data-view-target]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.viewTarget)));
+    qsa("[data-project-display]").forEach(
+      (button) => button.addEventListener("click", () => {
+        state.projectDisplayMode = button.dataset.projectDisplay === "cards" ? "cards" : "table";
+        localStorage.setItem("projectDisplayMode", state.projectDisplayMode);
+        renderProjects();
+      })
+    );
     qs("#refreshButton").addEventListener("click", () => refreshAppFromUser("Обновляем данные").catch((error) => showToast(error.message)));
-    (_a = qs("#mobileQuickActionToggle")) == null ? void 0 : _a.addEventListener("click", () => toggleMobileQuickActions());
-    (_b = qs("#mobileQuickActionClose")) == null ? void 0 : _b.addEventListener("click", () => toggleMobileQuickActions(false));
-    (_c = qs("#mobileMoreButton")) == null ? void 0 : _c.addEventListener("click", () => toggleMobileMenu(true));
-    (_d = qs("#logoutButton")) == null ? void 0 : _d.addEventListener("click", () => {
+    (_e = qs("#mobileQuickActionToggle")) == null ? void 0 : _e.addEventListener("click", () => toggleMobileQuickActions());
+    (_f = qs("#mobileQuickActionClose")) == null ? void 0 : _f.addEventListener("click", () => toggleMobileQuickActions(false));
+    (_g = qs("#mobileMoreButton")) == null ? void 0 : _g.addEventListener("click", () => toggleMobileMenu(true));
+    (_h = qs("#logoutButton")) == null ? void 0 : _h.addEventListener("click", () => {
       localStorage.removeItem("currentRole");
       window.location.href = "/logout";
     });
@@ -5249,7 +5393,7 @@
       resetProjectDialog();
       qs("#projectDialog").showModal();
     });
-    (_e = qs("#newContractButton")) == null ? void 0 : _e.addEventListener("click", () => openContractDialog(state.selectedProjectId || ""));
+    (_i = qs("#newContractButton")) == null ? void 0 : _i.addEventListener("click", () => openContractDialog(state.selectedProjectId || ""));
     qs("#newTaskButton").addEventListener("click", () => {
       var _a2;
       const form = qs("#taskForm");
@@ -5262,29 +5406,29 @@
       loadTaskContractOptions(((_a2 = form.elements.project_id) == null ? void 0 : _a2.value) || "");
       qs("#taskDialog").showModal();
     });
-    (_f = qs('#taskForm select[name="project_id"]')) == null ? void 0 : _f.addEventListener("change", (event) => loadTaskContractOptions(event.target.value));
+    (_j = qs('#taskForm select[name="project_id"]')) == null ? void 0 : _j.addEventListener("change", (event) => loadTaskContractOptions(event.target.value));
     qs("#newEstimateJobButton").addEventListener("click", () => openEstimateJobDialog());
-    (_g = qs('#estimateJobForm select[name="estimate_type"]')) == null ? void 0 : _g.addEventListener("change", () => syncEstimateSiteCostsByType());
-    (_h = qs('#estimateJobForm select[name="site_costs_policy"]')) == null ? void 0 : _h.addEventListener("change", () => {
+    (_k = qs('#estimateJobForm select[name="estimate_type"]')) == null ? void 0 : _k.addEventListener("change", () => syncEstimateSiteCostsByType());
+    (_l = qs('#estimateJobForm select[name="site_costs_policy"]')) == null ? void 0 : _l.addEventListener("change", () => {
       qs("#estimateJobForm").dataset.siteCostsTouched = "true";
     });
-    (_i = qs('#estimateJobFileForm select[name="mode"]')) == null ? void 0 : _i.addEventListener("change", updateEstimateFileDialogMode);
+    (_m = qs('#estimateJobFileForm select[name="mode"]')) == null ? void 0 : _m.addEventListener("change", updateEstimateFileDialogMode);
     qs("#newMaterialButton").addEventListener("click", async () => openNewMaterialDialog());
     qs("#newVariationButton").addEventListener("click", () => qs("#variationDialog").showModal());
-    (_j = qs("#newObjectRemarkButton")) == null ? void 0 : _j.addEventListener("click", () => {
+    (_n = qs("#newObjectRemarkButton")) == null ? void 0 : _n.addEventListener("click", () => {
       const form = qs("#objectRemarkForm");
       form.reset();
       if (state.selectedProjectId && form.elements.project_id) form.elements.project_id.value = String(state.selectedProjectId);
       qs("#objectRemarkDialog").showModal();
     });
-    (_k = qs("#newPhotoReportButton")) == null ? void 0 : _k.addEventListener("click", () => {
+    (_o = qs("#newPhotoReportButton")) == null ? void 0 : _o.addEventListener("click", () => {
       const form = qs("#photoReportForm");
       form.reset();
       if (state.selectedProjectId && form.elements.project_id) form.elements.project_id.value = String(state.selectedProjectId);
       form.elements.report_date.value = todayIso();
       qs("#photoReportDialog").showModal();
     });
-    (_l = qs("#newKnowledgeFolderButton")) == null ? void 0 : _l.addEventListener("click", () => {
+    (_p = qs("#newKnowledgeFolderButton")) == null ? void 0 : _p.addEventListener("click", () => {
       const form = qs("#knowledgeFolderForm");
       form.reset();
       fillKnowledgeFolderSelects();
@@ -5300,7 +5444,7 @@
       qs("#documentDialog").showModal();
     });
     qs("#newEventButton").addEventListener("click", () => qs("#eventDialog").showModal());
-    (_m = qs("#refreshIntegrityButton")) == null ? void 0 : _m.addEventListener("click", async () => {
+    (_q = qs("#refreshIntegrityButton")) == null ? void 0 : _q.addEventListener("click", async () => {
       await renderDataIntegrity(true);
       showToast("Проверка целостности обновлена");
     });
@@ -5310,7 +5454,7 @@
         await renderDataIntegrity();
       })
     );
-    (_n = qs("#refreshFeedbackButton")) == null ? void 0 : _n.addEventListener("click", async () => {
+    (_r = qs("#refreshFeedbackButton")) == null ? void 0 : _r.addEventListener("click", async () => {
       try {
         await renderFeedback();
         showToast("Обратная связь обновлена");
@@ -5318,7 +5462,7 @@
         showToast(error.message || "Не удалось обновить обратную связь");
       }
     });
-    (_o = qs("#deleteSelectedFeedbackButton")) == null ? void 0 : _o.addEventListener("click", async () => {
+    (_s = qs("#deleteSelectedFeedbackButton")) == null ? void 0 : _s.addEventListener("click", async () => {
       if (!canDeleteFeedback()) {
         showToast("Удаление сообщений недоступно для текущей роли");
         return;
@@ -5339,16 +5483,16 @@
       showToast("Удалено сообщений: ".concat(result.deleted || ids.length));
     });
     qsa("[data-close]").forEach((button) => button.addEventListener("click", () => qs("#".concat(button.dataset.close)).close()));
-    (_p = qs("#mediaPreviewClose")) == null ? void 0 : _p.addEventListener("click", closeMediaPreview);
-    (_q = qs("#mediaPreviewCloseBottom")) == null ? void 0 : _q.addEventListener("click", closeMediaPreview);
-    (_r = qs("#mediaPreviewPrev")) == null ? void 0 : _r.addEventListener("click", () => moveMediaPreview(-1));
-    (_s = qs("#mediaPreviewNext")) == null ? void 0 : _s.addEventListener("click", () => moveMediaPreview(1));
-    (_t = qs("#mediaPreviewDialog")) == null ? void 0 : _t.addEventListener("close", () => {
+    (_t = qs("#mediaPreviewClose")) == null ? void 0 : _t.addEventListener("click", closeMediaPreview);
+    (_u = qs("#mediaPreviewCloseBottom")) == null ? void 0 : _u.addEventListener("click", closeMediaPreview);
+    (_v = qs("#mediaPreviewPrev")) == null ? void 0 : _v.addEventListener("click", () => moveMediaPreview(-1));
+    (_w = qs("#mediaPreviewNext")) == null ? void 0 : _w.addEventListener("click", () => moveMediaPreview(1));
+    (_x = qs("#mediaPreviewDialog")) == null ? void 0 : _x.addEventListener("close", () => {
       const body = qs("#mediaPreviewBody");
       if (body) body.innerHTML = "";
       state.mediaPreview = { items: [], index: 0, touchX: null };
     });
-    (_u = qs("#mediaPreviewBody")) == null ? void 0 : _u.addEventListener(
+    (_y = qs("#mediaPreviewBody")) == null ? void 0 : _y.addEventListener(
       "touchstart",
       (event) => {
         var _a2, _b2, _c2;
@@ -5356,7 +5500,7 @@
       },
       { passive: true }
     );
-    (_v = qs("#mediaPreviewBody")) == null ? void 0 : _v.addEventListener(
+    (_z = qs("#mediaPreviewBody")) == null ? void 0 : _z.addEventListener(
       "touchend",
       (event) => {
         var _a2, _b2, _c2;
@@ -5368,14 +5512,14 @@
       },
       { passive: true }
     );
-    (_w = qs("#mediaPreviewDialog")) == null ? void 0 : _w.addEventListener("keydown", (event) => {
+    (_A = qs("#mediaPreviewDialog")) == null ? void 0 : _A.addEventListener("keydown", (event) => {
       if (event.key === "ArrowLeft") moveMediaPreview(-1);
       if (event.key === "ArrowRight") moveMediaPreview(1);
     });
-    (_x = qs("#estimateImagePrev")) == null ? void 0 : _x.addEventListener("click", () => moveEstimateGallery(-1));
-    (_y = qs("#estimateImageNext")) == null ? void 0 : _y.addEventListener("click", () => moveEstimateGallery(1));
+    (_B = qs("#estimateImagePrev")) == null ? void 0 : _B.addEventListener("click", () => moveEstimateGallery(-1));
+    (_C = qs("#estimateImageNext")) == null ? void 0 : _C.addEventListener("click", () => moveEstimateGallery(1));
     let estimateGalleryTouchX = null;
-    (_z = qs("#estimateImageStage")) == null ? void 0 : _z.addEventListener(
+    (_D = qs("#estimateImageStage")) == null ? void 0 : _D.addEventListener(
       "touchstart",
       (event) => {
         var _a2, _b2, _c2;
@@ -5383,7 +5527,7 @@
       },
       { passive: true }
     );
-    (_A = qs("#estimateImageStage")) == null ? void 0 : _A.addEventListener(
+    (_E = qs("#estimateImageStage")) == null ? void 0 : _E.addEventListener(
       "touchend",
       (event) => {
         var _a2, _b2, _c2;
@@ -6109,8 +6253,8 @@
       qs('#taskForm input[name="creator_id"]').value = currentUserId() || "";
       submitForm("taskDialog", "taskForm", "/api/tasks", "Задача создана");
     });
-    (_B = qs("#photoReportForm")) == null ? void 0 : _B.addEventListener("submit", submitPhotoReportForm);
-    (_C = qs("#objectRemarkForm")) == null ? void 0 : _C.addEventListener("submit", submitObjectRemarkForm);
+    (_F = qs("#photoReportForm")) == null ? void 0 : _F.addEventListener("submit", submitPhotoReportForm);
+    (_G = qs("#objectRemarkForm")) == null ? void 0 : _G.addEventListener("submit", submitObjectRemarkForm);
     qs("#estimateJobForm").addEventListener("submit", async (event) => {
       var _a2;
       event.preventDefault();
@@ -6298,7 +6442,7 @@
       switchView("materials");
       showToast("Материалы сметы загружены в объект");
     });
-    (_D = qs("#knowledgeFolderForm")) == null ? void 0 : _D.addEventListener("submit", async (event) => {
+    (_H = qs("#knowledgeFolderForm")) == null ? void 0 : _H.addEventListener("submit", async (event) => {
       event.preventDefault();
       const form = qs("#knowledgeFolderForm");
       try {

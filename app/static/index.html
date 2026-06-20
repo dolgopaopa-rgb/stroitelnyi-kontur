@@ -9,10 +9,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Строительный контур</title>
-    <link rel="manifest" href="/static/manifest.webmanifest?v=20260619-a3-data-integrity" />
+    <link rel="manifest" href="/static/manifest.webmanifest?v=20260620-d1-compact-ui" />
     <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260619-a3-data-integrity" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260620-d1-compact-ui" />
   </head>
   <body>
     <div class="app" data-testid="qa-scroll-root">
@@ -43,10 +43,28 @@
 
       <main class="main" data-testid="qa-main-content">
         <header class="topbar">
-          <div>
+          <button class="icon shell-toggle" id="sidebarToggle" type="button" aria-label="Свернуть меню">☰</button>
+          <div class="topbar-title">
             <h1 id="pageTitle">Сегодня</h1>
           </div>
           <div class="actions">
+            <label class="topbar-object-switch">
+              Объект
+              <select id="topbarProjectSelect">
+                <option value="">Все объекты</option>
+              </select>
+            </label>
+            <label class="global-search">
+              <span>Поиск</span>
+              <input id="globalSearchInput" type="search" placeholder="Объект, задача, материал..." />
+            </label>
+            <label class="density-switcher">
+              Плотность
+              <select id="densitySelect">
+                <option value="compact">Компактно</option>
+                <option value="comfortable">Комфортно</option>
+              </select>
+            </label>
             <label class="role-switcher">
               Роль
               <select id="currentRoleSelect">
@@ -79,6 +97,7 @@
             </div>
             <div class="today-primary-actions" id="todayPrimaryActions"></div>
           </section>
+          <div class="today-kpi-strip" id="todayKpis" data-testid="today-kpi-strip"></div>
           <div class="today-grid">
             <section class="panel today-focus-panel">
               <div class="panel-head">
@@ -168,9 +187,15 @@
             <section class="panel">
               <div class="panel-head">
                 <h2 id="projectListTitle">Список объектов</h2>
-                <div class="segmented-control">
-                  <button class="segment active" data-project-list="active">В работе</button>
-                  <button class="segment" data-project-list="archive">Архив</button>
+                <div class="project-list-tools">
+                  <div class="segmented-control">
+                    <button class="segment active" data-project-list="active">В работе</button>
+                    <button class="segment" data-project-list="archive">Архив</button>
+                  </div>
+                  <div class="segmented-control project-view-mode" aria-label="Вид списка объектов">
+                    <button class="segment active" type="button" data-project-display="table">Таблица</button>
+                    <button class="segment" type="button" data-project-display="cards">Карточки</button>
+                  </div>
                 </div>
               </div>
               <div class="table" id="projectRows"></div>
@@ -1113,6 +1138,6 @@
       </div>
     </div>
     <div class="toast" id="toast"></div>
-    <script src="/static/app.compat.js?v=20260619-a3-data-integrity"></script>
+    <script src="/static/app.compat.js?v=20260620-d1-compact-ui"></script>
   </body>
 </html>

@@ -1,9 +1,9 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260619-a3-data-integrity";
+﻿const CACHE_NAME = "stroitelnyi-kontur-20260620-d1-compact-ui";
 const CORE_ASSETS = [
   "/",
-  "/static/styles.css?v=20260619-a3-data-integrity",
-  "/static/app.compat.js?v=20260619-a3-data-integrity",
-  "/static/manifest.webmanifest?v=20260619-a3-data-integrity",
+  "/static/styles.css?v=20260620-d1-compact-ui",
+  "/static/app.compat.js?v=20260620-d1-compact-ui",
+  "/static/manifest.webmanifest?v=20260620-d1-compact-ui",
   "/static/assets/g2-logo-192.png",
   "/static/assets/g2-logo-512.png"
 ];

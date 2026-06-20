@@ -54,6 +54,7 @@ const agentNames = [
   "Mobile QA Agent",
   "Console Error QA Agent",
   "Visual Regression QA Agent",
+  "Visual Density QA Agent",
   "MAX Report Format QA Agent",
 ];
 
@@ -1356,6 +1357,98 @@ async function runVisual(results, page) {
   }
 }
 
+async function runVisualDensity(results, page) {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await route(page, "today");
+  await page.waitForTimeout(300);
+  const desktop = await page.evaluate(() => {
+    const visible = (node) => {
+      const style = getComputedStyle(node);
+      return style.display !== "none" && style.visibility !== "hidden" && node.getClientRects().length > 0;
+    };
+    const viewportHeight = window.innerHeight;
+    const kpis = [...document.querySelectorAll("#todayKpis .compact-kpi")].filter(visible);
+    const panels = [...document.querySelectorAll("#todayView .panel")].filter(visible);
+    const rows = [...document.querySelectorAll("#todayView .row, #todayView .attention-item, #todayView .today-object-card, #todayView .show-all-link")].filter(visible);
+    const rowsInViewport = rows.filter((row) => row.getBoundingClientRect().top < viewportHeight && row.getBoundingClientRect().bottom > 0);
+    const metricHeights = kpis.map((node) => Math.round(node.getBoundingClientRect().height));
+    const rowHeights = rows.map((node) => Math.round(node.getBoundingClientRect().height));
+    const panelPaddings = panels.map((node) => parseFloat(getComputedStyle(node).paddingTop) || 0);
+    const body = document.body;
+    const verticalText = [...document.querySelectorAll(".nav-button span:last-child, [data-testid='task-title'], .attention-count")]
+      .filter(visible)
+      .some((node) => {
+        const box = node.getBoundingClientRect();
+        return box.width < 28 && box.height > 70;
+      });
+    const primaryViolations = [...document.querySelectorAll("#todayView .row, #todayView .today-task-card, #todayView .today-material-card, #todayView .today-object-card")]
+      .filter(visible)
+      .filter((row) => row.querySelectorAll(".primary, button.primary").length > 1).length;
+    return {
+      compact: body.classList.contains("compact-ui-v1") && body.classList.contains("density-compact"),
+      kpis: kpis.length,
+      maxMetricHeight: metricHeights.length ? Math.max(...metricHeights) : 0,
+      rowsInViewport: rowsInViewport.length,
+      maxRowHeight: rowHeights.length ? Math.max(...rowHeights) : 0,
+      maxPanelPadding: panelPaddings.length ? Math.max(...panelPaddings) : 0,
+      panelCount: panels.length,
+      horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth + 2,
+      verticalText,
+      primaryViolations,
+    };
+  });
+  const desktopOk =
+    desktop.compact &&
+    desktop.kpis >= 6 &&
+    desktop.maxMetricHeight <= 72 &&
+    desktop.rowsInViewport >= 8 &&
+    desktop.maxPanelPadding <= 16 &&
+    !desktop.horizontalOverflow &&
+    !desktop.verticalText &&
+    desktop.primaryViolations === 0;
+  const desktopScreenshot = path.join(SCREENSHOT_DIR, "density-today-owner-1440.png");
+  await page.screenshot({ path: desktopScreenshot, fullPage: true }).catch(() => null);
+  add(
+    results,
+    "Visual Density QA Agent",
+    "Desktop compact density",
+    desktopOk ? "OK" : "FAIL",
+    `compact=${desktop.compact}; kpis=${desktop.kpis}; maxMetricHeight=${desktop.maxMetricHeight}; rowsInViewport=${desktop.rowsInViewport}; maxRowHeight=${desktop.maxRowHeight}; maxPanelPadding=${desktop.maxPanelPadding}; panelCount=${desktop.panelCount}; horizontalOverflow=${desktop.horizontalOverflow}; verticalText=${desktop.verticalText}; primaryViolations=${desktop.primaryViolations}`,
+    desktopOk ? "normal" : "blocker",
+    desktopScreenshot,
+  );
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await route(page, "today");
+  await page.waitForTimeout(300);
+  const mobile = await page.evaluate(() => {
+    const navButtons = [...document.querySelectorAll(".mobile-bottom-nav button")];
+    const boxes = navButtons.map((node) => node.getBoundingClientRect());
+    const plus = document.querySelector(".mobile-bottom-nav .mobile-plus")?.getBoundingClientRect();
+    const mainBottom = document.querySelector(".main")?.getBoundingClientRect().bottom || 0;
+    const navTop = document.querySelector(".mobile-bottom-nav")?.getBoundingClientRect().top || window.innerHeight;
+    return {
+      navButtons: navButtons.length,
+      minTouch: boxes.length ? Math.min(...boxes.map((box) => Math.min(box.width, box.height))) : 0,
+      plusSeparated: Boolean(plus && plus.width >= 56 && plus.height >= 56),
+      horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth + 2,
+      contentCovered: mainBottom > navTop + 4 && window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 4,
+    };
+  });
+  const mobileOk = mobile.navButtons === 5 && mobile.minTouch >= 44 && mobile.plusSeparated && !mobile.horizontalOverflow && !mobile.contentCovered;
+  const mobileScreenshot = path.join(SCREENSHOT_DIR, "density-today-mobile-390.png");
+  await page.screenshot({ path: mobileScreenshot, fullPage: true }).catch(() => null);
+  add(
+    results,
+    "Visual Density QA Agent",
+    "Mobile compact density",
+    mobileOk ? "OK" : "FAIL",
+    `navButtons=${mobile.navButtons}; minTouch=${Math.round(mobile.minTouch)}; plusSeparated=${mobile.plusSeparated}; horizontalOverflow=${mobile.horizontalOverflow}; contentCovered=${mobile.contentCovered}`,
+    mobileOk ? "normal" : "blocker",
+    mobileScreenshot,
+  );
+}
+
 async function runMaxFormat(results) {
   const message = formatMaxReport({
     task: "Проверка формата MAX-отчёта.",
@@ -1443,12 +1536,15 @@ function buildCoverage(results) {
     readonlyChecked = 0;
   }
   const visualResults = results.filter((item) => item.agent === "Visual Regression QA Agent" && item.name.startsWith("Screenshot "));
+  const densityResults = results.filter((item) => item.agent === "Visual Density QA Agent");
   const screenshotCount = visualResults.filter((item) => item.screenshot && fs.existsSync(item.screenshot)).length;
   const buttonResults = results.filter((item) => item.agent === "Button QA Agent" && item.status !== "WARN");
   const dataIntegrityWarningTypes = mergeMetaCounts(results, "dataIntegrityWarningTypes");
   return {
     pages_checked: visualResults.length,
     pages_verified_ok: visualResults.filter((item) => item.status === "OK").length,
+    visual_density_checks: densityResults.length,
+    visual_density_ok: densityResults.filter((item) => item.status === "OK").length,
     role_panels_checked: Number(roleMatch?.[1] || 0),
     role_panels_total: Number(roleMatch?.[2] || rolePanelChecks.length),
     task_cards_checked: Math.max(maxMeta(results, "taskCardsChecked"), detailNumber(taskLayout?.details, "cards")),
@@ -1499,7 +1595,7 @@ function writeReport(results, startedAt, finishedAt, mandatorySuites, environmen
   const payload = {
     generatedAt: finishedAt,
     startedAt,
-    appVersion: "2026.06.16-qa",
+    appVersion: "20260620-d1-compact-ui",
     commit,
     qaRunCommitHash: commit,
     environment: environmentInfo.environment || (baseUrl.includes("127.0.0.1") || baseUrl.includes("localhost") ? "local" : "production"),
@@ -1540,6 +1636,8 @@ function writeReport(results, startedAt, finishedAt, mandatorySuites, environmen
       mobile_tests: qaStatus(checks.mobile),
       console_errors: results.some((item) => item.agent === "Console Error QA Agent" && item.status === "FAIL") ? "failed" : results.some((item) => item.agent === "Console Error QA Agent") ? "ok" : "not_run",
       visual_regression: results.some((item) => item.agent === "Visual Regression QA Agent") ? "ok" : "not_run",
+      visual_density: agentQaStatus("Visual Density QA Agent"),
+      compact_ui_v1: agentQaStatus("Visual Density QA Agent"),
       max_report_format: results.some((item) => item.agent === "MAX Report Format QA Agent" && item.status === "FAIL") ? "failed" : results.some((item) => item.agent === "MAX Report Format QA Agent") ? "ok" : "not_run",
       photo_report_integrity: checkQaStatus("Photo Report Integrity QA Agent", "Photo report integrity"),
       photo_report_deduplication: checkQaStatus("Photo Report Integrity QA Agent", "Photo report deduplication"),
@@ -1623,6 +1721,7 @@ function writeReport(results, startedAt, finishedAt, mandatorySuites, environmen
     "",
     `- pages_checked: ${coverage.pages_checked}`,
     `- pages_verified_ok: ${coverage.pages_verified_ok}/${coverage.pages_checked}`,
+    `- visual_density_checks: ${coverage.visual_density_ok}/${coverage.visual_density_checks}`,
     `- role_panels_checked: ${coverage.role_panels_checked}/${coverage.role_panels_total}`,
     `- task_cards_checked: ${coverage.task_cards_checked}`,
     `- task_workflow_sections_checked: ${coverage.task_workflow_sections_checked}`,
@@ -1712,6 +1811,7 @@ async function main() {
       if (["all", "report"].includes(suite)) await runWorkflow(results, page);
       if (["photo_report_integrity", "all", "report"].includes(suite)) await runPhotoReportIntegrity(results, page);
       if (["all", "report"].includes(suite)) await runVisual(results, page);
+      if (["all", "report"].includes(suite)) await runVisualDensity(results, page);
       add(results, "Console Error QA Agent", "Browser console", errors.length ? "FAIL" : "OK", errors.join("\n") || "No console/page/request errors.", errors.length ? "blocker" : "normal");
     }
     if (["data_integrity", "all", "report"].includes(suite)) await runDataIntegrity(results);

@@ -68,6 +68,10 @@ const state = {
   pullRefresh: { tracking: false, startY: 0, distance: 0, ready: false, refreshing: false },
   dataIntegrityReport: null,
   dataIntegrityFilter: "all",
+  compactUiV1: true,
+  densityMode: localStorage.getItem("uiDensityMode") || "",
+  sidebarCollapsed: localStorage.getItem("sidebarCollapsed") === "1",
+  projectDisplayMode: localStorage.getItem("projectDisplayMode") || "table",
 };
 
 const PROJECT_FORM_DRAFT_KEY = "projectFormDraft:v1";
@@ -665,6 +669,7 @@ function syncTopbarAccess() {
   if (logoutButton) logoutButton.hidden = false;
   if (newProjectButton) newProjectButton.hidden = !canEditProject() || ownerOnlyPageActions;
   syncInstallButton();
+  applyUiShellPreferences();
   if (actions) {
     actions.classList.toggle("role-tools-hidden", !canUseRoleTools);
     actions.classList.toggle("manager-actions", currentRoleBase() === "sales_manager" && !canUseRoleTools);
@@ -784,6 +789,59 @@ function currentUserId() {
   if (String(state.currentRole || "").includes(":")) return Number(String(state.currentRole).split(":")[1]);
   if (state.session?.user?.role === currentRoleBase()) return Number(state.session.user.id || 0) || null;
   return state.users.find((user) => user.role === currentRoleBase())?.id || null;
+}
+
+function defaultDensityMode() {
+  return ["owner", "ai_auditor"].includes(currentRoleBase()) ? "compact" : "comfortable";
+}
+
+function effectiveDensityMode() {
+  return state.densityMode || defaultDensityMode();
+}
+
+function syncDensitySelect() {
+  const select = qs("#densitySelect");
+  if (select) select.value = effectiveDensityMode();
+}
+
+function applyUiShellPreferences() {
+  const density = effectiveDensityMode();
+  document.body.dataset.featureFlag = "compact_ui_v1";
+  document.body.classList.toggle("compact-ui-v1", Boolean(state.compactUiV1));
+  document.body.classList.toggle("density-compact", density === "compact");
+  document.body.classList.toggle("density-comfortable", density !== "compact");
+  document.body.classList.toggle("sidebar-collapsed", Boolean(state.sidebarCollapsed));
+  syncDensitySelect();
+  const sidebarToggle = qs("#sidebarToggle");
+  if (sidebarToggle) {
+    sidebarToggle.setAttribute("aria-pressed", state.sidebarCollapsed ? "true" : "false");
+    sidebarToggle.title = state.sidebarCollapsed ? "Развернуть меню" : "Свернуть меню";
+  }
+}
+
+function setDensityMode(mode) {
+  state.densityMode = mode === "comfortable" ? "comfortable" : "compact";
+  localStorage.setItem("uiDensityMode", state.densityMode);
+  applyUiShellPreferences();
+}
+
+function toggleSidebarCollapsed() {
+  state.sidebarCollapsed = !state.sidebarCollapsed;
+  localStorage.setItem("sidebarCollapsed", state.sidebarCollapsed ? "1" : "0");
+  applyUiShellPreferences();
+}
+
+function fillTopbarProjectSelect() {
+  const select = qs("#topbarProjectSelect");
+  if (!select) return;
+  const selected = state.selectedProjectId ? String(state.selectedProjectId) : "";
+  const projects = roleScopedProjects(state.projects || []);
+  select.innerHTML =
+    `<option value="">Все объекты</option>` +
+    projects
+      .map((project) => `<option value="${project.id}">${escapeHtml(project.title || "Объект")}</option>`)
+      .join("");
+  select.value = projects.some((project) => String(project.id) === selected) ? selected : "";
 }
 
 function roleValueForUser(user, fallbackRole = "owner") {
@@ -1730,6 +1788,7 @@ function fillSelects() {
   if (photoDate && !photoDate.value) photoDate.value = todayIso();
   updateEstimateMaterialSelect();
   fillRoleSwitcher();
+  fillTopbarProjectSelect();
   fillMaterialProjectSelect();
   updateMaterialActorHint();
 }
@@ -3538,6 +3597,28 @@ function projectBlockerCount(project, tasks = state.lastTasks || [], materialRow
   );
 }
 
+function renderTodayKpis(items = []) {
+  return items
+    .slice(0, 6)
+    .map(
+      (item) => `
+      <button class="metric compact-kpi ${item.level || ""} ${Number(item.value || 0) === 0 ? "is-zero" : ""}" type="button" ${item.attrs || 'data-view-target="today"'}>
+        <span class="kpi-icon">${escapeHtml(item.icon || "•")}</span>
+        <strong>${escapeHtml(String(item.value ?? 0))}</strong>
+        <span>${escapeHtml(item.label || "")}</span>
+      </button>`
+    )
+    .join("");
+}
+
+function renderLimitedRows(items, renderer, { limit = 5, empty = "", moreTarget = "" } = {}) {
+  if (!items.length) return empty;
+  const visible = items.slice(0, limit).map(renderer).join("");
+  const hidden = items.length - limit;
+  if (hidden <= 0) return visible;
+  return `${visible}<button class="show-all-link" type="button" ${moreTarget || 'data-view-target="today"'}>Показать все ${items.length}</button>`;
+}
+
 function renderTodayTaskCard(task) {
   return `
     <button class="row clickable today-task-card" type="button" data-open-task="${task.id}" data-testid="task-card">
@@ -3870,43 +3951,50 @@ async function renderToday() {
   const recentComments = notifications
     .filter((row) => isLast24Hours(row.created_at))
     .filter((row) => !row.project_id || isLeadershipRole() || roleProjectIds.has(Number(row.project_id || 0)))
-    .slice(0, 8);
+    .slice(0, 12);
+  const decisionItems = todayDecisionItems({ overdueTasks, returnedTasks, waitingTasks, riskyMaterials, noPhotoProjects, blockers: roleBlockers, remarks: openRemarks });
+  qs("#todayKpis").innerHTML = renderTodayKpis([
+    ["Требует действия", decisionItems.length, "!", decisionItems.length ? "danger" : "", 'data-view-target="tasks"'],
+    ["Просрочено", overdueTasks.length, "⏱", overdueTasks.length ? "danger" : "", 'data-view-target="tasks"'],
+    ["Ждёт проверки", waitingTasks.length, "✓", waitingTasks.length ? "blue" : "", 'data-view-target="tasks"'],
+    ["Блокеры", roleBlockers.length, "◆", roleBlockers.length ? "danger" : "", 'data-view-target="dashboard"'],
+    ["Без фотоотчёта", noPhotoProjects.length, "▣", noPhotoProjects.length ? "warning" : "", 'data-view-target="photos"'],
+    ["Материалы под риском", riskyMaterials.length, "◫", riskyMaterials.length ? "warning" : "", 'data-view-target="materials"'],
+  ].map(([label, value, icon, level, attrs]) => ({ label, value, icon, level, attrs })));
   qs("#todayTasks").innerHTML = todayTasks.length
-    ? todayTasks.slice(0, 6).map(renderTodayTaskCard).join("")
+    ? renderLimitedRows(todayTasks, renderTodayTaskCard, { limit: 5, moreTarget: 'data-view-target="tasks"' })
     : `<div class="empty-state"><strong>На сегодня задач нет</strong><p class="muted">Проверьте просроченные или откройте объект.</p></div>`;
-  const decisionItems = todayDecisionItems({ overdueTasks, returnedTasks, waitingTasks, riskyMaterials, noPhotoProjects, blockers: roleBlockers, remarks: openRemarks }).slice(0, 12);
   qs("#todayAttention").innerHTML = decisionItems.length
-    ? decisionItems.map(renderTodayDecisionItem).join("")
+    ? renderLimitedRows(decisionItems, renderTodayDecisionItem, { limit: 5, moreTarget: 'data-view-target="tasks"' })
     : `<div class="attention-empty"><strong>Критичных сигналов нет</strong><span>На сейчас ничего срочного не найдено.</span></div>`;
   qs("#todayMaterials").innerHTML = riskyMaterials.length
-    ? riskyMaterials.slice(0, 8).map(renderTodayMaterialCard).join("")
+    ? renderLimitedRows(riskyMaterials, renderTodayMaterialCard, { limit: 5, moreTarget: 'data-view-target="materials"' })
     : `<div class="empty-state"><strong>Заявок под риском нет</strong><p class="muted">Заявки появятся здесь, когда прораб или руководитель запросит материалы.</p>${canView("materials") ? `<button class="secondary tiny" type="button" data-view-target="materials">Открыть материалы</button>` : ""}</div>`;
   qs("#todayComments").innerHTML = recentComments.length
-    ? recentComments
-        .map(
+    ? renderLimitedRows(
+        recentComments,
           (row) => `
           <button class="row clickable" type="button" ${notificationTargetAttrs(row)}>
             <strong>${escapeHtml(row.title || "Событие")}</strong>
             <div class="muted">${escapeHtml(row.project_title || "без объекта")} · ${formatDateRu(row.created_at)}</div>
             <p>${escapeHtml(row.text || "")}</p>
-          </button>`
-        )
-        .join("")
+          </button>`,
+        { limit: 5, moreTarget: 'data-view-target="dashboard"' }
+      )
     : `<p class="muted">Новых комментариев за 24 часа нет.</p>`;
   qs("#todayObjects").innerHTML = activeProjects.length
-    ? activeProjects.map((project) => renderTodayObjectCard(project, roleTasks, roleMaterialRows)).join("")
+    ? renderLimitedRows(activeProjects, (project) => renderTodayObjectCard(project, roleTasks, roleMaterialRows), { limit: 5, moreTarget: 'data-view-target="projects"' })
     : `<p class="muted">Активных объектов пока нет.</p>`;
   qs("#todayNoPhoto").innerHTML = noPhotoProjects.length
-    ? noPhotoProjects
-        .slice(0, 8)
-        .map(
+    ? renderLimitedRows(
+        noPhotoProjects,
           (project) => `
           <button class="row clickable" type="button" data-open-project="${project.id}">
             <strong>${escapeHtml(project.title)}</strong>
             <div class="muted">последний фотоотчёт: ${latestPhotoReportDate(project.id) ? formatDateRu(latestPhotoReportDate(project.id)) : "не найден"}</div>
-          </button>`
-        )
-        .join("")
+          </button>`,
+        { limit: 5, moreTarget: 'data-view-target="photos"' }
+      )
     : `<p class="muted">По всем активным объектам есть фотоотчёт за сегодня.</p>`;
 }
 
@@ -4344,6 +4432,12 @@ async function renderProjects() {
   const projects = state.projectListMode === "archive" ? state.archivedProjects : state.projects;
   qs("#projectListTitle").textContent = state.projectListMode === "archive" ? "Архив объектов" : "Список объектов";
   qsa("[data-project-list]").forEach((button) => button.classList.toggle("active", button.dataset.projectList === state.projectListMode));
+  const rowsNode = qs("#projectRows");
+  if (rowsNode) {
+    rowsNode.classList.toggle("project-table-mode", state.projectDisplayMode === "table");
+    rowsNode.classList.toggle("project-card-mode", state.projectDisplayMode !== "table");
+  }
+  qsa("[data-project-display]").forEach((button) => button.classList.toggle("active", button.dataset.projectDisplay === state.projectDisplayMode));
   qs("#projectRows").innerHTML = projects.length
     ? projects
         .map(
@@ -7270,12 +7364,76 @@ async function handleTaskComment(button) {
   }
 }
 
+async function runGlobalSearch(rawQuery) {
+  const query = String(rawQuery || "").trim().toLowerCase();
+  if (!query) {
+    showToast("Введите, что найти: объект, задачу или материал");
+    return;
+  }
+  const project = [...(state.projects || []), ...(state.archivedProjects || [])].find((item) =>
+    [item.title, item.customer_name, item.address].some((value) => String(value || "").toLowerCase().includes(query))
+  );
+  if (project) {
+    state.selectedProjectId = project.id;
+    await switchView("projects");
+    await renderProjectDetail(project.id);
+    showToast("Открыт найденный объект");
+    return;
+  }
+  const task = (state.lastTasks || []).find((item) =>
+    [item.title, item.description, item.project_title, item.assignee_name].some((value) => String(value || "").toLowerCase().includes(query))
+  );
+  if (task) {
+    state.selectedTaskProjectId = task.project_id || null;
+    await switchView("tasks");
+    openTaskDetail(task.id);
+    showToast("Открыта найденная задача");
+    return;
+  }
+  const batch = buildMaterialBatches(state.materialRequests || []).find((item) =>
+    [materialBatchTitle(item), item.project_title, item.creator_name].some((value) => String(value || "").toLowerCase().includes(query))
+  );
+  if (batch) {
+    await switchView("materials");
+    await openMaterialBatchDialog(batch.key);
+    showToast("Открыта найденная заявка");
+    return;
+  }
+  showToast("Ничего не найдено. Попробуйте другое слово.");
+}
+
 function bindEvents() {
   bindStableDetailsTouchGuard();
   bindWheelPageScroll();
   initPullToRefresh();
+  qs("#sidebarToggle")?.addEventListener("click", () => toggleSidebarCollapsed());
+  qs("#densitySelect")?.addEventListener("change", (event) => setDensityMode(event.target.value));
+  qs("#topbarProjectSelect")?.addEventListener("change", async (event) => {
+    const projectId = Number(event.target.value || 0) || null;
+    state.selectedProjectId = projectId;
+    state.selectedTaskProjectId = projectId;
+    localStorage.setItem("selectedTopbarProjectId", projectId ? String(projectId) : "");
+    if (projectId) {
+      await switchView("projects");
+      await renderProjectDetail(projectId);
+    } else if (state.view === "projects") {
+      await renderProjects();
+    }
+  });
+  qs("#globalSearchInput")?.addEventListener("keydown", async (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    await runGlobalSearch(event.currentTarget.value);
+  });
   qsa("[data-view]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
   qsa("[data-view-target]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.viewTarget)));
+  qsa("[data-project-display]").forEach((button) =>
+    button.addEventListener("click", () => {
+      state.projectDisplayMode = button.dataset.projectDisplay === "cards" ? "cards" : "table";
+      localStorage.setItem("projectDisplayMode", state.projectDisplayMode);
+      renderProjects();
+    })
+  );
   qs("#refreshButton").addEventListener("click", () => refreshAppFromUser("Обновляем данные").catch((error) => showToast(error.message)));
   qs("#mobileQuickActionToggle")?.addEventListener("click", () => toggleMobileQuickActions());
   qs("#mobileQuickActionClose")?.addEventListener("click", () => toggleMobileQuickActions(false));

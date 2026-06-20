@@ -2231,6 +2231,91 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 
 Local QA result is `PARTIAL` only for the accepted external cookieless viewer limitation. No production deploy has been done in this step yet.
 
+### 2026-06-20: Release D1 - compact UI foundation
+
+**Request.** Start the compact interface release only after A3 is fixed and backed up. The release must reduce empty space, make the first screen more useful, keep the old comfortable density available, and add a Visual Density QA agent so mobile/desktop layout problems are not missed again.
+
+**Backup.**
+
+- Server backup was created before frontend changes:
+  - database: `/backups/construction-20260620-063817.db`;
+  - uploads: `/backups/uploads-20260620-063817.zip`.
+
+**What changed.**
+
+- Added feature flag `compact_ui_v1` in the frontend and audit snapshot.
+- Added density modes:
+  - `Compact` as the default for owner and AI auditor;
+  - `Comfortable` still available from the top bar.
+- Added compact shell controls:
+  - collapsible left sidebar;
+  - sticky 54px top bar;
+  - object selector;
+  - global search across objects, tasks and material requests.
+- Reworked the Today screen:
+  - added a compact KPI strip with six key signals;
+  - limited panels to five rows and added `Show all N`;
+  - reduced panel/card padding and row heights;
+  - prevented nested-card visual noise.
+- Reworked Objects:
+  - table view is default on desktop;
+  - card view remains available;
+  - mobile falls back to one-column cards.
+- Tightened mobile layout:
+  - today grid is forced to one column;
+  - bottom `+` button is visually separated;
+  - feedback remains reachable from mobile menu;
+  - no horizontal overflow in checked viewports.
+- Updated audit snapshot:
+  - added D1 compact UI checks;
+  - added Visual Density QA status;
+  - added links to desktop and mobile density screenshots.
+- Added Visual Density QA Agent:
+  - checks compact mode class and KPI strip;
+  - checks rows visible in first viewport;
+  - checks panel padding, horizontal overflow, vertical text and multi-primary-row violations;
+  - checks mobile bottom nav, plus button separation and content coverage.
+
+**Checks before commit.**
+
+- Local QA gate completed with result `PARTIAL`.
+- Critical errors: `0`.
+- Passed:
+  - lint;
+  - typecheck;
+  - unit smoke;
+  - scroll;
+  - buttons;
+  - navigation;
+  - mobile;
+  - workflow;
+  - photo report integrity;
+  - visual regression;
+  - visual density;
+  - MAX report format.
+- Coverage from local QA:
+  - pages checked: `10/10`;
+  - visual density: `2/2`;
+  - role panels: `6/6`;
+  - task cards checked: `39`;
+  - mobile viewports checked: `4`;
+  - readonly write methods checked: `4/4`.
+
+**Known PARTIAL reasons.**
+
+- `external_cookieless_viewer` remains unsupported for live audit-login by accepted project rule; snapshot must be used for that external viewer.
+- Data Integrity Agent still reports existing warning-level production data issues, but critical integrity issues are `0`.
+
+**Release rule.**
+
+D1 is not considered production-finished until:
+
+- D1 commit is created and pushed;
+- full quality gate is re-run on the D1 commit;
+- production is deployed;
+- `/version`, snapshot and `qa-report.md` all show the same D1 commit;
+- MAX receives a separate D1 report.
+
 ### 2026-06-19: Release A2 production follow-up - snapshot visibility
 
 **Request.** Do not count Release A2 as done until production, `/version`, snapshot and `qa-report.md` prove the same deployed commit and show the A2 checks explicitly.

@@ -1659,6 +1659,7 @@ def frontend_label_maps() -> tuple[dict[str, str], dict[str, str], dict[str, str
 def snapshot_feature_flags() -> dict[str, bool]:
     app_js = (STATIC_DIR / "app.js").read_text(encoding="utf-8", errors="replace") if (STATIC_DIR / "app.js").exists() else ""
     index_html = (STATIC_DIR / "index.html").read_text(encoding="utf-8", errors="replace") if (STATIC_DIR / "index.html").exists() else ""
+    styles_css = (STATIC_DIR / "styles.css").read_text(encoding="utf-8", errors="replace") if (STATIC_DIR / "styles.css").exists() else ""
     database_text = (APP_DIR / "database.py").read_text(encoding="utf-8", errors="replace") if (APP_DIR / "database.py").exists() else ""
     server_text = Path(__file__).read_text(encoding="utf-8", errors="replace")
     status_map, role_map, type_map = frontend_label_maps()
@@ -1668,6 +1669,7 @@ def snapshot_feature_flags() -> dict[str, bool]:
         "object_attention_block": "projectAttentionItems" in app_js and "Что требует внимания" in app_js,
         "photo_reports_entity": "CREATE TABLE IF NOT EXISTS photo_reports" in database_text and "photo_reports_payload" in server_text,
         "object_issues_entity": "CREATE TABLE IF NOT EXISTS object_remarks" in database_text and "object_remarks_payload" in server_text,
+        "compact_ui_v1": "compactUiV1: true" in app_js and "compact-ui-v1" in styles_css and "densitySelect" in index_html,
     }
 
 
@@ -4760,6 +4762,29 @@ class AppHandler(BaseHTTPRequestHandler):
             f'<div class="meta-row"><span><code>{e(key)}</code></span><strong>{e(value)}</strong></div>'
             for key, value in stage3_checks.items()
         )
+        d1_checks = {
+            "compact_ui_v1": "ok" if feature_flags.get("compact_ui_v1") else "missing",
+            "density_modes": "ok" if all(marker in styles_snapshot for marker in ["density-compact", "density-comfortable"]) and "densitySelect" in index_snapshot else "partial",
+            "compact_sidebar": "ok" if all(marker in styles_snapshot for marker in ["176px", "64px", "sidebar-collapsed"]) and "sidebarToggle" in index_snapshot else "partial",
+            "sticky_topbar": "ok" if all(marker in index_snapshot for marker in ["topbarProjectSelect", "globalSearchInput"]) and "position: sticky" in styles_snapshot else "partial",
+            "today_kpi_strip": "ok" if "todayKpis" in index_snapshot and "renderTodayKpis" in app_js_snapshot else "partial",
+            "limited_panels": "ok" if "renderLimitedRows" in app_js_snapshot and "Показать все" in app_js_snapshot else "partial",
+            "objects_table_default": "ok" if "projectDisplayMode" in app_js_snapshot and "project-table-mode" in styles_snapshot else "partial",
+            "material_compact_rows": "ok" if "material-card" in styles_snapshot and "material-status-tabs" in styles_snapshot else "partial",
+            "mobile_plus_button_separated": "ok" if "mobile-plus" in styles_snapshot and "grid-template-columns: 1fr 1fr 68px 1fr 1fr" in styles_snapshot else "partial",
+            "visual_density_qa": qa_snapshot_status(qa_report, "visual_density"),
+        }
+        d1_screenshots_body = f"""
+        <div class="meta-row"><span>Desktop compact screenshot</span><strong><a href="/qa-artifacts/latest/screenshots/density-today-owner-1440.png?v={e(qa_commit)}">density-today-owner-1440.png</a></strong></div>
+        <div class="meta-row"><span>Mobile compact screenshot</span><strong><a href="/qa-artifacts/latest/screenshots/density-today-mobile-390.png?v={e(qa_commit)}">density-today-mobile-390.png</a></strong></div>
+        """
+        d1_body = (
+            "".join(
+                f'<div class="meta-row"><span><code>{e(key)}</code></span><strong>{e(value)}</strong></div>'
+                for key, value in d1_checks.items()
+            )
+            + d1_screenshots_body
+        )
         release_a2_checks = {
             "photo_report_integrity": qa_snapshot_status(qa_report, "photo_report_integrity"),
             "photo_report_deduplication": qa_snapshot_status(qa_report, "photo_report_deduplication"),
@@ -4889,6 +4914,8 @@ class AppHandler(BaseHTTPRequestHandler):
           {qa_row("mobile_tests", "Мобильная версия")}
           {qa_row("console_errors", "Ошибки консоли")}
           {qa_row("visual_regression", "Визуальная проверка")}
+          {qa_row("visual_density", "D1: визуальная плотность")}
+          {qa_row("compact_ui_v1", "D1: compact_ui_v1")}
           {qa_row("max_report_format", "Формат MAX-отчёта")}
           {qa_row("material_stage_and_health", "A3: stage и health материалов")}
           {qa_row("data_integrity_agent", "A3: Data Integrity Agent")}
@@ -4897,6 +4924,7 @@ class AppHandler(BaseHTTPRequestHandler):
           <h2>QA coverage</h2>
           {coverage_row("pages_checked", "страниц проверено")}
           {coverage_row("pages_verified_ok", "страниц подтверждено")}
+          <div class="meta-row"><span><code>visual_density_checks</code> проверок плотности интерфейса</span><strong>{e(qa_coverage.get("visual_density_ok", "not_run"))}/{e(qa_coverage.get("visual_density_checks", "not_run"))}</strong></div>
           <div class="meta-row"><span><code>role_panels_checked</code> ролевых панелей</span><strong>{e(qa_coverage.get("role_panels_checked", "not_run"))}/{e(qa_coverage.get("role_panels_total", "not_run"))}</strong></div>
           {coverage_row("task_cards_checked", "карточек задач")}
           {coverage_row("object_cards_checked", "карточек объектов")}
@@ -4998,6 +5026,7 @@ class AppHandler(BaseHTTPRequestHandler):
               {block("QA-проверки", ["Открыть qa-report", "Посмотреть скриншоты", "Разобрать FAIL/PARTIAL"], ["Фактический прогон", "Quality gate", "Без фальшивого ok"], qa_body)}
               {block("Проверка первого ТЗ", ["Сверить контракт", "Найти частичные пункты"], ["UX-контракт", "Аудит", "Статусы"], first_tz_body)}
               {block("Проверка этапа UX-логики", ["Сверить ролевые сценарии", "Проверить мобильный UX", "Проверить блокеры"], ["Роли", "Сигналы", "Блокеры", "Мобильный UX"], stage3_body)}
+              {block("Release D1: compact UI", ["Сравнить Compact/Comfortable", "Открыть density screenshots", "Проверить первый экран"], ["compact_ui_v1", "Density QA", "Topbar", "Sidebar", "KPI"], d1_body)}
               {block("Release A2: photo reports", ["Reject empty report", "Check task link", "Check duplicates"], ["A2", "PhotoReportStatusService", "Consistency"], release_a2_body)}
               {block("1. Сегодня", ["Открыть задачи", "Открыть материалы", "Открыть фотоотчёты"], ["Мои задачи", "Требует решения", "Активные объекты"], today_body)}
               {block("2. Сегодня для руководителя", ["Открыть проблемный объект", "Открыть задачу", "Посмотреть сигналы"], ["Руководитель", "Решения", "Блокеры"], today_owner_body)}
