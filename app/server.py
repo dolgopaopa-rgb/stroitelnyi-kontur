@@ -4245,6 +4245,9 @@ class AppHandler(BaseHTTPRequestHandler):
         def e(value: object) -> str:
             return html.escape(snapshot_clean_text(value, status_map), quote=True)
 
+        def e_raw(value: object) -> str:
+            return html.escape(str(value or ""), quote=True)
+
         def label(mapping: dict[str, str], value: object, fallback: str = "Не задано") -> str:
             return snapshot_label(mapping, value, fallback)
 
@@ -4862,7 +4865,7 @@ class AppHandler(BaseHTTPRequestHandler):
             "production_rollout": "not_enabled_before_owner_choice",
         }
         d2_screenshots_body = "".join(
-            f'<div class="meta-row"><span>{e(name)}</span><strong><a href="/qa-artifacts/latest/screenshots/{e(name)}?v={e(qa_commit)}">открыть</a></strong></div>'
+            f'<div class="meta-row"><span>{e_raw(name)}</span><strong><a href="/qa-artifacts/latest/screenshots/{quote(name, safe="")}?v={quote(qa_commit, safe="")}">открыть</a></strong></div>'
             for name in d2_screenshot_names
         )
         d2_body = (
