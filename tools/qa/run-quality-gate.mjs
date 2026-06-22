@@ -40,6 +40,21 @@ const visualPages = [
   { view: "estimates", path: "/?view=estimates", title: "Сметы", testId: "estimates-page", activeViewId: "estimatesView" },
 ];
 
+const d2PrototypeShots = [
+  ["variant-a-owner-1440x900.png", "a", "owner", 1440, 900],
+  ["variant-b-owner-1440x900.png", "b", "owner", 1440, 900],
+  ["variant-a-owner-1280x720.png", "a", "owner", 1280, 720],
+  ["variant-b-owner-1280x720.png", "b", "owner", 1280, 720],
+  ["variant-a-foreman-1440x900.png", "a", "foreman", 1440, 900],
+  ["variant-b-foreman-1440x900.png", "b", "foreman", 1440, 900],
+  ["variant-a-master-390x844.png", "a", "master", 390, 844],
+  ["variant-b-master-390x844.png", "b", "master", 390, 844],
+  ["variant-a-tasks-1440x900.png", "a", "tasks", 1440, 900],
+  ["variant-b-tasks-1440x900.png", "b", "tasks", 1440, 900],
+  ["variant-a-materials-1440x900.png", "a", "materials", 1440, 900],
+  ["variant-b-materials-1440x900.png", "b", "materials", 1440, 900],
+];
+
 const agentNames = [
   "QA Orchestrator Agent",
   "Scroll QA Agent",
@@ -55,6 +70,7 @@ const agentNames = [
   "Console Error QA Agent",
   "Visual Regression QA Agent",
   "Visual Density QA Agent",
+  "D2 Prototype QA Agent",
   "MAX Report Format QA Agent",
 ];
 
@@ -92,6 +108,14 @@ function findBrowserExecutable() {
     "/usr/bin/microsoft-edge",
   ].filter(Boolean);
   return candidates.find((candidate) => fs.existsSync(candidate)) || "";
+}
+
+function packageVersion() {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")).version || "unknown";
+  } catch {
+    return "unknown";
+  }
 }
 
 function loadPlaywright() {
@@ -410,6 +434,41 @@ async function runSmoke(results, page) {
   const hasLoader = await page.locator(".app-loading, .global-loader").count().catch(() => 0);
   add(results, "QA Orchestrator Agent", "No white screen", length > 20 ? "OK" : "FAIL", `Visible text length: ${length}`, length > 20 ? "normal" : "blocker");
   add(results, "QA Orchestrator Agent", "No endless loader", hasLoader ? "WARN" : "OK", `Loader nodes: ${hasLoader}`);
+}
+
+async function runVersionCache(results) {
+  const expectedCommit = run("git", ["rev-parse", "--short", "HEAD"]).output || "";
+  const [first, second, head] = await Promise.all([
+    fetch(`${baseUrl}/version`, { cache: "no-store" }),
+    fetch(`${baseUrl}/version`, { cache: "no-store" }),
+    fetch(`${baseUrl}/version`, { method: "HEAD", cache: "no-store" }),
+  ]);
+  const firstJson = first.ok ? await first.json().catch(() => null) : null;
+  const secondJson = second.ok ? await second.json().catch(() => null) : null;
+  const firstCache = first.headers.get("cache-control") || "";
+  const secondCache = second.headers.get("cache-control") || "";
+  const headCache = head.headers.get("cache-control") || "";
+  const headPragma = head.headers.get("pragma") || "";
+  const headExpires = head.headers.get("expires") || "";
+  const noStore =
+    firstCache.includes("no-store") &&
+    secondCache.includes("no-store") &&
+    headCache.includes("no-store") &&
+    headPragma.toLowerCase().includes("no-cache") &&
+    headExpires === "0";
+  const commitOk =
+    Boolean(firstJson?.commitHash) &&
+    firstJson.commitHash === secondJson?.commitHash &&
+    (!expectedCommit || firstJson.commitHash.startsWith(expectedCommit) || expectedCommit.startsWith(firstJson.commitHash));
+  const status = first.ok && second.ok && head.ok && noStore && commitOk ? "OK" : "FAIL";
+  add(
+    results,
+    "QA Orchestrator Agent",
+    "Version endpoint is uncached and current",
+    status,
+    `first=${first.status}; second=${second.status}; head=${head.status}; cache=${firstCache} / ${secondCache} / ${headCache}; headPragma=${headPragma}; headExpires=${headExpires}; versionCommit=${firstJson?.commitHash || "missing"}; expectedCommit=${expectedCommit || "missing"}`,
+    status === "OK" ? "normal" : "blocker",
+  );
 }
 
 async function runScroll(results, page) {
@@ -1449,6 +1508,83 @@ async function runVisualDensity(results, page) {
   );
 }
 
+async function runD2Prototype(results, page) {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${baseUrl}/ui-lab`, { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(500);
+  const lab = await page.evaluate(() => {
+    const variants = [...document.querySelectorAll("[data-variant]")].map((node) => node.getAttribute("data-variant"));
+    const screens = [...document.querySelectorAll("[data-screen]")].map((node) => node.getAttribute("data-screen"));
+    return {
+      variants,
+      screens,
+      hasAppIcon: document.querySelectorAll("[data-icon] svg").length > 0,
+      text: document.body.innerText || "",
+      horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth + 2,
+    };
+  });
+  const expectedScreens = ["owner", "foreman", "master", "objects", "tasks", "materials", "photos", "documents", "drawer", "mobile"];
+  const variantsOk = lab.variants.includes("a") && lab.variants.includes("b");
+  const screensOk = expectedScreens.every((screen) => lab.screens.includes(screen));
+  const labelsOk = ["Corporate Compact", "D2Dom Soft", "Требует моего действия", "Список остаётся на месте"].every((label) => lab.text.includes(label));
+  const labOk = variantsOk && screensOk && lab.hasAppIcon && labelsOk && !lab.horizontalOverflow;
+  add(
+    results,
+    "D2 Prototype QA Agent",
+    "UI lab has both prototype variants",
+    labOk ? "OK" : "FAIL",
+    `variants=${lab.variants.join(",")}; screens=${lab.screens.length}; expectedScreens=${expectedScreens.length}; hasSvgIcons=${lab.hasAppIcon}; labelsOk=${labelsOk}; horizontalOverflow=${lab.horizontalOverflow}`,
+    labOk ? "normal" : "blocker",
+    "",
+    { d2PrototypeScreensChecked: lab.screens.length },
+  );
+
+  for (const [fileName, variant, screen, width, height] of d2PrototypeShots) {
+    await page.setViewportSize({ width, height });
+    const url = `${baseUrl}/ui-lab?variant=${variant}&screen=${screen}&shot=1`;
+    await page.goto(url, { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(350);
+    const screenshot = path.join(SCREENSHOT_DIR, fileName);
+    await page.screenshot({ path: screenshot, fullPage: false }).catch(() => null);
+    const shot = await page.evaluate((expectedScreen) => {
+      const activeVariant = document.querySelector(".variant.shot-active")?.getAttribute("data-variant") || "";
+      const activeScreen = document.querySelector(".screen.shot-active")?.getAttribute("data-screen") || "";
+      const textLength = (document.body.innerText || "").trim().length;
+      const rowHeights = [...document.querySelectorAll(".screen.shot-active .entity-row")].map((row) => Math.round(row.getBoundingClientRect().height));
+      const bodyClass = document.body.className;
+      return {
+        activeVariant,
+        activeScreen,
+        textLength,
+        maxRowHeight: rowHeights.length ? Math.max(...rowHeights) : 0,
+        bodyClass,
+        horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth + 2,
+        hasExpectedScreenClass: document.body.classList.contains(`screen-${expectedScreen}`),
+      };
+    }, screen);
+    const exists = fs.existsSync(screenshot);
+    const denseRowsOk = !["owner", "foreman", "tasks", "materials"].includes(screen) || shot.maxRowHeight <= 72;
+    const ok =
+      exists &&
+      shot.activeVariant === variant &&
+      shot.activeScreen === screen &&
+      shot.hasExpectedScreenClass &&
+      shot.textLength > 40 &&
+      denseRowsOk &&
+      !shot.horizontalOverflow;
+    add(
+      results,
+      "D2 Prototype QA Agent",
+      `Screenshot ${fileName}`,
+      ok ? "OK" : "FAIL",
+      `url=${url}; activeVariant=${shot.activeVariant}; activeScreen=${shot.activeScreen}; text=${shot.textLength}; maxRowHeight=${shot.maxRowHeight}; denseRowsOk=${denseRowsOk}; horizontalOverflow=${shot.horizontalOverflow}; screenshot=${screenshot}`,
+      ok ? "normal" : "blocker",
+      screenshot,
+      { screenshotsCreated: exists ? 1 : 0, d2PrototypeScreensChecked: ok ? 1 : 0 },
+    );
+  }
+}
+
 async function runMaxFormat(results) {
   const message = formatMaxReport({
     task: "Проверка формата MAX-отчёта.",
@@ -1485,6 +1621,7 @@ function checksSummary(results) {
   map.workflow = agentSummary("Workflow QA Agent");
   map.photo_report_integrity = agentSummary("Photo Report Integrity QA Agent");
   map.data_integrity = agentSummary("Data Integrity Agent");
+  map.d2Prototype = agentSummary("D2 Prototype QA Agent");
   return map;
 }
 
@@ -1557,6 +1694,8 @@ function buildCoverage(results) {
     data_integrity_violations_checked: sumMeta(results, "dataIntegrityViolationsChecked"),
     data_integrity_critical: maxMeta(results, "dataIntegrityCritical"),
     data_integrity_warning_types: dataIntegrityWarningTypes,
+    d2_prototype_checks: results.filter((item) => item.agent === "D2 Prototype QA Agent").length,
+    d2_prototype_screens_checked: sumMeta(results, "d2PrototypeScreensChecked"),
     buttons_checked: Math.max(sumMeta(results, "buttonsChecked"), buttonResults.length),
     mobile_viewports_checked: results.filter((item) => item.agent === "Mobile QA Agent" && item.name.startsWith("Viewport ")).length,
     mobile_quick_actions_checked: maxMeta(results, "mobileQuickActionsChecked"),
@@ -1595,7 +1734,7 @@ function writeReport(results, startedAt, finishedAt, mandatorySuites, environmen
   const payload = {
     generatedAt: finishedAt,
     startedAt,
-    appVersion: "20260620-d1-compact-ui",
+    appVersion: packageVersion(),
     commit,
     qaRunCommitHash: commit,
     environment: environmentInfo.environment || (baseUrl.includes("127.0.0.1") || baseUrl.includes("localhost") ? "local" : "production"),
@@ -1637,6 +1776,8 @@ function writeReport(results, startedAt, finishedAt, mandatorySuites, environmen
       console_errors: results.some((item) => item.agent === "Console Error QA Agent" && item.status === "FAIL") ? "failed" : results.some((item) => item.agent === "Console Error QA Agent") ? "ok" : "not_run",
       visual_regression: results.some((item) => item.agent === "Visual Regression QA Agent") ? "ok" : "not_run",
       visual_density: agentQaStatus("Visual Density QA Agent"),
+      d2_prototype: agentQaStatus("D2 Prototype QA Agent"),
+      d2_ui_lab: checkQaStatus("D2 Prototype QA Agent", "UI lab has both prototype variants"),
       compact_ui_v1: agentQaStatus("Visual Density QA Agent"),
       max_report_format: results.some((item) => item.agent === "MAX Report Format QA Agent" && item.status === "FAIL") ? "failed" : results.some((item) => item.agent === "MAX Report Format QA Agent") ? "ok" : "not_run",
       photo_report_integrity: checkQaStatus("Photo Report Integrity QA Agent", "Photo report integrity"),
@@ -1733,6 +1874,8 @@ function writeReport(results, startedAt, finishedAt, mandatorySuites, environmen
     `- data_integrity_violations_checked: ${coverage.data_integrity_violations_checked}`,
     `- data_integrity_critical: ${coverage.data_integrity_critical}`,
     `- data_integrity_warning_types: ${JSON.stringify(coverage.data_integrity_warning_types || {})}`,
+    `- d2_prototype_checks: ${coverage.d2_prototype_checks}`,
+    `- d2_prototype_screens_checked: ${coverage.d2_prototype_screens_checked}`,
     `- buttons_checked: ${coverage.buttons_checked}`,
     `- mobile_viewports_checked: ${coverage.mobile_viewports_checked}`,
     `- mobile_quick_actions_checked: ${coverage.mobile_quick_actions_checked}`,
@@ -1780,7 +1923,7 @@ async function main() {
   ensureDirs();
   const startedAt = new Date().toISOString();
   const results = [];
-  const mandatory = suite === "all" || suite === "report" ? ["lint", "typecheck", "unit", "scroll", "buttons", "navigation", "mobile", "readonly", "workflow", "photo_report_integrity", "data_integrity"] : [];
+  const mandatory = suite === "all" || suite === "report" ? ["lint", "typecheck", "unit", "scroll", "buttons", "navigation", "mobile", "readonly", "workflow", "photo_report_integrity", "data_integrity", "d2Prototype"] : [];
   let serverProcess = null;
   let browser = null;
   try {
@@ -1801,6 +1944,7 @@ async function main() {
       page = prepared.page;
       errors = prepared.errors;
       if (["smoke", "all", "report"].includes(suite)) await runSmoke(results, page);
+      if (["smoke", "all", "report"].includes(suite)) await runVersionCache(results);
       if (["scroll", "all", "report"].includes(suite)) await runScroll(results, page);
       if (["buttons", "all", "report"].includes(suite)) await runButtons(results, page);
       if (["navigation", "all", "report"].includes(suite)) await runNavigation(results, page);
@@ -1812,6 +1956,7 @@ async function main() {
       if (["photo_report_integrity", "all", "report"].includes(suite)) await runPhotoReportIntegrity(results, page);
       if (["all", "report"].includes(suite)) await runVisual(results, page);
       if (["all", "report"].includes(suite)) await runVisualDensity(results, page);
+      if (["all", "report"].includes(suite)) await runD2Prototype(results, page);
       add(results, "Console Error QA Agent", "Browser console", errors.length ? "FAIL" : "OK", errors.join("\n") || "No console/page/request errors.", errors.length ? "blocker" : "normal");
     }
     if (["data_integrity", "all", "report"].includes(suite)) await runDataIntegrity(results);

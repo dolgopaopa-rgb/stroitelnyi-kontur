@@ -51,6 +51,7 @@ def json_response(handler: BaseHTTPRequestHandler, payload: object, status: int 
     handler.send_header("Content-Type", "application/json; charset=utf-8")
     handler.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
     handler.send_header("Pragma", "no-cache")
+    handler.send_header("Expires", "0")
     maybe_send_session_cookie(handler)
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
@@ -2177,6 +2178,10 @@ def can_manage_feedback(account: dict | None) -> bool:
     return account_role(account) in {"owner", "construction_manager", "finance_director", "ai_auditor"}
 
 
+def can_access_ui_lab(account: dict | None) -> bool:
+    return account_role(account) in {"owner", "ai_auditor"}
+
+
 def can_delete_feedback(account: dict | None) -> bool:
     return account_role(account) in {"owner", "construction_manager"}
 
@@ -3708,8 +3713,32 @@ class AppHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
+        if path == "/favicon.ico":
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+            self.send_header("Pragma", "no-cache")
+            self.send_header("Expires", "0")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         if path == "/version":
             self.send_response(200)
+            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+            self.send_header("Pragma", "no-cache")
+            self.send_header("Expires", "0")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        if path == "/ui-lab":
+            if not can_access_ui_lab(current_access_account(self)):
+                self.send_error(403)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+            self.send_header("Pragma", "no-cache")
+            self.send_header("Expires", "0")
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
@@ -3760,6 +3789,9 @@ class AppHandler(BaseHTTPRequestHandler):
         if path == "/logout":
             logout_response(self)
             return
+        if path == "/favicon.ico":
+            self.serve_static("assets/g2-logo-192.png")
+            return
         if path == "/login":
             if is_authorized(self):
                 redirect_response(self, "/")
@@ -3804,6 +3836,12 @@ class AppHandler(BaseHTTPRequestHandler):
             return
         if path == "/version":
             json_response(self, app_metadata(self))
+            return
+        if path == "/ui-lab":
+            if not can_access_ui_lab(current_access_account(self)):
+                self.send_error(403)
+                return
+            self.serve_static("ui-lab.html")
             return
         if path == "/api/material-requests/export":
             self.serve_material_requests_export(parse_qs(parsed.query))
@@ -4800,6 +4838,41 @@ class AppHandler(BaseHTTPRequestHandler):
             )
             + d1_screenshots_body
         )
+        d2_screenshot_names = [
+            "variant-a-owner-1440x900.png",
+            "variant-b-owner-1440x900.png",
+            "variant-a-owner-1280x720.png",
+            "variant-b-owner-1280x720.png",
+            "variant-a-foreman-1440x900.png",
+            "variant-b-foreman-1440x900.png",
+            "variant-a-master-390x844.png",
+            "variant-b-master-390x844.png",
+            "variant-a-tasks-1440x900.png",
+            "variant-b-tasks-1440x900.png",
+            "variant-a-materials-1440x900.png",
+            "variant-b-materials-1440x900.png",
+        ]
+        d2_checks = {
+            "d2_stage": "prototype",
+            "ui_lab_route": "ok" if "ui-lab.html" in {path.name for path in STATIC_DIR.glob("ui-lab.html")} else "missing",
+            "variant_a_corporate_compact": "ok" if "Corporate Compact" in (STATIC_DIR / "ui-lab.html").read_text(encoding="utf-8", errors="replace") else "missing",
+            "variant_b_d2dom_soft": "ok" if "D2Dom Soft" in (STATIC_DIR / "ui-lab.html").read_text(encoding="utf-8", errors="replace") else "missing",
+            "d2_prototype_qa": qa_snapshot_status(qa_report, "d2_prototype"),
+            "d2_ui_lab": qa_snapshot_status(qa_report, "d2_ui_lab"),
+            "production_rollout": "not_enabled_before_owner_choice",
+        }
+        d2_screenshots_body = "".join(
+            f'<div class="meta-row"><span>{e(name)}</span><strong><a href="/qa-artifacts/latest/screenshots/{e(name)}?v={e(qa_commit)}">открыть</a></strong></div>'
+            for name in d2_screenshot_names
+        )
+        d2_body = (
+            "".join(
+                f'<div class="meta-row"><span><code>{e(key)}</code></span><strong>{e(value)}</strong></div>'
+                for key, value in d2_checks.items()
+            )
+            + '<div class="meta-row"><span><code>/ui-lab</code></span><strong><a href="/ui-lab">открыть прототипы</a></strong></div>'
+            + d2_screenshots_body
+        )
         release_a2_checks = {
             "photo_report_integrity": qa_snapshot_status(qa_report, "photo_report_integrity"),
             "photo_report_deduplication": qa_snapshot_status(qa_report, "photo_report_deduplication"),
@@ -5042,6 +5115,7 @@ class AppHandler(BaseHTTPRequestHandler):
               {block("Проверка первого ТЗ", ["Сверить контракт", "Найти частичные пункты"], ["UX-контракт", "Аудит", "Статусы"], first_tz_body)}
               {block("Проверка этапа UX-логики", ["Сверить ролевые сценарии", "Проверить мобильный UX", "Проверить блокеры"], ["Роли", "Сигналы", "Блокеры", "Мобильный UX"], stage3_body)}
               {block("Release D1: compact UI", ["Сравнить Compact/Comfortable", "Открыть density screenshots", "Проверить первый экран"], ["compact_ui_v1", "Density QA", "Topbar", "Sidebar", "KPI"], d1_body)}
+              {block("Release D2: UI Lab Prototype", ["Открыть /ui-lab", "Сравнить вариант A", "Сравнить вариант B", "Выбрать направление"], ["Prototype", "Corporate Compact", "D2Dom Soft", "Без rollout"], d2_body)}
               {block("Release A2: photo reports", ["Reject empty report", "Check task link", "Check duplicates"], ["A2", "PhotoReportStatusService", "Consistency"], release_a2_body)}
               {block("1. Сегодня", ["Открыть задачи", "Открыть материалы", "Открыть фотоотчёты"], ["Мои задачи", "Требует решения", "Активные объекты"], today_body)}
               {block("2. Сегодня для руководителя", ["Открыть проблемный объект", "Открыть задачу", "Посмотреть сигналы"], ["Руководитель", "Решения", "Блокеры"], today_owner_body)}

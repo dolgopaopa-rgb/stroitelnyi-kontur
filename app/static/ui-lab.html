@@ -1,0 +1,1122 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>D2 UI Lab - Строительный контур</title>
+    <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
+    <style>
+      :root {
+        --brand: #1f756c;
+        --brand-dark: #145750;
+        --ink: #142127;
+        --muted: #64727b;
+        --line: #d7e0e4;
+        --danger: #c34b4b;
+        --warning: #b57915;
+        --success: #2f7a4f;
+        --blue: #3474a8;
+        --shadow: 0 16px 44px rgba(20, 33, 39, 0.1);
+        font-family: "Segoe UI", Arial, sans-serif;
+        color: var(--ink);
+        background: #eef2f4;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: #eef2f4;
+      }
+
+      button,
+      input,
+      select {
+        font: inherit;
+      }
+
+      .lab-shell {
+        display: grid;
+        grid-template-columns: 72px 1fr;
+        min-height: 100vh;
+      }
+
+      .lab-sidebar {
+        position: sticky;
+        top: 0;
+        align-self: start;
+        height: 100vh;
+        padding: 14px 10px;
+        background: #111c22;
+        color: #dce6e8;
+        display: grid;
+        grid-template-rows: auto 1fr;
+        gap: 18px;
+      }
+
+      .lab-logo {
+        display: grid;
+        place-items: center;
+        width: 44px;
+        height: 44px;
+        border-radius: 10px;
+        background: #17292f;
+        margin: 0 auto;
+      }
+
+      .lab-logo img {
+        width: 32px;
+        height: 32px;
+        border-radius: 7px;
+      }
+
+      .lab-nav {
+        display: grid;
+        gap: 8px;
+      }
+
+      .lab-nav button {
+        width: 52px;
+        min-height: 42px;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        color: inherit;
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+      }
+
+      .lab-nav button.active,
+      .lab-nav button:hover {
+        background: rgba(255, 255, 255, 0.1);
+      }
+
+      .lab-main {
+        min-width: 0;
+        padding: 18px;
+      }
+
+      .lab-intro {
+        margin: 0 auto 16px;
+        max-width: 1180px;
+        background: white;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 16px;
+        box-shadow: 0 8px 24px rgba(20, 33, 39, 0.06);
+      }
+
+      .lab-intro h1 {
+        margin: 0 0 6px;
+        font-size: 24px;
+      }
+
+      .lab-intro p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.45;
+      }
+
+      .variant-stack {
+        display: grid;
+        gap: 22px;
+      }
+
+      .variant {
+        max-width: 1280px;
+        margin: 0 auto;
+        border: 1px solid rgba(20, 33, 39, 0.12);
+        border-radius: 16px;
+        overflow: hidden;
+        box-shadow: var(--shadow);
+      }
+
+      .variant-a {
+        --surface: #ffffff;
+        --page: #edf1f4;
+        --panel: #ffffff;
+        --soft: #f5f8f9;
+        --radius: 8px;
+        --gap: 10px;
+        --pad: 12px;
+        background: var(--page);
+      }
+
+      .variant-b {
+        --surface: #fffdf9;
+        --page: #f4f0e9;
+        --panel: #fffdf9;
+        --soft: #f8f3ea;
+        --radius: 12px;
+        --gap: 12px;
+        --pad: 14px;
+        background: var(--page);
+      }
+
+      .variant-title {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 12px;
+        align-items: center;
+        padding: 14px 16px;
+        background: #111c22;
+        color: white;
+      }
+
+      .variant-title h2 {
+        margin: 0;
+        font-size: 18px;
+      }
+
+      .variant-title span {
+        color: rgba(255, 255, 255, 0.7);
+        font-size: 13px;
+      }
+
+      .variant .app-shell {
+        min-height: 720px;
+        display: grid;
+        grid-template-rows: 58px 1fr;
+      }
+
+      .topbar {
+        display: grid;
+        grid-template-columns: minmax(180px, 1fr) minmax(180px, 260px) minmax(220px, 360px) auto auto auto;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 14px;
+        background: var(--surface);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .page-title {
+        min-width: 0;
+      }
+
+      .page-title strong {
+        display: block;
+        font-size: 18px;
+      }
+
+      .context-line {
+        display: block;
+        color: var(--muted);
+        font-size: 12px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .select-like,
+      .search-like,
+      .add-button,
+      .icon-button,
+      .avatar-button {
+        min-height: 38px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: white;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 10px;
+        color: var(--ink);
+        text-decoration: none;
+      }
+
+      .search-like {
+        justify-content: flex-start;
+        color: var(--muted);
+      }
+
+      .add-button {
+        border-color: var(--brand);
+        background: var(--brand);
+        color: white;
+        font-weight: 700;
+      }
+
+      .icon-button,
+      .avatar-button {
+        justify-content: center;
+        width: 38px;
+        padding: 0;
+      }
+
+      .screen-grid {
+        display: grid;
+        gap: 14px;
+        padding: 14px;
+      }
+
+      .screen {
+        display: grid;
+        gap: var(--gap);
+      }
+
+      .context-strip {
+        min-height: 36px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .kpi-strip {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: var(--gap);
+      }
+
+      .kpi {
+        min-height: 58px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-left: 4px solid var(--brand);
+        border-radius: var(--radius);
+        padding: 8px 10px;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .kpi.danger {
+        border-left-color: var(--danger);
+      }
+
+      .kpi.warning {
+        border-left-color: var(--warning);
+      }
+
+      .kpi.blue {
+        border-left-color: var(--blue);
+      }
+
+      .kpi strong {
+        display: block;
+        font-size: 23px;
+        line-height: 1;
+      }
+
+      .kpi span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .dashboard-grid {
+        display: grid;
+        grid-template-columns: 2fr 1fr;
+        gap: var(--gap);
+      }
+
+      .dashboard-grid.second {
+        grid-template-columns: 7fr 5fr;
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: var(--pad);
+        min-width: 0;
+      }
+
+      .panel-head {
+        min-height: 30px;
+        display: grid;
+        grid-template-columns: 1fr auto auto;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 6px;
+      }
+
+      .panel-head h3 {
+        margin: 0;
+        font-size: 15px;
+      }
+
+      .panel-head .count {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .row-list {
+        display: grid;
+      }
+
+      .entity-row {
+        min-height: 48px;
+        display: grid;
+        grid-template-columns: 28px minmax(0, 1fr) 90px auto auto 32px;
+        gap: 9px;
+        align-items: center;
+        border-top: 1px solid #ecf0f2;
+        padding: 7px 0;
+      }
+
+      .entity-row:first-child {
+        border-top: 0;
+      }
+
+      .entity-row strong {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 14px;
+      }
+
+      .entity-row small {
+        color: var(--muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 24px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 12px;
+        white-space: nowrap;
+        background: #edf2f4;
+        color: #41505a;
+      }
+
+      .badge.danger {
+        background: #f9e8e8;
+        color: var(--danger);
+      }
+
+      .badge.warning {
+        background: #fff3d8;
+        color: var(--warning);
+      }
+
+      .badge.success {
+        background: #e8f5ed;
+        color: var(--success);
+      }
+
+      .badge.blue {
+        background: #e8f2fb;
+        color: var(--blue);
+      }
+
+      .row-action {
+        min-height: 30px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: white;
+        color: var(--brand-dark);
+        padding: 0 10px;
+        font-weight: 700;
+      }
+
+      .menu-dots {
+        width: 30px;
+        min-height: 30px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: white;
+        color: var(--muted);
+      }
+
+      .risk-object {
+        min-height: 56px;
+        display: grid;
+        gap: 4px;
+        border-top: 1px solid #ecf0f2;
+        padding: 8px 0;
+      }
+
+      .risk-object:first-of-type {
+        border-top: 0;
+      }
+
+      .risk-object strong {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .metrics {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+      }
+
+      .table-panel {
+        overflow: hidden;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+
+      th,
+      td {
+        text-align: left;
+        border-bottom: 1px solid #e8eef1;
+        padding: 9px 8px;
+        vertical-align: middle;
+      }
+
+      th {
+        position: sticky;
+        top: 0;
+        background: var(--soft);
+        color: var(--muted);
+        font-weight: 600;
+        z-index: 1;
+      }
+
+      td:first-child,
+      th:first-child {
+        position: sticky;
+        left: 0;
+        background: inherit;
+      }
+
+      .filterbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 8px;
+      }
+
+      .filterbar .active {
+        background: var(--brand);
+        color: white;
+        border-color: var(--brand);
+      }
+
+      .detail-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 500px;
+        gap: var(--gap);
+      }
+
+      .drawer {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: var(--pad);
+        min-height: 520px;
+        display: grid;
+        gap: 10px;
+        align-content: start;
+      }
+
+      .drawer h3 {
+        margin: 0;
+        font-size: 18px;
+      }
+
+      .drawer-section {
+        border-top: 1px solid #ecf0f2;
+        padding-top: 9px;
+      }
+
+      .command-palette {
+        position: relative;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: var(--pad);
+        display: grid;
+        gap: 8px;
+      }
+
+      .command-input {
+        min-height: 38px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 0 12px;
+        background: white;
+      }
+
+      .command-result {
+        display: grid;
+        grid-template-columns: 82px 1fr auto;
+        gap: 8px;
+        align-items: center;
+        min-height: 42px;
+        border-top: 1px solid #ecf0f2;
+      }
+
+      .photo-grid {
+        display: grid;
+        grid-template-columns: 1.4fr 1fr 1fr;
+        gap: 8px;
+      }
+
+      .photo-card {
+        min-height: 112px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: linear-gradient(135deg, #dfe9ea, #f7fbfb);
+        padding: 10px;
+        display: grid;
+        align-content: end;
+      }
+
+      .photo-card:first-child {
+        grid-row: span 2;
+        min-height: 232px;
+      }
+
+      .doc-layout {
+        display: grid;
+        grid-template-columns: 240px 1fr;
+        gap: var(--gap);
+      }
+
+      .folder-tree,
+      .file-table {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: var(--pad);
+      }
+
+      .folder-tree div {
+        min-height: 34px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border-bottom: 1px solid #ecf0f2;
+      }
+
+      .folder-tree div:last-child {
+        border-bottom: 0;
+      }
+
+      .mobile-preview {
+        max-width: 390px;
+        margin: 0 auto;
+        min-height: 844px;
+        border-radius: 26px;
+        overflow: hidden;
+        background: var(--page);
+        border: 10px solid #152228;
+        display: grid;
+        grid-template-rows: 1fr 72px;
+      }
+
+      .mobile-content {
+        padding: 14px;
+        display: grid;
+        gap: 10px;
+        align-content: start;
+      }
+
+      .mobile-kpis {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+
+      .mobile-bottom {
+        background: #111c22;
+        color: white;
+        display: grid;
+        grid-template-columns: 1fr 1fr 74px 1fr 1fr;
+        align-items: center;
+        gap: 4px;
+        padding: 8px 8px 10px;
+        text-align: center;
+        font-size: 12px;
+      }
+
+      .mobile-bottom strong {
+        display: grid;
+        place-items: center;
+        width: 64px;
+        height: 56px;
+        border-radius: 14px;
+        background: var(--brand);
+        justify-self: center;
+        font-size: 28px;
+      }
+
+      .icon {
+        display: inline-flex;
+        width: 20px;
+        height: 20px;
+        color: currentColor;
+      }
+
+      .icon svg {
+        width: 100%;
+        height: 100%;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 1.9;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .shot-mode .lab-shell {
+        display: block;
+        min-height: 100vh;
+      }
+
+      .shot-mode .lab-sidebar,
+      .shot-mode .lab-intro,
+      .shot-mode .variant-title,
+      .shot-mode .screen:not(.shot-active),
+      .shot-mode .variant:not(.shot-active) {
+        display: none !important;
+      }
+
+      .shot-mode .lab-main {
+        padding: 0;
+      }
+
+      .shot-mode .variant {
+        max-width: none;
+        min-height: 100vh;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+      }
+
+      .shot-mode .variant .app-shell {
+        min-height: 100vh;
+      }
+
+      .shot-mode .screen-grid {
+        padding: 14px;
+      }
+
+      .shot-mode.screen-mobile .variant .app-shell,
+      .shot-mode.screen-master .variant .app-shell {
+        display: block;
+        min-height: 100vh;
+      }
+
+      .shot-mode.screen-mobile .topbar,
+      .shot-mode.screen-master .topbar {
+        display: none;
+      }
+
+      @media (max-width: 760px) {
+        .lab-shell {
+          grid-template-columns: 1fr;
+        }
+
+        .lab-sidebar {
+          display: none;
+        }
+
+        .lab-main {
+          padding: 10px;
+        }
+
+        .topbar,
+        .dashboard-grid,
+        .dashboard-grid.second,
+        .detail-layout,
+        .doc-layout {
+          grid-template-columns: 1fr;
+        }
+
+        .kpi-strip {
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .entity-row {
+          grid-template-columns: 28px minmax(0, 1fr) 32px;
+        }
+
+        .entity-row .row-action,
+        .entity-row > span:not(.icon) {
+          grid-column: 2;
+        }
+
+        .entity-row .badge {
+          justify-self: start;
+        }
+
+        .entity-row .menu-dots {
+          grid-column: 3;
+          grid-row: 1;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="lab-shell">
+      <aside class="lab-sidebar" aria-label="D2 UI Lab navigation">
+        <div class="lab-logo"><img src="/static/assets/g2-logo-192.png" alt="" /></div>
+        <nav class="lab-nav">
+          <button class="active" type="button" aria-label="Сегодня"><span data-icon="today"></span></button>
+          <button type="button" aria-label="Объекты"><span data-icon="objects"></span></button>
+          <button type="button" aria-label="Задачи"><span data-icon="tasks"></span></button>
+          <button type="button" aria-label="Материалы"><span data-icon="materials"></span></button>
+          <button type="button" aria-label="Документы"><span data-icon="documents"></span></button>
+        </nav>
+      </aside>
+      <main class="lab-main">
+        <section class="lab-intro">
+          <h1>D2 UI Lab</h1>
+          <p>
+            Два визуальных направления для следующего интерфейса. Это витрина, она не меняет рабочие экраны сотрудников.
+            Вариант A строже и плотнее, вариант B мягче и спокойнее.
+          </p>
+        </section>
+        <div class="variant-stack">
+          <section class="variant variant-a" data-variant="a">
+            <div class="variant-title">
+              <div><h2>Вариант A — Corporate Compact</h2><span>Плотная корпоративная панель, белые поверхности, строгие реестры</span></div>
+              <span>accent D2Dom · radius 8 · rows 48</span>
+            </div>
+            <div class="app-shell">
+              <header class="topbar">
+                <div class="page-title"><strong>Сегодня</strong><span class="context-line">Сегодня · Ген.директор · 3 объекта требуют внимания</span></div>
+                <div class="select-like"><span data-icon="objects"></span><span>Все объекты</span></div>
+                <div class="search-like"><span data-icon="search"></span><span>Ctrl+K · найти объект, задачу, материал</span></div>
+                <button class="add-button" type="button"><span data-icon="plus"></span><span>Добавить</span></button>
+                <button class="icon-button" type="button" aria-label="Уведомления"><span data-icon="bell"></span></button>
+                <button class="avatar-button" type="button" aria-label="Профиль">ГД</button>
+              </header>
+              <div class="screen-grid">
+                <section class="screen screen-owner" data-screen="owner"></section>
+                <section class="screen screen-foreman" data-screen="foreman"></section>
+                <section class="screen screen-master" data-screen="master"></section>
+                <section class="screen screen-objects" data-screen="objects"></section>
+                <section class="screen screen-tasks" data-screen="tasks"></section>
+                <section class="screen screen-materials" data-screen="materials"></section>
+                <section class="screen screen-photos" data-screen="photos"></section>
+                <section class="screen screen-documents" data-screen="documents"></section>
+                <section class="screen screen-drawer" data-screen="drawer"></section>
+                <section class="screen screen-mobile" data-screen="mobile"></section>
+              </div>
+            </div>
+          </section>
+
+          <section class="variant variant-b" data-variant="b">
+            <div class="variant-title">
+              <div><h2>Вариант B — D2Dom Soft</h2><span>Чуть мягче, теплее, но без потери рабочей плотности</span></div>
+              <span>warm neutral · radius 12 · rows 52</span>
+            </div>
+            <div class="app-shell">
+              <header class="topbar">
+                <div class="page-title"><strong>Сегодня</strong><span class="context-line">Сегодня · Ген.директор · 3 объекта требуют внимания</span></div>
+                <div class="select-like"><span data-icon="objects"></span><span>Все объекты</span></div>
+                <div class="search-like"><span data-icon="search"></span><span>Ctrl+K · найти объект, задачу, материал</span></div>
+                <button class="add-button" type="button"><span data-icon="plus"></span><span>Добавить</span></button>
+                <button class="icon-button" type="button" aria-label="Уведомления"><span data-icon="bell"></span></button>
+                <button class="avatar-button" type="button" aria-label="Профиль">ГД</button>
+              </header>
+              <div class="screen-grid">
+                <section class="screen screen-owner" data-screen="owner"></section>
+                <section class="screen screen-foreman" data-screen="foreman"></section>
+                <section class="screen screen-master" data-screen="master"></section>
+                <section class="screen screen-objects" data-screen="objects"></section>
+                <section class="screen screen-tasks" data-screen="tasks"></section>
+                <section class="screen screen-materials" data-screen="materials"></section>
+                <section class="screen screen-photos" data-screen="photos"></section>
+                <section class="screen screen-documents" data-screen="documents"></section>
+                <section class="screen screen-drawer" data-screen="drawer"></section>
+                <section class="screen screen-mobile" data-screen="mobile"></section>
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <template id="owner-template">
+      <div class="context-strip">Сегодня · Ген.директор <strong>3 объекта требуют внимания</strong></div>
+      <div class="kpi-strip">
+        <div class="kpi danger"><span data-icon="alert"></span><div><strong>7</strong><span>Требует действия</span></div></div>
+        <div class="kpi danger"><span data-icon="clock"></span><div><strong>3</strong><span>Просрочено</span></div></div>
+        <div class="kpi warning"><span data-icon="check"></span><div><strong>4</strong><span>Ждёт проверки</span></div></div>
+        <div class="kpi danger"><span data-icon="blocker"></span><div><strong>2</strong><span>Блокеры</span></div></div>
+        <div class="kpi blue"><span data-icon="materials"></span><div><strong>5</strong><span>Материалы под риском</span></div></div>
+      </div>
+      <div class="dashboard-grid">
+        <section class="panel">
+          <div class="panel-head"><h3>Требует моего действия</h3><span class="count">7</span><button class="menu-dots">...</button></div>
+          <div class="row-list">
+            <div class="entity-row"><span data-icon="photo"></span><div><strong>Подшив с покраской — фотоотчёт просрочен</strong><small>Андрей · срок 12.06 · высокая критичность</small></div><span>Сегодня</span><span class="badge danger">Просрочено</span><button class="row-action">Открыть</button><button class="menu-dots">...</button></div>
+            <div class="entity-row"><span data-icon="materials"></span><div><strong>Квартира на Севастопольском — срочная заявка</strong><small>Снабжение · нужен материал к утру</small></div><span>Завтра</span><span class="badge warning">Под риском</span><button class="row-action">Открыть</button><button class="menu-dots">...</button></div>
+            <div class="entity-row"><span data-icon="blocker"></span><div><strong>Антон Субботино — нет решения по узлу</strong><small>Ждём решение руководителя проекта</small></div><span>Без срока</span><span class="badge danger">Блокер</span><button class="row-action">Решить</button><button class="menu-dots">...</button></div>
+            <div class="entity-row"><span data-icon="tasks"></span><div><strong>Проверить возврат задачи по отделке</strong><small>Технадзор вернул на доработку</small></div><span>18.06</span><span class="badge warning">Возвращено</span><button class="row-action">Открыть</button><button class="menu-dots">...</button></div>
+            <div class="entity-row"><span data-icon="objects"></span><div><strong>Объект без ответственного за фото</strong><small>Нет отчёта сегодня · требуется назначение</small></div><span>Сегодня</span><span class="badge warning">Нужно действие</span><button class="row-action">Назначить</button><button class="menu-dots">...</button></div>
+          </div>
+        </section>
+        <section class="panel">
+          <div class="panel-head"><h3>Объекты под риском</h3><span class="count">3</span><button class="menu-dots">...</button></div>
+          <div class="risk-object"><strong>Подшив с покраской</strong><small>Андрей · 2 просрочки · нет фото</small><div class="metrics"><span class="badge danger">2 блокера</span><span class="badge warning">материалы</span></div></div>
+          <div class="risk-object"><strong>Квартира на Севастопольском</strong><small>Анастасия · доставка сегодня</small><div class="metrics"><span class="badge warning">срочно</span><span class="badge blue">заказано</span></div></div>
+          <div class="risk-object"><strong>Антон Субботино</strong><small>Технадзор · ждём решение</small><div class="metrics"><span class="badge danger">решение</span></div></div>
+        </section>
+      </div>
+      <div class="dashboard-grid second">
+        <section class="panel">
+          <div class="panel-head"><h3>Мои задачи</h3><span class="count">8</span><button class="menu-dots">...</button></div>
+          <div class="row-list">
+            <div class="entity-row"><span data-icon="tasks"></span><div><strong>Назначить ответственного за блокер</strong><small>Антон Субботино · руководитель проекта</small></div><span>Сегодня</span><span class="badge blue">В работе</span><button class="row-action">Открыть</button><button class="menu-dots">...</button></div>
+            <div class="entity-row"><span data-icon="check"></span><div><strong>Принять выполненную задачу</strong><small>Подшив с покраской · технадзор</small></div><span>18.06</span><span class="badge warning">Проверка</span><button class="row-action">Принять</button><button class="menu-dots">...</button></div>
+          </div>
+        </section>
+        <section class="panel">
+          <div class="panel-head"><h3>Материалы</h3><span class="count">5</span><button class="menu-dots">...</button></div>
+          <div class="row-list">
+            <div class="entity-row"><span data-icon="materials"></span><div><strong>QuickDeck, 10 листов</strong><small>Квартира на Севастопольском · срочная заявка</small></div><span>Завтра</span><span class="badge blue">В пути</span><button class="row-action">Открыть</button><button class="menu-dots">...</button></div>
+            <div class="entity-row"><span data-icon="materials"></span><div><strong>Крепёж усиленный</strong><small>Подшив с покраской · вне сметы</small></div><span>Сегодня</span><span class="badge warning">Согласовать</span><button class="row-action">Открыть</button><button class="menu-dots">...</button></div>
+          </div>
+        </section>
+      </div>
+    </template>
+
+    <template id="foreman-template">
+      <div class="context-strip">Сегодня · Прораб Андрей <strong>2 объекта · 5 действий</strong></div>
+      <div class="kpi-strip">
+        <div class="kpi danger"><span data-icon="clock"></span><div><strong>2</strong><span>Мои просрочки</span></div></div>
+        <div class="kpi blue"><span data-icon="tasks"></span><div><strong>4</strong><span>Задачи сегодня</span></div></div>
+        <div class="kpi warning"><span data-icon="photo"></span><div><strong>1</strong><span>Нужен фотоотчёт</span></div></div>
+        <div class="kpi blue"><span data-icon="materials"></span><div><strong>3</strong><span>Материалы</span></div></div>
+        <div class="kpi warning"><span data-icon="alert"></span><div><strong>2</strong><span>Замечания</span></div></div>
+      </div>
+      <div class="dashboard-grid second">
+        <section class="panel">
+          <div class="panel-head"><h3>Что сделать сегодня</h3><span class="count">5</span><button class="menu-dots">...</button></div>
+          <div class="row-list">
+            <div class="entity-row"><span data-icon="photo"></span><div><strong>Сделать фотоотчёт по объекту</strong><small>Подшив с покраской · территория и сети</small></div><span>Сегодня</span><span class="badge danger">Просрочено</span><button class="row-action">Добавить</button><button class="menu-dots">...</button></div>
+            <div class="entity-row"><span data-icon="tasks"></span><div><strong>Закрыть замечание по наличнику</strong><small>Квартира на Севастопольском · прихожая</small></div><span>18.06</span><span class="badge blue">В работе</span><button class="row-action">Готово</button><button class="menu-dots">...</button></div>
+            <div class="entity-row"><span data-icon="materials"></span><div><strong>Получить материал по заявке</strong><small>QuickDeck · 10 листов · снабжение</small></div><span>Завтра</span><span class="badge blue">В пути</span><button class="row-action">Открыть</button><button class="menu-dots">...</button></div>
+          </div>
+        </section>
+        <section class="panel">
+          <div class="panel-head"><h3>Мои объекты</h3><span class="count">2</span><button class="menu-dots">...</button></div>
+          <div class="risk-object"><strong>Подшив с покраской</strong><small>Нужен фотоотчёт · 2 задачи</small><div class="metrics"><span class="badge danger">просрочка</span><span class="badge warning">материал</span></div></div>
+          <div class="risk-object"><strong>Квартира на Севастопольском</strong><small>Материалы в пути · замечание</small><div class="metrics"><span class="badge blue">в работе</span></div></div>
+        </section>
+      </div>
+    </template>
+
+    <template id="master-template">
+      <div class="mobile-preview">
+        <div class="mobile-content">
+          <div class="context-strip">Сегодня · Мастер <strong>3 задачи</strong></div>
+          <section class="panel">
+            <div class="panel-head"><h3>Что сделать</h3><span class="count">3</span></div>
+            <div class="row-list">
+              <div class="risk-object"><strong>Доделать подшив в прихожей</strong><small>Квартира на Севастопольском · сегодня</small><div class="metrics"><button class="row-action">Готово</button><button class="row-action">Фото</button></div></div>
+              <div class="risk-object"><strong>Снять фото результата</strong><small>Подшив с покраской · без лишних разделов</small><div class="metrics"><button class="row-action">Добавить фото</button></div></div>
+              <div class="risk-object"><strong>Есть проблема на объекте?</strong><small>Напишите короткий комментарий руководителю</small><div class="metrics"><button class="row-action">Сообщить проблему</button></div></div>
+            </div>
+          </section>
+        </div>
+        <nav class="mobile-bottom"><span>Сегодня</span><span>Задачи</span><strong>+</strong><span>Уведомл.</span><span>Я</span></nav>
+      </div>
+    </template>
+
+    <template id="objects-template">
+      <section class="panel table-panel">
+        <div class="panel-head"><h3>Объекты</h3><span class="count">12</span><button class="menu-dots">...</button></div>
+        <div class="filterbar"><button class="row-action active">Требует внимания</button><button class="row-action">Ответственный</button><button class="row-action">Этап</button><button class="row-action">Сохранить вид</button></div>
+        <table>
+          <thead><tr><th>Объект</th><th>Этап</th><th>Ответственный</th><th>Задачи</th><th>Просрочено</th><th>Блокеры</th><th>Фотоотчёт</th><th>Статус</th><th>Действие</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Подшив с покраской</strong></td><td>Отделка</td><td>Андрей</td><td>6</td><td><span class="badge danger">2</span></td><td><span class="badge danger">1</span></td><td>нет сегодня</td><td><span class="badge warning">Риск</span></td><td><button class="row-action">Открыть</button></td></tr>
+            <tr><td><strong>Квартира на Севастопольском</strong></td><td>Материалы</td><td>Андрей</td><td>4</td><td>0</td><td>0</td><td>сегодня</td><td><span class="badge blue">В работе</span></td><td><button class="row-action">Открыть</button></td></tr>
+            <tr><td><strong>Антон Субботино</strong></td><td>Согласование</td><td>Технадзор</td><td>3</td><td><span class="badge danger">1</span></td><td><span class="badge danger">1</span></td><td>вчера</td><td><span class="badge danger">Блокер</span></td><td><button class="row-action">Открыть</button></td></tr>
+          </tbody>
+        </table>
+      </section>
+    </template>
+
+    <template id="tasks-template">
+      <section class="panel">
+        <div class="panel-head"><h3>Мне нужно сделать</h3><span class="count">8</span><button class="menu-dots">...</button></div>
+        <div class="row-list">
+          <div class="entity-row"><span data-icon="photo"></span><div><strong>Сделать фотоотчёт по объекту</strong><small>Подшив с покраской · Андрей</small></div><span>Сегодня</span><span class="badge danger">Просрочено</span><button class="row-action">Открыть</button><button class="menu-dots">...</button></div>
+          <div class="entity-row"><span data-icon="question"></span><div><strong>Согласовать способ примыкания</strong><small>Антон Субботино · руководитель</small></div><span>18.06</span><span class="badge warning">Ждёт ответа</span><button class="row-action">Открыть</button><button class="menu-dots">...</button></div>
+          <div class="entity-row"><span data-icon="check"></span><div><strong>Принять выполнение</strong><small>Квартира на Севастопольском · технадзор</small></div><span>Сегодня</span><span class="badge blue">Проверка</span><button class="row-action">Принять</button><button class="menu-dots">...</button></div>
+          <div class="entity-row"><span data-icon="tasks"></span><div><strong>Закрыть замечание по наличнику</strong><small>Прихожая · мастер</small></div><span>19.06</span><span class="badge blue">В работе</span><button class="row-action">Открыть</button><button class="menu-dots">...</button></div>
+          <div class="entity-row"><span data-icon="materials"></span><div><strong>Проверить заявку на крепёж</strong><small>Снабжение · вне сметы</small></div><span>Завтра</span><span class="badge warning">Согласовать</span><button class="row-action">Открыть</button><button class="menu-dots">...</button></div>
+          <div class="entity-row"><span data-icon="tasks"></span><div><strong>Поставить срок по задаче</strong><small>Объект без срока · руководитель проекта</small></div><span>Без срока</span><span class="badge warning">Уточнить</span><button class="row-action">Открыть</button><button class="menu-dots">...</button></div>
+          <div class="entity-row"><span data-icon="blocker"></span><div><strong>Разобрать блокер по материалу</strong><small>Подшив с покраской · снабжение</small></div><span>Сегодня</span><span class="badge danger">Блокер</span><button class="row-action">Открыть</button><button class="menu-dots">...</button></div>
+          <div class="entity-row"><span data-icon="photo"></span><div><strong>Проверить возвращённый фотоотчёт</strong><small>Технадзор · нужна причина</small></div><span>18.06</span><span class="badge warning">Возвращено</span><button class="row-action">Открыть</button><button class="menu-dots">...</button></div>
+        </div>
+      </section>
+    </template>
+
+    <template id="materials-template">
+      <section class="panel table-panel">
+        <div class="panel-head"><h3>Материалы</h3><span class="count">18</span><button class="menu-dots">...</button></div>
+        <div class="filterbar"><button class="row-action active">Все</button><button class="row-action">Нужно согласовать</button><button class="row-action">Согласовано</button><button class="row-action">Заказано</button><button class="row-action">В пути</button><button class="row-action">На объекте</button><button class="row-action">Закрыто</button></div>
+        <div class="filterbar"><button class="row-action">Под риском</button><button class="row-action">Проблема</button><button class="row-action">Вне сметы</button><button class="row-action">Срочные</button></div>
+        <table>
+          <thead><tr><th>Материал</th><th>Объект</th><th>Количество</th><th>Нужен до</th><th>Stage</th><th>Health</th><th>Ответственный</th><th>Действие</th></tr></thead>
+          <tbody>
+            <tr><td><strong>QuickDeck</strong></td><td>Квартира на Севастопольском</td><td>10 листов</td><td>завтра</td><td><span class="badge blue">В пути</span></td><td><span class="badge warning">Под риском</span></td><td>Анастасия</td><td><button class="row-action">Открыть</button></td></tr>
+            <tr><td><strong>Крепёж усиленный</strong></td><td>Подшив с покраской</td><td>4 уп.</td><td>сегодня</td><td><span class="badge warning">Нужно согласовать</span></td><td><span class="badge danger">Проблема</span></td><td>Снабжение</td><td><button class="row-action">Открыть</button></td></tr>
+            <tr><td><strong>Мембрана</strong></td><td>Антон Субботино</td><td>2 рулона</td><td>20.06</td><td><span class="badge blue">Заказано</span></td><td><span class="badge success">Норма</span></td><td>Анастасия</td><td><button class="row-action">Открыть</button></td></tr>
+          </tbody>
+        </table>
+      </section>
+    </template>
+
+    <template id="photos-template">
+      <section class="panel">
+        <div class="panel-head"><h3>Фотоотчёты</h3><span class="count">Галерея</span><button class="menu-dots">...</button></div>
+        <div class="photo-grid">
+          <div class="photo-card"><strong>Подшив с покраской</strong><small>Андрей · 5 файлов · Ждёт проверки</small></div>
+          <div class="photo-card"><strong>Квартира</strong><small>3 файла · Проверен</small></div>
+          <div class="photo-card"><strong>Антон</strong><small>нет сегодня</small></div>
+          <div class="photo-card"><strong>Сети</strong><small>2 файла</small></div>
+          <div class="photo-card"><strong>Фасад</strong><small>4 файла</small></div>
+        </div>
+      </section>
+    </template>
+
+    <template id="documents-template">
+      <div class="doc-layout">
+        <aside class="folder-tree">
+          <div><span data-icon="folder"></span><strong>База знаний</strong></div>
+          <div><span data-icon="folder"></span>Регламенты</div>
+          <div><span data-icon="folder"></span>Проекты</div>
+          <div><span data-icon="folder"></span>Инструкции</div>
+        </aside>
+        <section class="file-table">
+          <div class="panel-head"><h3>Регламенты / Внутренняя отделка</h3><span class="count">12 файлов</span><button class="menu-dots">...</button></div>
+          <table>
+            <thead><tr><th>Название</th><th>Тип</th><th>Объект</th><th>Версия</th><th>Дата</th><th>Автор</th><th>Действие</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Регламент фотоотчётов</strong></td><td>Инструкция</td><td>-</td><td>v2</td><td>18.06</td><td>Контур</td><td><button class="row-action">Открыть</button></td></tr>
+              <tr><td><strong>Схема контроля материалов</strong></td><td>Регламент</td><td>-</td><td>v1</td><td>17.06</td><td>Снабжение</td><td><button class="row-action">Открыть</button></td></tr>
+              <tr><td><strong>Файл без типа</strong></td><td><span class="badge warning">Не разобрано</span></td><td>Объект #14</td><td>-</td><td>16.06</td><td>Менеджер</td><td><button class="row-action">Классиф.</button></td></tr>
+            </tbody>
+          </table>
+        </section>
+      </div>
+    </template>
+
+    <template id="drawer-template">
+      <div class="detail-layout">
+        <section class="panel">
+          <div class="panel-head"><h3>Список остаётся на месте</h3><span class="count">Scroll сохраняется</span></div>
+          <div class="row-list">
+            <div class="entity-row"><span data-icon="tasks"></span><div><strong>Сделать фотоотчёт по объекту</strong><small>Подшив с покраской · Андрей</small></div><span>Сегодня</span><span class="badge danger">Просрочено</span><button class="row-action">Открыть</button><button class="menu-dots">...</button></div>
+            <div class="entity-row"><span data-icon="materials"></span><div><strong>QuickDeck, 10 листов</strong><small>Квартира · снабжение</small></div><span>Завтра</span><span class="badge blue">В пути</span><button class="row-action">Открыть</button><button class="menu-dots">...</button></div>
+          </div>
+        </section>
+        <aside class="drawer">
+          <div class="panel-head"><h3>Сделать фотоотчёт по объекту</h3><button class="menu-dots">×</button></div>
+          <div class="metrics"><span class="badge danger">Просрочено</span><span class="badge blue">Фотоотчёт</span><span class="badge warning">Высокий</span></div>
+          <div class="drawer-section"><strong>Контекст</strong><p>Объект: Подшив с покраской. Ответственный: Андрей. Срок: сегодня.</p></div>
+          <div class="drawer-section"><strong>Главное действие</strong><p><button class="add-button">Добавить фотоотчёт</button></p></div>
+          <div class="drawer-section"><strong>История</strong><p class="context-line">Задача создана руководителем, просрочка поднята в «Требует действия».</p></div>
+          <div class="drawer-section"><strong>Комментарии</strong><p class="context-line">Здесь обсуждение по конкретной задаче, а не бесконечный общий журнал.</p></div>
+        </aside>
+      </div>
+    </template>
+
+    <template id="mobile-template">
+      <div class="mobile-preview">
+        <div class="mobile-content">
+          <div class="context-strip">Сегодня · Прораб Андрей</div>
+          <div class="mobile-kpis">
+            <div class="kpi danger"><span data-icon="clock"></span><div><strong>2</strong><span>Просрочки</span></div></div>
+            <div class="kpi blue"><span data-icon="tasks"></span><div><strong>4</strong><span>Задачи</span></div></div>
+          </div>
+          <section class="panel">
+            <div class="panel-head"><h3>Главное сейчас</h3><span class="count">3</span></div>
+            <div class="risk-object"><strong>Сделать фотоотчёт</strong><small>Подшив с покраской · сегодня</small><button class="row-action">Добавить фото</button></div>
+            <div class="risk-object"><strong>Получить материалы</strong><small>QuickDeck · завтра</small><button class="row-action">Открыть заявку</button></div>
+            <div class="risk-object"><strong>Сообщить проблему</strong><small>Если материал не привезли или есть дефект</small><button class="row-action">Сообщить</button></div>
+          </section>
+        </div>
+        <nav class="mobile-bottom"><span>Сегодня</span><span>Объекты</span><strong>+</strong><span>Уведомл.</span><span>Я</span></nav>
+      </div>
+    </template>
+
+    <script>
+      const icons = {
+        today: '<svg viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/><circle cx="12" cy="12" r="7"/></svg>',
+        objects: '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7"/><rect x="13" y="4" width="7" height="7"/><rect x="4" y="13" width="7" height="7"/><rect x="13" y="13" width="7" height="7"/></svg>',
+        tasks: '<svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/><path d="M5 20h14"/></svg>',
+        materials: '<svg viewBox="0 0 24 24"><path d="M4 7h16v10H4z"/><path d="M8 7V5h8v2"/><path d="M8 17v2h8v-2"/></svg>',
+        documents: '<svg viewBox="0 0 24 24"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h6"/></svg>',
+        search: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m16 16 4 4"/></svg>',
+        plus: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+        bell: '<svg viewBox="0 0 24 24"><path d="M6 9a6 6 0 0 1 12 0c0 7 3 6 3 8H3c0-2 3-1 3-8"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>',
+        alert: '<svg viewBox="0 0 24 24"><path d="M12 4 3 20h18z"/><path d="M12 9v5M12 17h.01"/></svg>',
+        clock: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v5l3 2"/></svg>',
+        check: '<svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg>',
+        blocker: '<svg viewBox="0 0 24 24"><path d="M5 5h14v14H5z"/><path d="M8 8l8 8M16 8l-8 8"/></svg>',
+        photo: '<svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="13" rx="2"/><circle cx="9" cy="11" r="2"/><path d="m8 17 3-3 2 2 3-4 3 5"/></svg>',
+        question: '<svg viewBox="0 0 24 24"><path d="M9 9a3 3 0 1 1 4 2.8c-.7.3-1 1-1 2.2"/><path d="M12 18h.01"/><circle cx="12" cy="12" r="9"/></svg>',
+        folder: '<svg viewBox="0 0 24 24"><path d="M4 7h7l2 2h7v9H4z"/></svg>'
+      };
+
+      function renderIcons(root = document) {
+        root.querySelectorAll("[data-icon]").forEach((node) => {
+          const name = node.dataset.icon;
+          node.classList.add("icon");
+          node.setAttribute("aria-hidden", "true");
+          node.innerHTML = icons[name] || icons.today;
+        });
+      }
+
+      function fillScreens() {
+        const mapping = {
+          owner: "owner-template",
+          foreman: "foreman-template",
+          master: "master-template",
+          objects: "objects-template",
+          tasks: "tasks-template",
+          materials: "materials-template",
+          photos: "photos-template",
+          documents: "documents-template",
+          drawer: "drawer-template",
+          mobile: "mobile-template"
+        };
+        document.querySelectorAll(".variant").forEach((variant) => {
+          for (const [screen, templateId] of Object.entries(mapping)) {
+            const target = variant.querySelector(`[data-screen="${screen}"]`);
+            const template = document.getElementById(templateId);
+            if (target && template) target.innerHTML = template.innerHTML;
+          }
+        });
+        renderIcons();
+      }
+
+      function applyShotMode() {
+        const params = new URLSearchParams(location.search);
+        const variant = params.get("variant");
+        const screen = params.get("screen");
+        if (!variant || !screen) return;
+        document.body.classList.add("shot-mode", `screen-${screen}`);
+        document.querySelectorAll(".variant").forEach((node) => {
+          node.classList.toggle("shot-active", node.dataset.variant === variant);
+        });
+        document.querySelectorAll(".screen").forEach((node) => {
+          node.classList.toggle("shot-active", node.dataset.screen === screen);
+        });
+        const title = variant === "a" ? "Corporate Compact" : "D2Dom Soft";
+        document.title = `D2 ${title} — ${screen}`;
+      }
+
+      fillScreens();
+      applyShotMode();
+    </script>
+  </body>
+</html>

@@ -2231,6 +2231,77 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 
 Local QA result is `PARTIAL` only for the accepted external cookieless viewer limitation. No production deploy has been done in this step yet.
 
+### 2026-06-22: Release D2 prototype - visual system lab
+
+**Request.** Start Release D2 with a prototype stage only. Do not roll out the new visual system to employees before the owner chooses a direction. MAX reports for colleagues must contain only user-facing descriptions, not technical implementation details.
+
+**Starting point.**
+
+- Repository and production both started from commit `9142ecf`.
+- Production `/version` returned appVersion `20260620-d1-compact-ui` and commitHash `9142ecf`.
+- A local pre-D2 backup was created:
+  - `backups/construction-d2-20260622-083717.db`;
+  - `backups/uploads-d2-20260622-083717.zip`.
+
+**What changed.**
+
+- Added the protected `/ui-lab` route for `owner` and `ai_auditor`.
+- Added two D2 visual prototype directions:
+  - Variant A: `Corporate Compact`;
+  - Variant B: `D2Dom Soft`.
+- The prototype includes:
+  - Today for owner;
+  - Today for foreman;
+  - Today for worker/master;
+  - objects;
+  - tasks;
+  - materials;
+  - photo reports;
+  - documents;
+  - right-side detail drawer;
+  - mobile home screen.
+- Added local inline SVG icons for the lab so the prototype does not rely on emoji or external CDN assets.
+- Updated `/version` and `HEAD /version` cache behavior:
+  - `Cache-Control: no-store, no-cache, must-revalidate, max-age=0`;
+  - `Pragma: no-cache`;
+  - `Expires: 0`.
+- Added `/favicon.ico` handling to avoid browser console 404 noise.
+- Added D2 screenshots to the QA flow:
+  - `variant-a-owner-1440x900.png`;
+  - `variant-b-owner-1440x900.png`;
+  - `variant-a-owner-1280x720.png`;
+  - `variant-b-owner-1280x720.png`;
+  - `variant-a-foreman-1440x900.png`;
+  - `variant-b-foreman-1440x900.png`;
+  - `variant-a-master-390x844.png`;
+  - `variant-b-master-390x844.png`;
+  - `variant-a-tasks-1440x900.png`;
+  - `variant-b-tasks-1440x900.png`;
+  - `variant-a-materials-1440x900.png`;
+  - `variant-b-materials-1440x900.png`.
+- Added snapshot block `Release D2: UI Lab Prototype` with links to `/ui-lab` and the D2 screenshots.
+- Added `version.spec.ts` for the explicit D2 `/version` E2E check.
+- Stabilized `material-stage-health.spec.ts` by waiting for the materials page and pipeline filters before reading them.
+- Updated app/cache version to `20260622-d2-ui-lab`.
+
+**Important product boundary.**
+
+D2 is not enabled in the live employee interface. This step creates prototypes and screenshots only. The next step is owner selection of Variant A or Variant B before implementing `compact_ui_v2`.
+
+**Checks.**
+
+- Local QA quality gate: `PARTIAL`, critical errors `0`.
+- D2 Prototype QA: `OK`.
+- `/version` no-cache QA: `OK`.
+- Playwright: `121 passed`, `5 skipped`.
+- Accepted partial reasons remain unchanged:
+  - `external_cookieless_viewer` is unsupported for live login and should use snapshot;
+  - Data Integrity Agent still reports existing warning-level data issues without auto-fixing them.
+
+**MAX communication rule.**
+
+For this and future releases, MAX messages to the team must stay user-facing: what changed in the program and what to check. Do not include commit hashes, file paths, implementation details, QA internals, deployment logs, or developer-only explanations.
+
 ### 2026-06-20: Release D1 - compact UI foundation
 
 **Request.** Start the compact interface release only after A3 is fixed and backed up. The release must reduce empty space, make the first screen more useful, keep the old comfortable density available, and add a Visual Density QA agent so mobile/desktop layout problems are not missed again.

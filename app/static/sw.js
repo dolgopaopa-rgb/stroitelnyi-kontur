@@ -1,9 +1,9 @@
-﻿const CACHE_NAME = "stroitelnyi-kontur-20260620-d1-compact-ui";
+﻿const CACHE_NAME = "stroitelnyi-kontur-20260622-d2-ui-lab";
 const CORE_ASSETS = [
   "/",
-  "/static/styles.css?v=20260620-d1-compact-ui",
-  "/static/app.compat.js?v=20260620-d1-compact-ui",
-  "/static/manifest.webmanifest?v=20260620-d1-compact-ui",
+  "/static/styles.css?v=20260622-d2-ui-lab",
+  "/static/app.compat.js?v=20260622-d2-ui-lab",
+  "/static/manifest.webmanifest?v=20260622-d2-ui-lab",
   "/static/assets/g2-logo-192.png",
   "/static/assets/g2-logo-512.png"
 ];
@@ -80,3 +80,4 @@ self.addEventListener("fetch", (event) => {
     })
   );
 });
+

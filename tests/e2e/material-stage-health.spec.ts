@@ -5,6 +5,8 @@ const tomorrow = () => new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().
 
 test("materials expose independent stage and health, including in transit with problem", async ({ page }) => {
   await openApp(page, "/materials");
+  await expect(page.locator("#materialsView.active")).toBeVisible();
+  await expect(page.locator("[data-material-pipeline-filter]").first()).toBeVisible();
 
   const pipelineFilters = await page.locator("[data-material-pipeline-filter]").evaluateAll((buttons) =>
     buttons.map((button) => (button as HTMLElement).dataset.materialPipelineFilter)
