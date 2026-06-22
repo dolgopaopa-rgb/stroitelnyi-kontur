@@ -41,14 +41,14 @@ const visualPages = [
 ];
 
 const d2PrototypeShots = [
-  ["variant-a-owner-1440x900.png", "a", "owner", 1440, 900],
-  ["variant-b-owner-1440x900.png", "b", "owner", 1440, 900],
-  ["variant-a-owner-1280x720.png", "a", "owner", 1280, 720],
-  ["variant-b-owner-1280x720.png", "b", "owner", 1280, 720],
-  ["variant-a-foreman-1440x900.png", "a", "foreman", 1440, 900],
-  ["variant-b-foreman-1440x900.png", "b", "foreman", 1440, 900],
-  ["variant-a-master-390x844.png", "a", "master", 390, 844],
-  ["variant-b-master-390x844.png", "b", "master", 390, 844],
+  ["d2-a-lead-1440x900.png", "a", "owner", 1440, 900],
+  ["d2-b-lead-1440x900.png", "b", "owner", 1440, 900],
+  ["d2-a-lead-1280x720.png", "a", "owner", 1280, 720],
+  ["d2-b-lead-1280x720.png", "b", "owner", 1280, 720],
+  ["d2-a-site-work-1440x900.png", "a", "foreman", 1440, 900],
+  ["d2-b-site-work-1440x900.png", "b", "foreman", 1440, 900],
+  ["d2-a-field-mobile-390x844.png", "a", "master", 390, 844],
+  ["d2-b-field-mobile-390x844.png", "b", "master", 390, 844],
   ["variant-a-tasks-1440x900.png", "a", "tasks", 1440, 900],
   ["variant-b-tasks-1440x900.png", "b", "tasks", 1440, 900],
   ["variant-a-materials-1440x900.png", "a", "materials", 1440, 900],

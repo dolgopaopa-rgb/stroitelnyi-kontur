@@ -4842,14 +4842,14 @@ class AppHandler(BaseHTTPRequestHandler):
             + d1_screenshots_body
         )
         d2_screenshot_names = [
-            "variant-a-owner-1440x900.png",
-            "variant-b-owner-1440x900.png",
-            "variant-a-owner-1280x720.png",
-            "variant-b-owner-1280x720.png",
-            "variant-a-foreman-1440x900.png",
-            "variant-b-foreman-1440x900.png",
-            "variant-a-master-390x844.png",
-            "variant-b-master-390x844.png",
+            "d2-a-lead-1440x900.png",
+            "d2-b-lead-1440x900.png",
+            "d2-a-lead-1280x720.png",
+            "d2-b-lead-1280x720.png",
+            "d2-a-site-work-1440x900.png",
+            "d2-b-site-work-1440x900.png",
+            "d2-a-field-mobile-390x844.png",
+            "d2-b-field-mobile-390x844.png",
             "variant-a-tasks-1440x900.png",
             "variant-b-tasks-1440x900.png",
             "variant-a-materials-1440x900.png",
