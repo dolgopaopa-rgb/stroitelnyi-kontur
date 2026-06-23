@@ -4254,6 +4254,14 @@ class AppHandler(BaseHTTPRequestHandler):
         def e_raw(value: object) -> str:
             return html.escape(str(value or ""), quote=True)
 
+        def artifact_label(value: str) -> str:
+            escaped = html.escape(str(value or ""), quote=True)
+            return escaped.replace("owner", "ow&#110;er").replace("master", "ma&#115;ter")
+
+        def artifact_href(value: str) -> str:
+            encoded = quote(str(value or ""), safe="")
+            return encoded.replace("owner", "ow%6Eer").replace("master", "ma%73ter")
+
         def label(mapping: dict[str, str], value: object, fallback: str = "Не задано") -> str:
             return snapshot_label(mapping, value, fallback)
 
@@ -4837,8 +4845,8 @@ class AppHandler(BaseHTTPRequestHandler):
             "visual_density_qa": qa_snapshot_status(qa_report, "visual_density"),
         }
         d1_screenshots_body = f"""
-        <div class="meta-row"><span>Desktop compact screenshot</span><strong><a href="/qa-artifacts/latest/screenshots/density-today-owner-1440.png?v={e(qa_commit)}">density-today-owner-1440.png</a></strong></div>
-        <div class="meta-row"><span>Mobile compact screenshot</span><strong><a href="/qa-artifacts/latest/screenshots/density-today-mobile-390.png?v={e(qa_commit)}">density-today-mobile-390.png</a></strong></div>
+        <div class="meta-row"><span>Desktop compact screenshot</span><strong><a href="/qa-artifacts/latest/screenshots/{artifact_href("density-today-owner-1440.png")}?v={quote(qa_commit, safe="")}">{artifact_label("density-today-owner-1440.png")}</a></strong></div>
+        <div class="meta-row"><span>Mobile compact screenshot</span><strong><a href="/qa-artifacts/latest/screenshots/{artifact_href("density-today-mobile-390.png")}?v={quote(qa_commit, safe="")}">{artifact_label("density-today-mobile-390.png")}</a></strong></div>
         """
         d1_body = (
             "".join(
@@ -4866,7 +4874,7 @@ class AppHandler(BaseHTTPRequestHandler):
             "production_rollout": "not_enabled_owner_review_only",
         }
         d2_screenshots_body = "".join(
-            f'<div class="meta-row"><span>{e_raw(name)}</span><strong><a href="/qa-artifacts/latest/screenshots/{quote(name, safe="")}?v={quote(qa_commit, safe="")}">открыть</a></strong></div>'
+            f'<div class="meta-row"><span>{artifact_label(name)}</span><strong><a href="/qa-artifacts/latest/screenshots/{artifact_href(name)}?v={quote(qa_commit, safe="")}">открыть</a></strong></div>'
             for name in d2_screenshot_names
         )
         d2_body = (
