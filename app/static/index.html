@@ -9,10 +9,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Строительный контур</title>
-    <link rel="manifest" href="/static/manifest.webmanifest?v=20260622-d2-ui-lab" />
+    <link rel="manifest" href="/static/manifest.webmanifest?v=20260623-feedback-files" />
     <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260622-d2-ui-lab" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260623-feedback-files" />
   </head>
   <body>
     <div class="app" data-testid="qa-scroll-root">
@@ -323,10 +323,19 @@
               <form class="form embedded compact-form" id="workExtraForm">
                 <label>Объект <select name="project_id" required></select></label>
                 <label>Раздел / этап сметы <select name="estimate_section"></select></label>
+                <label>
+                  Расценка из задания на работы
+                  <select name="source_work_item_id"></select>
+                  <span class="field-hint">Можно выбрать позицию из загруженного задания Сметтера, чтобы подтянуть расценку.</span>
+                </label>
                 <label>Наименование <input name="title" required placeholder="Например: демонтаж старого основания" /></label>
                 <div class="grid-2">
                   <label>Ед. измерения <input name="unit" required placeholder="м2, м.п., шт" /></label>
                   <label>Количество <input name="quantity" type="number" min="0" step="0.001" required /></label>
+                </div>
+                <div class="grid-2">
+                  <label>Расценка, ₽ <input name="unit_price" type="number" min="0" step="0.01" placeholder="0.00" /></label>
+                  <label>Сумма, ₽ <input name="total_price" type="number" min="0" step="0.01" placeholder="0.00" readonly /></label>
                 </div>
                 <label>
                   Причина
@@ -1138,6 +1147,6 @@
       </div>
     </div>
     <div class="toast" id="toast"></div>
-    <script src="/static/app.compat.js?v=20260622-d2-ui-lab"></script>
+    <script src="/static/app.compat.js?v=20260623-feedback-files"></script>
   </body>
 </html>

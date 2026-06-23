@@ -272,6 +272,50 @@ async function runUnit(results) {
   const db = run("python", ["-c", "import sys; sys.path.insert(0, 'app'); from database import init_db; init_db(); print('db ok')"]);
   const failed = py.code !== 0 || db.code !== 0;
   add(results, "QA Orchestrator Agent", "Unit smoke", failed ? "FAIL" : "OK", [py.output, db.output].filter(Boolean).join("\n") || "ok", failed ? "blocker" : "normal");
+  runFeedbackFixStaticChecks(results);
+}
+
+function runFeedbackFixStaticChecks(results) {
+  const appText = fs.readFileSync(path.join(ROOT, "app/static/app.js"), "utf8");
+  const htmlText = fs.readFileSync(path.join(ROOT, "app/static/index.html"), "utf8");
+  const serverText = fs.readFileSync(path.join(ROOT, "app/server.py"), "utf8");
+  const checks = [
+    {
+      name: "Mobile file download behavior",
+      ok:
+        appText.includes("canPreviewInlineFile") &&
+        appText.includes("download-link") &&
+        serverText.includes("content_disposition_for_file") &&
+        serverText.includes("download_from_yandex_disk(stored_path)"),
+      details: "PDF/images preview inline, Excel and other office files download instead of opening blank mobile webview.",
+    },
+    {
+      name: "Photo upload loading and compression",
+      ok:
+        appText.includes("compressImageForUpload") &&
+        appText.includes("Готовим и загружаем фотоотчёт") &&
+        appText.includes("photo-report-upload"),
+      details: "Photo reports prepare large images and show loading before API request starts.",
+    },
+    {
+      name: "Work extras can use work-task rates",
+      ok:
+        htmlText.includes('name="source_work_item_id"') &&
+        htmlText.includes('name="unit_price"') &&
+        htmlText.includes('name="total_price"') &&
+        appText.includes("fillWorkExtraRateSelect") &&
+        appText.includes("applyWorkExtraRateSelection"),
+      details: "Extra works form exposes Smetter work-task rate selection, unit price and calculated total.",
+    },
+    {
+      name: "Delivered material requests do not stay overdue",
+      ok: appText.includes("materialBatchIsClosedForAttention") && appText.includes("if (materialBatchIsClosedForAttention(batch)) return 0"),
+      details: "Delivered/closed non-problem material batches are excluded from attention risk scoring.",
+    },
+  ];
+  for (const check of checks) {
+    add(results, "UX Sanity QA Agent", check.name, check.ok ? "OK" : "FAIL", check.details, check.ok ? "normal" : "blocker");
+  }
 }
 
 function ensureLocalQaFixtures(results) {

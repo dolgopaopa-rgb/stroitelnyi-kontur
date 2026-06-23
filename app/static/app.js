@@ -329,6 +329,12 @@ function money(value) {
   return new Intl.NumberFormat("ru-RU").format(Number(value || 0)) + " ₽";
 }
 
+function numberValue(value) {
+  const normalized = String(value ?? "").replace(/\s/g, "").replace(",", ".");
+  const number = Number(normalized);
+  return Number.isFinite(number) ? number : 0;
+}
+
 function pill(text, level = "") {
   return `<span class="pill ${level}">${text}</span>`;
 }
@@ -1089,6 +1095,18 @@ function documentTitle(doc) {
   return documentType(doc) || doc.file_name || "Документ";
 }
 
+function canPreviewInlineFile(fileName = "", mimeType = "") {
+  const mime = String(mimeType || "").toLowerCase();
+  const name = String(fileName || "").toLowerCase();
+  if (mime.startsWith("image/") || mime.startsWith("video/")) return true;
+  if (["application/pdf", "text/plain"].includes(mime)) return true;
+  return /\.(png|jpe?g|webp|gif|heic|heif|mp4|mov|webm|pdf|txt)$/i.test(name);
+}
+
+function fileOpenAction(fileName = "", mimeType = "") {
+  return canPreviewInlineFile(fileName, mimeType) ? "Открыть" : "Скачать файл";
+}
+
 function documentFileLink(doc) {
   const type = documentType(doc);
   const title = documentTitle(doc);
@@ -1101,10 +1119,12 @@ function documentFileLink(doc) {
       </div>`;
   }
   const processLabel = String(doc.process_type || "").startsWith("variation:") ? "" : doc.process_type;
+  const canPreview = canPreviewInlineFile(file, doc.mime_type);
   return `
-    <a class="document-link" href="/api/documents/${doc.id}/download" target="_blank" rel="noopener noreferrer">
+    <a class="document-link ${canPreview ? "" : "download-link"}" href="/api/documents/${doc.id}/download" target="_blank" rel="noopener noreferrer" ${canPreview ? "" : "download"}>
       <strong>${title}</strong>
       <span>${[type, doc.status === "archived" ? "архивная версия" : "", doc.related_section, processLabel, file].filter(Boolean).join(" · ")}</span>
+      <small>${fileOpenAction(file, doc.mime_type)}</small>
     </a>`;
 }
 
@@ -2223,6 +2243,11 @@ function materialIsRisky(batch) {
   return status === "problem" || batch.requiring_review || ["at_risk"].includes(batch.health) || ["returned", "revision_requested"].includes(batch.status) || (batch.delivery_urgency === "urgent" && !["delivered", "closed"].includes(status)) || actualOverrun;
 }
 
+function materialBatchIsClosedForAttention(batch) {
+  const status = materialPipelineStatus(batch);
+  return ["delivered", "closed", "cancelled"].includes(status) && !materialIsRisky(batch);
+}
+
 function materialReceiptAttachment(batch) {
   if (!batch.receipt_document_id) return "";
   const fileName = batch.receipt_document_file_name || batch.receipt_document_title || "Файл приемки";
@@ -2816,6 +2841,7 @@ function todayTasksForProfile(tasks = [], profile = roleTodayProfile()) {
 }
 
 function materialBatchRiskScore(batch) {
+  if (materialBatchIsClosedForAttention(batch)) return 0;
   let score = 0;
   const status = materialPipelineStatus(batch);
   if (status === "problem") score += 90;
@@ -2833,11 +2859,11 @@ function todayMaterialsForProfile(batches = [], profile = roleTodayProfile()) {
   let rows = Array.isArray(batches) ? batches : [];
   if (mode === "none") return [];
   if (mode === "procurement") {
-    rows = rows.filter((batch) => !["closed", "cancelled"].includes(materialPipelineStatus(batch)));
+    rows = rows.filter((batch) => !materialBatchIsClosedForAttention(batch) && !["closed", "cancelled"].includes(materialPipelineStatus(batch)));
   } else if (mode === "estimator") {
     rows = rows.filter((batch) => materialActiveItems(batch).some((item) => materialRowHasDeviation(item) || materialRowHasNoPrice(item) || materialRowActualOverrun(item)));
   } else if (mode === "foreman") {
-    rows = rows.filter((batch) => !["closed", "cancelled"].includes(materialPipelineStatus(batch)));
+    rows = rows.filter((batch) => !materialBatchIsClosedForAttention(batch) && !["closed", "cancelled"].includes(materialPipelineStatus(batch)));
   } else {
     rows = rows.filter(materialIsRisky);
   }
@@ -3154,6 +3180,8 @@ function renderEstimateJobFiles(files = [], jobId = "", canManageFiles = false) 
             const replaceButton = canManageFiles && isCurrent ? `<button class="estimate-file-print" type="button" data-replace-estimate-file="${escapeAttr(file.id)}" data-estimate-job-id="${escapeAttr(jobId)}">Заменить</button>` : "";
             const deleteButton = canManageFiles ? `<button class="estimate-file-print danger-outline" type="button" data-delete-estimate-file="${escapeAttr(file.id)}">Удалить</button>` : "";
             const meta = `<span>${fileName}</span><span>${versionText}${note}</span>`;
+            const canPreview = canPreviewInlineFile(file.file_name || file.title || "", file.mime_type);
+            const actionLabel = fileOpenAction(file.file_name || file.title || "", file.mime_type);
             if (isEstimateImageFile(file)) {
               return `
           <div class="estimate-file-card ${isCurrent ? "" : "previous-version"}">
@@ -3168,9 +3196,10 @@ function renderEstimateJobFiles(files = [], jobId = "", canManageFiles = false) 
             }
             return `
           <div class="estimate-file-card ${isCurrent ? "" : "previous-version"}">
-            <a href="${href}" target="_blank" rel="noopener noreferrer">
+            <a href="${href}" target="_blank" rel="noopener noreferrer" ${canPreview ? "" : "download"}>
               <strong>${escapeHtml(file.title || file.file_name || "Файл")}</strong>
               ${meta}
+              <span>${actionLabel}</span>
             </a>
             ${printButton}
             ${replaceButton}
@@ -5100,15 +5129,62 @@ function fileToBase64(file) {
   });
 }
 
+function canCompressUploadImage(file) {
+  return file && ["image/jpeg", "image/png", "image/webp"].includes(String(file.type || "").toLowerCase()) && Number(file.size || 0) > 1200000;
+}
+
+function loadImageElementFromFile(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = (event) => {
+      URL.revokeObjectURL(url);
+      reject(event);
+    };
+    image.src = url;
+  });
+}
+
+async function compressImageForUpload(file, { maxSide = 2000, quality = 0.82 } = {}) {
+  if (!canCompressUploadImage(file)) return file;
+  try {
+    const image = await loadImageElementFromFile(file);
+    const scale = Math.min(1, maxSide / Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height));
+    if (!scale || scale >= 1) return file;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round((image.naturalWidth || image.width) * scale));
+    canvas.height = Math.max(1, Math.round((image.naturalHeight || image.height) * scale));
+    canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+    if (!blob || blob.size >= file.size) return file;
+    return new File([blob], file.name, { type: "image/jpeg", lastModified: file.lastModified });
+  } catch (error) {
+    return file;
+  }
+}
+
+async function prepareFileForUpload(file, type = "") {
+  const uploadType = String(type || "");
+  if (["photo_report", "object_remark_photo"].includes(uploadType)) {
+    return compressImageForUpload(file);
+  }
+  return file;
+}
+
 async function fileDocumentPayload(file, title, type, relatedType = "handover") {
   if (!file) return null;
+  const preparedFile = await prepareFileForUpload(file, type);
   return {
     title,
     type,
     related_type: relatedType,
     file_name: file.name,
-    mime_type: file.type || "",
-    file_base64: await fileToBase64(file),
+    mime_type: preparedFile.type || file.type || "",
+    file_base64: await fileToBase64(preparedFile),
   };
 }
 
@@ -5346,6 +5422,53 @@ function fillWorkExtraSectionSelect(works) {
     `<option value="">Без привязки к разделу</option>` +
     sections.map((section) => `<option value="${escapeAttr(section)}">${section}</option>`).join("");
   if (sections.includes(current)) select.value = current;
+}
+
+function fillWorkExtraRateSelect(works) {
+  const select = qs('#workExtraForm select[name="source_work_item_id"]');
+  if (!select) return;
+  const current = select.value;
+  const rows = Array.isArray(works) ? works : [];
+  select.innerHTML =
+    `<option value="">Без привязки к расценке</option>` +
+    rows
+      .map((row) => {
+        const labelParts = [
+          row.title || "Работа",
+          row.unit ? `${row.estimated_quantity || 0} ${row.unit}` : "",
+          numberValue(row.unit_price) > 0 ? money(row.unit_price) : "",
+        ].filter(Boolean);
+        return `<option value="${escapeAttr(row.id)}" data-section="${escapeAttr(row.section || "")}" data-title="${escapeAttr(row.title || "")}" data-unit="${escapeAttr(row.unit || "")}" data-unit-price="${escapeAttr(row.unit_price || 0)}">${escapeHtml(labelParts.join(" · "))}</option>`;
+      })
+      .join("");
+  if (rows.some((row) => String(row.id) === String(current))) select.value = current;
+}
+
+function recalcWorkExtraTotal() {
+  const form = qs("#workExtraForm");
+  if (!form) return;
+  const quantity = numberValue(form.elements.quantity?.value);
+  const unitPrice = numberValue(form.elements.unit_price?.value);
+  const total = quantity > 0 && unitPrice > 0 ? quantity * unitPrice : 0;
+  if (form.elements.total_price) {
+    form.elements.total_price.value = total ? total.toFixed(2) : "";
+  }
+}
+
+function applyWorkExtraRateSelection() {
+  const form = qs("#workExtraForm");
+  const select = form?.elements.source_work_item_id;
+  const option = select?.selectedOptions?.[0];
+  if (!form || !option || !option.value) return;
+  const title = option.dataset.title || "";
+  const unit = option.dataset.unit || "";
+  const section = option.dataset.section || "";
+  const unitPrice = option.dataset.unitPrice || "";
+  if (title) form.elements.title.value = title;
+  if (unit) form.elements.unit.value = unit;
+  if (section) form.elements.estimate_section.value = section;
+  if (unitPrice && numberValue(unitPrice) > 0) form.elements.unit_price.value = numberValue(unitPrice).toFixed(2);
+  recalcWorkExtraTotal();
 }
 
 function taskTimeline(task) {
@@ -5606,6 +5729,7 @@ async function renderWorks() {
     api(`/api/work-extra-items?project_id=${projectId}`),
   ]);
   fillWorkExtraSectionSelect(works);
+  fillWorkExtraRateSelect(works);
   const project = state.projects.find((item) => Number(item.id) === Number(projectId));
   const fileNote = project?.work_task_file_name
     ? `<p class="muted">Файл задания: ${project.work_task_file_name} · загружено работ: ${works.length}</p>`
@@ -5671,10 +5795,13 @@ async function renderWorks() {
             <div class="material-main">
               <strong>${row.title}</strong>
               <div class="muted">${row.project_title || ""} · ${row.estimate_section || "без раздела"} · ${row.creator_name || "автор не указан"}</div>
+              ${row.source_work_title ? `<div class="muted">Расценка: ${escapeHtml(row.source_work_title)}</div>` : ""}
               ${row.comment ? `<div class="muted">${row.comment}</div>` : ""}
             </div>
             <div class="stack-line">
               ${pill(`${row.quantity || 0} ${row.unit || ""}`, "blue")}
+              ${numberValue(row.unit_price) > 0 ? pill(`Расценка: ${money(row.unit_price)}`, "") : ""}
+              ${numberValue(row.total_price) > 0 ? pill(`Сумма: ${money(row.total_price)}`, "success") : ""}
               ${pill(workReasonLabel(row.reason), row.reason === "company_cost" || row.reason === "rework" ? "danger" : "warning")}
             </div>
           </div>`
@@ -6919,24 +7046,30 @@ async function submitPhotoReportForm(event) {
     showToast("Прикрепите фото или видео по объекту");
     return;
   }
-  const payload = {
-    project_id: form.elements.project_id.value,
-    report_date: form.elements.report_date.value || todayIso(),
-    stage: form.elements.stage.value,
-    zones: form.elements.zones.value,
-    comment: form.elements.comment.value,
-    notify_personal: form.elements.notify_personal?.checked || false,
-    attachments: await Promise.all(files.map((file) => fileDocumentPayload(file, file.name, "photo_report", "photo_report"))),
-  };
-  await api("/api/photo-reports", {
-    method: "POST",
-    loadingMessage: "Загружаем фотоотчёт",
-    body: JSON.stringify(payload),
-  });
-  qs("#photoReportDialog").close();
-  form.reset();
-  await loadAll();
-  showToast("Фотоотчёт сохранён");
+  const loadingKey = "photo-report-upload";
+  setAppLoading(true, "Готовим и загружаем фотоотчёт", loadingKey);
+  try {
+    const payload = {
+      project_id: form.elements.project_id.value,
+      report_date: form.elements.report_date.value || todayIso(),
+      stage: form.elements.stage.value,
+      zones: form.elements.zones.value,
+      comment: form.elements.comment.value,
+      notify_personal: form.elements.notify_personal?.checked || false,
+      attachments: await Promise.all(files.map((file) => fileDocumentPayload(file, file.name, "photo_report", "photo_report"))),
+    };
+    await api("/api/photo-reports", {
+      method: "POST",
+      loadingMessage: "Загружаем фотоотчёт",
+      body: JSON.stringify(payload),
+    });
+    qs("#photoReportDialog").close();
+    form.reset();
+    await loadAll();
+    showToast("Фотоотчёт сохранён");
+  } finally {
+    setAppLoading(false, "", loadingKey);
+  }
 }
 
 async function submitObjectRemarkForm(event) {
@@ -6944,27 +7077,33 @@ async function submitObjectRemarkForm(event) {
   const form = qs("#objectRemarkForm");
   const beforeFile = form.elements.photo_before?.files?.[0];
   const afterFile = form.elements.photo_after?.files?.[0];
-  const payload = {
-    project_id: form.elements.project_id.value,
-    zone: form.elements.zone.value,
-    description: form.elements.description.value,
-    responsible_id: form.elements.responsible_id.value,
-    due_date: form.elements.due_date.value,
-    status: form.elements.status.value,
-    checked_by_id: form.elements.checked_by_id.value,
-    notify_personal: form.elements.notify_personal?.checked || false,
-    photo_before: beforeFile ? await fileDocumentPayload(beforeFile, `Фото до: ${beforeFile.name}`, "object_remark_photo", "object_remark") : null,
-    photo_after: afterFile ? await fileDocumentPayload(afterFile, `Фото после: ${afterFile.name}`, "object_remark_photo", "object_remark") : null,
-  };
-  await api("/api/object-remarks", {
-    method: "POST",
-    loadingMessage: "Сохраняем замечание",
-    body: JSON.stringify(payload),
-  });
-  qs("#objectRemarkDialog").close();
-  form.reset();
-  await loadAll();
-  showToast("Замечание сохранено");
+  const loadingKey = "object-remark-upload";
+  setAppLoading(true, "Готовим и сохраняем фото", loadingKey);
+  try {
+    const payload = {
+      project_id: form.elements.project_id.value,
+      zone: form.elements.zone.value,
+      description: form.elements.description.value,
+      responsible_id: form.elements.responsible_id.value,
+      due_date: form.elements.due_date.value,
+      status: form.elements.status.value,
+      checked_by_id: form.elements.checked_by_id.value,
+      notify_personal: form.elements.notify_personal?.checked || false,
+      photo_before: beforeFile ? await fileDocumentPayload(beforeFile, `Фото до: ${beforeFile.name}`, "object_remark_photo", "object_remark") : null,
+      photo_after: afterFile ? await fileDocumentPayload(afterFile, `Фото после: ${afterFile.name}`, "object_remark_photo", "object_remark") : null,
+    };
+    await api("/api/object-remarks", {
+      method: "POST",
+      loadingMessage: "Сохраняем замечание",
+      body: JSON.stringify(payload),
+    });
+    qs("#objectRemarkDialog").close();
+    form.reset();
+    await loadAll();
+    showToast("Замечание сохранено");
+  } finally {
+    setAppLoading(false, "", loadingKey);
+  }
 }
 
 function hasOpenDialog() {
@@ -7661,6 +7800,9 @@ function bindEvents() {
     qs('#workProjectForm select[name="project_id"]').value = event.target.value;
     await renderWorks();
   });
+  qs('#workExtraForm select[name="source_work_item_id"]')?.addEventListener("change", applyWorkExtraRateSelection);
+  qs('#workExtraForm input[name="quantity"]')?.addEventListener("input", recalcWorkExtraTotal);
+  qs('#workExtraForm input[name="unit_price"]')?.addEventListener("input", recalcWorkExtraTotal);
   qs("#printWorksButton").addEventListener("click", () => {
     const projectId = workProjectId();
     if (projectId) window.open(`/api/work-items/print?project_id=${encodeURIComponent(projectId)}`, "_blank", "noopener");

@@ -1216,6 +1216,20 @@ h2 {
   font-size: 13px;
 }
 
+.document-link small {
+  width: max-content;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--brand-strong);
+  font-size: 12px;
+}
+
+.document-link.download-link small {
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
 .document-link:hover strong {
   text-decoration: underline;
 }

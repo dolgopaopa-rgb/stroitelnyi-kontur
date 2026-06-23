@@ -372,6 +372,9 @@ def init_db() -> None:
                 title TEXT NOT NULL,
                 unit TEXT,
                 quantity REAL NOT NULL DEFAULT 0,
+                source_work_item_id INTEGER,
+                unit_price REAL NOT NULL DEFAULT 0,
+                total_price REAL NOT NULL DEFAULT 0,
                 reason TEXT NOT NULL DEFAULT 'additional_work',
                 estimate_section TEXT,
                 comment TEXT,
@@ -379,7 +382,8 @@ def init_db() -> None:
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
-                FOREIGN KEY (creator_id) REFERENCES users(id)
+                FOREIGN KEY (creator_id) REFERENCES users(id),
+                FOREIGN KEY (source_work_item_id) REFERENCES work_items(id)
             );
 
             CREATE TABLE IF NOT EXISTS supplier_locations (
@@ -612,6 +616,9 @@ def init_db() -> None:
         ensure_column(db, "blockers", "severity", "TEXT NOT NULL DEFAULT 'medium'")
         ensure_column(db, "blockers", "status", "TEXT NOT NULL DEFAULT 'open'")
         ensure_column(db, "work_extra_items", "estimate_section", "TEXT")
+        ensure_column(db, "work_extra_items", "source_work_item_id", "INTEGER")
+        ensure_column(db, "work_extra_items", "unit_price", "REAL NOT NULL DEFAULT 0")
+        ensure_column(db, "work_extra_items", "total_price", "REAL NOT NULL DEFAULT 0")
         ensure_column(db, "documents", "file_name", "TEXT")
         ensure_column(db, "documents", "file_path", "TEXT")
         ensure_column(db, "documents", "mime_type", "TEXT")

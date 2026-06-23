@@ -349,6 +349,11 @@
   function money(value) {
     return new Intl.NumberFormat("ru-RU").format(Number(value || 0)) + " ₽";
   }
+  function numberValue(value) {
+    const normalized = String(value != null ? value : "").replace(/\s/g, "").replace(",", ".");
+    const number = Number(normalized);
+    return Number.isFinite(number) ? number : 0;
+  }
   function pill(text, level = "") {
     return '<span class="pill '.concat(level, '">').concat(text, "</span>");
   }
@@ -973,6 +978,16 @@
     if (title && !isBrokenText(title)) return title;
     return documentType(doc) || doc.file_name || "Документ";
   }
+  function canPreviewInlineFile(fileName = "", mimeType = "") {
+    const mime = String(mimeType || "").toLowerCase();
+    const name = String(fileName || "").toLowerCase();
+    if (mime.startsWith("image/") || mime.startsWith("video/")) return true;
+    if (["application/pdf", "text/plain"].includes(mime)) return true;
+    return /\.(png|jpe?g|webp|gif|heic|heif|mp4|mov|webm|pdf|txt)$/i.test(name);
+  }
+  function fileOpenAction(fileName = "", mimeType = "") {
+    return canPreviewInlineFile(fileName, mimeType) ? "Открыть" : "Скачать файл";
+  }
   function documentFileLink(doc) {
     const type = documentType(doc);
     const title = documentTitle(doc);
@@ -981,7 +996,8 @@
       return "\n      <div>\n        <strong>".concat(title, '</strong>\n        <div class="muted">').concat(type, " · файл не загружен</div>\n      </div>");
     }
     const processLabel = String(doc.process_type || "").startsWith("variation:") ? "" : doc.process_type;
-    return '\n    <a class="document-link" href="/api/documents/'.concat(doc.id, '/download" target="_blank" rel="noopener noreferrer">\n      <strong>').concat(title, "</strong>\n      <span>").concat([type, doc.status === "archived" ? "архивная версия" : "", doc.related_section, processLabel, file].filter(Boolean).join(" · "), "</span>\n    </a>");
+    const canPreview = canPreviewInlineFile(file, doc.mime_type);
+    return '\n    <a class="document-link '.concat(canPreview ? "" : "download-link", '" href="/api/documents/').concat(doc.id, '/download" target="_blank" rel="noopener noreferrer" ').concat(canPreview ? "" : "download", ">\n      <strong>").concat(title, "</strong>\n      <span>").concat([type, doc.status === "archived" ? "архивная версия" : "", doc.related_section, processLabel, file].filter(Boolean).join(" · "), "</span>\n      <small>").concat(fileOpenAction(file, doc.mime_type), "</small>\n    </a>");
   }
   function contractTitleById(contracts = []) {
     return contracts.reduce((acc, contract) => {
@@ -1859,6 +1875,10 @@
     const actualOverrun = Number(batch.actual_purchase_amount || 0) > 0 && Number(batch.actual_purchase_amount || 0) > Number(batch.total_amount || 0);
     return status === "problem" || batch.requiring_review || ["at_risk"].includes(batch.health) || ["returned", "revision_requested"].includes(batch.status) || batch.delivery_urgency === "urgent" && !["delivered", "closed"].includes(status) || actualOverrun;
   }
+  function materialBatchIsClosedForAttention(batch) {
+    const status = materialPipelineStatus(batch);
+    return ["delivered", "closed", "cancelled"].includes(status) && !materialIsRisky(batch);
+  }
   function materialReceiptAttachment(batch) {
     if (!batch.receipt_document_id) return "";
     const fileName = batch.receipt_document_file_name || batch.receipt_document_title || "Файл приемки";
@@ -2352,6 +2372,7 @@
     return rows.sort((a, b) => taskRoleScore(b) - taskRoleScore(a) || String(a.due_date || "9999").localeCompare(String(b.due_date || "9999")));
   }
   function materialBatchRiskScore(batch) {
+    if (materialBatchIsClosedForAttention(batch)) return 0;
     let score = 0;
     const status = materialPipelineStatus(batch);
     if (status === "problem") score += 90;
@@ -2368,11 +2389,11 @@
     let rows = Array.isArray(batches) ? batches : [];
     if (mode === "none") return [];
     if (mode === "procurement") {
-      rows = rows.filter((batch) => !["closed", "cancelled"].includes(materialPipelineStatus(batch)));
+      rows = rows.filter((batch) => !materialBatchIsClosedForAttention(batch) && !["closed", "cancelled"].includes(materialPipelineStatus(batch)));
     } else if (mode === "estimator") {
       rows = rows.filter((batch) => materialActiveItems(batch).some((item) => materialRowHasDeviation(item) || materialRowHasNoPrice(item) || materialRowActualOverrun(item)));
     } else if (mode === "foreman") {
-      rows = rows.filter((batch) => !["closed", "cancelled"].includes(materialPipelineStatus(batch)));
+      rows = rows.filter((batch) => !materialBatchIsClosedForAttention(batch) && !["closed", "cancelled"].includes(materialPipelineStatus(batch)));
     } else {
       rows = rows.filter(materialIsRisky);
     }
@@ -2626,10 +2647,12 @@
         const replaceButton = canManageFiles && isCurrent ? '<button class="estimate-file-print" type="button" data-replace-estimate-file="'.concat(escapeAttr(file.id), '" data-estimate-job-id="').concat(escapeAttr(jobId), '">Заменить</button>') : "";
         const deleteButton = canManageFiles ? '<button class="estimate-file-print danger-outline" type="button" data-delete-estimate-file="'.concat(escapeAttr(file.id), '">Удалить</button>') : "";
         const meta = "<span>".concat(fileName, "</span><span>").concat(versionText).concat(note, "</span>");
+        const canPreview = canPreviewInlineFile(file.file_name || file.title || "", file.mime_type);
+        const actionLabel = fileOpenAction(file.file_name || file.title || "", file.mime_type);
         if (isEstimateImageFile(file)) {
           return '\n          <div class="estimate-file-card '.concat(isCurrent ? "" : "previous-version", '">\n            <button class="estimate-file-button" type="button" data-estimate-gallery-job="').concat(escapeAttr(jobId), '" data-estimate-gallery-file="').concat(escapeAttr(file.id), '">\n              <strong>').concat(title, "</strong>\n              ").concat(meta, "\n            </button>\n            ").concat(printButton, "\n            ").concat(replaceButton, "\n            ").concat(deleteButton, "\n          </div>");
         }
-        return '\n          <div class="estimate-file-card '.concat(isCurrent ? "" : "previous-version", '">\n            <a href="').concat(href, '" target="_blank" rel="noopener noreferrer">\n              <strong>').concat(escapeHtml(file.title || file.file_name || "Файл"), "</strong>\n              ").concat(meta, "\n            </a>\n            ").concat(printButton, "\n            ").concat(replaceButton, "\n            ").concat(deleteButton, "\n          </div>");
+        return '\n          <div class="estimate-file-card '.concat(isCurrent ? "" : "previous-version", '">\n            <a href="').concat(href, '" target="_blank" rel="noopener noreferrer" ').concat(canPreview ? "" : "download", ">\n              <strong>").concat(escapeHtml(file.title || file.file_name || "Файл"), "</strong>\n              ").concat(meta, "\n              <span>").concat(actionLabel, "</span>\n            </a>\n            ").concat(printButton, "\n            ").concat(replaceButton, "\n            ").concat(deleteButton, "\n          </div>");
       }
     ).join(""), "\n    </div>");
   }
@@ -3823,15 +3846,58 @@
       reader.readAsDataURL(file);
     });
   }
+  function canCompressUploadImage(file) {
+    return file && ["image/jpeg", "image/png", "image/webp"].includes(String(file.type || "").toLowerCase()) && Number(file.size || 0) > 12e5;
+  }
+  function loadImageElementFromFile(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const image = new Image();
+      image.onload = () => {
+        URL.revokeObjectURL(url);
+        resolve(image);
+      };
+      image.onerror = (event) => {
+        URL.revokeObjectURL(url);
+        reject(event);
+      };
+      image.src = url;
+    });
+  }
+  async function compressImageForUpload(file, { maxSide = 2e3, quality = 0.82 } = {}) {
+    if (!canCompressUploadImage(file)) return file;
+    try {
+      const image = await loadImageElementFromFile(file);
+      const scale = Math.min(1, maxSide / Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height));
+      if (!scale || scale >= 1) return file;
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round((image.naturalWidth || image.width) * scale));
+      canvas.height = Math.max(1, Math.round((image.naturalHeight || image.height) * scale));
+      canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+      if (!blob || blob.size >= file.size) return file;
+      return new File([blob], file.name, { type: "image/jpeg", lastModified: file.lastModified });
+    } catch (error) {
+      return file;
+    }
+  }
+  async function prepareFileForUpload(file, type = "") {
+    const uploadType = String(type || "");
+    if (["photo_report", "object_remark_photo"].includes(uploadType)) {
+      return compressImageForUpload(file);
+    }
+    return file;
+  }
   async function fileDocumentPayload(file, title, type, relatedType = "handover") {
     if (!file) return null;
+    const preparedFile = await prepareFileForUpload(file, type);
     return {
       title,
       type,
       related_type: relatedType,
       file_name: file.name,
-      mime_type: file.type || "",
-      file_base64: await fileToBase64(file)
+      mime_type: preparedFile.type || file.type || "",
+      file_base64: await fileToBase64(preparedFile)
     };
   }
   async function projectFormToJson(form) {
@@ -3999,6 +4065,48 @@
     select.innerHTML = '<option value="">Без привязки к разделу</option>' + sections.map((section) => '<option value="'.concat(escapeAttr(section), '">').concat(section, "</option>")).join("");
     if (sections.includes(current)) select.value = current;
   }
+  function fillWorkExtraRateSelect(works) {
+    const select = qs('#workExtraForm select[name="source_work_item_id"]');
+    if (!select) return;
+    const current = select.value;
+    const rows = Array.isArray(works) ? works : [];
+    select.innerHTML = '<option value="">Без привязки к расценке</option>' + rows.map((row) => {
+      const labelParts = [
+        row.title || "Работа",
+        row.unit ? "".concat(row.estimated_quantity || 0, " ").concat(row.unit) : "",
+        numberValue(row.unit_price) > 0 ? money(row.unit_price) : ""
+      ].filter(Boolean);
+      return '<option value="'.concat(escapeAttr(row.id), '" data-section="').concat(escapeAttr(row.section || ""), '" data-title="').concat(escapeAttr(row.title || ""), '" data-unit="').concat(escapeAttr(row.unit || ""), '" data-unit-price="').concat(escapeAttr(row.unit_price || 0), '">').concat(escapeHtml(labelParts.join(" · ")), "</option>");
+    }).join("");
+    if (rows.some((row) => String(row.id) === String(current))) select.value = current;
+  }
+  function recalcWorkExtraTotal() {
+    var _a, _b;
+    const form = qs("#workExtraForm");
+    if (!form) return;
+    const quantity = numberValue((_a = form.elements.quantity) == null ? void 0 : _a.value);
+    const unitPrice = numberValue((_b = form.elements.unit_price) == null ? void 0 : _b.value);
+    const total = quantity > 0 && unitPrice > 0 ? quantity * unitPrice : 0;
+    if (form.elements.total_price) {
+      form.elements.total_price.value = total ? total.toFixed(2) : "";
+    }
+  }
+  function applyWorkExtraRateSelection() {
+    var _a;
+    const form = qs("#workExtraForm");
+    const select = form == null ? void 0 : form.elements.source_work_item_id;
+    const option = (_a = select == null ? void 0 : select.selectedOptions) == null ? void 0 : _a[0];
+    if (!form || !option || !option.value) return;
+    const title = option.dataset.title || "";
+    const unit = option.dataset.unit || "";
+    const section = option.dataset.section || "";
+    const unitPrice = option.dataset.unitPrice || "";
+    if (title) form.elements.title.value = title;
+    if (unit) form.elements.unit.value = unit;
+    if (section) form.elements.estimate_section.value = section;
+    if (unitPrice && numberValue(unitPrice) > 0) form.elements.unit_price.value = numberValue(unitPrice).toFixed(2);
+    recalcWorkExtraTotal();
+  }
   function taskTimeline(task) {
     var _a, _b;
     const actionTitle = {
@@ -4135,6 +4243,7 @@
       api("/api/work-extra-items?project_id=".concat(projectId))
     ]);
     fillWorkExtraSectionSelect(works);
+    fillWorkExtraRateSelect(works);
     const project = state.projects.find((item) => Number(item.id) === Number(projectId));
     const fileNote = (project == null ? void 0 : project.work_task_file_name) ? '<p class="muted">Файл задания: '.concat(project.work_task_file_name, " · загружено работ: ").concat(works.length, "</p>") : '<p class="muted">Файл задания на работы по этому объекту еще не загружен.</p>';
     const processNote = '\n    <section class="hint-box neutral work-process-note">\n      <strong>Как читать раздел</strong>\n      <p>Слева — плановые работы из файла «Задание на работы» Сметтера. Справа — появившиеся работы: допы, превышения, переделки и расходы компании. На рабочем столе показываются задачи и контрольные сигналы, а не весь список работ по смете.</p>\n    </section>';
@@ -4147,7 +4256,7 @@
       ).join(""), "\n            </div>\n          </details>")
     ).join("") : '<p class="muted">Список работ пока пуст. Если файл уже выбран и сохранен, значит программа не распознала строки в этой выгрузке.</p>');
     qs("#workExtraRows").innerHTML = extraWorks.length ? extraWorks.map(
-      (row) => '\n          <div class="row estimate-material-row">\n            <div class="material-main">\n              <strong>'.concat(row.title, '</strong>\n              <div class="muted">').concat(row.project_title || "", " · ").concat(row.estimate_section || "без раздела", " · ").concat(row.creator_name || "автор не указан", "</div>\n              ").concat(row.comment ? '<div class="muted">'.concat(row.comment, "</div>") : "", '\n            </div>\n            <div class="stack-line">\n              ').concat(pill("".concat(row.quantity || 0, " ").concat(row.unit || ""), "blue"), "\n              ").concat(pill(workReasonLabel(row.reason), row.reason === "company_cost" || row.reason === "rework" ? "danger" : "warning"), "\n            </div>\n          </div>")
+      (row) => '\n          <div class="row estimate-material-row">\n            <div class="material-main">\n              <strong>'.concat(row.title, '</strong>\n              <div class="muted">').concat(row.project_title || "", " · ").concat(row.estimate_section || "без раздела", " · ").concat(row.creator_name || "автор не указан", "</div>\n              ").concat(row.source_work_title ? '<div class="muted">Расценка: '.concat(escapeHtml(row.source_work_title), "</div>") : "", "\n              ").concat(row.comment ? '<div class="muted">'.concat(row.comment, "</div>") : "", '\n            </div>\n            <div class="stack-line">\n              ').concat(pill("".concat(row.quantity || 0, " ").concat(row.unit || ""), "blue"), "\n              ").concat(numberValue(row.unit_price) > 0 ? pill("Расценка: ".concat(money(row.unit_price)), "") : "", "\n              ").concat(numberValue(row.total_price) > 0 ? pill("Сумма: ".concat(money(row.total_price)), "success") : "", "\n              ").concat(pill(workReasonLabel(row.reason), row.reason === "company_cost" || row.reason === "rework" ? "danger" : "warning"), "\n            </div>\n          </div>")
     ).join("") : '<p class="muted">Появившихся работ по объекту пока нет.</p>';
   }
   async function renderLocations() {
@@ -4864,24 +4973,30 @@
       showToast("Прикрепите фото или видео по объекту");
       return;
     }
-    const payload = {
-      project_id: form.elements.project_id.value,
-      report_date: form.elements.report_date.value || todayIso(),
-      stage: form.elements.stage.value,
-      zones: form.elements.zones.value,
-      comment: form.elements.comment.value,
-      notify_personal: ((_b = form.elements.notify_personal) == null ? void 0 : _b.checked) || false,
-      attachments: await Promise.all(files.map((file) => fileDocumentPayload(file, file.name, "photo_report", "photo_report")))
-    };
-    await api("/api/photo-reports", {
-      method: "POST",
-      loadingMessage: "Загружаем фотоотчёт",
-      body: JSON.stringify(payload)
-    });
-    qs("#photoReportDialog").close();
-    form.reset();
-    await loadAll();
-    showToast("Фотоотчёт сохранён");
+    const loadingKey = "photo-report-upload";
+    setAppLoading(true, "Готовим и загружаем фотоотчёт", loadingKey);
+    try {
+      const payload = {
+        project_id: form.elements.project_id.value,
+        report_date: form.elements.report_date.value || todayIso(),
+        stage: form.elements.stage.value,
+        zones: form.elements.zones.value,
+        comment: form.elements.comment.value,
+        notify_personal: ((_b = form.elements.notify_personal) == null ? void 0 : _b.checked) || false,
+        attachments: await Promise.all(files.map((file) => fileDocumentPayload(file, file.name, "photo_report", "photo_report")))
+      };
+      await api("/api/photo-reports", {
+        method: "POST",
+        loadingMessage: "Загружаем фотоотчёт",
+        body: JSON.stringify(payload)
+      });
+      qs("#photoReportDialog").close();
+      form.reset();
+      await loadAll();
+      showToast("Фотоотчёт сохранён");
+    } finally {
+      setAppLoading(false, "", loadingKey);
+    }
   }
   async function submitObjectRemarkForm(event) {
     var _a, _b, _c, _d, _e;
@@ -4889,27 +5004,33 @@
     const form = qs("#objectRemarkForm");
     const beforeFile = (_b = (_a = form.elements.photo_before) == null ? void 0 : _a.files) == null ? void 0 : _b[0];
     const afterFile = (_d = (_c = form.elements.photo_after) == null ? void 0 : _c.files) == null ? void 0 : _d[0];
-    const payload = {
-      project_id: form.elements.project_id.value,
-      zone: form.elements.zone.value,
-      description: form.elements.description.value,
-      responsible_id: form.elements.responsible_id.value,
-      due_date: form.elements.due_date.value,
-      status: form.elements.status.value,
-      checked_by_id: form.elements.checked_by_id.value,
-      notify_personal: ((_e = form.elements.notify_personal) == null ? void 0 : _e.checked) || false,
-      photo_before: beforeFile ? await fileDocumentPayload(beforeFile, "Фото до: ".concat(beforeFile.name), "object_remark_photo", "object_remark") : null,
-      photo_after: afterFile ? await fileDocumentPayload(afterFile, "Фото после: ".concat(afterFile.name), "object_remark_photo", "object_remark") : null
-    };
-    await api("/api/object-remarks", {
-      method: "POST",
-      loadingMessage: "Сохраняем замечание",
-      body: JSON.stringify(payload)
-    });
-    qs("#objectRemarkDialog").close();
-    form.reset();
-    await loadAll();
-    showToast("Замечание сохранено");
+    const loadingKey = "object-remark-upload";
+    setAppLoading(true, "Готовим и сохраняем фото", loadingKey);
+    try {
+      const payload = {
+        project_id: form.elements.project_id.value,
+        zone: form.elements.zone.value,
+        description: form.elements.description.value,
+        responsible_id: form.elements.responsible_id.value,
+        due_date: form.elements.due_date.value,
+        status: form.elements.status.value,
+        checked_by_id: form.elements.checked_by_id.value,
+        notify_personal: ((_e = form.elements.notify_personal) == null ? void 0 : _e.checked) || false,
+        photo_before: beforeFile ? await fileDocumentPayload(beforeFile, "Фото до: ".concat(beforeFile.name), "object_remark_photo", "object_remark") : null,
+        photo_after: afterFile ? await fileDocumentPayload(afterFile, "Фото после: ".concat(afterFile.name), "object_remark_photo", "object_remark") : null
+      };
+      await api("/api/object-remarks", {
+        method: "POST",
+        loadingMessage: "Сохраняем замечание",
+        body: JSON.stringify(payload)
+      });
+      qs("#objectRemarkDialog").close();
+      form.reset();
+      await loadAll();
+      showToast("Замечание сохранено");
+    } finally {
+      setAppLoading(false, "", loadingKey);
+    }
   }
   function hasOpenDialog() {
     return Boolean(document.querySelector("dialog[open]"));
@@ -5330,7 +5451,7 @@
     showToast("Ничего не найдено. Попробуйте другое слово.");
   }
   function bindEvents() {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H, _I, _J, _K;
     bindStableDetailsTouchGuard();
     bindWheelPageScroll();
     initPullToRefresh();
@@ -5591,6 +5712,9 @@
       qs('#workProjectForm select[name="project_id"]').value = event.target.value;
       await renderWorks();
     });
+    (_F = qs('#workExtraForm select[name="source_work_item_id"]')) == null ? void 0 : _F.addEventListener("change", applyWorkExtraRateSelection);
+    (_G = qs('#workExtraForm input[name="quantity"]')) == null ? void 0 : _G.addEventListener("input", recalcWorkExtraTotal);
+    (_H = qs('#workExtraForm input[name="unit_price"]')) == null ? void 0 : _H.addEventListener("input", recalcWorkExtraTotal);
     qs("#printWorksButton").addEventListener("click", () => {
       const projectId = workProjectId();
       if (projectId) window.open("/api/work-items/print?project_id=".concat(encodeURIComponent(projectId)), "_blank", "noopener");
@@ -6253,8 +6377,8 @@
       qs('#taskForm input[name="creator_id"]').value = currentUserId() || "";
       submitForm("taskDialog", "taskForm", "/api/tasks", "Задача создана");
     });
-    (_F = qs("#photoReportForm")) == null ? void 0 : _F.addEventListener("submit", submitPhotoReportForm);
-    (_G = qs("#objectRemarkForm")) == null ? void 0 : _G.addEventListener("submit", submitObjectRemarkForm);
+    (_I = qs("#photoReportForm")) == null ? void 0 : _I.addEventListener("submit", submitPhotoReportForm);
+    (_J = qs("#objectRemarkForm")) == null ? void 0 : _J.addEventListener("submit", submitObjectRemarkForm);
     qs("#estimateJobForm").addEventListener("submit", async (event) => {
       var _a2;
       event.preventDefault();
@@ -6442,7 +6566,7 @@
       switchView("materials");
       showToast("Материалы сметы загружены в объект");
     });
-    (_H = qs("#knowledgeFolderForm")) == null ? void 0 : _H.addEventListener("submit", async (event) => {
+    (_K = qs("#knowledgeFolderForm")) == null ? void 0 : _K.addEventListener("submit", async (event) => {
       event.preventDefault();
       const form = qs("#knowledgeFolderForm");
       try {

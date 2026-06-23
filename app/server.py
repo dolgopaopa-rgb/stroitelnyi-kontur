@@ -802,9 +802,10 @@ def create_addendum_work_extras(db, *, project_id: int, actor_id: int | None, co
         work_cursor = db.execute(
             """
             INSERT INTO work_extra_items (
-                project_id, creator_id, title, unit, quantity, reason, estimate_section, comment, status
+                project_id, creator_id, title, unit, quantity, unit_price, total_price,
+                reason, estimate_section, comment, status
             )
-            VALUES (?, ?, ?, ?, ?, 'additional_work', ?, ?, 'new')
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'additional_work', ?, ?, 'new')
             """,
             (
                 project_id,
@@ -812,6 +813,8 @@ def create_addendum_work_extras(db, *, project_id: int, actor_id: int | None, co
                 title,
                 row.get("unit") or "",
                 quantity,
+                unit_price,
+                total_amount,
                 section,
                 comment,
             ),
@@ -2644,10 +2647,23 @@ def yandex_disk_download_url(file_path: str) -> str:
     return str(href)
 
 
-def should_proxy_yandex_inline(file_name: str, content_type: str) -> bool:
-    if str(content_type or "").startswith("image/"):
+def should_open_inline(file_name: str, content_type: str) -> bool:
+    normalized_type = str(content_type or "").lower()
+    normalized_name = str(file_name or "").lower()
+    if normalized_type.startswith(("image/", "video/")):
         return True
-    return bool(re.search(r"\.(?:png|jpe?g|webp|gif|heic|heif)$", str(file_name or ""), re.IGNORECASE))
+    if normalized_type in {"application/pdf", "text/plain"}:
+        return True
+    return bool(re.search(r"\.(?:png|jpe?g|webp|gif|heic|heif|mp4|mov|webm|pdf|txt)$", normalized_name, re.IGNORECASE))
+
+
+def should_proxy_yandex_inline(file_name: str, content_type: str) -> bool:
+    return should_open_inline(file_name, content_type)
+
+
+def content_disposition_for_file(file_name: str, content_type: str) -> str:
+    disposition = "inline" if should_open_inline(file_name, content_type) else "attachment"
+    return f"{disposition}; filename*=UTF-8''{quote(file_name)}"
 
 
 def stream_inline_bytes(
@@ -2659,7 +2675,7 @@ def stream_inline_bytes(
     handler.send_response(200)
     handler.send_header("Content-Type", content_type)
     handler.send_header("Content-Length", str(len(raw)))
-    handler.send_header("Content-Disposition", f"inline; filename*=UTF-8''{quote(file_name)}")
+    handler.send_header("Content-Disposition", content_disposition_for_file(file_name, content_type))
     handler.send_header("Cache-Control", "private, max-age=300")
     handler.end_headers()
     if handler.command == "HEAD":
@@ -2715,7 +2731,7 @@ def stream_local_file(
     handler.send_header("Content-Length", str(content_length))
     if byte_range:
         handler.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
-    handler.send_header("Content-Disposition", f"inline; filename*=UTF-8''{quote(file_name)}")
+    handler.send_header("Content-Disposition", content_disposition_for_file(file_name, content_type))
     handler.send_header("Cache-Control", "private, max-age=300")
     handler.end_headers()
 
@@ -5185,20 +5201,12 @@ class AppHandler(BaseHTTPRequestHandler):
             file_name = document["file_name"] or Path(stored_path).name
             content_type = document["mime_type"] or mimetypes.guess_type(file_name)[0] or "application/octet-stream"
             if stored_path.startswith(YANDEX_DISK_FILE_PREFIX):
-                if should_proxy_yandex_inline(file_name, content_type):
-                    try:
-                        raw = download_from_yandex_disk(stored_path)
-                    except (HTTPError, URLError, TimeoutError, RuntimeError, OSError):
-                        self.send_error(502)
-                        return
-                    stream_inline_bytes(self, raw, file_name, content_type)
-                    return
                 try:
-                    href = yandex_disk_download_url(stored_path)
+                    raw = download_from_yandex_disk(stored_path)
                 except (HTTPError, URLError, TimeoutError, RuntimeError, OSError):
                     self.send_error(502)
                     return
-                redirect_response(self, href, 302)
+                stream_inline_bytes(self, raw, file_name, content_type)
                 return
             else:
                 file_path = (DATA_DIR / stored_path).resolve()
@@ -5225,13 +5233,15 @@ class AppHandler(BaseHTTPRequestHandler):
                 self.send_error(404)
                 return
             stored_path = str(item["file_path"])
+            file_name = item["file_name"] or Path(stored_path).name
+            content_type = item["mime_type"] or mimetypes.guess_type(file_name)[0] or "application/octet-stream"
             if stored_path.startswith(YANDEX_DISK_FILE_PREFIX):
                 try:
-                    href = yandex_disk_download_url(stored_path)
+                    raw = download_from_yandex_disk(stored_path)
                 except (HTTPError, URLError, TimeoutError, RuntimeError, OSError):
                     self.send_error(502)
                     return
-                redirect_response(self, href, 302)
+                stream_inline_bytes(self, raw, file_name, content_type)
                 return
             else:
                 file_path = (DATA_DIR / stored_path).resolve()
@@ -5242,7 +5252,7 @@ class AppHandler(BaseHTTPRequestHandler):
                     self.send_error(404)
                     return
                 file_name = item["file_name"] or file_path.name
-            content_type = item["mime_type"] or mimetypes.guess_type(file_name)[0] or "application/octet-stream"
+                content_type = item["mime_type"] or mimetypes.guess_type(file_name)[0] or "application/octet-stream"
             stream_local_file(self, file_path, file_name, content_type)
 
     def serve_material_requests_export(self, query: dict[str, list[str]]) -> None:
@@ -5574,6 +5584,10 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             WHEN 'estimate_done' THEN 6
                             ELSE 7
                         END,
+                        CASE
+                            WHEN j.status = 'estimate_done'
+                            THEN COALESCE(j.delivered_at, j.updated_at, j.created_at)
+                        END DESC,
                         j.due_date,
                         j.received_at DESC,
                         j.id DESC
@@ -5708,10 +5722,12 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     params.append(int(project_id))
                 rows = db.execute(
                     f"""
-                    SELECT w.*, p.title AS project_title, u.name AS creator_name
+                    SELECT w.*, p.title AS project_title, u.name AS creator_name,
+                           source.title AS source_work_title, source.section AS source_work_section
                     FROM work_extra_items w
                     JOIN projects p ON p.id = w.project_id
                     LEFT JOIN users u ON u.id = w.creator_id
+                    LEFT JOIN work_items source ON source.id = w.source_work_item_id
                     {where}
                     ORDER BY w.created_at DESC
                     """,
@@ -9079,19 +9095,41 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         ("reason", "Причина"),
                     ],
                 )
+                project_id = int(data["project_id"])
+                source_work_item_id = int(data.get("source_work_item_id") or 0) or None
+                source_work = None
+                if source_work_item_id:
+                    source_work = db.execute(
+                        "SELECT * FROM work_items WHERE id = ? AND project_id = ?",
+                        (source_work_item_id, project_id),
+                    ).fetchone()
+                    if not source_work:
+                        json_response(self, {"error": "Позиция задания на работы не найдена по выбранному объекту"}, 400)
+                        return
+                quantity = number_value(data.get("quantity"))
+                unit_price = number_value(data.get("unit_price"))
+                if source_work and unit_price <= 0:
+                    unit_price = number_value(source_work["unit_price"])
+                total_price = number_value(data.get("total_price"))
+                if total_price <= 0 and unit_price > 0:
+                    total_price = quantity * unit_price
                 cursor = db.execute(
                     """
                     INSERT INTO work_extra_items (
-                        project_id, creator_id, title, unit, quantity, reason, estimate_section, comment, status
+                        project_id, creator_id, title, unit, quantity, source_work_item_id,
+                        unit_price, total_price, reason, estimate_section, comment, status
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new')
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new')
                     """,
                     (
-                        int(data["project_id"]),
+                        project_id,
                         int(data.get("creator_id") or 0) or None,
                         data.get("title"),
                         data.get("unit"),
-                        number_value(data.get("quantity")),
+                        quantity,
+                        source_work_item_id,
+                        unit_price,
+                        total_price,
                         data.get("reason") or "additional_work",
                         data.get("estimate_section") or "",
                         data.get("comment") or "",
@@ -9105,12 +9143,13 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         project_id, title, type, status, financial_decision, amount, due_date,
                         description, estimate_section, requester_id, source_type, source_id
                     )
-                    VALUES (?, ?, ?, 'decision_required', 'not_decided', 0, NULL, ?, ?, ?, 'work_extra_item', ?)
+                    VALUES (?, ?, ?, 'decision_required', 'not_decided', ?, NULL, ?, ?, ?, 'work_extra_item', ?)
                     """,
                     (
                         int(data["project_id"]),
                         data.get("title"),
                         variation_type,
+                        total_price,
                         data.get("comment") or "",
                         data.get("estimate_section") or "",
                         int(data.get("creator_id") or 0) or None,
