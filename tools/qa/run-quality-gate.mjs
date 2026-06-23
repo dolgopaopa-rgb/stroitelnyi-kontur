@@ -1539,6 +1539,49 @@ async function runD2Prototype(results, page) {
     { d2PrototypeScreensChecked: lab.screens.length },
   );
 
+  for (const expectedVariant of ["a", "b"]) {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const url = `${baseUrl}/ui-lab?variant=${expectedVariant}`;
+    await page.goto(url, { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(350);
+    const variantState = await page.evaluate((expected) => {
+      const variants = [...document.querySelectorAll(".variant")].map((node) => {
+        const rect = node.getBoundingClientRect();
+        const style = window.getComputedStyle(node);
+        return {
+          variant: node.getAttribute("data-variant") || "",
+          visible: style.display !== "none" && rect.width > 0 && rect.height > 0,
+          selected: node.classList.contains("variant-selected"),
+        };
+      });
+      const pressed = document.querySelector(`[data-variant-choice="${expected}"]`)?.getAttribute("aria-pressed") || "";
+      return {
+        hasSwitch: document.querySelectorAll("[data-variant-choice]").length >= 3,
+        pressed,
+        visibleVariants: variants.filter((item) => item.visible).map((item) => item.variant),
+        selectedVariants: variants.filter((item) => item.selected).map((item) => item.variant),
+        horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth + 2,
+      };
+    }, expectedVariant);
+    const ok =
+      variantState.hasSwitch &&
+      variantState.pressed === "true" &&
+      variantState.visibleVariants.length === 1 &&
+      variantState.visibleVariants[0] === expectedVariant &&
+      variantState.selectedVariants.includes(expectedVariant) &&
+      !variantState.horizontalOverflow;
+    add(
+      results,
+      "D2 Prototype QA Agent",
+      `Direct variant link ${expectedVariant}`,
+      ok ? "OK" : "FAIL",
+      `url=${url}; hasSwitch=${variantState.hasSwitch}; pressed=${variantState.pressed}; visible=${variantState.visibleVariants.join(",")}; selected=${variantState.selectedVariants.join(",")}; horizontalOverflow=${variantState.horizontalOverflow}`,
+      ok ? "normal" : "blocker",
+      "",
+      { d2PrototypeScreensChecked: ok ? 1 : 0 },
+    );
+  }
+
   for (const [fileName, variant, screen, width, height] of d2PrototypeShots) {
     await page.setViewportSize({ width, height });
     const url = `${baseUrl}/ui-lab?variant=${variant}&screen=${screen}&shot=1`;

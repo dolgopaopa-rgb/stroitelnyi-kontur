@@ -2643,3 +2643,23 @@ A3 is considered production-ready only after:
 **Result.**
 
 Local QA result is `PARTIAL` only for the accepted external cookieless viewer limitation. No production deploy has been done in this step yet.
+
+### 2026-06-23: D2 UI Lab variant switch fix
+
+**Reason.** The owner could only see Corporate Compact: `/ui-lab?variant=b` still showed the same general page because the `variant` query parameter worked only for screenshot mode with `screen=...`.
+
+**What changed.**
+
+- Added a visible variant switcher to `/ui-lab`:
+  - `Показать оба`;
+  - `Corporate Compact`;
+  - `D2Dom Soft`.
+- Made direct links work:
+  - `/ui-lab?variant=a` shows only Corporate Compact;
+  - `/ui-lab?variant=b` shows only D2Dom Soft.
+- Kept screenshot mode unchanged for QA artifacts.
+- Added D2 QA checks for direct variant links so this cannot silently regress again.
+
+**QA note.**
+
+The first QA run failed because the local Windows browser test environment temporarily exhausted TCP buffers (`ERR_NO_BUFFER_SPACE`). After waiting for local `TIME_WAIT` sockets to clear, the same QA gate passed with no critical errors. D2 direct variant link checks are now explicitly `OK`.

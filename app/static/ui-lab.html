@@ -121,6 +121,40 @@
         line-height: 1.45;
       }
 
+      .variant-switch {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 14px;
+      }
+
+      .variant-switch button,
+      .variant-switch a {
+        min-height: 38px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+        color: var(--ink);
+        padding: 0 12px;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        text-decoration: none;
+        cursor: pointer;
+      }
+
+      .variant-switch button[aria-pressed="true"],
+      .variant-switch a.active {
+        border-color: var(--brand);
+        background: #e5f2ef;
+        color: var(--brand-dark);
+        font-weight: 700;
+      }
+
+      .single-variant .variant:not(.variant-selected) {
+        display: none;
+      }
+
       .variant-stack {
         display: grid;
         gap: 22px;
@@ -675,6 +709,7 @@
 
       .shot-mode .lab-sidebar,
       .shot-mode .lab-intro,
+      .shot-mode .variant-switch,
       .shot-mode .variant-title,
       .shot-mode .screen:not(.shot-active),
       .shot-mode .variant:not(.shot-active) {
@@ -776,6 +811,11 @@
             Два визуальных направления для следующего интерфейса. Это витрина, она не меняет рабочие экраны сотрудников.
             Вариант A строже и плотнее, вариант B мягче и спокойнее.
           </p>
+          <div class="variant-switch" data-variant-switch aria-label="Переключение варианта интерфейса">
+            <button type="button" data-variant-choice="all" aria-pressed="true">Показать оба</button>
+            <button type="button" data-variant-choice="a" aria-pressed="false">Corporate Compact</button>
+            <button type="button" data-variant-choice="b" aria-pressed="false">D2Dom Soft</button>
+          </div>
         </section>
         <div class="variant-stack">
           <section class="variant variant-a" data-variant="a">
@@ -1099,6 +1139,42 @@
         renderIcons();
       }
 
+      function normalizeVariant(value) {
+        return value === "a" || value === "b" ? value : "all";
+      }
+
+      function setVariantMode(mode, updateUrl = false) {
+        const selected = normalizeVariant(mode);
+        document.body.classList.toggle("single-variant", selected !== "all");
+        document.querySelectorAll(".variant").forEach((node) => {
+          node.classList.toggle("variant-selected", selected === "all" || node.dataset.variant === selected);
+        });
+        document.querySelectorAll("[data-variant-choice]").forEach((button) => {
+          const active = button.dataset.variantChoice === selected;
+          button.setAttribute("aria-pressed", active ? "true" : "false");
+          button.classList.toggle("active", active);
+        });
+        if (updateUrl) {
+          const url = new URL(window.location.href);
+          if (selected === "all") {
+            url.searchParams.delete("variant");
+          } else {
+            url.searchParams.set("variant", selected);
+          }
+          url.searchParams.delete("screen");
+          url.searchParams.delete("shot");
+          history.replaceState(null, "", url);
+        }
+      }
+
+      function bindVariantSwitch() {
+        document.querySelectorAll("[data-variant-choice]").forEach((button) => {
+          button.addEventListener("click", () => setVariantMode(button.dataset.variantChoice, true));
+        });
+        const params = new URLSearchParams(location.search);
+        setVariantMode(params.get("variant") || "all");
+      }
+
       function applyShotMode() {
         const params = new URLSearchParams(location.search);
         const variant = params.get("variant");
@@ -1116,6 +1192,7 @@
       }
 
       fillScreens();
+      bindVariantSwitch();
       applyShotMode();
     </script>
   </body>
