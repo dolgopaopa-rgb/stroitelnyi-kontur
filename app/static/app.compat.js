@@ -4841,6 +4841,9 @@
       },
       { all: 0, new: 0, in_work: 0, done: 0 }
     );
+    if (state.feedbackFilter !== "all" && !(counts[state.feedbackFilter] || 0) && items.length) {
+      state.feedbackFilter = counts.new ? "new" : "all";
+    }
     const statItems = [
       ["all", "Все"],
       ["new", "Новые"],
