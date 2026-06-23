@@ -312,6 +312,17 @@ function runFeedbackFixStaticChecks(results) {
       ok: appText.includes("materialBatchIsClosedForAttention") && appText.includes("if (materialBatchIsClosedForAttention(batch)) return 0"),
       details: "Delivered/closed non-problem material batches are excluded from attention risk scoring.",
     },
+    {
+      name: "Procurement can postpone or cancel material delivery without losing prices",
+      ok:
+        appText.includes('data-material-batch-action="postpone_delivery"') &&
+        appText.includes('data-material-batch-action="cancel_delivery"') &&
+        appText.includes("collectMaterialActualItems(currentBatch)") &&
+        serverText.includes("postpone_delivery") &&
+        serverText.includes("cancel_delivery") &&
+        serverText.includes("actual_purchase_amount = save_material_actual_items"),
+      details: "Material request dialog exposes postpone/cancel delivery actions and both actions preserve actual purchase prices through the backend.",
+    },
   ];
   for (const check of checks) {
     add(results, "UX Sanity QA Agent", check.name, check.ok ? "OK" : "FAIL", check.details, check.ok ? "normal" : "blocker");

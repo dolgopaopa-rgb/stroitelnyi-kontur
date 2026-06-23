@@ -1,9 +1,9 @@
-﻿const CACHE_NAME = "stroitelnyi-kontur-20260623-feedback-text";
+const CACHE_NAME = "stroitelnyi-kontur-20260623-material-delivery-actions";
 const CORE_ASSETS = [
   "/",
-  "/static/styles.css?v=20260623-feedback-text",
-  "/static/app.compat.js?v=20260623-feedback-text",
-  "/static/manifest.webmanifest?v=20260623-feedback-text",
+  "/static/styles.css?v=20260623-material-delivery-actions",
+  "/static/app.compat.js?v=20260623-material-delivery-actions",
+  "/static/manifest.webmanifest?v=20260623-material-delivery-actions",
   "/static/assets/g2-logo-192.png",
   "/static/assets/g2-logo-512.png"
 ];

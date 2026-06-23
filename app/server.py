@@ -1739,6 +1739,10 @@ def snapshot_material_pipeline_status(row: dict) -> str:
         return "needs_approval" if stage == "draft" else stage
     status = str(row.get("batch_status") or row.get("status") or row.get("procurement_status") or "")
     receipt_status = str(row.get("receipt_status") or "")
+    if status == "postponed":
+        return "approved"
+    if status == "cancelled":
+        return "cancelled"
     if status in {"receipt_issue", "returned", "revision_requested"} or receipt_status == "problem":
         return "problem"
     if status in {"archived", "closed"}:
@@ -4285,7 +4289,7 @@ class AppHandler(BaseHTTPRequestHandler):
             key = str(value or "")
             if key in {"overdue", "danger", "problem", "returned", "revision_requested", "rejected", "receipt_issue", "no_material", "quality_problem", "critical", "high"}:
                 return "danger"
-            if key in {"warning", "review", "completed_pending_acceptance", "waiting_check", "estimate_question", "estimate_returned", "submitted_to_construction", "decision_required", "need_approval", "needs_approval", "at_risk", "requiring_review", "estimate_hold", "new", "feedback_new", "open", "waiting_external", "waiting_client_decision", "waiting_owner_decision", "waiting_project_documentation", "estimate_not_approved", "subcontractor_problem", "no_photo_report", "medium", "check", "approval"}:
+            if key in {"warning", "review", "completed_pending_acceptance", "waiting_check", "estimate_question", "estimate_returned", "submitted_to_construction", "decision_required", "need_approval", "needs_approval", "at_risk", "requiring_review", "estimate_hold", "new", "feedback_new", "open", "waiting_external", "waiting_client_decision", "waiting_owner_decision", "waiting_project_documentation", "estimate_not_approved", "subcontractor_problem", "no_photo_report", "medium", "check", "approval", "postponed"}:
                 return "warning"
             if key in {"success", "accepted", "approved", "closed", "completed", "received", "on_site", "delivered", "agreed", "done", "feedback_done", "estimate_done"}:
                 return "success"
@@ -7757,7 +7761,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 json_response(self, {"id": task_id, "comment": comment})
                 return
 
-            material_batch_action = re.match(r"^/api/material-request-batches/(\d+)/(accept|return|resubmit|schedule|save_actuals|resolve_issue|receive|update|delete|create_variation)$", path)
+            material_batch_action = re.match(r"^/api/material-request-batches/(\d+)/(accept|return|resubmit|schedule|save_actuals|postpone_delivery|cancel_delivery|resolve_issue|receive|update|delete|create_variation)$", path)
             if material_batch_action:
                 batch_id = int(material_batch_action.group(1))
                 action = material_batch_action.group(2)
@@ -8191,10 +8195,89 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         )
                     json_response(self, {"id": batch_id, "status": "new"})
                     return
+                if action in {"postpone_delivery", "cancel_delivery"}:
+                    if actor_role not in {"procurement_manager", "owner", "construction_manager"}:
+                        raise ValueError("Отложить или отменить доставку может снабжение, руководитель строительства или ген.директор.")
+                    current_status = str(batch["status"] or "")
+                    if current_status in {"received", "closed", "archived", "cancelled"}:
+                        raise ValueError("Эта заявка уже закрыта, отменена или получена. Изменить доставку нельзя.")
+                    comment = str(data.get("comment") or "").strip()
+                    actual_purchase_amount = save_material_actual_items(db, batch_id, data.get("actual_items") or [])
+                    if action == "postpone_delivery":
+                        procurement_comment = f"Доставка отложена. {comment}".strip()
+                        status_to = "postponed"
+                        stage_to = "approved"
+                        health_to = "at_risk"
+                        health_comment = comment or "Доставка отложена снабжением. Внесенные цены закупки сохранены."
+                        request_status = "ordered"
+                        title = "Доставка по заявке отложена"
+                        message = f"{batch['project_title']}: доставка по заявке на материалы от {format_date_ru(batch['created_at'])} отложена."
+                        if comment:
+                            message += f" Комментарий снабжения: {comment}"
+                        message += " Внесенные цены закупки сохранены в заявке."
+                    else:
+                        procurement_comment = f"Доставка отменена. {comment}".strip()
+                        status_to = "cancelled"
+                        stage_to = "cancelled"
+                        health_to = "normal"
+                        health_comment = comment or None
+                        request_status = "cancelled"
+                        title = "Доставка по заявке отменена"
+                        message = f"{batch['project_title']}: доставка по заявке на материалы от {format_date_ru(batch['created_at'])} отменена."
+                        if comment:
+                            message += f" Комментарий снабжения: {comment}"
+                        message += " Внесенные цены закупки сохранены в истории заявки."
+                    db.execute(
+                        """
+                        UPDATE material_request_batches
+                        SET status = ?,
+                            stage = ?,
+                            health = ?,
+                            health_comment = ?,
+                            scheduled_delivery_date = NULL,
+                            planned_delivery_date = NULL,
+                            procurement_comment = ?,
+                            actual_purchase_amount = ?,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (status_to, stage_to, health_to, health_comment, procurement_comment, actual_purchase_amount, batch_id),
+                    )
+                    db.execute(
+                        """
+                        UPDATE material_requests
+                        SET procurement_status = ?,
+                            actual_delivery_date = NULL,
+                            procurement_comment = ?,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE batch_id = ?
+                          AND COALESCE(change_type, '') != 'removed'
+                        """,
+                        (request_status, procurement_comment, batch_id),
+                    )
+                    notify_users(
+                        db,
+                        watcher_ids,
+                        batch["project_id"],
+                        title,
+                        message,
+                        "material_request_batch",
+                        batch_id,
+                        force_max=force_max,
+                    )
+                    db.execute(
+                        """
+                        INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
+                        VALUES (?, 'decision', ?, ?, 'internal', 'material_request')
+                        """,
+                        (batch["project_id"], message, actor_id or user_id_by_role(db, "procurement_manager") or 4),
+                    )
+                    json_response(self, {"id": batch_id, "status": status_to, "actual_purchase_amount": actual_purchase_amount})
+                    return
                 if action == "save_actuals":
                     if str(data.get("actor_role") or "") != "procurement_manager":
                         raise ValueError("Сохранить цены закупки может только снабжение.")
-                    if str(batch["status"] or "") not in {"in_work", "delivery_scheduled", "received", "receipt_issue"}:
+                    if str(batch["status"] or "") not in {"in_work", "delivery_scheduled", "postponed", "received", "receipt_issue"}:
                         raise ValueError("Цены закупки можно сохранять после принятия заявки снабжением в работу.")
                     comment = str(data.get("comment") or "").strip()
                     actual_purchase_amount = save_material_actual_items(db, batch_id, data.get("actual_items") or [])

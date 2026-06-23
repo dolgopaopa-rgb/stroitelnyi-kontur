@@ -153,6 +153,7 @@ const statusLabelMap = {
   delivery: "Доставка",
   delivery_confirmed: "Доставка обработана",
   delivery_scheduled: "Доставка назначена",
+  postponed: "Доставка отложена",
   received: "Получено",
   receipt_issue: "Проблема при приемке",
   in_work: "Принята в работу",
@@ -266,7 +267,7 @@ function statusLabel(value) {
 function statusLevel(value, fallback = "") {
   const key = String(value || "");
   if (["overdue", "danger", "problem", "returned", "revision_requested", "rejected", "receipt_issue", "quality_problem", "no_material", "invalid_empty"].includes(key)) return "danger";
-  if (["warning", "review", "completed_pending_acceptance", "waiting_check", "estimate_question", "estimate_returned", "submitted_to_construction", "decision_required", "need_approval", "needs_approval", "at_risk", "requiring_review", "estimate_hold", "new", "feedback_new", "open", "waiting_external", "waiting_client_decision", "waiting_owner_decision", "waiting_project_documentation", "estimate_not_approved", "subcontractor_problem", "no_photo_report", "approval", "check"].includes(key)) return "warning";
+  if (["warning", "review", "completed_pending_acceptance", "waiting_check", "estimate_question", "estimate_returned", "submitted_to_construction", "decision_required", "need_approval", "needs_approval", "at_risk", "requiring_review", "estimate_hold", "new", "feedback_new", "open", "waiting_external", "waiting_client_decision", "waiting_owner_decision", "waiting_project_documentation", "estimate_not_approved", "subcontractor_problem", "no_photo_report", "approval", "check", "postponed"].includes(key)) return "warning";
   if (["success", "accepted", "approved", "closed", "completed", "received", "on_site", "delivered", "agreed", "done", "feedback_done", "estimate_done", "resolved", "checked"].includes(key)) return "success";
   if (["blue", "in_progress", "in_progress_task", "ordered", "in_transit", "delivery_scheduled", "delivery_confirmed", "estimate_in_work", "in_review", "active", "in_work", "feedback_in_work", "material"].includes(key)) return "blue";
   if (["draft", "archived", "estimate_new", "not_required", "duplicate", "superseded"].includes(key)) return "";
@@ -2195,9 +2196,11 @@ function materialPipelineStatus(batchOrStatus) {
   const batch = typeof batchOrStatus === "object" ? batchOrStatus : { status: batchOrStatus };
   const health = String(batch.health || "");
   const stage = String(batch.stage || "");
-  if (health === "problem") return "problem";
-  if (stage) return stage === "draft" ? "needs_approval" : stage;
   const status = String(batch.status || "");
+  if (health === "problem") return "problem";
+  if (status === "postponed") return "approved";
+  if (status === "cancelled") return "cancelled";
+  if (stage) return stage === "draft" ? "needs_approval" : stage;
   if (status === "receipt_issue" || status === "returned" || status === "revision_requested" || batch.receipt_status === "problem") return "problem";
   if (status === "archived" || status === "closed") return "closed";
   if (status === "received" || batch.receipt_status === "ok") return "delivered";
@@ -2223,6 +2226,9 @@ function renderMaterialPipeline(batch) {
 }
 
 function materialStageLabel(batch) {
+  const status = String(batch?.status || "");
+  if (status === "postponed") return statusLabel("postponed");
+  if (status === "cancelled") return statusLabel("cancelled");
   const stage = String(batch?.stage || materialPipelineStatus(batch) || "");
   return stage === "draft" ? "Черновик" : statusLabel(stage);
 }
@@ -5978,7 +5984,7 @@ async function openMaterialBatchDialog(batchKey) {
   }
   qs("#materialReviewTitle").textContent = materialBatchTitle(batch, currentRoleBase() === "procurement_manager");
   const canReview = currentRoleBase() === "procurement_manager" && batch.id && ["new", "revision_requested"].includes(batch.status);
-  const canSchedule = currentRoleBase() === "procurement_manager" && batch.id && ["in_work", "delivery_scheduled"].includes(batch.status);
+  const canSchedule = currentRoleBase() === "procurement_manager" && batch.id && ["in_work", "delivery_scheduled", "postponed"].includes(batch.status);
   const canSaveActualsOnly = currentRoleBase() === "procurement_manager" && batch.id && !canSchedule && ["received", "receipt_issue"].includes(batch.status);
   const canResolveIssue = currentRoleBase() === "procurement_manager" && batch.id && batch.status === "receipt_issue";
   const canEdit = canEditMaterialBatch(batch);
@@ -6080,6 +6086,8 @@ async function openMaterialBatchDialog(batchKey) {
             <div class="form-actions">
               <button class="primary" type="button" data-material-batch-action="schedule" data-material-batch-id="${batch.id}">Уведомить о доставке</button>
               <button class="secondary" type="button" data-material-batch-action="save_actuals" data-material-batch-id="${batch.id}">Сохранить цены закупки</button>
+              <button class="secondary" type="button" data-material-batch-action="postpone_delivery" data-material-batch-id="${batch.id}">Отложить доставку</button>
+              <button class="danger-button" type="button" data-material-batch-action="cancel_delivery" data-material-batch-id="${batch.id}">Отменить доставку</button>
             </div>
           </section>`
         : ""
@@ -8242,6 +8250,7 @@ function bindEvents() {
       const currentBatch = buildMaterialBatches(state.materialRequests || []).find((batch) => String(batch.id) === String(id));
       let body = {};
       if (action === "delete" && !confirm("Удалить заявку на материалы? Это можно сделать только до принятия снабжением в работу.")) return;
+      if (action === "cancel_delivery" && !confirm("Отменить доставку по этой заявке? Внесенные цены закупки сохранятся в заявке.")) return;
       if (action === "return") {
         body = { comment: qs("#materialBatchReturnComment")?.value || "" };
       }
@@ -8270,6 +8279,12 @@ function bindEvents() {
         };
       }
       if (action === "save_actuals") {
+        body = {
+          actual_items: currentBatch ? collectMaterialActualItems(currentBatch) : [],
+          comment: qs("#materialBatchScheduleComment")?.value || "",
+        };
+      }
+      if (action === "postpone_delivery" || action === "cancel_delivery") {
         body = {
           actual_items: currentBatch ? collectMaterialActualItems(currentBatch) : [],
           comment: qs("#materialBatchScheduleComment")?.value || "",
@@ -8318,6 +8333,8 @@ function bindEvents() {
           resubmit: "Заявка повторно отправлена снабжению",
           schedule: "Прораб уведомлен о доставке",
           save_actuals: "Цены закупки сохранены",
+          postpone_delivery: "Доставка отложена, цены закупки сохранены",
+          cancel_delivery: "Доставка отменена, цены закупки сохранены",
           resolve_issue: "Прораб уведомлен о повторной доставке",
           receive: "Приемка по заявке отправлена",
           update: "Заявка исправлена и отправлена снабжению",

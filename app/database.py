@@ -722,6 +722,7 @@ def material_stage_health_from_legacy(status: str, receipt_status: str = "") -> 
         "delivery_confirmed": ("delivered", "normal", 0),
         "received": ("delivered", "normal", 0),
         "receipt_issue": ("delivered", "problem", 0),
+        "postponed": ("approved", "at_risk", 0),
         "closed": ("closed", "normal", 0),
         "archived": ("closed", "normal", 0),
         "cancelled": ("cancelled", "normal", 0),
