@@ -594,13 +594,21 @@ async function runButtons(results, page) {
   const feedbackRows = await page.locator(".feedback-row").count().catch(() => 0);
   const feedbackStatsText = await page.locator("#feedbackStats").innerText().catch(() => "");
   const feedbackStatusText = await page.locator("#feedbackRefreshStatus").innerText().catch(() => "");
-  const feedbackVisible = feedbackRows > 0;
+  const feedbackVisibleTextRows = await page.locator(".feedback-row p").evaluateAll((nodes) =>
+    nodes.filter((node) => {
+      const style = getComputedStyle(node);
+      const box = node.getBoundingClientRect();
+      const text = (node.textContent || "").trim();
+      return text && text !== "Без текста" && style.display !== "none" && style.visibility !== "hidden" && box.height > 0 && box.width > 0;
+    }).length,
+  ).catch(() => 0);
+  const feedbackVisible = feedbackRows > 0 && feedbackVisibleTextRows > 0;
   add(
     results,
     "Button QA Agent",
-    "Feedback MAX messages are visible",
+    "Feedback MAX messages and text are visible",
     feedbackVisible ? "OK" : "FAIL",
-    `rows=${feedbackRows}; stats=${feedbackStatsText.replace(/\s+/g, " ").trim()}; status=${feedbackStatusText.replace(/\s+/g, " ").trim()}`,
+    `rows=${feedbackRows}; visibleTextRows=${feedbackVisibleTextRows}; stats=${feedbackStatsText.replace(/\s+/g, " ").trim()}; status=${feedbackStatusText.replace(/\s+/g, " ").trim()}`,
     feedbackVisible ? "normal" : "blocker",
     "",
     { buttonsChecked: 1, feedbackRowsChecked: feedbackRows },

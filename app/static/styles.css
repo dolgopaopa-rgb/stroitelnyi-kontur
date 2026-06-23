@@ -4500,6 +4500,10 @@ textarea {
   display: none;
 }
 
+.compact-ui-v1.density-compact .feedback-row p {
+  display: block;
+}
+
 .compact-ui-v1 .today-kpi-strip {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
