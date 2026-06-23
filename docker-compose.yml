@@ -5,6 +5,7 @@ services:
       args:
         APP_COMMIT_SHA: ${APP_COMMIT_SHA:-}
         APP_BUILD_TIME: ${APP_BUILD_TIME:-}
+        APP_VERSION: ${APP_VERSION:-}
     restart: unless-stopped
     environment:
       HOST: 0.0.0.0
@@ -18,6 +19,7 @@ services:
       APP_SESSION_TTL_SECONDS: ${APP_SESSION_TTL_SECONDS:-7776000}
       APP_COMMIT_SHA: ${APP_COMMIT_SHA:-}
       APP_BUILD_TIME: ${APP_BUILD_TIME:-}
+      APP_VERSION: ${APP_VERSION:-}
       APP_DEPLOYED_AT: ${APP_DEPLOYED_AT:-}
       APP_ENVIRONMENT: ${APP_ENVIRONMENT:-production}
       STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
