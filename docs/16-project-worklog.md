@@ -2663,3 +2663,18 @@ Local QA result is `PARTIAL` only for the accepted external cookieless viewer li
 **QA note.**
 
 The first QA run failed because the local Windows browser test environment temporarily exhausted TCP buffers (`ERR_NO_BUFFER_SPACE`). After waiting for local `TIME_WAIT` sockets to clear, the same QA gate passed with no critical errors. D2 direct variant link checks are now explicitly `OK`.
+
+### 2026-06-23: Feedback visibility repair and D2 A/B stop note
+
+**Reason.** New feedback from the MAX chat was present in production data, but the construction manager role could not open the feedback section from the frontend menu even though the server-side permission allowed feedback management. This made MAX feedback appear missing depending on the selected role.
+
+**What changed.**
+
+- Aligned frontend navigation with backend permissions: construction manager can now see and open `Обратная связь по программе`.
+- Updated role QA expectations so hiding feedback from construction manager is no longer accepted.
+- Added a local QA fixture for a MAX feedback item.
+- Added a QA check that opens feedback and fails if no feedback rows are visible.
+
+**Design note.**
+
+Corporate Compact and D2Dom Soft are rejected as future design bases. Do not continue variant A or B, and do not transfer their composition into production. A future concept must start separately as `D2DOM CONTROL` after the feedback pipeline is stable.

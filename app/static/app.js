@@ -545,7 +545,7 @@ function canQuestionEstimateJob(job) {
 
 const viewAccess = {
   owner: ["today", "dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "object_remarks", "photos", "locations", "documents", "feedback", "events"],
-  construction_manager: ["today", "dashboard", "projects", "tasks", "works", "materials", "object_remarks", "photos", "documents", "events"],
+  construction_manager: ["today", "dashboard", "projects", "tasks", "works", "materials", "object_remarks", "photos", "documents", "feedback", "events"],
   ai_auditor: ["today", "dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "object_remarks", "photos", "locations", "documents", "feedback", "events"],
   finance_director: ["today", "dashboard", "projects", "tasks", "works", "materials", "variations", "object_remarks", "photos", "locations", "documents", "feedback", "events"],
   accountant: ["today", "dashboard", "projects", "materials", "variations", "locations", "documents", "events"],

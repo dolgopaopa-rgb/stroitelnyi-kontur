@@ -374,6 +374,17 @@ with connect() as db:
             """,
             (batch, project, owner, (date.today() + timedelta(days=2)).isoformat()),
         )
+    if not db.execute("SELECT id FROM feedback_items WHERE source = 'max' AND external_id = 'qa-feedback-max-fixture'").fetchone():
+        db.execute(
+            """
+            INSERT INTO feedback_items (
+                source, external_id, chat_id, chat_title, sender_id, sender_name,
+                text, attachments_json, status, decision_comment
+            )
+            VALUES ('max', 'qa-feedback-max-fixture', '-qa-chat', 'QA MAX chat', 'qa-user', 'QA MAX',
+                    'QA сообщение из MAX для проверки видимости обратной связи', '[]', 'new', '')
+            """
+        )
     photo_comment = "QA photo report fixture"
     report_row = db.execute("SELECT id FROM photo_reports WHERE project_id = ? AND comment = ?", (project, photo_comment)).fetchone()
     if report_row:
@@ -542,6 +553,22 @@ async function runButtons(results, page) {
     const ok = before !== after || (await page.locator(".view.active").count()) > 0;
     add(results, "Button QA Agent", title, ok ? "OK" : "FAIL", `before=${before}; after=${after}`, ok ? "normal" : "blocker");
   }
+  await route(page, "feedback");
+  await page.waitForTimeout(350);
+  const feedbackRows = await page.locator(".feedback-row").count().catch(() => 0);
+  const feedbackStatsText = await page.locator("#feedbackStats").innerText().catch(() => "");
+  const feedbackStatusText = await page.locator("#feedbackRefreshStatus").innerText().catch(() => "");
+  const feedbackVisible = feedbackRows > 0;
+  add(
+    results,
+    "Button QA Agent",
+    "Feedback MAX messages are visible",
+    feedbackVisible ? "OK" : "FAIL",
+    `rows=${feedbackRows}; stats=${feedbackStatsText.replace(/\s+/g, " ").trim()}; status=${feedbackStatusText.replace(/\s+/g, " ").trim()}`,
+    feedbackVisible ? "normal" : "blocker",
+    "",
+    { buttonsChecked: 1, feedbackRowsChecked: feedbackRows },
+  );
   await route(page, "projects");
   const objectRows = page.locator('.row[data-testid="object-card"]');
   const objectCount = await objectRows.count().catch(() => 0);
@@ -658,7 +685,7 @@ async function runNavigation(results, page) {
 async function runRoles(results, page) {
   const roleChecks = [
     ["owner", "today-role-owner", ["nav-objects", "nav-tasks", "nav-materials"], []],
-    ["construction_manager", "today-role-project-manager", ["nav-objects", "nav-tasks", "nav-materials"], ["nav-feedback", "nav-estimates"]],
+    ["construction_manager", "today-role-project-manager", ["nav-objects", "nav-tasks", "nav-materials", "nav-feedback"], ["nav-estimates"]],
     ["foreman:7", "today-role-foreman", ["nav-objects", "nav-tasks", "nav-materials", "nav-photo-reports"], ["nav-feedback", "nav-estimates", "nav-documents"]],
     ["master", "today-role-worker", ["nav-tasks", "nav-photo-reports", "nav-object-issues"], ["nav-objects", "nav-materials", "nav-feedback", "nav-documents"]],
     ["procurement_manager", "today-role-procurement", ["nav-materials", "nav-objects", "nav-photo-reports"], ["nav-tasks", "nav-feedback", "nav-estimates"]],
@@ -1740,6 +1767,7 @@ function buildCoverage(results) {
     d2_prototype_checks: results.filter((item) => item.agent === "D2 Prototype QA Agent").length,
     d2_prototype_screens_checked: sumMeta(results, "d2PrototypeScreensChecked"),
     buttons_checked: Math.max(sumMeta(results, "buttonsChecked"), buttonResults.length),
+    feedback_rows_checked: maxMeta(results, "feedbackRowsChecked"),
     mobile_viewports_checked: results.filter((item) => item.agent === "Mobile QA Agent" && item.name.startsWith("Viewport ")).length,
     mobile_quick_actions_checked: maxMeta(results, "mobileQuickActionsChecked"),
     readonly_write_methods_checked: readonlyChecked,
@@ -1920,6 +1948,7 @@ function writeReport(results, startedAt, finishedAt, mandatorySuites, environmen
     `- d2_prototype_checks: ${coverage.d2_prototype_checks}`,
     `- d2_prototype_screens_checked: ${coverage.d2_prototype_screens_checked}`,
     `- buttons_checked: ${coverage.buttons_checked}`,
+    `- feedback_rows_checked: ${coverage.feedback_rows_checked}`,
     `- mobile_viewports_checked: ${coverage.mobile_viewports_checked}`,
     `- mobile_quick_actions_checked: ${coverage.mobile_quick_actions_checked}`,
     `- readonly_write_methods_checked: ${coverage.readonly_write_methods_checked}/${coverage.readonly_write_methods_total}`,
