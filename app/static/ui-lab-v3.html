@@ -1,0 +1,909 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>D2DOM CONTROL V1</title>
+    <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
+    <style>
+      :root {
+        --page: #f3f4f2;
+        --surface: #ffffff;
+        --surface-2: #f8f9f7;
+        --sidebar: #182321;
+        --text: #1b2423;
+        --muted: #6d7774;
+        --brand: #276c63;
+        --brand-hover: #1e5952;
+        --accent: #b58a57;
+        --danger: #c14f4a;
+        --warning: #c68b2d;
+        --success: #39785a;
+        --border: #e1e5e2;
+        --blue: #486f96;
+        font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: var(--text);
+        background: var(--page);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--page);
+      }
+
+      button,
+      input,
+      select {
+        font: inherit;
+      }
+
+      button {
+        cursor: pointer;
+      }
+
+      .prototype {
+        min-height: 100vh;
+        display: grid;
+        grid-template-columns: 208px 1fr;
+      }
+
+      .sidebar {
+        min-height: 100vh;
+        background: var(--sidebar);
+        color: rgba(255, 255, 255, 0.84);
+        padding: 18px 14px;
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        gap: 22px;
+      }
+
+      .brand {
+        display: grid;
+        grid-template-columns: 34px 1fr;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .brand img {
+        width: 34px;
+        height: 34px;
+        border-radius: 6px;
+      }
+
+      .brand strong {
+        display: block;
+        font-size: 14px;
+        line-height: 17px;
+        font-weight: 650;
+        color: #fff;
+      }
+
+      .brand span {
+        display: block;
+        margin-top: 2px;
+        font-size: 11px;
+        line-height: 14px;
+        color: rgba(255, 255, 255, 0.55);
+      }
+
+      .nav {
+        display: grid;
+        gap: 18px;
+        align-content: start;
+      }
+
+      .nav-group {
+        display: grid;
+        gap: 5px;
+      }
+
+      .nav-title {
+        padding: 0 8px 4px;
+        font-size: 10px;
+        line-height: 14px;
+        letter-spacing: 0.08em;
+        color: rgba(255, 255, 255, 0.38);
+        text-transform: uppercase;
+      }
+
+      .nav-item {
+        width: 100%;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: rgba(255, 255, 255, 0.74);
+        padding: 8px 9px;
+        display: grid;
+        grid-template-columns: 16px 1fr;
+        gap: 8px;
+        align-items: center;
+        text-align: left;
+        font-size: 13px;
+        line-height: 17px;
+      }
+
+      .nav-item .mark {
+        width: 14px;
+        height: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.32);
+        border-radius: 3px;
+      }
+
+      .nav-item.active {
+        background: rgba(255, 255, 255, 0.1);
+        color: #fff;
+      }
+
+      .nav-item.active .mark {
+        border-color: var(--accent);
+        background: linear-gradient(135deg, rgba(181, 138, 87, 0.9), rgba(181, 138, 87, 0.18));
+      }
+
+      .sidebar-note {
+        border-top: 1px solid rgba(255, 255, 255, 0.11);
+        padding-top: 14px;
+        font-size: 12px;
+        line-height: 16px;
+        color: rgba(255, 255, 255, 0.55);
+      }
+
+      .main {
+        min-width: 0;
+        display: grid;
+        grid-template-rows: 56px auto 1fr;
+      }
+
+      .topbar {
+        height: 56px;
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+        padding: 0 22px;
+        display: grid;
+        grid-template-columns: 1fr auto auto auto auto auto;
+        gap: 12px;
+        align-items: center;
+      }
+
+      .screen-title {
+        min-width: 0;
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        white-space: nowrap;
+      }
+
+      .screen-title h1 {
+        margin: 0;
+        font-size: 22px;
+        line-height: 28px;
+        font-weight: 650;
+      }
+
+      .screen-title span {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .control {
+        height: 34px;
+        min-width: 118px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--surface-2);
+        color: var(--text);
+        padding: 0 10px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        font-size: 13px;
+        line-height: 18px;
+      }
+
+      .search {
+        width: 160px;
+        justify-content: flex-start;
+        color: var(--muted);
+      }
+
+      .add {
+        background: var(--brand);
+        border-color: var(--brand);
+        color: white;
+        min-width: 112px;
+      }
+
+      .profile {
+        width: 34px;
+        min-width: 34px;
+        padding: 0;
+        border-color: var(--border);
+        background: var(--surface);
+      }
+
+      .summary {
+        min-height: 42px;
+        padding: 0 22px;
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        border-bottom: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.54);
+        font-size: 13px;
+        line-height: 18px;
+        color: var(--muted);
+      }
+
+      .metric-inline {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        white-space: nowrap;
+      }
+
+      .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 999px;
+        background: var(--muted);
+      }
+
+      .dot.danger {
+        background: var(--danger);
+      }
+
+      .dot.warning {
+        background: var(--warning);
+      }
+
+      .dot.success {
+        background: var(--success);
+      }
+
+      .workspace {
+        padding: 18px 22px 22px;
+        display: grid;
+        grid-template-rows: minmax(0, 1fr) auto;
+        gap: 16px;
+      }
+
+      .desktop-grid {
+        min-height: 0;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 31%;
+        gap: 16px;
+      }
+
+      .section {
+        min-width: 0;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+      }
+
+      .section-head {
+        min-height: 42px;
+        padding: 11px 13px 8px;
+        border-bottom: 1px solid var(--border);
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .section-head h2 {
+        margin: 0;
+        font-size: 15px;
+        line-height: 20px;
+        font-weight: 650;
+      }
+
+      .section-head span {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 16px;
+      }
+
+      .focus-list,
+      .risk-list,
+      .work-list {
+        display: grid;
+      }
+
+      .action-row,
+      .risk-row,
+      .work-row {
+        min-height: 54px;
+        display: grid;
+        align-items: center;
+        gap: 10px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .action-row:last-child,
+      .risk-row:last-child,
+      .work-row:last-child {
+        border-bottom: 0;
+      }
+
+      .action-row {
+        grid-template-columns: 4px 72px minmax(0, 1fr) 114px 94px 94px;
+        padding: 0 12px 0 0;
+      }
+
+      .stripe {
+        align-self: stretch;
+        background: var(--brand);
+      }
+
+      .stripe.danger {
+        background: var(--danger);
+      }
+
+      .stripe.warning {
+        background: var(--warning);
+      }
+
+      .stripe.accent {
+        background: var(--accent);
+      }
+
+      .kind {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 16px;
+      }
+
+      .row-title {
+        min-width: 0;
+      }
+
+      .row-title strong {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 14px;
+        line-height: 19px;
+        font-weight: 600;
+      }
+
+      .row-title span {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 16px;
+      }
+
+      .status {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 24px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        padding: 3px 8px;
+        background: var(--surface-2);
+        font-size: 12px;
+        line-height: 16px;
+        color: var(--text);
+        white-space: nowrap;
+      }
+
+      .status.danger {
+        color: var(--danger);
+        border-color: rgba(193, 79, 74, 0.3);
+      }
+
+      .status.warning {
+        color: var(--warning);
+        border-color: rgba(198, 139, 45, 0.32);
+      }
+
+      .status.success {
+        color: var(--success);
+        border-color: rgba(57, 120, 90, 0.28);
+      }
+
+      .status.blue {
+        color: var(--blue);
+        border-color: rgba(72, 111, 150, 0.28);
+      }
+
+      .row-action {
+        height: 30px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--surface);
+        color: var(--brand);
+        font-size: 13px;
+        line-height: 18px;
+      }
+
+      .risk-row {
+        grid-template-columns: 4px minmax(0, 1fr);
+        padding: 0 12px 0 0;
+      }
+
+      .risk-row .row-title {
+        display: grid;
+        gap: 2px;
+      }
+
+      .risk-row .meta-line {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 16px;
+      }
+
+      .show-all {
+        height: 42px;
+        border: 0;
+        border-top: 1px solid var(--border);
+        background: var(--surface);
+        color: var(--brand);
+        text-align: left;
+        padding: 0 13px;
+        font-size: 13px;
+      }
+
+      .register {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+      }
+
+      .tabs {
+        min-height: 43px;
+        padding: 0 12px;
+        display: flex;
+        align-items: end;
+        gap: 18px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .tab {
+        border: 0;
+        background: transparent;
+        padding: 11px 0 10px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 18px;
+        border-bottom: 2px solid transparent;
+      }
+
+      .tab.active {
+        color: var(--text);
+        border-bottom-color: var(--accent);
+      }
+
+      .tab strong {
+        font-size: 14px;
+      }
+
+      .work-row {
+        grid-template-columns: 4px 92px minmax(0, 1fr) 112px 88px;
+        min-height: 52px;
+        padding: 0 12px 0 0;
+      }
+
+      .screen {
+        display: none;
+      }
+
+      .screen.active {
+        display: contents;
+      }
+
+      .foreman .action-row {
+        grid-template-columns: 4px 82px minmax(0, 1fr) 118px 94px 94px;
+      }
+
+      .foreman .desktop-grid {
+        grid-template-columns: minmax(0, 1fr) 30%;
+      }
+
+      .master-shell {
+        min-height: 100vh;
+        background: var(--page);
+        display: grid;
+        grid-template-rows: 54px 1fr 72px;
+      }
+
+      .mobile-top {
+        padding: 0 18px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid var(--border);
+        background: var(--surface);
+      }
+
+      .mobile-top h1 {
+        margin: 0;
+        font-size: 22px;
+        line-height: 28px;
+        font-weight: 650;
+      }
+
+      .mobile-content {
+        min-width: 0;
+        padding: 16px;
+        display: grid;
+        align-content: start;
+        gap: 14px;
+      }
+
+      .mobile-count {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .mobile-task {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 14px;
+        display: grid;
+        gap: 10px;
+      }
+
+      .mobile-task .label {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 16px;
+      }
+
+      .mobile-task h2 {
+        margin: 0;
+        font-size: 17px;
+        line-height: 22px;
+        font-weight: 650;
+      }
+
+      .mobile-task p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 18px;
+      }
+
+      .mobile-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+
+      .mobile-actions.single {
+        grid-template-columns: 1fr;
+      }
+
+      .mobile-actions button {
+        min-height: 44px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--surface);
+        color: var(--brand);
+      }
+
+      .mobile-actions .primary {
+        background: var(--brand);
+        color: white;
+        border-color: var(--brand);
+      }
+
+      .mobile-bottom {
+        position: sticky;
+        bottom: 0;
+        min-height: 72px;
+        background: var(--sidebar);
+        color: rgba(255, 255, 255, 0.76);
+        display: grid;
+        grid-template-columns: 1fr 1fr 72px 1fr 1fr;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 10px 10px;
+      }
+
+      .mobile-bottom button {
+        min-height: 44px;
+        border: 0;
+        background: transparent;
+        color: inherit;
+        border-radius: 7px;
+        font-size: 12px;
+        line-height: 15px;
+      }
+
+      .mobile-bottom .plus {
+        width: 64px;
+        height: 56px;
+        justify-self: center;
+        background: var(--brand);
+        color: white;
+        font-size: 28px;
+        line-height: 28px;
+      }
+
+      body.shot {
+        overflow: hidden;
+      }
+
+      body.shot .screen:not(.shot-active) {
+        display: none;
+      }
+
+      body.shot .prototype.screen-owner.shot-active,
+      body.shot .prototype.screen-foreman.shot-active,
+      body.shot .master-shell.screen-master.shot-active {
+        display: grid;
+      }
+
+      body.shot .screen-owner.shot-active,
+      body.shot .screen-foreman.shot-active,
+      body.shot .screen-master.shot-active {
+        min-height: 100vh;
+      }
+
+      @media (max-width: 920px) {
+        .prototype {
+          grid-template-columns: 1fr;
+        }
+
+        .sidebar {
+          display: none;
+        }
+
+        .topbar {
+          grid-template-columns: 1fr;
+          height: auto;
+          padding: 12px 16px;
+        }
+
+        .control {
+          display: none;
+        }
+
+        .summary {
+          flex-wrap: wrap;
+          padding: 10px 16px;
+        }
+
+        .workspace {
+          padding: 14px 16px 82px;
+        }
+
+        .desktop-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .action-row,
+        .work-row {
+          grid-template-columns: 4px minmax(0, 1fr);
+          padding-right: 10px;
+          min-height: 68px;
+        }
+
+        .kind,
+        .status,
+        .row-action {
+          margin-left: 10px;
+          justify-self: start;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="screen screen-owner active" data-screen="owner">
+      <div class="prototype">
+        <aside class="sidebar" aria-label="Навигация D2DOM CONTROL">
+          <div class="brand">
+            <img src="/static/assets/g2-logo-192.png" alt="" />
+            <div><strong>D2DOM CONTROL V1</strong><span>визуальный прототип</span></div>
+          </div>
+          <nav class="nav">
+            <div class="nav-group">
+              <div class="nav-title">Работа</div>
+              <button class="nav-item active"><span class="mark"></span><span>Сегодня</span></button>
+              <button class="nav-item"><span class="mark"></span><span>Объекты</span></button>
+              <button class="nav-item"><span class="mark"></span><span>Задачи</span></button>
+            </div>
+            <div class="nav-group">
+              <div class="nav-title">Контроль</div>
+              <button class="nav-item"><span class="mark"></span><span>Материалы</span></button>
+              <button class="nav-item"><span class="mark"></span><span>Фотоотчёты</span></button>
+              <button class="nav-item"><span class="mark"></span><span>Замечания</span></button>
+              <button class="nav-item"><span class="mark"></span><span>Сигналы</span></button>
+            </div>
+            <div class="nav-group">
+              <div class="nav-title">Документы</div>
+              <button class="nav-item"><span class="mark"></span><span>Сметы</span></button>
+              <button class="nav-item"><span class="mark"></span><span>Допработы</span></button>
+              <button class="nav-item"><span class="mark"></span><span>База знаний</span></button>
+            </div>
+          </nav>
+          <div class="sidebar-note">Один новый концепт. Старые A/B отклонены и не используются.</div>
+        </aside>
+        <main class="main">
+          <header class="topbar">
+            <div class="screen-title"><h1>Сегодня</h1><span>23 июня</span></div>
+            <button class="control">Все объекты</button>
+            <button class="control search">Поиск</button>
+            <button class="control add">+ Добавить</button>
+            <button class="control profile">У</button>
+          </header>
+          <div class="summary" aria-label="Показатели одной строкой">
+            <span class="metric-inline"><span class="dot danger"></span><strong>3</strong> требуют решения</span>
+            <span class="metric-inline"><span class="dot danger"></span><strong>2</strong> просрочено</span>
+            <span class="metric-inline"><span class="dot warning"></span><strong>1</strong> блокер</span>
+            <span class="metric-inline"><span class="dot"></span><strong>2</strong> без фото</span>
+            <span class="metric-inline"><span class="dot warning"></span><strong>1</strong> материал под риском</span>
+          </div>
+          <div class="workspace">
+            <div class="desktop-grid">
+              <section class="section focus-section" data-focus-section>
+                <div class="section-head"><h2>Фокус сегодня</h2><span>9 рабочих строк</span></div>
+                <div class="focus-list">
+                  <div class="action-row" data-action-row><span class="stripe danger"></span><span class="kind">Фото</span><div class="row-title"><strong>Проверить фотоотчёт по инженерным сетям</strong><span>Субботино · Андрей · срок сегодня</span></div><span class="status warning">Ждёт проверки</span><span class="status danger">Высокая</span><button class="row-action">Проверить</button></div>
+                  <div class="action-row" data-action-row><span class="stripe warning"></span><span class="kind">Решение</span><div class="row-title"><strong>Согласовать размещение коллекторного шкафа</strong><span>Павлово · руководитель проекта · до 14:00</span></div><span class="status warning">Нужен ответ</span><span class="status">Обычная</span><button class="row-action">Открыть</button></div>
+                  <div class="action-row" data-action-row><span class="stripe danger"></span><span class="kind">Материал</span><div class="row-title"><strong>Поставка QuickDeck задерживается на сутки</strong><span>Павлово · снабжение · нужна завтра</span></div><span class="status danger">Проблема</span><span class="status danger">Высокая</span><button class="row-action">Заявка</button></div>
+                  <div class="action-row" data-action-row><span class="stripe accent"></span><span class="kind">Задача</span><div class="row-title"><strong>Принять исправление примыкания наличника</strong><span>Селигер · технадзор · спальня</span></div><span class="status blue">На проверке</span><span class="status">Обычная</span><button class="row-action">Принять</button></div>
+                  <div class="action-row" data-action-row><span class="stripe warning"></span><span class="kind">Фото</span><div class="row-title"><strong>Нет фото территории перед началом работ</strong><span>Геленджик · прораб Сергей · сегодня</span></div><span class="status warning">Нужен отчёт</span><span class="status">Обычная</span><button class="row-action">Запросить</button></div>
+                  <div class="action-row" data-action-row><span class="stripe"></span><span class="kind">Проверка</span><div class="row-title"><strong>Сметчик ждёт основание по допматериалу</strong><span>Субботино · QuickDeck · 10 листов</span></div><span class="status warning">Уточнить</span><span class="status">Обычная</span><button class="row-action">Открыть</button></div>
+                  <div class="action-row" data-action-row><span class="stripe"></span><span class="kind">Срок</span><div class="row-title"><strong>Подтвердить выход бригады на инженерные сети</strong><span>Павлово · мастер · завтра</span></div><span class="status success">В плане</span><span class="status">Низкая</span><button class="row-action">Открыть</button></div>
+                  <div class="action-row" data-action-row><span class="stripe accent"></span><span class="kind">Замечание</span><div class="row-title"><strong>Исправить узел примыкания в спальне</strong><span>Селигер · мастер · до пятницы</span></div><span class="status blue">В работе</span><span class="status">Обычная</span><button class="row-action">Открыть</button></div>
+                  <div class="action-row" data-action-row><span class="stripe"></span><span class="kind">Материал</span><div class="row-title"><strong>Подтвердить получение мембраны</strong><span>Геленджик · прораб Сергей · склад</span></div><span class="status success">На объекте</span><span class="status">Низкая</span><button class="row-action">Закрыть</button></div>
+                </div>
+                <button class="show-all">Показать все рабочие действия</button>
+              </section>
+              <section class="section risk-section">
+                <div class="section-head"><h2>Объекты под риском</h2><span>до 4 объектов</span></div>
+                <div class="risk-list">
+                  <div class="risk-row"><span class="stripe danger"></span><div class="row-title"><strong>Павлово</strong><span class="meta-line">Андрей · инженерные сети</span><span class="meta-line">2 просрочки · материал задерживается</span></div></div>
+                  <div class="risk-row"><span class="stripe warning"></span><div class="row-title"><strong>Субботино</strong><span class="meta-line">Андрей · чистовая отделка</span><span class="meta-line">нет фотоотчёта · решение руководителя</span></div></div>
+                  <div class="risk-row"><span class="stripe accent"></span><div class="row-title"><strong>Селигер</strong><span class="meta-line">Сергей · спальня</span><span class="meta-line">замечание ждёт приёмки</span></div></div>
+                  <div class="risk-row"><span class="stripe"></span><div class="row-title"><strong>Геленджик</strong><span class="meta-line">Сергей · территория</span><span class="meta-line">нужен фотоотчёт до вечера</span></div></div>
+                </div>
+              </section>
+            </div>
+            <section class="register">
+              <div class="tabs" data-tabs>
+                <button class="tab active" data-tab="tasks">Задачи <strong>12</strong></button>
+                <button class="tab" data-tab="materials">Материалы <strong>6</strong></button>
+                <button class="tab" data-tab="photos">Фотоотчёты <strong>3</strong></button>
+                <button class="tab" data-tab="issues">Замечания <strong>2</strong></button>
+              </div>
+              <div class="work-list" data-tab-panel="tasks">
+                <div class="work-row"><span class="stripe danger"></span><span class="kind">Фото</span><div class="row-title"><strong>Проверить фотоотчёт по инженерным сетям</strong><span>Субботино · Андрей</span></div><span class="status warning">Ждёт проверки</span><button class="row-action">Открыть</button></div>
+                <div class="work-row"><span class="stripe"></span><span class="kind">Вопрос</span><div class="row-title"><strong>Согласовать коллекторный шкаф</strong><span>Павлово · руководитель проекта</span></div><span class="status warning">Нужен ответ</span><button class="row-action">Открыть</button></div>
+                <div class="work-row"><span class="stripe accent"></span><span class="kind">Проверка</span><div class="row-title"><strong>Принять исправление наличника</strong><span>Селигер · технадзор</span></div><span class="status blue">На проверке</span><button class="row-action">Принять</button></div>
+              </div>
+              <div class="work-list" data-tab-panel="materials" hidden>
+                <div class="work-row"><span class="stripe danger"></span><span class="kind">QuickDeck</span><div class="row-title"><strong>10 листов задерживаются</strong><span>Павлово · нужна завтра</span></div><span class="status danger">Проблема</span><button class="row-action">Заявка</button></div>
+                <div class="work-row"><span class="stripe"></span><span class="kind">Мембрана</span><div class="row-title"><strong>Подтвердить получение на объекте</strong><span>Геленджик · склад</span></div><span class="status success">На объекте</span><button class="row-action">Закрыть</button></div>
+              </div>
+              <div class="work-list" data-tab-panel="photos" hidden>
+                <div class="work-row"><span class="stripe warning"></span><span class="kind">Фото</span><div class="row-title"><strong>Нет фото территории</strong><span>Геленджик · сегодня</span></div><span class="status warning">Нужен</span><button class="row-action">Запросить</button></div>
+                <div class="work-row"><span class="stripe"></span><span class="kind">Фото</span><div class="row-title"><strong>Фотоотчёт по сетям загружен</strong><span>Субботино · 18 фото</span></div><span class="status blue">Проверить</span><button class="row-action">Открыть</button></div>
+              </div>
+              <div class="work-list" data-tab-panel="issues" hidden>
+                <div class="work-row"><span class="stripe accent"></span><span class="kind">Замечание</span><div class="row-title"><strong>Исправить примыкание наличника</strong><span>Селигер · спальня</span></div><span class="status blue">В работе</span><button class="row-action">Открыть</button></div>
+              </div>
+            </section>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <div class="screen screen-foreman foreman" data-screen="foreman">
+      <div class="prototype">
+        <aside class="sidebar" aria-label="Навигация прораба">
+          <div class="brand"><img src="/static/assets/g2-logo-192.png" alt="" /><div><strong>D2DOM CONTROL V1</strong><span>прораб</span></div></div>
+          <nav class="nav">
+            <div class="nav-group"><div class="nav-title">Работа</div><button class="nav-item active"><span class="mark"></span><span>Сегодня</span></button><button class="nav-item"><span class="mark"></span><span>Мои объекты</span></button><button class="nav-item"><span class="mark"></span><span>Мои задачи</span></button></div>
+            <div class="nav-group"><div class="nav-title">Объект</div><button class="nav-item"><span class="mark"></span><span>Фото</span></button><button class="nav-item"><span class="mark"></span><span>Материалы</span></button><button class="nav-item"><span class="mark"></span><span>Замечания</span></button></div>
+          </nav>
+          <div class="sidebar-note">Главное: что сделать сегодня на назначенных объектах.</div>
+        </aside>
+        <main class="main">
+          <header class="topbar"><div class="screen-title"><h1>Сегодня</h1><span>Прораб Андрей</span></div><button class="control">Мои объекты</button><button class="control search">Поиск</button><button class="control add">+ Добавить</button><button class="control profile">А</button></header>
+          <div class="summary"><span class="metric-inline"><span class="dot danger"></span><strong>2</strong> просрочено</span><span class="metric-inline"><span class="dot warning"></span><strong>1</strong> нужен фотоотчёт</span><span class="metric-inline"><span class="dot warning"></span><strong>1</strong> материал задерживается</span><span class="metric-inline"><span class="dot success"></span><strong>3</strong> задачи в плане</span></div>
+          <div class="workspace">
+            <div class="desktop-grid">
+              <section class="section focus-section" data-focus-section>
+                <div class="section-head"><h2>Фокус сегодня</h2><span>8 рабочих строк</span></div>
+                <div class="focus-list">
+                  <div class="action-row" data-action-row><span class="stripe danger"></span><span class="kind">Фото</span><div class="row-title"><strong>Доснять инженерные сети после разводки</strong><span>Субботино · котельная · до 12:00</span></div><span class="status warning">Нужен отчёт</span><span class="status danger">Высокая</span><button class="row-action">Добавить фото</button></div>
+                  <div class="action-row" data-action-row><span class="stripe warning"></span><span class="kind">Материал</span><div class="row-title"><strong>Подтвердить замену QuickDeck на аналог</strong><span>Павлово · нужно завтра</span></div><span class="status danger">Проблема</span><span class="status danger">Высокая</span><button class="row-action">Открыть</button></div>
+                  <div class="action-row" data-action-row><span class="stripe"></span><span class="kind">Задача</span><div class="row-title"><strong>Проверить подготовку под наличники</strong><span>Селигер · спальня · сегодня</span></div><span class="status blue">В работе</span><span class="status">Обычная</span><button class="row-action">Готово</button></div>
+                  <div class="action-row" data-action-row><span class="stripe accent"></span><span class="kind">Вопрос</span><div class="row-title"><strong>Ответить по коллекторному шкафу</strong><span>Павлово · решение руководителя</span></div><span class="status warning">Ждёт ответ</span><span class="status">Обычная</span><button class="row-action">Ответить</button></div>
+                  <div class="action-row" data-action-row><span class="stripe"></span><span class="kind">Фото</span><div class="row-title"><strong>Сделать фото территории перед доставкой</strong><span>Геленджик · до 17:00</span></div><span class="status">Новая</span><span class="status">Обычная</span><button class="row-action">Добавить</button></div>
+                  <div class="action-row" data-action-row><span class="stripe"></span><span class="kind">Задача</span><div class="row-title"><strong>Проверить место разгрузки мембраны</strong><span>Геленджик · участок</span></div><span class="status blue">В работе</span><span class="status">Обычная</span><button class="row-action">Готово</button></div>
+                  <div class="action-row" data-action-row><span class="stripe"></span><span class="kind">Замечание</span><div class="row-title"><strong>Прислать фото после исправления примыкания</strong><span>Селигер · спальня</span></div><span class="status warning">Нужно фото</span><span class="status">Обычная</span><button class="row-action">Фото</button></div>
+                  <div class="action-row" data-action-row><span class="stripe"></span><span class="kind">Материал</span><div class="row-title"><strong>Создать заявку на краску для спальни</strong><span>Селигер · допработа</span></div><span class="status">Черновик</span><span class="status">Низкая</span><button class="row-action">Заявка</button></div>
+                </div>
+              </section>
+              <section class="section risk-section">
+                <div class="section-head"><h2>Мои объекты</h2><span>проблемные сверху</span></div>
+                <div class="risk-list">
+                  <div class="risk-row"><span class="stripe danger"></span><div class="row-title"><strong>Павлово</strong><span class="meta-line">QuickDeck задерживается</span><span class="meta-line">нужен ответ по замене</span></div></div>
+                  <div class="risk-row"><span class="stripe warning"></span><div class="row-title"><strong>Субботино</strong><span class="meta-line">инженерные сети</span><span class="meta-line">нужен фотоотчёт</span></div></div>
+                  <div class="risk-row"><span class="stripe"></span><div class="row-title"><strong>Селигер</strong><span class="meta-line">чистовая отделка</span><span class="meta-line">замечание на исправлении</span></div></div>
+                </div>
+              </section>
+            </div>
+            <section class="register"><div class="tabs"><button class="tab active">Задачи <strong>8</strong></button><button class="tab">Материалы <strong>3</strong></button><button class="tab">Фото <strong>2</strong></button><button class="tab">Замечания <strong>1</strong></button></div><div class="work-list"><div class="work-row"><span class="stripe danger"></span><span class="kind">Фото</span><div class="row-title"><strong>Доснять инженерные сети</strong><span>Субботино · сегодня</span></div><span class="status warning">Нужно</span><button class="row-action">Фото</button></div><div class="work-row"><span class="stripe warning"></span><span class="kind">Материал</span><div class="row-title"><strong>QuickDeck: подтвердить замену</strong><span>Павлово · завтра</span></div><span class="status danger">Проблема</span><button class="row-action">Открыть</button></div></div></section>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <div class="screen screen-master" data-screen="master">
+      <div class="master-shell">
+        <header class="mobile-top"><h1>Сегодня</h1><span class="status">Мастер</span></header>
+        <main class="mobile-content">
+          <div class="mobile-count"><strong>3 задачи</strong><span>Субботино · первый этаж</span></div>
+          <article class="mobile-task">
+            <span class="label">Задача</span>
+            <h2>Установить наличники</h2>
+            <p>Субботино · первый этаж · до 16:00</p>
+            <div class="mobile-actions"><button>Добавить фото</button><button class="primary">Готово</button></div>
+          </article>
+          <article class="mobile-task">
+            <span class="label">Замечание</span>
+            <h2>Исправить примыкание</h2>
+            <p>Субботино · спальня · до завтра</p>
+            <div class="mobile-actions single"><button>Сообщить проблему</button></div>
+          </article>
+          <article class="mobile-task">
+            <span class="label">Фото</span>
+            <h2>Снять результат после шлифовки</h2>
+            <p>Субботино · коридор · сегодня</p>
+            <div class="mobile-actions"><button>Добавить фото</button><button class="primary">Готово</button></div>
+          </article>
+        </main>
+        <nav class="mobile-bottom" aria-label="Нижнее меню">
+          <button>Сегодня</button>
+          <button>Задачи</button>
+          <button class="plus">+</button>
+          <button>Уведомления</button>
+          <button>Я</button>
+        </nav>
+      </div>
+    </div>
+
+    <script>
+      const params = new URLSearchParams(window.location.search);
+      const requestedScreen = params.get("screen") || params.get("role") || "owner";
+      const shot = params.get("shot") === "1";
+      const screenMap = { owner: "owner", director: "owner", foreman: "foreman", master: "master" };
+      const screen = screenMap[requestedScreen] || "owner";
+      document.querySelectorAll(".screen").forEach((node) => {
+        const active = node.dataset.screen === screen;
+        node.classList.toggle("active", active);
+        node.classList.toggle("shot-active", active && shot);
+      });
+      if (shot) document.body.classList.add("shot");
+      document.querySelectorAll("[data-tab]").forEach((tab) => {
+        tab.addEventListener("click", () => {
+          const id = tab.dataset.tab;
+          document.querySelectorAll("[data-tab]").forEach((item) => item.classList.toggle("active", item === tab));
+          document.querySelectorAll("[data-tab-panel]").forEach((panel) => {
+            panel.hidden = panel.dataset.tabPanel !== id;
+          });
+        });
+      });
+    </script>
+  </body>
+</html>

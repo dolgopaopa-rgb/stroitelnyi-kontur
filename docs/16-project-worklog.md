@@ -2678,3 +2678,32 @@ The first QA run failed because the local Windows browser test environment tempo
 **Design note.**
 
 Corporate Compact and D2Dom Soft are rejected as future design bases. Do not continue variant A or B, and do not transfer their composition into production. A future concept must start separately as `D2DOM CONTROL` after the feedback pipeline is stable.
+
+### 2026-06-23: D2DOM CONTROL V1 prototype
+
+**Request.** Create a new standalone visual prototype from scratch. Do not continue Corporate Compact or D2Dom Soft, do not change production UI, and stop after the owner-review prototype artifacts are ready.
+
+**What changed.**
+
+- Marked the old `/ui-lab` as an archive of rejected concepts.
+- Added a new standalone route: `/ui-lab-v3`.
+- Added one concept only: `D2DOM CONTROL V1`.
+- Added four target screens:
+  - owner today, 1440x900;
+  - owner today, 1280x720;
+  - foreman today, 1440x900;
+  - master today, 390x844.
+- Added `docs/d2dom-control-v1.md` with the visual principle, removed A/B ideas, visible-row counts, non-implemented items, and confirmation that production UI was not changed.
+- Updated snapshot links to point to `/ui-lab-v3` and the four PNG artifacts.
+- Reworked the D2 prototype QA contract so it checks the new one-concept prototype instead of the rejected A/B variants.
+
+**Design guardrails.**
+
+- No A/B/C variants.
+- No KPI cards as standalone tiles.
+- No nested card-heavy dashboard.
+- No production rollout before owner visual approval.
+
+**Status.**
+
+Prototype is prepared for owner review only. It is not a production redesign.

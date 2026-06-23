@@ -3730,7 +3730,7 @@ class AppHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
-        if path == "/ui-lab":
+        if path in {"/ui-lab", "/ui-lab-v3"}:
             if not can_access_ui_lab(current_access_account(self)):
                 self.send_error(403)
                 return
@@ -3842,6 +3842,12 @@ class AppHandler(BaseHTTPRequestHandler):
                 self.send_error(403)
                 return
             self.serve_static("ui-lab.html")
+            return
+        if path == "/ui-lab-v3":
+            if not can_access_ui_lab(current_access_account(self)):
+                self.send_error(403)
+                return
+            self.serve_static("ui-lab-v3.html")
             return
         if path == "/api/material-requests/export":
             self.serve_material_requests_export(parse_qs(parsed.query))
@@ -4842,27 +4848,22 @@ class AppHandler(BaseHTTPRequestHandler):
             + d1_screenshots_body
         )
         d2_screenshot_names = [
-            "d2-a-lead-1440x900.png",
-            "d2-b-lead-1440x900.png",
-            "d2-a-lead-1280x720.png",
-            "d2-b-lead-1280x720.png",
-            "d2-a-site-work-1440x900.png",
-            "d2-b-site-work-1440x900.png",
-            "d2-a-field-mobile-390x844.png",
-            "d2-b-field-mobile-390x844.png",
-            "variant-a-tasks-1440x900.png",
-            "variant-b-tasks-1440x900.png",
-            "variant-a-materials-1440x900.png",
-            "variant-b-materials-1440x900.png",
+            "d2dom-control-owner-1440x900.png",
+            "d2dom-control-owner-1280x720.png",
+            "d2dom-control-foreman-1440x900.png",
+            "d2dom-control-master-390x844.png",
         ]
+        ui_lab_v3_text = (STATIC_DIR / "ui-lab-v3.html").read_text(encoding="utf-8", errors="replace") if (STATIC_DIR / "ui-lab-v3.html").exists() else ""
+        ui_lab_archive_text = (STATIC_DIR / "ui-lab.html").read_text(encoding="utf-8", errors="replace") if (STATIC_DIR / "ui-lab.html").exists() else ""
         d2_checks = {
-            "d2_stage": "prototype",
-            "ui_lab_route": "ok" if "ui-lab.html" in {path.name for path in STATIC_DIR.glob("ui-lab.html")} else "missing",
-            "variant_a_corporate_compact": "ok" if "Corporate Compact" in (STATIC_DIR / "ui-lab.html").read_text(encoding="utf-8", errors="replace") else "missing",
-            "variant_b_d2dom_soft": "ok" if "D2Dom Soft" in (STATIC_DIR / "ui-lab.html").read_text(encoding="utf-8", errors="replace") else "missing",
-            "d2_prototype_qa": qa_snapshot_status(qa_report, "d2_prototype"),
-            "d2_ui_lab": qa_snapshot_status(qa_report, "d2_ui_lab"),
-            "production_rollout": "not_enabled_before_owner_choice",
+            "d2_stage": "owner_review",
+            "old_ui_lab_archive": "ok" if "Архив отклонённых концепций" in ui_lab_archive_text else "missing",
+            "corporate_compact": "REJECTED",
+            "d2dom_soft": "REJECTED",
+            "ui_lab_v3_route": "ok" if "ui-lab-v3.html" in {path.name for path in STATIC_DIR.glob("ui-lab-v3.html")} else "missing",
+            "single_concept": "ok" if "D2DOM CONTROL V1" in ui_lab_v3_text and "Corporate Compact" not in ui_lab_v3_text and "D2Dom Soft" not in ui_lab_v3_text else "partial",
+            "d2dom_control_qa": qa_snapshot_status(qa_report, "d2dom_control_v1"),
+            "production_rollout": "not_enabled_owner_review_only",
         }
         d2_screenshots_body = "".join(
             f'<div class="meta-row"><span>{e_raw(name)}</span><strong><a href="/qa-artifacts/latest/screenshots/{quote(name, safe="")}?v={quote(qa_commit, safe="")}">открыть</a></strong></div>'
@@ -4873,7 +4874,8 @@ class AppHandler(BaseHTTPRequestHandler):
                 f'<div class="meta-row"><span><code>{e(key)}</code></span><strong>{e(value)}</strong></div>'
                 for key, value in d2_checks.items()
             )
-            + '<div class="meta-row"><span><code>/ui-lab</code></span><strong><a href="/ui-lab">открыть прототипы</a></strong></div>'
+            + '<div class="meta-row"><span><code>/ui-lab-v3</code></span><strong><a href="/ui-lab-v3">открыть D2DOM CONTROL V1</a></strong></div>'
+            + '<div class="meta-row"><span><code>/ui-lab</code></span><strong><a href="/ui-lab">архив A/B REJECTED</a></strong></div>'
             + d2_screenshots_body
         )
         release_a2_checks = {
@@ -5118,7 +5120,7 @@ class AppHandler(BaseHTTPRequestHandler):
               {block("Проверка первого ТЗ", ["Сверить контракт", "Найти частичные пункты"], ["UX-контракт", "Аудит", "Статусы"], first_tz_body)}
               {block("Проверка этапа UX-логики", ["Сверить ролевые сценарии", "Проверить мобильный UX", "Проверить блокеры"], ["Роли", "Сигналы", "Блокеры", "Мобильный UX"], stage3_body)}
               {block("Release D1: compact UI", ["Сравнить Compact/Comfortable", "Открыть density screenshots", "Проверить первый экран"], ["compact_ui_v1", "Density QA", "Topbar", "Sidebar", "KPI"], d1_body)}
-              {block("Release D2: UI Lab Prototype", ["Открыть /ui-lab", "Сравнить вариант A", "Сравнить вариант B", "Выбрать направление"], ["Prototype", "Corporate Compact", "D2Dom Soft", "Без rollout"], d2_body)}
+              {block("D2DOM CONTROL V1", ["Открыть /ui-lab-v3", "Посмотреть 4 PNG", "Оставить правки владельца"], ["Prototype", "One concept", "Owner review", "No rollout"], d2_body)}
               {block("Release A2: photo reports", ["Reject empty report", "Check task link", "Check duplicates"], ["A2", "PhotoReportStatusService", "Consistency"], release_a2_body)}
               {block("1. Сегодня", ["Открыть задачи", "Открыть материалы", "Открыть фотоотчёты"], ["Мои задачи", "Требует решения", "Активные объекты"], today_body)}
               {block("2. Сегодня для руководителя", ["Открыть проблемный объект", "Открыть задачу", "Посмотреть сигналы"], ["Руководитель", "Решения", "Блокеры"], today_owner_body)}

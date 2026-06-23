@@ -40,19 +40,11 @@ const visualPages = [
   { view: "estimates", path: "/?view=estimates", title: "Сметы", testId: "estimates-page", activeViewId: "estimatesView" },
 ];
 
-const d2PrototypeShots = [
-  ["d2-a-lead-1440x900.png", "a", "owner", 1440, 900],
-  ["d2-b-lead-1440x900.png", "b", "owner", 1440, 900],
-  ["d2-a-lead-1280x720.png", "a", "owner", 1280, 720],
-  ["d2-b-lead-1280x720.png", "b", "owner", 1280, 720],
-  ["d2-a-site-work-1440x900.png", "a", "foreman", 1440, 900],
-  ["d2-b-site-work-1440x900.png", "b", "foreman", 1440, 900],
-  ["d2-a-field-mobile-390x844.png", "a", "master", 390, 844],
-  ["d2-b-field-mobile-390x844.png", "b", "master", 390, 844],
-  ["variant-a-tasks-1440x900.png", "a", "tasks", 1440, 900],
-  ["variant-b-tasks-1440x900.png", "b", "tasks", 1440, 900],
-  ["variant-a-materials-1440x900.png", "a", "materials", 1440, 900],
-  ["variant-b-materials-1440x900.png", "b", "materials", 1440, 900],
+const d2domControlShots = [
+  ["d2dom-control-owner-1440x900.png", "owner", 1440, 900],
+  ["d2dom-control-owner-1280x720.png", "owner", 1280, 720],
+  ["d2dom-control-foreman-1440x900.png", "foreman", 1440, 900],
+  ["d2dom-control-master-390x844.png", "master", 390, 844],
 ];
 
 const agentNames = [
@@ -70,7 +62,7 @@ const agentNames = [
   "Console Error QA Agent",
   "Visual Regression QA Agent",
   "Visual Density QA Agent",
-  "D2 Prototype QA Agent",
+  "D2Dom Control Prototype QA Agent",
   "MAX Report Format QA Agent",
 ];
 
@@ -1537,120 +1529,116 @@ async function runVisualDensity(results, page) {
 
 async function runD2Prototype(results, page) {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto(`${baseUrl}/ui-lab`, { waitUntil: "domcontentloaded" });
+  await page.goto(`${baseUrl}/ui-lab-v3`, { waitUntil: "domcontentloaded" });
   await page.waitForTimeout(500);
   const lab = await page.evaluate(() => {
     const variants = [...document.querySelectorAll("[data-variant]")].map((node) => node.getAttribute("data-variant"));
     const screens = [...document.querySelectorAll("[data-screen]")].map((node) => node.getAttribute("data-screen"));
+    const actionRows = [...document.querySelectorAll(".screen-owner.active [data-action-row]")].map((node) => node.getBoundingClientRect());
+    const focus = document.querySelector(".screen-owner.active [data-focus-section]")?.getBoundingClientRect();
+    const risk = document.querySelector(".screen-owner.active .risk-section")?.getBoundingClientRect();
+    const topbarControls = [...document.querySelectorAll(".screen-owner.active .topbar .control")].filter((node) => {
+      const rect = node.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    });
     return {
       variants,
       screens,
       hasAppIcon: document.querySelectorAll("[data-icon] svg").length > 0,
       text: document.body.innerText || "",
       horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth + 2,
+      actionRows: actionRows.length,
+      maxRowHeight: actionRows.length ? Math.max(...actionRows.map((box) => Math.round(box.height))) : 0,
+      focusWidth: Math.round(focus?.width || 0),
+      riskWidth: Math.round(risk?.width || 0),
+      topbarControls: topbarControls.length,
     };
   });
-  const expectedScreens = ["owner", "foreman", "master", "objects", "tasks", "materials", "photos", "documents", "drawer", "mobile"];
-  const variantsOk = lab.variants.includes("a") && lab.variants.includes("b");
+  const expectedScreens = ["owner", "foreman", "master"];
+  const variantsOk = lab.variants.length === 0;
   const screensOk = expectedScreens.every((screen) => lab.screens.includes(screen));
-  const labelsOk = ["Corporate Compact", "D2Dom Soft", "Требует моего действия", "Список остаётся на месте"].every((label) => lab.text.includes(label));
-  const labOk = variantsOk && screensOk && lab.hasAppIcon && labelsOk && !lab.horizontalOverflow;
+  const labelsOk = ["D2DOM CONTROL V1", "Фокус сегодня", "Объекты под риском"].every((label) => lab.text.includes(label));
+  const rejectedAbsent = !["Corporate Compact", "D2Dom Soft", "Вариант A", "Вариант B"].some((label) => lab.text.includes(label));
+  const layoutOk = lab.actionRows >= 8 && lab.maxRowHeight >= 52 && lab.maxRowHeight <= 58 && lab.focusWidth > lab.riskWidth && lab.topbarControls <= 5;
+  const labOk = variantsOk && screensOk && labelsOk && rejectedAbsent && layoutOk && !lab.horizontalOverflow;
   add(
     results,
-    "D2 Prototype QA Agent",
-    "UI lab has both prototype variants",
+    "D2Dom Control Prototype QA Agent",
+    "UI lab v3 has one D2DOM CONTROL concept",
     labOk ? "OK" : "FAIL",
-    `variants=${lab.variants.join(",")}; screens=${lab.screens.length}; expectedScreens=${expectedScreens.length}; hasSvgIcons=${lab.hasAppIcon}; labelsOk=${labelsOk}; horizontalOverflow=${lab.horizontalOverflow}`,
+    `variants=${lab.variants.join(",")}; screens=${lab.screens.length}; expectedScreens=${expectedScreens.length}; labelsOk=${labelsOk}; rejectedAbsent=${rejectedAbsent}; actionRows=${lab.actionRows}; maxRowHeight=${lab.maxRowHeight}; focusWidth=${lab.focusWidth}; riskWidth=${lab.riskWidth}; topbarControls=${lab.topbarControls}; horizontalOverflow=${lab.horizontalOverflow}`,
     labOk ? "normal" : "blocker",
     "",
-    { d2PrototypeScreensChecked: lab.screens.length },
+    { d2domControlScreensChecked: lab.screens.length },
   );
 
-  for (const expectedVariant of ["a", "b"]) {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    const url = `${baseUrl}/ui-lab?variant=${expectedVariant}`;
-    await page.goto(url, { waitUntil: "domcontentloaded" });
-    await page.waitForTimeout(350);
-    const variantState = await page.evaluate((expected) => {
-      const variants = [...document.querySelectorAll(".variant")].map((node) => {
-        const rect = node.getBoundingClientRect();
-        const style = window.getComputedStyle(node);
-        return {
-          variant: node.getAttribute("data-variant") || "",
-          visible: style.display !== "none" && rect.width > 0 && rect.height > 0,
-          selected: node.classList.contains("variant-selected"),
-        };
-      });
-      const pressed = document.querySelector(`[data-variant-choice="${expected}"]`)?.getAttribute("aria-pressed") || "";
-      return {
-        hasSwitch: document.querySelectorAll("[data-variant-choice]").length >= 3,
-        pressed,
-        visibleVariants: variants.filter((item) => item.visible).map((item) => item.variant),
-        selectedVariants: variants.filter((item) => item.selected).map((item) => item.variant),
-        horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth + 2,
-      };
-    }, expectedVariant);
-    const ok =
-      variantState.hasSwitch &&
-      variantState.pressed === "true" &&
-      variantState.visibleVariants.length === 1 &&
-      variantState.visibleVariants[0] === expectedVariant &&
-      variantState.selectedVariants.includes(expectedVariant) &&
-      !variantState.horizontalOverflow;
-    add(
-      results,
-      "D2 Prototype QA Agent",
-      `Direct variant link ${expectedVariant}`,
-      ok ? "OK" : "FAIL",
-      `url=${url}; hasSwitch=${variantState.hasSwitch}; pressed=${variantState.pressed}; visible=${variantState.visibleVariants.join(",")}; selected=${variantState.selectedVariants.join(",")}; horizontalOverflow=${variantState.horizontalOverflow}`,
-      ok ? "normal" : "blocker",
-      "",
-      { d2PrototypeScreensChecked: ok ? 1 : 0 },
-    );
-  }
+  await page.goto(`${baseUrl}/ui-lab`, { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(350);
+  const archive = await page.evaluate(() => {
+    const banner = document.querySelector(".archive-banner");
+    const text = document.body.innerText || "";
+    return {
+      hasBanner: Boolean(banner),
+      mentionsRejected: text.includes("REJECTED"),
+      mentionsArchive: /архив/i.test(text),
+      mentionsOldConcepts: text.includes("Corporate Compact") && text.includes("D2Dom Soft"),
+      horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth + 2,
+    };
+  });
+  const archiveOk = archive.hasBanner && archive.mentionsRejected && archive.mentionsArchive && archive.mentionsOldConcepts && !archive.horizontalOverflow;
+  add(
+    results,
+    "D2Dom Control Prototype QA Agent",
+    "Rejected ui-lab variants are archived",
+    archiveOk ? "OK" : "FAIL",
+    `hasBanner=${archive.hasBanner}; mentionsRejected=${archive.mentionsRejected}; mentionsArchive=${archive.mentionsArchive}; mentionsOldConcepts=${archive.mentionsOldConcepts}; horizontalOverflow=${archive.horizontalOverflow}`,
+    archiveOk ? "normal" : "blocker",
+  );
 
-  for (const [fileName, variant, screen, width, height] of d2PrototypeShots) {
+  for (const [fileName, screen, width, height] of d2domControlShots) {
     await page.setViewportSize({ width, height });
-    const url = `${baseUrl}/ui-lab?variant=${variant}&screen=${screen}&shot=1`;
+    const url = `${baseUrl}/ui-lab-v3?screen=${screen}&shot=1`;
     await page.goto(url, { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(350);
     const screenshot = path.join(SCREENSHOT_DIR, fileName);
     await page.screenshot({ path: screenshot, fullPage: false }).catch(() => null);
     const shot = await page.evaluate((expectedScreen) => {
-      const activeVariant = document.querySelector(".variant.shot-active")?.getAttribute("data-variant") || "";
       const activeScreen = document.querySelector(".screen.shot-active")?.getAttribute("data-screen") || "";
       const textLength = (document.body.innerText || "").trim().length;
-      const rowHeights = [...document.querySelectorAll(".screen.shot-active .entity-row")].map((row) => Math.round(row.getBoundingClientRect().height));
-      const bodyClass = document.body.className;
+      const rowHeights = [...document.querySelectorAll(".screen.shot-active [data-action-row], .screen.shot-active .mobile-task")].map((row) => Math.round(row.getBoundingClientRect().height));
+      const mobileButtons = [...document.querySelectorAll(".screen.shot-active .mobile-actions button, .screen.shot-active .mobile-bottom button")].map((row) => Math.round(Math.min(row.getBoundingClientRect().width, row.getBoundingClientRect().height)));
+      const topbar = document.querySelector(".screen.shot-active .topbar")?.getBoundingClientRect();
       return {
-        activeVariant,
         activeScreen,
         textLength,
+        actionRows: rowHeights.length,
         maxRowHeight: rowHeights.length ? Math.max(...rowHeights) : 0,
-        bodyClass,
+        minTouch: mobileButtons.length ? Math.min(...mobileButtons) : 999,
+        topbarHeight: Math.round(topbar?.height || 0),
         horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth + 2,
-        hasExpectedScreenClass: document.body.classList.contains(`screen-${expectedScreen}`),
+        hasExpectedScreenClass: Boolean(document.querySelector(`.screen-${expectedScreen}.shot-active`)),
       };
     }, screen);
     const exists = fs.existsSync(screenshot);
-    const denseRowsOk = !["owner", "foreman", "tasks", "materials"].includes(screen) || shot.maxRowHeight <= 72;
+    const denseRowsOk = screen === "master" ? shot.minTouch >= 44 && shot.actionRows >= 3 : shot.actionRows >= 8 && shot.maxRowHeight >= 52 && shot.maxRowHeight <= 58;
+    const topbarOk = screen === "master" || shot.topbarHeight <= 58;
     const ok =
       exists &&
-      shot.activeVariant === variant &&
       shot.activeScreen === screen &&
       shot.hasExpectedScreenClass &&
       shot.textLength > 40 &&
       denseRowsOk &&
+      topbarOk &&
       !shot.horizontalOverflow;
     add(
       results,
-      "D2 Prototype QA Agent",
+      "D2Dom Control Prototype QA Agent",
       `Screenshot ${fileName}`,
       ok ? "OK" : "FAIL",
-      `url=${url}; activeVariant=${shot.activeVariant}; activeScreen=${shot.activeScreen}; text=${shot.textLength}; maxRowHeight=${shot.maxRowHeight}; denseRowsOk=${denseRowsOk}; horizontalOverflow=${shot.horizontalOverflow}; screenshot=${screenshot}`,
+      `url=${url}; activeScreen=${shot.activeScreen}; text=${shot.textLength}; actionRows=${shot.actionRows}; maxRowHeight=${shot.maxRowHeight}; minTouch=${shot.minTouch}; topbarHeight=${shot.topbarHeight}; denseRowsOk=${denseRowsOk}; topbarOk=${topbarOk}; horizontalOverflow=${shot.horizontalOverflow}; screenshot=${screenshot}`,
       ok ? "normal" : "blocker",
       screenshot,
-      { screenshotsCreated: exists ? 1 : 0, d2PrototypeScreensChecked: ok ? 1 : 0 },
+      { screenshotsCreated: exists ? 1 : 0, d2domControlScreensChecked: ok ? 1 : 0 },
     );
   }
 }
@@ -1691,7 +1679,7 @@ function checksSummary(results) {
   map.workflow = agentSummary("Workflow QA Agent");
   map.photo_report_integrity = agentSummary("Photo Report Integrity QA Agent");
   map.data_integrity = agentSummary("Data Integrity Agent");
-  map.d2Prototype = agentSummary("D2 Prototype QA Agent");
+  map.d2dom_control_v1 = agentSummary("D2Dom Control Prototype QA Agent");
   return map;
 }
 
@@ -1764,8 +1752,8 @@ function buildCoverage(results) {
     data_integrity_violations_checked: sumMeta(results, "dataIntegrityViolationsChecked"),
     data_integrity_critical: maxMeta(results, "dataIntegrityCritical"),
     data_integrity_warning_types: dataIntegrityWarningTypes,
-    d2_prototype_checks: results.filter((item) => item.agent === "D2 Prototype QA Agent").length,
-    d2_prototype_screens_checked: sumMeta(results, "d2PrototypeScreensChecked"),
+    d2dom_control_v1_checks: results.filter((item) => item.agent === "D2Dom Control Prototype QA Agent").length,
+    d2dom_control_screens_checked: sumMeta(results, "d2domControlScreensChecked"),
     buttons_checked: Math.max(sumMeta(results, "buttonsChecked"), buttonResults.length),
     feedback_rows_checked: maxMeta(results, "feedbackRowsChecked"),
     mobile_viewports_checked: results.filter((item) => item.agent === "Mobile QA Agent" && item.name.startsWith("Viewport ")).length,
@@ -1847,8 +1835,8 @@ function writeReport(results, startedAt, finishedAt, mandatorySuites, environmen
       console_errors: results.some((item) => item.agent === "Console Error QA Agent" && item.status === "FAIL") ? "failed" : results.some((item) => item.agent === "Console Error QA Agent") ? "ok" : "not_run",
       visual_regression: results.some((item) => item.agent === "Visual Regression QA Agent") ? "ok" : "not_run",
       visual_density: agentQaStatus("Visual Density QA Agent"),
-      d2_prototype: agentQaStatus("D2 Prototype QA Agent"),
-      d2_ui_lab: checkQaStatus("D2 Prototype QA Agent", "UI lab has both prototype variants"),
+      d2dom_control_v1: agentQaStatus("D2Dom Control Prototype QA Agent"),
+      d2_ui_lab_v3: checkQaStatus("D2Dom Control Prototype QA Agent", "UI lab v3 has one D2DOM CONTROL concept"),
       compact_ui_v1: agentQaStatus("Visual Density QA Agent"),
       max_report_format: results.some((item) => item.agent === "MAX Report Format QA Agent" && item.status === "FAIL") ? "failed" : results.some((item) => item.agent === "MAX Report Format QA Agent") ? "ok" : "not_run",
       photo_report_integrity: checkQaStatus("Photo Report Integrity QA Agent", "Photo report integrity"),
@@ -1945,8 +1933,8 @@ function writeReport(results, startedAt, finishedAt, mandatorySuites, environmen
     `- data_integrity_violations_checked: ${coverage.data_integrity_violations_checked}`,
     `- data_integrity_critical: ${coverage.data_integrity_critical}`,
     `- data_integrity_warning_types: ${JSON.stringify(coverage.data_integrity_warning_types || {})}`,
-    `- d2_prototype_checks: ${coverage.d2_prototype_checks}`,
-    `- d2_prototype_screens_checked: ${coverage.d2_prototype_screens_checked}`,
+    `- d2dom_control_v1_checks: ${coverage.d2dom_control_v1_checks}`,
+    `- d2dom_control_screens_checked: ${coverage.d2dom_control_screens_checked}`,
     `- buttons_checked: ${coverage.buttons_checked}`,
     `- feedback_rows_checked: ${coverage.feedback_rows_checked}`,
     `- mobile_viewports_checked: ${coverage.mobile_viewports_checked}`,
@@ -1995,7 +1983,7 @@ async function main() {
   ensureDirs();
   const startedAt = new Date().toISOString();
   const results = [];
-  const mandatory = suite === "all" || suite === "report" ? ["lint", "typecheck", "unit", "scroll", "buttons", "navigation", "mobile", "readonly", "workflow", "photo_report_integrity", "data_integrity", "d2Prototype"] : [];
+  const mandatory = suite === "all" || suite === "report" ? ["lint", "typecheck", "unit", "scroll", "buttons", "navigation", "mobile", "readonly", "workflow", "photo_report_integrity", "data_integrity", "d2dom_control_v1"] : [];
   let serverProcess = null;
   let browser = null;
   try {
