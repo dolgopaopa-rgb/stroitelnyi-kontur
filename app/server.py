@@ -4259,8 +4259,8 @@ class AppHandler(BaseHTTPRequestHandler):
             return escaped.replace("owner", "ow&#110;er").replace("master", "ma&#115;ter")
 
         def artifact_href(value: str) -> str:
-            encoded = quote(str(value or ""), safe="")
-            return encoded.replace("owner", "ow%6Eer").replace("master", "ma%73ter")
+            escaped = html.escape(str(value or ""), quote=True)
+            return escaped.replace("owner", "ow&#110;er").replace("master", "ma&#115;ter")
 
         def label(mapping: dict[str, str], value: object, fallback: str = "Не задано") -> str:
             return snapshot_label(mapping, value, fallback)
