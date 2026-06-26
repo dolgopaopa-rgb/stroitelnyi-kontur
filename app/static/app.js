@@ -1096,12 +1096,18 @@ function documentTitle(doc) {
   return documentType(doc) || doc.file_name || "Документ";
 }
 
-function canPreviewInlineFile(fileName = "", mimeType = "") {
+function filePreviewKind(fileName = "", mimeType = "") {
   const mime = String(mimeType || "").toLowerCase();
   const name = String(fileName || "").toLowerCase();
-  if (mime.startsWith("image/") || mime.startsWith("video/")) return true;
-  if (["application/pdf", "text/plain"].includes(mime)) return true;
-  return /\.(png|jpe?g|webp|gif|heic|heif|mp4|mov|webm|pdf|txt)$/i.test(name);
+  if (mime.startsWith("image/") || /\.(png|jpe?g|webp|gif|heic|heif)$/i.test(name)) return "image";
+  if (mime.startsWith("video/") || /\.(mp4|mov|webm)$/i.test(name)) return "video";
+  if (mime === "application/pdf" || /\.pdf$/i.test(name)) return "pdf";
+  if (mime === "text/plain" || /\.txt$/i.test(name)) return "text";
+  return "";
+}
+
+function canPreviewInlineFile(fileName = "", mimeType = "") {
+  return Boolean(filePreviewKind(fileName, mimeType));
 }
 
 function fileOpenAction(fileName = "", mimeType = "") {
@@ -1120,9 +1126,14 @@ function documentFileLink(doc) {
       </div>`;
   }
   const processLabel = String(doc.process_type || "").startsWith("variation:") ? "" : doc.process_type;
-  const canPreview = canPreviewInlineFile(file, doc.mime_type);
+  const previewKind = filePreviewKind(file, doc.mime_type);
+  const canPreview = Boolean(previewKind);
+  const href = `/api/documents/${doc.id}/download`;
+  const previewAttrs = canPreview
+    ? `data-media-preview="${previewKind}" data-media-url="${href}" data-media-title="${escapeHtml(title)}" data-media-mime="${escapeHtml(doc.mime_type || "")}"`
+    : `target="_blank" rel="noopener noreferrer" download`;
   return `
-    <a class="document-link ${canPreview ? "" : "download-link"}" href="/api/documents/${doc.id}/download" target="_blank" rel="noopener noreferrer" ${canPreview ? "" : "download"}>
+    <a class="document-link ${canPreview ? "" : "download-link"}" href="${href}" ${previewAttrs}>
       <strong>${title}</strong>
       <span>${[type, doc.status === "archived" ? "архивная версия" : "", doc.related_section, processLabel, file].filter(Boolean).join(" · ")}</span>
       <small>${fileOpenAction(file, doc.mime_type)}</small>
@@ -2401,6 +2412,10 @@ function canReceiveMaterialBatch(batch) {
   return Boolean(batch.id && batch.status === "delivery_scheduled" && isCurrentForemanForMaterialBatch(batch));
 }
 
+function canRequestMaterialDeliveryAgain(batch) {
+  return Boolean(batch.id && batch.status === "postponed" && isCurrentForemanForMaterialBatch(batch));
+}
+
 function materialReceiptActionNote(batch) {
   if (state.materialListMode === "archive" || currentRoleBase() !== "foreman") return "";
   if (canReceiveMaterialBatch(batch)) {
@@ -2414,6 +2429,9 @@ function materialReceiptActionNote(batch) {
   }
   if (batch.status === "receipt_issue") {
     return `<div class="material-receipt-note danger">Проблема при приемке отправлена снабжению. Ожидается исправление или повторная доставка.</div>`;
+  }
+  if (batch.status === "postponed") {
+    return `<div class="material-receipt-note warning">Доставка отложена снабжением. Откройте заявку, чтобы повторно запросить доставку с новой датой и комментарием.</div>`;
   }
   if (batch.status === "received") {
     return `<div class="material-receipt-note success">Получение по заявке подтверждено.</div>`;
@@ -4252,13 +4270,21 @@ async function renderNotifications() {
 function mediaPreviewLink(doc) {
   if (!doc) return "";
   const href = `/api/documents/${doc.id}/download`;
-  const title = escapeHtml(doc.file_name || doc.title || "Файл");
+  const rawTitle = doc.file_name || doc.title || "Файл";
+  const title = escapeHtml(rawTitle);
   const mime = String(doc.mime_type || "");
-  if (mime.startsWith("image/")) {
+  const previewKind = filePreviewKind(rawTitle, mime);
+  if (previewKind === "image") {
     return `<a class="media-thumb" href="${href}" data-media-preview="image" data-media-url="${href}" data-media-title="${title}" data-media-mime="${escapeHtml(mime)}"><span class="media-thumb-placeholder">Фото</span><span>${title}</span></a>`;
   }
-  if (mime.startsWith("video/")) {
+  if (previewKind === "video") {
     return `<a class="media-thumb video" href="${href}" data-media-preview="video" data-media-url="${href}" data-media-title="${title}" data-media-mime="${escapeHtml(mime)}"><span>Видео</span><small>${title}</small></a>`;
+  }
+  if (previewKind === "pdf") {
+    return `<a class="media-thumb file" href="${href}" data-media-preview="pdf" data-media-url="${href}" data-media-title="${title}" data-media-mime="${escapeHtml(mime)}"><span>PDF</span><small>${title}</small></a>`;
+  }
+  if (previewKind === "text") {
+    return `<a class="media-thumb file" href="${href}" data-media-preview="text" data-media-url="${href}" data-media-title="${title}" data-media-mime="${escapeHtml(mime)}"><span>Файл</span><small>${title}</small></a>`;
   }
   return `<a class="media-thumb file" href="${href}" target="_blank" rel="noopener"><span>${title}</span></a>`;
 }
@@ -4300,10 +4326,15 @@ function renderMediaPreview() {
   if (prevButton) prevButton.disabled = items.length <= 1;
   if (nextButton) nextButton.disabled = items.length <= 1;
   if (originalLink) originalLink.href = item.href;
-  body.innerHTML =
-    mediaKind === "video"
-      ? `<video src="${item.href}" controls playsinline preload="metadata"></video>`
-      : `<img src="${item.href}" alt="${escapeHtml(safeTitle)}" />`;
+  if (mediaKind === "video") {
+    body.innerHTML = `<video src="${item.href}" controls playsinline preload="metadata"></video>`;
+  } else if (mediaKind === "pdf") {
+    body.innerHTML = `<iframe class="media-preview-frame" src="${item.href}" title="${escapeHtml(safeTitle)}"></iframe>`;
+  } else if (mediaKind === "text") {
+    body.innerHTML = `<iframe class="media-preview-frame text-preview" src="${item.href}" title="${escapeHtml(safeTitle)}"></iframe>`;
+  } else {
+    body.innerHTML = `<img src="${item.href}" alt="${escapeHtml(safeTitle)}" />`;
+  }
 }
 
 function openMediaPreview({ href, title, mime, kind, items = [], index = 0 }) {
@@ -5990,6 +6021,7 @@ async function openMaterialBatchDialog(batchKey) {
   const canEdit = canEditMaterialBatch(batch);
   const canCreateVariation = canCreateVariationFromBatch(batch);
   const canReceive = canReceiveMaterialBatch(batch);
+  const canRequestAgain = canRequestMaterialDeliveryAgain(batch);
   const activeItems = materialActiveItems(batch);
   const removedItems = materialRemovedItems(batch);
   qs("#materialReviewContent").innerHTML = `
@@ -6116,6 +6148,20 @@ async function openMaterialBatchDialog(batchKey) {
             ${personalNotifyControl()}
             <div class="form-actions">
               <button class="secondary" type="button" data-material-batch-action="save_actuals" data-material-batch-id="${batch.id}">Сохранить цены закупки</button>
+            </div>
+          </section>`
+        : ""
+    }
+    ${
+      canRequestAgain
+        ? `<section class="workflow-panel material-request-again-panel">
+            <h3>Повторный запрос доставки</h3>
+            <p class="muted">Снабжение отложило доставку. Если материал снова нужен на объекте, укажите новую желаемую дату и комментарий для снабжения.</p>
+            <label>Новая желаемая дата доставки <input id="materialBatchRequestAgainDate" type="date" value="${batch.needed_at || ""}" /></label>
+            <label>Комментарий прораба <textarea id="materialBatchRequestAgainComment" rows="3" placeholder="Например: работы возобновили, материал нужен к пятнице"></textarea></label>
+            ${personalNotifyControl()}
+            <div class="form-actions">
+              <button class="primary" type="button" data-material-batch-action="request_again" data-material-batch-id="${batch.id}">Повторно запросить доставку</button>
             </div>
           </section>`
         : ""
@@ -7841,7 +7887,7 @@ function bindEvents() {
     const mediaPreviewButton = event.target.closest("[data-media-preview]");
     if (mediaPreviewButton) {
       event.preventDefault();
-      const galleryRoot = mediaPreviewButton.closest(".media-grid, .remark-media-grid, .photo-report-card, .object-remark-card");
+      const galleryRoot = mediaPreviewButton.closest(".media-grid, .remark-media-grid, .photo-report-card, .object-remark-card, .document-list, .knowledge-list");
       const galleryItems = qsa("[data-media-preview]", galleryRoot || document).map(mediaPreviewItemFromLink).filter((item) => item.href);
       const clickedHref = mediaPreviewButton.dataset.mediaUrl || mediaPreviewButton.getAttribute("href") || "";
       const clickedIndex = Math.max(0, galleryItems.findIndex((item) => item.href === clickedHref));
@@ -8290,6 +8336,12 @@ function bindEvents() {
           comment: qs("#materialBatchScheduleComment")?.value || "",
         };
       }
+      if (action === "request_again") {
+        body = {
+          needed_at: qs("#materialBatchRequestAgainDate")?.value || "",
+          comment: qs("#materialBatchRequestAgainComment")?.value || "",
+        };
+      }
       if (action === "resolve_issue") {
         body = {
           scheduled_delivery_date: qs("#materialBatchResolveDate")?.value || "",
@@ -8335,6 +8387,7 @@ function bindEvents() {
           save_actuals: "Цены закупки сохранены",
           postpone_delivery: "Доставка отложена, цены закупки сохранены",
           cancel_delivery: "Доставка отменена, цены закупки сохранены",
+          request_again: "Заявка повторно отправлена снабжению",
           resolve_issue: "Прораб уведомлен о повторной доставке",
           receive: "Приемка по заявке отправлена",
           update: "Заявка исправлена и отправлена снабжению",

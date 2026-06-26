@@ -283,11 +283,14 @@ function runFeedbackFixStaticChecks(results) {
     {
       name: "Mobile file download behavior",
       ok:
+        appText.includes("filePreviewKind") &&
+        appText.includes("media-preview-frame") &&
+        appText.includes('data-media-preview="pdf"') &&
         appText.includes("canPreviewInlineFile") &&
         appText.includes("download-link") &&
         serverText.includes("content_disposition_for_file") &&
         serverText.includes("download_from_yandex_disk(stored_path)"),
-      details: "PDF/images preview inline, Excel and other office files download instead of opening blank mobile webview.",
+      details: "PDF/images open inside the app preview dialog with close controls; Excel and other office files download instead of opening blank mobile webview.",
     },
     {
       name: "Photo upload loading and compression",
@@ -322,6 +325,17 @@ function runFeedbackFixStaticChecks(results) {
         serverText.includes("cancel_delivery") &&
         serverText.includes("actual_purchase_amount = save_material_actual_items"),
       details: "Material request dialog exposes postpone/cancel delivery actions and both actions preserve actual purchase prices through the backend.",
+    },
+    {
+      name: "Foreman can request postponed material delivery again",
+      ok:
+        appText.includes("canRequestMaterialDeliveryAgain") &&
+        appText.includes('data-material-batch-action="request_again"') &&
+        appText.includes("materialBatchRequestAgainComment") &&
+        serverText.includes("request_again") &&
+        serverText.includes("Повторно запросить доставку может только прораб объекта") &&
+        serverText.includes("stage = 'needs_approval'"),
+      details: "Postponed material batches return to the foreman; the foreman can send a new delivery date and comment back to procurement.",
     },
   ];
   for (const check of checks) {

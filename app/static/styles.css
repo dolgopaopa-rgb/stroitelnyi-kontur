@@ -4216,6 +4216,20 @@ textarea {
   border-radius: 6px;
 }
 
+.media-preview-frame {
+  display: block;
+  width: 100%;
+  height: min(72dvh, 720px);
+  min-height: 420px;
+  border: 0;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.media-preview-frame.text-preview {
+  background: #fff;
+}
+
 .media-preview-toolbar {
   display: grid;
   grid-template-columns: minmax(96px, 1fr) auto minmax(96px, 1fr);
@@ -5292,6 +5306,11 @@ textarea {
   .media-preview-body img,
   .media-preview-body video {
     max-height: calc(100dvh - 170px);
+  }
+
+  .media-preview-frame {
+    height: calc(100dvh - 210px);
+    min-height: 320px;
   }
 
   .media-preview-toolbar {

@@ -979,12 +979,17 @@
     if (title && !isBrokenText(title)) return title;
     return documentType(doc) || doc.file_name || "Документ";
   }
-  function canPreviewInlineFile(fileName = "", mimeType = "") {
+  function filePreviewKind(fileName = "", mimeType = "") {
     const mime = String(mimeType || "").toLowerCase();
     const name = String(fileName || "").toLowerCase();
-    if (mime.startsWith("image/") || mime.startsWith("video/")) return true;
-    if (["application/pdf", "text/plain"].includes(mime)) return true;
-    return /\.(png|jpe?g|webp|gif|heic|heif|mp4|mov|webm|pdf|txt)$/i.test(name);
+    if (mime.startsWith("image/") || /\.(png|jpe?g|webp|gif|heic|heif)$/i.test(name)) return "image";
+    if (mime.startsWith("video/") || /\.(mp4|mov|webm)$/i.test(name)) return "video";
+    if (mime === "application/pdf" || /\.pdf$/i.test(name)) return "pdf";
+    if (mime === "text/plain" || /\.txt$/i.test(name)) return "text";
+    return "";
+  }
+  function canPreviewInlineFile(fileName = "", mimeType = "") {
+    return Boolean(filePreviewKind(fileName, mimeType));
   }
   function fileOpenAction(fileName = "", mimeType = "") {
     return canPreviewInlineFile(fileName, mimeType) ? "Открыть" : "Скачать файл";
@@ -997,8 +1002,11 @@
       return "\n      <div>\n        <strong>".concat(title, '</strong>\n        <div class="muted">').concat(type, " · файл не загружен</div>\n      </div>");
     }
     const processLabel = String(doc.process_type || "").startsWith("variation:") ? "" : doc.process_type;
-    const canPreview = canPreviewInlineFile(file, doc.mime_type);
-    return '\n    <a class="document-link '.concat(canPreview ? "" : "download-link", '" href="/api/documents/').concat(doc.id, '/download" target="_blank" rel="noopener noreferrer" ').concat(canPreview ? "" : "download", ">\n      <strong>").concat(title, "</strong>\n      <span>").concat([type, doc.status === "archived" ? "архивная версия" : "", doc.related_section, processLabel, file].filter(Boolean).join(" · "), "</span>\n      <small>").concat(fileOpenAction(file, doc.mime_type), "</small>\n    </a>");
+    const previewKind = filePreviewKind(file, doc.mime_type);
+    const canPreview = Boolean(previewKind);
+    const href = "/api/documents/".concat(doc.id, "/download");
+    const previewAttrs = canPreview ? 'data-media-preview="'.concat(previewKind, '" data-media-url="').concat(href, '" data-media-title="').concat(escapeHtml(title), '" data-media-mime="').concat(escapeHtml(doc.mime_type || ""), '"') : 'target="_blank" rel="noopener noreferrer" download';
+    return '\n    <a class="document-link '.concat(canPreview ? "" : "download-link", '" href="').concat(href, '" ').concat(previewAttrs, ">\n      <strong>").concat(title, "</strong>\n      <span>").concat([type, doc.status === "archived" ? "архивная версия" : "", doc.related_section, processLabel, file].filter(Boolean).join(" · "), "</span>\n      <small>").concat(fileOpenAction(file, doc.mime_type), "</small>\n    </a>");
   }
   function contractTitleById(contracts = []) {
     return contracts.reduce((acc, contract) => {
@@ -2006,6 +2014,9 @@
   function canReceiveMaterialBatch(batch) {
     return Boolean(batch.id && batch.status === "delivery_scheduled" && isCurrentForemanForMaterialBatch(batch));
   }
+  function canRequestMaterialDeliveryAgain(batch) {
+    return Boolean(batch.id && batch.status === "postponed" && isCurrentForemanForMaterialBatch(batch));
+  }
   function materialReceiptActionNote(batch) {
     if (state.materialListMode === "archive" || currentRoleBase() !== "foreman") return "";
     if (canReceiveMaterialBatch(batch)) {
@@ -2019,6 +2030,9 @@
     }
     if (batch.status === "receipt_issue") {
       return '<div class="material-receipt-note danger">Проблема при приемке отправлена снабжению. Ожидается исправление или повторная доставка.</div>';
+    }
+    if (batch.status === "postponed") {
+      return '<div class="material-receipt-note warning">Доставка отложена снабжением. Откройте заявку, чтобы повторно запросить доставку с новой датой и комментарием.</div>';
     }
     if (batch.status === "received") {
       return '<div class="material-receipt-note success">Получение по заявке подтверждено.</div>';
@@ -3440,13 +3454,21 @@
   function mediaPreviewLink(doc) {
     if (!doc) return "";
     const href = "/api/documents/".concat(doc.id, "/download");
-    const title = escapeHtml(doc.file_name || doc.title || "Файл");
+    const rawTitle = doc.file_name || doc.title || "Файл";
+    const title = escapeHtml(rawTitle);
     const mime = String(doc.mime_type || "");
-    if (mime.startsWith("image/")) {
+    const previewKind = filePreviewKind(rawTitle, mime);
+    if (previewKind === "image") {
       return '<a class="media-thumb" href="'.concat(href, '" data-media-preview="image" data-media-url="').concat(href, '" data-media-title="').concat(title, '" data-media-mime="').concat(escapeHtml(mime), '"><span class="media-thumb-placeholder">Фото</span><span>').concat(title, "</span></a>");
     }
-    if (mime.startsWith("video/")) {
+    if (previewKind === "video") {
       return '<a class="media-thumb video" href="'.concat(href, '" data-media-preview="video" data-media-url="').concat(href, '" data-media-title="').concat(title, '" data-media-mime="').concat(escapeHtml(mime), '"><span>Видео</span><small>').concat(title, "</small></a>");
+    }
+    if (previewKind === "pdf") {
+      return '<a class="media-thumb file" href="'.concat(href, '" data-media-preview="pdf" data-media-url="').concat(href, '" data-media-title="').concat(title, '" data-media-mime="').concat(escapeHtml(mime), '"><span>PDF</span><small>').concat(title, "</small></a>");
+    }
+    if (previewKind === "text") {
+      return '<a class="media-thumb file" href="'.concat(href, '" data-media-preview="text" data-media-url="').concat(href, '" data-media-title="').concat(title, '" data-media-mime="').concat(escapeHtml(mime), '"><span>Файл</span><small>').concat(title, "</small></a>");
     }
     return '<a class="media-thumb file" href="'.concat(href, '" target="_blank" rel="noopener"><span>').concat(title, "</span></a>");
   }
@@ -3486,7 +3508,15 @@
     if (prevButton) prevButton.disabled = items.length <= 1;
     if (nextButton) nextButton.disabled = items.length <= 1;
     if (originalLink) originalLink.href = item.href;
-    body.innerHTML = mediaKind === "video" ? '<video src="'.concat(item.href, '" controls playsinline preload="metadata"></video>') : '<img src="'.concat(item.href, '" alt="').concat(escapeHtml(safeTitle), '" />');
+    if (mediaKind === "video") {
+      body.innerHTML = '<video src="'.concat(item.href, '" controls playsinline preload="metadata"></video>');
+    } else if (mediaKind === "pdf") {
+      body.innerHTML = '<iframe class="media-preview-frame" src="'.concat(item.href, '" title="').concat(escapeHtml(safeTitle), '"></iframe>');
+    } else if (mediaKind === "text") {
+      body.innerHTML = '<iframe class="media-preview-frame text-preview" src="'.concat(item.href, '" title="').concat(escapeHtml(safeTitle), '"></iframe>');
+    } else {
+      body.innerHTML = '<img src="'.concat(item.href, '" alt="').concat(escapeHtml(safeTitle), '" />');
+    }
   }
   function openMediaPreview({ href, title, mime, kind, items = [], index = 0 }) {
     const dialog = qs("#mediaPreviewDialog");
@@ -4375,6 +4405,7 @@
     const canEdit = canEditMaterialBatch(batch);
     const canCreateVariation = canCreateVariationFromBatch(batch);
     const canReceive = canReceiveMaterialBatch(batch);
+    const canRequestAgain = canRequestMaterialDeliveryAgain(batch);
     const activeItems = materialActiveItems(batch);
     const removedItems = materialRemovedItems(batch);
     qs("#materialReviewContent").innerHTML = '\n    <section class="workflow-panel compact-workflow">\n      <div class="stack-line">\n        <h3>'.concat(batch.project_title || "Объект не указан", "</h3>\n        ").concat(pill(urgencyLabel(batch.delivery_urgency), urgencyLevel(batch.delivery_urgency)), "\n        ").concat(pill(materialStageLabel(batch), materialPipelineLevel(batch)), "\n        ").concat(pill(materialHealthLabel(batch), materialHealthLevel(batch)), '\n      </div>\n      <p class="muted">Кто заказал: ').concat(batch.creator_name || "не указано", " · желаемая доставка: ").concat(batch.needed_at || "не указана", " · позиций: ").concat(activeItems.length).concat(removedItems.length ? " · удалено при исправлении: ".concat(removedItems.length) : "", "</p>\n      ").concat(batch.actual_purchase_amount ? '<p class="muted">Фактическая стоимость закупки: '.concat(money(batch.actual_purchase_amount), " · сметная сумма заявки: ").concat(money(batch.total_amount), "</p>") : "", '\n      <p class="muted">Основания: ').concat(materialBatchBasisSummary(batch), '</p>\n      <p class="muted">').concat(materialBatchDestination(batch), "</p>\n      ").concat(batch.comment ? "<p>".concat(batch.comment, "</p>") : "", "\n      ").concat(batch.revision_comment ? '<p class="muted">Комментарий по доработке: '.concat(batch.revision_comment, "</p>") : "", "\n      ").concat(batch.foreman_response ? '<p class="muted">Ответ прораба: '.concat(batch.foreman_response, "</p>") : "", "\n      ").concat(batch.scheduled_delivery_date ? '<p class="muted">Назначенная доставка: '.concat(formatDateRu(batch.scheduled_delivery_date), "</p>") : "", "\n      ").concat(batch.procurement_comment ? '<p class="muted">Комментарий снабжения: '.concat(batch.procurement_comment, "</p>") : "", "\n      ").concat(batch.receipt_comment ? '<p class="muted">Приемка: '.concat(batch.receipt_comment, "</p>") : "", "\n      ").concat(batch.variation_id ? '<p class="muted">Связана с допработой: '.concat(batch.variation_title || "#".concat(batch.variation_id), " · ").concat(label(batch.variation_status), "</p>") : "", "\n      ").concat(materialReceiptAttachment(batch), '\n    </section>\n    <div class="table material-review-items">\n      ').concat(batch.items.map(
@@ -4383,7 +4414,7 @@
       (item) => '\n                  <div class="row estimate-material-row">\n                    <div class="material-main">\n                      <strong>'.concat(item.title, '</strong>\n                      <div class="muted">Смета: ').concat(money(item.total_amount), " · ").concat(item.requested_quantity || item.estimated_quantity || 0, " ").concat(item.requested_unit || item.estimate_material_unit || "", '</div>\n                    </div>\n                    <label>Цена закупки за ед., ₽ <input type="text" inputmode="decimal" data-material-actual-unit="').concat(item.id, '" value="').concat(item.actual_unit_price || "", '" placeholder="0" /></label>\n                    <label>Сумма закупки, ₽ <input type="text" inputmode="decimal" data-material-actual-total="').concat(item.id, '" value="').concat(item.actual_total_amount || "", '" placeholder="0" /></label>\n                  </div>')
     ).join(""), '\n            </div>\n            <label>Комментарий снабжения <textarea id="materialBatchScheduleComment" rows="3" placeholder="Например: нужна доверенность или кран">').concat(batch.procurement_comment || "", "</textarea></label>\n            ").concat(personalNotifyControl(), '\n            <div class="form-actions">\n              <button class="primary" type="button" data-material-batch-action="schedule" data-material-batch-id="').concat(batch.id, '">Уведомить о доставке</button>\n              <button class="secondary" type="button" data-material-batch-action="save_actuals" data-material-batch-id="').concat(batch.id, '">Сохранить цены закупки</button>\n              <button class="secondary" type="button" data-material-batch-action="postpone_delivery" data-material-batch-id="').concat(batch.id, '">Отложить доставку</button>\n              <button class="danger-button" type="button" data-material-batch-action="cancel_delivery" data-material-batch-id="').concat(batch.id, '">Отменить доставку</button>\n            </div>\n          </section>') : "", "\n    ").concat(canSaveActualsOnly ? '<section class="workflow-panel">\n            <h3>Фактические цены закупки</h3>\n            <p class="muted">Заявка уже в архиве или закрыта, но снабжение может допоставить фактические цены и суммы закупки.</p>\n            <div class="table material-review-items">\n              '.concat(activeItems.map(
       (item) => '\n                  <div class="row estimate-material-row">\n                    <div class="material-main">\n                      <strong>'.concat(item.title, '</strong>\n                      <div class="muted">Смета: ').concat(money(item.total_amount), " · ").concat(item.requested_quantity || item.estimated_quantity || 0, " ").concat(item.requested_unit || item.estimate_material_unit || "", '</div>\n                    </div>\n                    <label>Цена закупки за ед., ₽ <input type="text" inputmode="decimal" data-material-actual-unit="').concat(item.id, '" value="').concat(item.actual_unit_price || "", '" placeholder="0" /></label>\n                    <label>Сумма закупки, ₽ <input type="text" inputmode="decimal" data-material-actual-total="').concat(item.id, '" value="').concat(item.actual_total_amount || "", '" placeholder="0" /></label>\n                  </div>')
-    ).join(""), '\n            </div>\n            <label>Комментарий снабжения <textarea id="materialBatchScheduleComment" rows="3" placeholder="Например: цены внесены после закрытия заявки">').concat(batch.procurement_comment || "", "</textarea></label>\n            ").concat(personalNotifyControl(), '\n            <div class="form-actions">\n              <button class="secondary" type="button" data-material-batch-action="save_actuals" data-material-batch-id="').concat(batch.id, '">Сохранить цены закупки</button>\n            </div>\n          </section>') : "", "\n    ").concat(canResolveIssue ? '<section class="workflow-panel">\n            <h3>Исправление проблемы</h3>\n            <p class="muted">Укажите, когда будет повторная доставка, замена или довоз материала. Прораб и руководители получат уведомление.</p>\n            <label>Дата повторной доставки <input id="materialBatchResolveDate" type="date" value="'.concat(batch.scheduled_delivery_date || "", '" /></label>\n            <label>Комментарий снабжения <textarea id="materialBatchResolveComment" rows="3" placeholder="Например: заменили позицию, довезем недостающий материал, поставщик подтвердил замену"></textarea></label>\n            ').concat(personalNotifyControl(), '\n            <div class="form-actions">\n              <button class="primary" type="button" data-material-batch-action="resolve_issue" data-material-batch-id="').concat(batch.id, '">Уведомить о повторной доставке</button>\n            </div>\n          </section>') : "", "\n    ").concat(canEdit ? renderMaterialBatchEditSection(batch) : "", "\n    ").concat(canReceive ? '<section class="workflow-panel material-receipt-panel">\n            <h3>Приемка доставки</h3>\n            <p class="muted">Доставка назначена'.concat(batch.scheduled_delivery_date ? " на ".concat(formatDateRu(batch.scheduled_delivery_date)) : "", '. Если все по списку, подтвердите получение. Если что-то не так, опишите проблему и прикрепите фото или видео.</p>\n            <label>Комментарий при проблеме <textarea id="materialBatchReceiptComment" rows="3" placeholder="Что именно не так: не довезли, повреждено, не тот материал"></textarea></label>\n            <label>Фото или видео <input id="materialBatchReceiptFile" type="file" accept="image/*,video/*" /></label>\n            ').concat(personalNotifyControl(), '\n            <div class="form-actions">\n              <button class="primary" type="button" data-material-batch-action="receive" data-receipt-status="received" data-material-batch-id="').concat(batch.id, '">Материалы получены</button>\n              <button class="secondary" type="button" data-material-batch-action="receive" data-receipt-status="issue" data-material-batch-id="').concat(batch.id, '">Есть проблема</button>\n            </div>\n          </section>') : "", "\n  ");
+    ).join(""), '\n            </div>\n            <label>Комментарий снабжения <textarea id="materialBatchScheduleComment" rows="3" placeholder="Например: цены внесены после закрытия заявки">').concat(batch.procurement_comment || "", "</textarea></label>\n            ").concat(personalNotifyControl(), '\n            <div class="form-actions">\n              <button class="secondary" type="button" data-material-batch-action="save_actuals" data-material-batch-id="').concat(batch.id, '">Сохранить цены закупки</button>\n            </div>\n          </section>') : "", "\n    ").concat(canRequestAgain ? '<section class="workflow-panel material-request-again-panel">\n            <h3>Повторный запрос доставки</h3>\n            <p class="muted">Снабжение отложило доставку. Если материал снова нужен на объекте, укажите новую желаемую дату и комментарий для снабжения.</p>\n            <label>Новая желаемая дата доставки <input id="materialBatchRequestAgainDate" type="date" value="'.concat(batch.needed_at || "", '" /></label>\n            <label>Комментарий прораба <textarea id="materialBatchRequestAgainComment" rows="3" placeholder="Например: работы возобновили, материал нужен к пятнице"></textarea></label>\n            ').concat(personalNotifyControl(), '\n            <div class="form-actions">\n              <button class="primary" type="button" data-material-batch-action="request_again" data-material-batch-id="').concat(batch.id, '">Повторно запросить доставку</button>\n            </div>\n          </section>') : "", "\n    ").concat(canResolveIssue ? '<section class="workflow-panel">\n            <h3>Исправление проблемы</h3>\n            <p class="muted">Укажите, когда будет повторная доставка, замена или довоз материала. Прораб и руководители получат уведомление.</p>\n            <label>Дата повторной доставки <input id="materialBatchResolveDate" type="date" value="'.concat(batch.scheduled_delivery_date || "", '" /></label>\n            <label>Комментарий снабжения <textarea id="materialBatchResolveComment" rows="3" placeholder="Например: заменили позицию, довезем недостающий материал, поставщик подтвердил замену"></textarea></label>\n            ').concat(personalNotifyControl(), '\n            <div class="form-actions">\n              <button class="primary" type="button" data-material-batch-action="resolve_issue" data-material-batch-id="').concat(batch.id, '">Уведомить о повторной доставке</button>\n            </div>\n          </section>') : "", "\n    ").concat(canEdit ? renderMaterialBatchEditSection(batch) : "", "\n    ").concat(canReceive ? '<section class="workflow-panel material-receipt-panel">\n            <h3>Приемка доставки</h3>\n            <p class="muted">Доставка назначена'.concat(batch.scheduled_delivery_date ? " на ".concat(formatDateRu(batch.scheduled_delivery_date)) : "", '. Если все по списку, подтвердите получение. Если что-то не так, опишите проблему и прикрепите фото или видео.</p>\n            <label>Комментарий при проблеме <textarea id="materialBatchReceiptComment" rows="3" placeholder="Что именно не так: не довезли, повреждено, не тот материал"></textarea></label>\n            <label>Фото или видео <input id="materialBatchReceiptFile" type="file" accept="image/*,video/*" /></label>\n            ').concat(personalNotifyControl(), '\n            <div class="form-actions">\n              <button class="primary" type="button" data-material-batch-action="receive" data-receipt-status="received" data-material-batch-id="').concat(batch.id, '">Материалы получены</button>\n              <button class="secondary" type="button" data-material-batch-action="receive" data-receipt-status="issue" data-material-batch-id="').concat(batch.id, '">Есть проблема</button>\n            </div>\n          </section>') : "", "\n  ");
     qs("#materialReviewDialog").showModal();
   }
   function variationType(type) {
@@ -5748,11 +5779,11 @@
       }
     });
     document.addEventListener("click", async (event) => {
-      var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k2, _l2, _m2, _n2, _o2, _p2, _q2;
+      var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k2, _l2, _m2, _n2, _o2, _p2, _q2, _r2, _s2;
       const mediaPreviewButton = event.target.closest("[data-media-preview]");
       if (mediaPreviewButton) {
         event.preventDefault();
-        const galleryRoot = mediaPreviewButton.closest(".media-grid, .remark-media-grid, .photo-report-card, .object-remark-card");
+        const galleryRoot = mediaPreviewButton.closest(".media-grid, .remark-media-grid, .photo-report-card, .object-remark-card, .document-list, .knowledge-list");
         const galleryItems = qsa("[data-media-preview]", galleryRoot || document).map(mediaPreviewItemFromLink).filter((item) => item.href);
         const clickedHref = mediaPreviewButton.dataset.mediaUrl || mediaPreviewButton.getAttribute("href") || "";
         const clickedIndex = Math.max(0, galleryItems.findIndex((item) => item.href === clickedHref));
@@ -6164,17 +6195,23 @@
             comment: ((_j2 = qs("#materialBatchScheduleComment")) == null ? void 0 : _j2.value) || ""
           };
         }
+        if (action === "request_again") {
+          body = {
+            needed_at: ((_k2 = qs("#materialBatchRequestAgainDate")) == null ? void 0 : _k2.value) || "",
+            comment: ((_l2 = qs("#materialBatchRequestAgainComment")) == null ? void 0 : _l2.value) || ""
+          };
+        }
         if (action === "resolve_issue") {
           body = {
-            scheduled_delivery_date: ((_k2 = qs("#materialBatchResolveDate")) == null ? void 0 : _k2.value) || "",
-            comment: ((_l2 = qs("#materialBatchResolveComment")) == null ? void 0 : _l2.value) || ""
+            scheduled_delivery_date: ((_m2 = qs("#materialBatchResolveDate")) == null ? void 0 : _m2.value) || "",
+            comment: ((_n2 = qs("#materialBatchResolveComment")) == null ? void 0 : _n2.value) || ""
           };
         }
         if (action === "receive") {
-          const file = (_n2 = (_m2 = qs("#materialBatchReceiptFile")) == null ? void 0 : _m2.files) == null ? void 0 : _n2[0];
+          const file = (_p2 = (_o2 = qs("#materialBatchReceiptFile")) == null ? void 0 : _o2.files) == null ? void 0 : _p2[0];
           body = {
             receipt_status: materialBatchAction.dataset.receiptStatus || "received",
-            comment: ((_o2 = qs("#materialBatchReceiptComment")) == null ? void 0 : _o2.value) || "",
+            comment: ((_q2 = qs("#materialBatchReceiptComment")) == null ? void 0 : _q2.value) || "",
             receipt_file: file ? {
               title: file.name,
               type: "other",
@@ -6207,6 +6244,7 @@
             save_actuals: "Цены закупки сохранены",
             postpone_delivery: "Доставка отложена, цены закупки сохранены",
             cancel_delivery: "Доставка отменена, цены закупки сохранены",
+            request_again: "Заявка повторно отправлена снабжению",
             resolve_issue: "Прораб уведомлен о повторной доставке",
             receive: "Приемка по заявке отправлена",
             update: "Заявка исправлена и отправлена снабжению",
@@ -6222,8 +6260,8 @@
         await api("/api/material-requests/".concat(id, "/deliver"), {
           method: "POST",
           body: JSON.stringify({
-            actual_delivery_date: ((_p2 = qs('[data-material-actual="'.concat(id, '"]'))) == null ? void 0 : _p2.value) || "",
-            procurement_comment: ((_q2 = qs('[data-material-comment="'.concat(id, '"]'))) == null ? void 0 : _q2.value) || ""
+            actual_delivery_date: ((_r2 = qs('[data-material-actual="'.concat(id, '"]'))) == null ? void 0 : _r2.value) || "",
+            procurement_comment: ((_s2 = qs('[data-material-comment="'.concat(id, '"]'))) == null ? void 0 : _s2.value) || ""
           })
         });
         await loadAll();

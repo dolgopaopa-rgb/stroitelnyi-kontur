@@ -7761,7 +7761,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 json_response(self, {"id": task_id, "comment": comment})
                 return
 
-            material_batch_action = re.match(r"^/api/material-request-batches/(\d+)/(accept|return|resubmit|schedule|save_actuals|postpone_delivery|cancel_delivery|resolve_issue|receive|update|delete|create_variation)$", path)
+            material_batch_action = re.match(r"^/api/material-request-batches/(\d+)/(accept|return|resubmit|request_again|schedule|save_actuals|postpone_delivery|cancel_delivery|resolve_issue|receive|update|delete|create_variation)$", path)
             if material_batch_action:
                 batch_id = int(material_batch_action.group(1))
                 action = material_batch_action.group(2)
@@ -8195,6 +8195,70 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         )
                     json_response(self, {"id": batch_id, "status": "new"})
                     return
+                if action == "request_again":
+                    allowed_foremen = {int(batch["foreman_id"] or 0), int(batch["creator_id"] or 0)} - {0}
+                    if actor_role != "foreman" or not actor_id or int(actor_id) not in allowed_foremen:
+                        raise ValueError("Повторно запросить доставку может только прораб объекта.")
+                    if str(batch["status"] or "") != "postponed":
+                        raise ValueError("Повторный запрос доступен только для отложенной доставки.")
+                    new_needed_at = str(data.get("needed_at") or batch["needed_at"] or "").strip() or None
+                    if not new_needed_at:
+                        raise ValueError("Укажите новую желаемую дату доставки.")
+                    comment = str(data.get("comment") or "").strip()
+                    new_urgency = delivery_urgency(new_needed_at)
+                    db.execute(
+                        """
+                        UPDATE material_request_batches
+                        SET status = 'new',
+                            stage = 'needs_approval',
+                            health = 'normal',
+                            health_comment = NULL,
+                            revision_comment = NULL,
+                            foreman_response = ?,
+                            needed_at = ?,
+                            delivery_urgency = ?,
+                            scheduled_delivery_date = NULL,
+                            planned_delivery_date = NULL,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (comment, new_needed_at, new_urgency, batch_id),
+                    )
+                    db.execute(
+                        """
+                        UPDATE material_requests
+                        SET procurement_status = 'new',
+                            needed_at = ?,
+                            delivery_urgency = ?,
+                            actual_delivery_date = NULL,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE batch_id = ?
+                          AND COALESCE(change_type, '') != 'removed'
+                        """,
+                        (new_needed_at, new_urgency, batch_id),
+                    )
+                    message = f"{batch['project_title']}: прораб повторно запросил доставку по заявке на материалы от {format_date_ru(batch['created_at'])}. Новая желаемая дата: {format_date_ru(new_needed_at)}."
+                    if comment:
+                        message += f" Комментарий прораба: {comment}"
+                    notify_users(
+                        db,
+                        {user_id for user_id in (watcher_ids | {user_id_by_role(db, "procurement_manager")}) if user_id},
+                        batch["project_id"],
+                        "Заявка на материалы повторно запрошена",
+                        message,
+                        "material_request_batch",
+                        batch_id,
+                        force_max=force_max,
+                    )
+                    db.execute(
+                        """
+                        INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
+                        VALUES (?, 'decision', ?, ?, 'internal', 'material_request')
+                        """,
+                        (batch["project_id"], message, actor_id),
+                    )
+                    json_response(self, {"id": batch_id, "status": "new"})
+                    return
                 if action in {"postpone_delivery", "cancel_delivery"}:
                     if actor_role not in {"procurement_manager", "owner", "construction_manager"}:
                         raise ValueError("Отложить или отменить доставку может снабжение, руководитель строительства или ген.директор.")
@@ -8214,7 +8278,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         message = f"{batch['project_title']}: доставка по заявке на материалы от {format_date_ru(batch['created_at'])} отложена."
                         if comment:
                             message += f" Комментарий снабжения: {comment}"
-                        message += " Внесенные цены закупки сохранены в заявке."
+                        message += " Внесенные цены закупки сохранены в заявке. Заявка вернулась прорабу: он может повторно запросить доставку с новой датой и комментарием."
                     else:
                         procurement_comment = f"Доставка отменена. {comment}".strip()
                         status_to = "cancelled"
