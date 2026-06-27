@@ -1475,9 +1475,59 @@ async function runMobile(results, playwright) {
         }
       }
       const mobileMenuOk = moreVisible && feedbackMenuVisible && feedbackOpens;
-      const status = navVisible && !overflow && actions > 0 && plusSeparated && mobileMenuOk && todayGridOk && estimatesOk && photosOk && photoPreviewOk ? "OK" : "FAIL";
+      await route(page, "projects");
+      await page.waitForTimeout(250);
+      const firstObjectCard = page.locator('#projectsView.active [data-testid="object-card"]').first();
+      const objectCardsCount = await firstObjectCard.count().catch(() => 0);
+      if (objectCardsCount) {
+        await firstObjectCard.click();
+        await page.waitForTimeout(350);
+      }
+      const projectHeroLayout = await page.evaluate(() => {
+        const visible = (node) => {
+          const style = getComputedStyle(node);
+          return style.display !== "none" && style.visibility !== "hidden" && node.getClientRects().length > 0;
+        };
+        const hero = document.querySelector("#projectDetail .project-hero");
+        const main = document.querySelector("#projectDetail .project-hero-main");
+        const stats = document.querySelector("#projectDetail .project-hero-stats");
+        const statCards = [...document.querySelectorAll("#projectDetail .project-hero-stats .info")].filter(visible);
+        const gridTemplate = hero ? getComputedStyle(hero).gridTemplateColumns : "";
+        const gridColumns = gridTemplate ? gridTemplate.trim().split(/\s+/).filter(Boolean).length : 0;
+        const verticalTextNodes = [...document.querySelectorAll("#projectDetail .project-hero-main h2, #projectDetail .project-hero-main .pill, #projectDetail .project-hero-stats .info span, #projectDetail .project-hero-stats .info strong")]
+          .filter(visible)
+          .filter((node) => {
+            const text = (node.textContent || "").trim();
+            const box = node.getBoundingClientRect();
+            return text.length > 3 && box.width < 34 && box.height > 58;
+          });
+        const widths = statCards.map((node) => Math.round(node.getBoundingClientRect().width));
+        return {
+          heroFound: Boolean(hero),
+          objectCards: document.querySelectorAll('#projectsView.active [data-testid="object-card"]').length,
+          gridTemplate,
+          gridColumns,
+          heroWidth: hero ? Math.round(hero.getBoundingClientRect().width) : 0,
+          mainWidth: main ? Math.round(main.getBoundingClientRect().width) : 0,
+          statsWidth: stats ? Math.round(stats.getBoundingClientRect().width) : 0,
+          statCards: statCards.length,
+          minStatWidth: widths.length ? Math.min(...widths) : 0,
+          verticalTextCount: verticalTextNodes.length,
+          verticalTextSamples: verticalTextNodes.slice(0, 3).map((node) => (node.textContent || "").trim()).join(" | "),
+        };
+      });
+      const projectHeroOk =
+        projectHeroLayout.heroFound &&
+        projectHeroLayout.objectCards > 0 &&
+        projectHeroLayout.gridColumns === 1 &&
+        projectHeroLayout.mainWidth > minExpectedWidth &&
+        projectHeroLayout.statsWidth > minExpectedWidth &&
+        projectHeroLayout.statCards >= 4 &&
+        projectHeroLayout.minStatWidth >= 120 &&
+        projectHeroLayout.verticalTextCount === 0;
+      const status = navVisible && !overflow && actions > 0 && plusSeparated && mobileMenuOk && todayGridOk && estimatesOk && photosOk && photoPreviewOk && projectHeroOk ? "OK" : "FAIL";
       const plusDetails = plusBox ? `${Math.round(plusBox.width)}x${Math.round(plusBox.height)}@${Math.round(plusBox.x)}` : "missing";
-      add(results, "Mobile QA Agent", `Viewport ${viewport.width}x${viewport.height}`, status, `nav=${navVisible}; horizontalOverflow=${overflow}; actions=${actions}; plusSeparated=${plusSeparated}; plusBox=${plusDetails}; mobileMenuOk=${mobileMenuOk}; moreVisible=${moreVisible}; feedbackMenuVisible=${feedbackMenuVisible}; feedbackOpens=${feedbackOpens}; todayGridOk=${todayGridOk}; minGridChildWidth=${todayLayout.minGridChildWidth}; minDecisionWidth=${todayLayout.minDecisionWidth}; minExpectedWidth=${minExpectedWidth}; estimatesOverlap=${estimatesLayout.overlapped}; estimateRows=${estimatesLayout.rows}; estimateRowBottom=${estimatesLayout.rowBottom}; navTop=${estimatesLayout.navTop}; photosOk=${photosOk}; photoPreviewOk=${photoPreviewOk}; photoPreview=${photoPreviewDetails}; photoLayoutChildren=${photosLayout.layoutChildren}; photoMinLayoutWidth=${photosLayout.minLayoutWidth}; photoCards=${photosLayout.cards}; photoMinCardWidth=${photosLayout.minCardWidth}; photoThumbs=${photosLayout.thumbs}; photoMinThumbWidth=${photosLayout.minThumbWidth}; photoResponse=${photosLayout.responseStatus}; photoType=${photosLayout.responseType}`, status === "FAIL" ? "blocker" : "normal");
+      add(results, "Mobile QA Agent", `Viewport ${viewport.width}x${viewport.height}`, status, `nav=${navVisible}; horizontalOverflow=${overflow}; actions=${actions}; plusSeparated=${plusSeparated}; plusBox=${plusDetails}; mobileMenuOk=${mobileMenuOk}; moreVisible=${moreVisible}; feedbackMenuVisible=${feedbackMenuVisible}; feedbackOpens=${feedbackOpens}; todayGridOk=${todayGridOk}; minGridChildWidth=${todayLayout.minGridChildWidth}; minDecisionWidth=${todayLayout.minDecisionWidth}; minExpectedWidth=${minExpectedWidth}; projectHeroOk=${projectHeroOk}; projectHero=${JSON.stringify(projectHeroLayout)}; estimatesOverlap=${estimatesLayout.overlapped}; estimateRows=${estimatesLayout.rows}; estimateRowBottom=${estimatesLayout.rowBottom}; navTop=${estimatesLayout.navTop}; photosOk=${photosOk}; photoPreviewOk=${photoPreviewOk}; photoPreview=${photoPreviewDetails}; photoLayoutChildren=${photosLayout.layoutChildren}; photoMinLayoutWidth=${photosLayout.minLayoutWidth}; photoCards=${photosLayout.cards}; photoMinCardWidth=${photosLayout.minCardWidth}; photoThumbs=${photosLayout.thumbs}; photoMinThumbWidth=${photosLayout.minThumbWidth}; photoResponse=${photosLayout.responseStatus}; photoType=${photosLayout.responseType}`, status === "FAIL" ? "blocker" : "normal");
     } finally {
       await browser.close().catch(() => {});
     }

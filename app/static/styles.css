@@ -5635,6 +5635,40 @@ textarea {
     min-height: auto;
   }
 
+  .project-hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .project-hero-main .stack-line {
+    align-items: flex-start;
+  }
+
+  .project-hero-main h2,
+  .project-hero-main .pill,
+  .project-hero-main .project-hero-meta,
+  .project-hero-main .project-hero-meta *,
+  .project-hero-stats .info,
+  .project-hero-stats .info * {
+    overflow-wrap: normal;
+    word-break: normal;
+  }
+
+  .project-hero-meta {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 5px;
+  }
+
+  .project-hero-stats {
+    grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+    gap: 8px;
+  }
+
+  .project-hero-stats .info {
+    min-height: 78px;
+    align-content: start;
+  }
+
   .main,
   .view,
   .panel,
@@ -5666,6 +5700,16 @@ textarea {
     min-width: 0;
     overflow-wrap: anywhere;
     white-space: normal;
+  }
+
+  #projectDetail .project-hero-main h2,
+  #projectDetail .project-hero-main .pill,
+  #projectDetail .project-hero-main .project-hero-meta,
+  #projectDetail .project-hero-main .project-hero-meta *,
+  #projectDetail .project-hero-stats .info,
+  #projectDetail .project-hero-stats .info * {
+    overflow-wrap: normal;
+    word-break: normal;
   }
 
   #projectDetail .project-detail-blocks {

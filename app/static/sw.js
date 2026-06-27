@@ -1,9 +1,9 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260626-material-preview-request-again";
+const CACHE_NAME = "stroitelnyi-kontur-20260627-mobile-project-hero";
 const CORE_ASSETS = [
   "/",
-  "/static/styles.css?v=20260626-material-preview-request-again",
-  "/static/app.compat.js?v=20260626-material-preview-request-again",
-  "/static/manifest.webmanifest?v=20260626-material-preview-request-again",
+  "/static/styles.css?v=20260627-mobile-project-hero",
+  "/static/app.compat.js?v=20260627-mobile-project-hero",
+  "/static/manifest.webmanifest?v=20260627-mobile-project-hero",
   "/static/assets/g2-logo-192.png",
   "/static/assets/g2-logo-512.png"
 ];
