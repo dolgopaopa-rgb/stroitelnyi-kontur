@@ -4,8 +4,8 @@
 
 ✅ OK
 
-- generatedAt: 2026-06-27T11:13:56.370Z
-- commitHash: faea1cf
+- generatedAt: 2026-06-27T11:21:34.654Z
+- commitHash: c0ce8d9
 - production deploy: не выполнялся
 
 ## Что было проверено
@@ -14,7 +14,6 @@
 - наличие npm-скриптов QA
 - существующий qa-artifacts/latest отчёт
 - правила безопасных и опасных изменений
-- static lint без перезаписи qa-artifacts/latest
 
 ## Что было найдено
 
@@ -22,8 +21,7 @@
 
 ## Что исправлено автоматически
 
-- Скопирован актуальный qa-artifacts/latest/qa-report.md в qa-reports/latest-report.md
-- Скопирован актуальный qa-artifacts/latest/qa-report.json в qa-reports/latest-report.json
+- Автоматические исправления не требовались.
 
 ## Что требует подтверждения владельца
 
@@ -35,7 +33,7 @@
 
 ## Запущенные команды
 
-- `C:\Users\seven\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe tools/qa/static-lint.mjs` → exit 0, 0.8s
+- Команды не запускались.
 
 ## Как запустить проверку
 

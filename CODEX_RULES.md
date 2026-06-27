@@ -1,7 +1,7 @@
 # Постоянные правила проекта "Строительный контур"
 
 1. Нельзя завершать задачу без QA.
-2. После каждой UX/Frontend-правки запускать QA-агентов.
+2. После каждой правки кода, стилей, тестов, QA-скриптов или проектной документации запускать всех QA-агентов.
 3. Scroll QA обязателен.
 4. Button QA обязателен.
 5. Navigation QA обязателен.
@@ -42,7 +42,7 @@ Mobile QA не считается пройденным, если провере�
 
 ## Обязательный quality gate
 
-Перед финальным сообщением после изменений запустить:
+Перед финальным сообщением после любых изменений Codex обязан сам запустить полный QA-контур. Нельзя перекладывать этот запуск на пользователя и нельзя писать "готово", если агенты не запускались.
 
 ```bash
 npm run lint
@@ -54,6 +54,14 @@ npm run test:qa:buttons
 npm run test:qa:mobile
 npm run test:qa:readonly
 npm run test:qa:report
+```
+
+Дополнительно после правок QA-инфраструктуры запускать:
+
+```bash
+npm run qa
+npm run qa:snapshots
+npm run qa:report
 ```
 
 Если локально нет `npm`, нужно запустить эквивалентные команды через Node:
@@ -68,9 +76,14 @@ node tools/qa/run-quality-gate.mjs --suite buttons
 node tools/qa/run-quality-gate.mjs --suite mobile
 node tools/qa/run-quality-gate.mjs --suite readonly
 node tools/qa/run-quality-gate.mjs --suite report
+node tools/qa/qa-fix-orchestrator.mjs --fix --full
+node tools/qa/visual-snapshots.mjs
+node scripts/generate-qa-report.js
 ```
 
 В отчёте обязательно указать, если вместо npm использовался fallback-запуск.
+
+Если часть агентов не запущена из-за отсутствия окружения или внешней зависимости, итог задачи может быть только PARTIAL или FAIL с явной причиной в финальном ответе.
 
 ## BLOCKER-ошибки
 
@@ -141,6 +154,8 @@ Codex works as a QA-fix team for this project. After code changes, it must run t
 - `qa-artifacts/latest/qa-report.json`
 - `qa-reports/latest-report.md`
 - `qa-reports/latest-report.json`
+
+This rule is automatic and applies after every edit made by Codex. The agent must not wait for a separate reminder to run QA.
 
 The lead agent is `Lead QA Fix Architect`. It coordinates:
 

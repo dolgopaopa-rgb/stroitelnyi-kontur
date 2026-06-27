@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-06-27T11:13:56.370Z",
-  "commitHash": "faea1cf",
+  "generatedAt": "2026-06-27T11:21:34.654Z",
+  "commitHash": "c0ce8d9",
   "status": "OK",
   "agents": [
     {
@@ -167,24 +167,13 @@
     "структура QA-директорий",
     "наличие npm-скриптов QA",
     "существующий qa-artifacts/latest отчёт",
-    "правила безопасных и опасных изменений",
-    "static lint без перезаписи qa-artifacts/latest"
+    "правила безопасных и опасных изменений"
   ],
   "found": [],
-  "fixed": [
-    "Скопирован актуальный qa-artifacts/latest/qa-report.md в qa-reports/latest-report.md",
-    "Скопирован актуальный qa-artifacts/latest/qa-report.json в qa-reports/latest-report.json"
-  ],
+  "fixed": [],
   "dangerous": [],
   "manual": [
     "Для полного цикла запустить `npm run qa` или `node tools/qa/qa-fix-orchestrator.mjs --fix --full`."
   ],
-  "commands": [
-    {
-      "command": "C:\\Users\\seven\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\bin\\node.exe tools/qa/static-lint.mjs",
-      "code": 0,
-      "durationMs": 791,
-      "output": "{\n  \"overall\": \"PASS\",\n  \"checks\": [\n    {\n      \"name\": \"Python syntax\",\n      \"status\": \"OK\",\n      \"details\": \"ok\"\n    },\n    {\n      \"name\": \"JS syntax app/static/app.js\",\n      \"status\": \"OK\",\n      \"details\": \"ok\"\n    },\n    {\n      \"name\": \"JS syntax app/static/app.compat.js\",\n      \"status\": \"OK\",\n      \"details\": \"ok\"\n    },\n    {\n      \"name\": \"JS syntax src/notifications/max/formatMaxReport.mjs\",\n      \"status\": \"OK\",\n      \"details\": \"ok\"\n    },\n    {\n      \"name\": \"JS syntax tools/qa/run-quality-gate.mjs\",\n      \"status\": \"OK\",\n      \"details\": \"ok\"\n    },\n    {\n      \"name\": \"JS syntax tools/qa/max-report-cli.mjs\",\n      \"status\": \"OK\",\n      \"details\": \"ok\"\n    },\n    {\n      \"name\": \"JS syntax tools/qa/qa-fix-orchestrator.mjs\",\n      \"status\": \"OK\",\n      \"details\": \"ok\"\n    },\n    {\n      \"name\": \"JS syntax tools/qa/visual-snapshots.mjs\",\n      \"status\": \"OK\",\n      \"details\": \"ok\"\n    },\n    {\n      \"name\": \"JS syntax scripts/generate-qa-report.js\",\n      \"status\": \"OK\",\n      \"details\": \"ok\"\n    },\n    {\n      \"name\": \"Foreman/master can open extra work attachments\",\n      \"status\": \"OK\",\n      \"details\": \"variation_attachment and extra_work_attachment are allowed in server and frontend rules\"\n    },\n    {\n      \"name\": \"Field roles can open photo report media\",\n      \"status\": \"OK\",\n      \"details\": \"photo_report and object_remark_photo are allowed for field roles in server and frontend rules\"\n    }\n  ]\n}"
-    }
-  ]
+  "commands": []
 }
