@@ -1,0 +1,190 @@
+{
+  "generatedAt": "2026-06-27T11:13:56.370Z",
+  "commitHash": "faea1cf",
+  "status": "OK",
+  "agents": [
+    {
+      "name": "Lead QA Fix Architect",
+      "checks": [
+        "координация проверок",
+        "разделение safe/dangerous",
+        "итоговый отчёт"
+      ],
+      "safeFixes": [
+        "создание QA-директорий",
+        "синхронизация отчётов",
+        "запуск quality gate"
+      ]
+    },
+    {
+      "name": "Code Review Fix Agent",
+      "checks": [
+        "lint",
+        "typecheck",
+        "мелкие ошибки кода"
+      ],
+      "safeFixes": [
+        "неиспользуемые импорты",
+        "очевидные null/undefined guards",
+        "мелкие ошибки импортов"
+      ]
+    },
+    {
+      "name": "Frontend QA Fix Agent",
+      "checks": [
+        "страницы",
+        "кнопки",
+        "формы",
+        "модалки",
+        "адаптивность"
+      ],
+      "safeFixes": [
+        "битые обработчики",
+        "внутренние ссылки",
+        "модалки",
+        "горизонтальный скролл"
+      ]
+    },
+    {
+      "name": "UI Consistency Fix Agent",
+      "checks": [
+        "кнопки",
+        "карточки",
+        "формы",
+        "отступы",
+        "disabled/hover"
+      ],
+      "safeFixes": [
+        "размеры однотипных элементов",
+        "отступы",
+        "радиусы",
+        "состояния форм"
+      ]
+    },
+    {
+      "name": "UX Fix Agent",
+      "checks": [
+        "подписи",
+        "loading/error/success",
+        "empty states",
+        "кликабельные зоны"
+      ],
+      "safeFixes": [
+        "понятные подписи",
+        "состояния загрузки",
+        "пустые состояния"
+      ]
+    },
+    {
+      "name": "Regression Fix Agent",
+      "checks": [
+        "auth",
+        "объекты",
+        "задачи",
+        "материалы",
+        "документы",
+        "мобильная версия"
+      ],
+      "safeFixes": [
+        "локализация файла регрессии",
+        "точечный frontend-fix"
+      ]
+    },
+    {
+      "name": "Playwright E2E Agent",
+      "checks": [
+        "smoke",
+        "navigation",
+        "forms",
+        "mobile",
+        "screenshots"
+      ],
+      "safeFixes": [
+        "стабильные selectors",
+        "test fixtures",
+        "mock/e2e режим без реальных данных"
+      ]
+    },
+    {
+      "name": "Accessibility Fix Agent",
+      "checks": [
+        "labels",
+        "aria",
+        "focus-visible",
+        "contrast",
+        "tab order"
+      ],
+      "safeFixes": [
+        "aria-label",
+        "alt",
+        "focus styles",
+        "input labels"
+      ]
+    },
+    {
+      "name": "Performance Fix Agent",
+      "checks": [
+        "тяжёлые импорты",
+        "лишний код",
+        "lazy loading",
+        "шрифты"
+      ],
+      "safeFixes": [
+        "простые lazy/defer правки",
+        "удаление очевидно неиспользуемого UI-кода"
+      ]
+    },
+    {
+      "name": "Security Check Agent",
+      "checks": [
+        "secrets",
+        "console.log sensitive data",
+        "target blank",
+        "XSS UI risk"
+      ],
+      "safeFixes": [
+        "rel=noopener noreferrer",
+        "убрать чувствительный console.log",
+        "безопасный текст ошибок"
+      ]
+    },
+    {
+      "name": "Visual Snapshot Agent",
+      "checks": [
+        "390x844",
+        "768x1024",
+        "1280x720",
+        "1440x900",
+        "1920x1080"
+      ],
+      "safeFixes": [
+        "фиксация screenshots",
+        "поиск белого экрана и сломанной вёрстки"
+      ]
+    }
+  ],
+  "checked": [
+    "структура QA-директорий",
+    "наличие npm-скриптов QA",
+    "существующий qa-artifacts/latest отчёт",
+    "правила безопасных и опасных изменений",
+    "static lint без перезаписи qa-artifacts/latest"
+  ],
+  "found": [],
+  "fixed": [
+    "Скопирован актуальный qa-artifacts/latest/qa-report.md в qa-reports/latest-report.md",
+    "Скопирован актуальный qa-artifacts/latest/qa-report.json в qa-reports/latest-report.json"
+  ],
+  "dangerous": [],
+  "manual": [
+    "Для полного цикла запустить `npm run qa` или `node tools/qa/qa-fix-orchestrator.mjs --fix --full`."
+  ],
+  "commands": [
+    {
+      "command": "C:\\Users\\seven\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\bin\\node.exe tools/qa/static-lint.mjs",
+      "code": 0,
+      "durationMs": 791,
+      "output": "{\n  \"overall\": \"PASS\",\n  \"checks\": [\n    {\n      \"name\": \"Python syntax\",\n      \"status\": \"OK\",\n      \"details\": \"ok\"\n    },\n    {\n      \"name\": \"JS syntax app/static/app.js\",\n      \"status\": \"OK\",\n      \"details\": \"ok\"\n    },\n    {\n      \"name\": \"JS syntax app/static/app.compat.js\",\n      \"status\": \"OK\",\n      \"details\": \"ok\"\n    },\n    {\n      \"name\": \"JS syntax src/notifications/max/formatMaxReport.mjs\",\n      \"status\": \"OK\",\n      \"details\": \"ok\"\n    },\n    {\n      \"name\": \"JS syntax tools/qa/run-quality-gate.mjs\",\n      \"status\": \"OK\",\n      \"details\": \"ok\"\n    },\n    {\n      \"name\": \"JS syntax tools/qa/max-report-cli.mjs\",\n      \"status\": \"OK\",\n      \"details\": \"ok\"\n    },\n    {\n      \"name\": \"JS syntax tools/qa/qa-fix-orchestrator.mjs\",\n      \"status\": \"OK\",\n      \"details\": \"ok\"\n    },\n    {\n      \"name\": \"JS syntax tools/qa/visual-snapshots.mjs\",\n      \"status\": \"OK\",\n      \"details\": \"ok\"\n    },\n    {\n      \"name\": \"JS syntax scripts/generate-qa-report.js\",\n      \"status\": \"OK\",\n      \"details\": \"ok\"\n    },\n    {\n      \"name\": \"Foreman/master can open extra work attachments\",\n      \"status\": \"OK\",\n      \"details\": \"variation_attachment and extra_work_attachment are allowed in server and frontend rules\"\n    },\n    {\n      \"name\": \"Field roles can open photo report media\",\n      \"status\": \"OK\",\n      \"details\": \"photo_report and object_remark_photo are allowed for field roles in server and frontend rules\"\n    }\n  ]\n}"
+    }
+  ]
+}

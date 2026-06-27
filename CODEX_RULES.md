@@ -133,6 +133,69 @@ For the "working cycles and real-use UX" stage, QA must verify business logic, n
 7. `Workflow QA Agent` must run inside `npm run test:qa` / `npm run test:qa:report`; if workflow checks are not run or fail, the task lifecycle release cannot be marked PASS.
 8. The test `role-task-ownership.spec.ts` is mandatory for Release B1 changes that group tasks by role responsibility.
 
+## QA Fix Agents
+
+Codex works as a QA-fix team for this project. After code changes, it must run the QA cycle, classify issues, fix safe problems, rerun checks, and write the current report to:
+
+- `qa-artifacts/latest/qa-report.md`
+- `qa-artifacts/latest/qa-report.json`
+- `qa-reports/latest-report.md`
+- `qa-reports/latest-report.json`
+
+The lead agent is `Lead QA Fix Architect`. It coordinates:
+
+1. Code Review Fix Agent.
+2. Frontend QA Fix Agent.
+3. UI Consistency Fix Agent.
+4. UX Fix Agent.
+5. Regression Fix Agent.
+6. Playwright E2E Agent.
+7. Accessibility Fix Agent.
+8. Performance Fix Agent.
+9. Security Check Agent.
+10. Visual Snapshot Agent.
+
+Safe fixes may be applied automatically:
+
+- lint/typecheck/build fixes that do not change business behavior;
+- small UI and responsive layout fixes;
+- broken click handlers, tabs, internal links, modal close/open logic;
+- missing loading/error/success states;
+- missing labels, alt text, `aria-label`, focus-visible styles;
+- unsafe `target="_blank"` without `rel="noopener noreferrer"`;
+- report generation, screenshots, QA scripts and stable test ids;
+- Playwright test hardening that uses only test data.
+
+Dangerous changes require explicit owner approval before editing:
+
+- deleting major project sections;
+- changing application architecture;
+- changing database schema or migrations;
+- changing authentication, sessions, roles or permissions;
+- changing API contracts;
+- changing deploy, domains or production publication flow;
+- changing tokens, keys or secrets;
+- deleting dependencies;
+- deleting working business logic;
+- modifying real production data.
+
+Production deploy is never part of an automatic QA-fix cycle. Deploy requires a separate explicit instruction.
+
+## QA Fix Commands
+
+Use these commands for the autonomous QA-fix loop:
+
+```bash
+npm run qa
+npm run qa:e2e
+npm run qa:snapshots
+npm run qa:report
+```
+
+`npm run qa` runs `tools/qa/qa-fix-orchestrator.mjs` and may apply safe workspace fixes. It must not deploy to production.
+
+Visual snapshots are stored in `qa-snapshots`.
+
 ## Release A2 photo report QA
 
 Release A2 changes are not complete until the following checks are present in `qa-report.json` and snapshot:

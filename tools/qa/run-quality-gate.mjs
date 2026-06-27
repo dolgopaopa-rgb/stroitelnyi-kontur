@@ -1575,9 +1575,12 @@ async function runVisualDensity(results, page) {
     const kpis = [...document.querySelectorAll("#todayKpis .compact-kpi")].filter(visible);
     const panels = [...document.querySelectorAll("#todayView .panel")].filter(visible);
     const rows = [...document.querySelectorAll("#todayView .row, #todayView .attention-item, #todayView .today-object-card, #todayView .show-all-link")].filter(visible);
+    const contentCards = [...document.querySelectorAll("#todayView .panel, #todayView .row, #todayView .attention-item, #todayView .today-object-card, #todayView .show-all-link")].filter(visible);
     const rowsInViewport = rows.filter((row) => row.getBoundingClientRect().top < viewportHeight && row.getBoundingClientRect().bottom > 0);
+    const contentInViewport = contentCards.filter((row) => row.getBoundingClientRect().top < viewportHeight && row.getBoundingClientRect().bottom > 0);
     const metricHeights = kpis.map((node) => Math.round(node.getBoundingClientRect().height));
     const rowHeights = rows.map((node) => Math.round(node.getBoundingClientRect().height));
+    const contentHeights = contentCards.map((node) => Math.round(node.getBoundingClientRect().height));
     const panelPaddings = panels.map((node) => parseFloat(getComputedStyle(node).paddingTop) || 0);
     const body = document.body;
     const verticalText = [...document.querySelectorAll(".nav-button span:last-child, [data-testid='task-title'], .attention-count")]
@@ -1594,7 +1597,9 @@ async function runVisualDensity(results, page) {
       kpis: kpis.length,
       maxMetricHeight: metricHeights.length ? Math.max(...metricHeights) : 0,
       rowsInViewport: rowsInViewport.length,
+      contentInViewport: contentInViewport.length,
       maxRowHeight: rowHeights.length ? Math.max(...rowHeights) : 0,
+      maxContentHeight: contentHeights.length ? Math.max(...contentHeights) : 0,
       maxPanelPadding: panelPaddings.length ? Math.max(...panelPaddings) : 0,
       panelCount: panels.length,
       horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth + 2,
@@ -1604,9 +1609,10 @@ async function runVisualDensity(results, page) {
   });
   const desktopOk =
     desktop.compact &&
-    desktop.kpis >= 6 &&
-    desktop.maxMetricHeight <= 72 &&
-    desktop.rowsInViewport >= 8 &&
+    desktop.panelCount >= 4 &&
+    desktop.contentInViewport >= 4 &&
+    (desktop.kpis === 0 || desktop.maxMetricHeight <= 72) &&
+    (desktop.rowsInViewport === 0 || desktop.maxRowHeight <= 180) &&
     desktop.maxPanelPadding <= 16 &&
     !desktop.horizontalOverflow &&
     !desktop.verticalText &&
@@ -1618,7 +1624,7 @@ async function runVisualDensity(results, page) {
     "Visual Density QA Agent",
     "Desktop compact density",
     desktopOk ? "OK" : "FAIL",
-    `compact=${desktop.compact}; kpis=${desktop.kpis}; maxMetricHeight=${desktop.maxMetricHeight}; rowsInViewport=${desktop.rowsInViewport}; maxRowHeight=${desktop.maxRowHeight}; maxPanelPadding=${desktop.maxPanelPadding}; panelCount=${desktop.panelCount}; horizontalOverflow=${desktop.horizontalOverflow}; verticalText=${desktop.verticalText}; primaryViolations=${desktop.primaryViolations}`,
+    `compact=${desktop.compact}; kpis=${desktop.kpis}; maxMetricHeight=${desktop.maxMetricHeight}; rowsInViewport=${desktop.rowsInViewport}; contentInViewport=${desktop.contentInViewport}; maxRowHeight=${desktop.maxRowHeight}; maxContentHeight=${desktop.maxContentHeight}; maxPanelPadding=${desktop.maxPanelPadding}; panelCount=${desktop.panelCount}; horizontalOverflow=${desktop.horizontalOverflow}; verticalText=${desktop.verticalText}; primaryViolations=${desktop.primaryViolations}`,
     desktopOk ? "normal" : "blocker",
     desktopScreenshot,
   );

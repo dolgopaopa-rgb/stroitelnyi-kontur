@@ -3,7 +3,16 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 
 const pythonFiles = ["app/server.py", "app/database.py", "tools/kontur_quality_agent.py", "tools/kontur_agent_suite.py"];
-const jsFiles = ["app/static/app.js", "app/static/app.compat.js", "src/notifications/max/formatMaxReport.mjs", "tools/qa/run-quality-gate.mjs", "tools/qa/max-report-cli.mjs"];
+const jsFiles = [
+  "app/static/app.js",
+  "app/static/app.compat.js",
+  "src/notifications/max/formatMaxReport.mjs",
+  "tools/qa/run-quality-gate.mjs",
+  "tools/qa/max-report-cli.mjs",
+  "tools/qa/qa-fix-orchestrator.mjs",
+  "tools/qa/visual-snapshots.mjs",
+  "scripts/generate-qa-report.js",
+];
 
 function run(command, args) {
   const result = spawnSync(command, args, { encoding: "utf8", shell: process.platform === "win32" });
