@@ -2,7 +2,7 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 
-const pythonFiles = ["app/server.py", "app/database.py", "tools/kontur_quality_agent.py", "tools/kontur_agent_suite.py"];
+const pythonFiles = ["app/server.py", "app/database.py", "app/data_integrity.py", "tools/kontur_quality_agent.py", "tools/kontur_agent_suite.py", "tools/data_integrity_cleanup.py"];
 const jsFiles = [
   "app/static/app.js",
   "app/static/app.compat.js",

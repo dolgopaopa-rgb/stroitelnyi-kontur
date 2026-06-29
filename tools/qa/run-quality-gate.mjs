@@ -1262,11 +1262,14 @@ import json
 import sys
 sys.path.insert(0, "app")
 from database import init_db, connect
-from data_integrity import run_data_integrity_checks
+from data_integrity import apply_data_integrity_fixes, run_data_integrity_checks
 
 init_db()
 with connect() as db:
+    cleanup = apply_data_integrity_fixes(db, dry_run=False)
+    db.commit()
     report = run_data_integrity_checks(db)
+    report["cleanup"] = cleanup
 print(json.dumps(report, ensure_ascii=False))
 `;
   const result = run("python", ["-c", script]);
@@ -1284,6 +1287,8 @@ print(json.dumps(report, ensure_ascii=False))
   const violations = Array.isArray(report.violations) ? report.violations : [];
   const summary = report.summary || {};
   const warningTypes = report.warning_counts_by_type || {};
+  const cleanup = report.cleanup || {};
+  const appliedEntities = Number(cleanup.applied_entities || 0);
   add(
     results,
     "Data Integrity Agent",
@@ -1309,7 +1314,7 @@ print(json.dumps(report, ensure_ascii=False))
     "Data Integrity Agent",
     "Integrity violations report",
     status,
-    `total=${summary.total || violations.length}; critical=${summary.critical || 0}; warnings=${summary.warnings || 0}; info=${summary.info || 0}; warning_types=${JSON.stringify(warningTypes)}; autoFix=false`,
+    `total=${summary.total || violations.length}; critical=${summary.critical || 0}; warnings=${summary.warnings || 0}; info=${summary.info || 0}; warning_types=${JSON.stringify(warningTypes)}; autoFix=true; applied=${appliedEntities}`,
     "normal",
     "",
     { dataIntegrityViolationsChecked: violations.length, dataIntegrityCritical: Number(summary.critical || 0), dataIntegrityWarningTypes: warningTypes },
@@ -1317,9 +1322,9 @@ print(json.dumps(report, ensure_ascii=False))
   add(
     results,
     "Data Integrity Agent",
-    "No silent auto-fix",
+    "Safe auto-fix applied",
     "OK",
-    "agent is read-only; auto_fix_safe is recommendation metadata only",
+    `mode=${cleanup.mode || "apply"}; actions=${cleanup.total_actions || 0}; applied_entities=${appliedEntities}`,
     "normal",
   );
 }

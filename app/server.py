@@ -23,19 +23,28 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse
 from urllib.request import Request, urlopen
 
-from database import DATA_DIR, connect, init_db, row_to_dict, rows_to_dicts
-from data_integrity import run_data_integrity_checks
+from database import DATA_DIR, DB_PATH, connect, init_db, row_to_dict, rows_to_dicts
+from data_integrity import apply_data_integrity_fixes, run_data_integrity_checks
 
 
 APP_DIR = Path(__file__).resolve().parent
 STATIC_DIR = APP_DIR / "static"
 UPLOAD_DIR = DATA_DIR / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+DATA_INTEGRITY_BACKUP_DIR = APP_DIR.parent / "backups" / "data-integrity"
 YANDEX_DISK_FILE_PREFIX = "yadisk:"
 MAX_API_URL = os.environ.get("MAX_API_URL", "https://platform-api.max.ru").rstrip("/")
 APP_PUBLIC_URL = os.environ.get("APP_PUBLIC_URL", "").rstrip("/")
 SESSION_COOKIE_NAME = "kontur_session"
 SESSION_TTL_SECONDS = int(os.environ.get("APP_SESSION_TTL_SECONDS", str(90 * 24 * 60 * 60)) or 0)
+
+
+def backup_database_before_cleanup() -> str:
+    DATA_INTEGRITY_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    target = DATA_INTEGRITY_BACKUP_DIR / f"construction-before-data-cleanup-{stamp}.db"
+    shutil.copy2(DB_PATH, target)
+    return str(target.relative_to(APP_DIR.parent))
 
 
 def write_response_body(handler: BaseHTTPRequestHandler, body: bytes) -> None:
@@ -4481,8 +4490,12 @@ class AppHandler(BaseHTTPRequestHandler):
             name = f"{row.get('title') or ''} {row.get('file_name') or ''}".lower()
             mime = str(row.get("mime_type") or "").lower()
             process_type = str(row.get("process_type") or "").lower()
+            related_type = str(row.get("related_type") or "").lower()
+            is_media = mime.startswith(("image/", "video/")) or bool(re.search(r"\.(mov|mp4|jpe?g|png|webp)$", name))
             if process_type.startswith("variation:"):
                 return "extra_work_attachment"
+            if related_type == "material_receipt":
+                return "photo_video" if is_media else "extra_work_attachment"
             if mime.startswith("image/") or mime.startswith("video/"):
                 if re.search(r"кнопка|экран|ошибка|скрин|screenshot|feedback|интерфейс", name):
                     return "service_screenshot"
@@ -5995,6 +6008,27 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
     def handle_api_post(self, path: str, data: dict) -> None:
         with connect() as db:
             account = current_access_account(self) or {}
+            if path == "/api/data-integrity/fix":
+                if account_role(account) not in {"owner", "construction_manager", "finance_director"}:
+                    json_response(self, {"error": "Forbidden"}, 403)
+                    return
+                before = run_data_integrity_checks(db)
+                backup_path = backup_database_before_cleanup()
+                cleanup = apply_data_integrity_fixes(db, dry_run=False)
+                db.commit()
+                after = run_data_integrity_checks(db)
+                after["commitHash"] = app_metadata(self).get("commitHash")
+                json_response(
+                    self,
+                    {
+                        "ok": True,
+                        "backup": backup_path,
+                        "before": before["summary"],
+                        "cleanup": cleanup,
+                        "after": after,
+                    },
+                )
+                return
             if path == "/api/feedback":
                 if not can_manage_feedback(account):
                     json_response(self, {"error": "Forbidden"}, 403)
@@ -8503,12 +8537,19 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     if receipt_status == "issue" and not comment and not file_data.get("file_base64"):
                         raise ValueError("Опишите проблему или прикрепите фото/видео.")
                     if file_data.get("file_base64"):
+                        receipt_file_name = str(file_data.get("file_name") or file_data.get("name") or "")
+                        receipt_mime = str(file_data.get("mime_type") or "").lower()
+                        receipt_doc_type = (
+                            "photo_video"
+                            if receipt_mime.startswith(("image/", "video/")) or re.search(r"\.(mov|mp4|jpe?g|png|webp)$", receipt_file_name.lower())
+                            else "extra_work_attachment"
+                        )
                         document_id = save_document_file(
                             db,
                             batch["project_id"],
                             file_data,
                             f"Приемка материалов по заявке от {format_date_ru(batch['created_at'])}",
-                            "other",
+                            receipt_doc_type,
                             "material_receipt",
                         )
                     new_status = "received" if receipt_status == "received" else "receipt_issue"

@@ -49,6 +49,7 @@ const state = {
   notificationsOpen: false,
   notificationGroupsOpen: {},
   expandedLists: {},
+  expandedTodayProjectIds: new Set(),
   selectedWorkProjectId: initialProjectId,
   selectedRemarkProjectId: initialProjectId,
   selectedPhotoProjectId: initialProjectId,
@@ -1044,10 +1045,13 @@ function documentTypeKey(input) {
   }
   const name = `${doc.title || ""} ${doc.file_name || ""}`.toLowerCase();
   const processType = String(doc.process_type || "").toLowerCase();
+  const relatedType = String(doc.related_type || "").toLowerCase();
   const mime = String(doc.mime_type || "").toLowerCase();
+  const isMedia = mime.startsWith("image/") || mime.startsWith("video/") || /\.(mov|mp4|jpe?g|png|webp)$/i.test(name);
   if (processType.startsWith("variation:")) return "extra_work_attachment";
+  if (relatedType === "material_receipt") return isMedia ? "photo_video" : "extra_work_attachment";
   if (/(кнопка|экран|ошибка|скрин|skrin|oshibka|screen|screenshot|feedback|интерфейс)/.test(name) && (mime.startsWith("image/") || /\.(png|jpe?g|webp)$/i.test(name))) return "service_screenshot";
-  if (mime.startsWith("image/") || mime.startsWith("video/") || /\.(mov|mp4|jpe?g|png|webp)$/i.test(name)) return "photo_video";
+  if (isMedia) return "photo_video";
   if (/проект|пдф|узел|решени/.test(name)) return "project";
   if (/смет|задани[ея]\s+на\s+работ|smetter|work_assignment|purchase/.test(name)) return "estimate";
   if (/договор|допник|доп\.?\s*соглаш|contract/.test(name)) return "contract";
@@ -3709,21 +3713,30 @@ function renderTodayObjectCard(project, tasks, materialRows) {
   const blockers = projectBlockerCount(project, tasks, materialRows);
   const riskyMaterials = projectMaterialBatches(project.id, materialRows).filter(materialIsRisky);
   const latestPhoto = latestPhotoReportDate(project.id);
+  const isExpanded = state.expandedTodayProjectIds?.has(Number(project.id));
   return `
-    <button class="today-object-card clickable" type="button" data-open-project="${project.id}">
+    <article class="today-object-card ${isExpanded ? "is-expanded" : ""}" data-today-project-card="${project.id}" data-testid="object-card">
       <div class="today-object-head">
         <strong>${escapeHtml(project.title || "Объект")}</strong>
         ${pill(statusLabel(project.status), statusLevel(project.status))}
       </div>
-      <div class="muted">ответственный: ${escapeHtml(project.foreman_name || "прораб не назначен")} · этап: ${statusLabel(project.stage || project.status)}</div>
       <div class="today-object-metrics">
         ${pill(`открыто: ${openTasks.length}`, openTasks.length ? "blue" : "")}
         ${overdueTasks.length ? pill(`просрочено: ${overdueTasks.length}`, "danger") : ""}
         ${blockers ? pill(`блокеры: ${blockers}`, "danger") : ""}
         ${riskyMaterials.length ? pill(`материалы под риском: ${riskyMaterials.length}`, "warning") : ""}
       </div>
-      <div class="muted">последний фотоотчёт: ${latestPhoto ? formatDateRu(latestPhoto) : "не найден"}</div>
-    </button>`;
+      <div class="today-object-actions">
+        <button class="secondary tiny" type="button" data-toggle-today-project="${project.id}" aria-expanded="${isExpanded ? "true" : "false"}">${isExpanded ? "Свернуть" : "Развернуть"}</button>
+        <button class="secondary tiny" type="button" data-open-project="${project.id}">Открыть</button>
+      </div>
+      ${isExpanded ? `
+        <div class="today-object-details" data-testid="today-object-details">
+          <div class="muted">ответственный: ${escapeHtml(project.foreman_name || "прораб не назначен")} · этап: ${statusLabel(project.stage || project.status)}</div>
+          <div class="muted">последний фотоотчёт: ${latestPhoto ? formatDateRu(latestPhoto) : "не найден"}</div>
+          ${project.deadline ? `<div class="muted">ближайший срок: ${formatDateRu(project.deadline)}</div>` : ""}
+        </div>` : ""}
+    </article>`;
 }
 
 function renderTodayAttentionCard(title, count, text, level, targetAttrs) {
@@ -7010,6 +7023,10 @@ function canViewDataIntegrity() {
   return ["owner", "construction_manager", "finance_director"].includes(currentRoleBase()) || currentRoleBase() === "ai_auditor";
 }
 
+function canFixDataIntegrity() {
+  return ["owner", "construction_manager", "finance_director"].includes(currentRoleBase());
+}
+
 function integrityEntityGroup(entityType) {
   if (["material_request_batch", "material_request"].includes(entityType)) return "material";
   return entityType || "other";
@@ -7024,6 +7041,8 @@ async function renderDataIntegrity(force = false) {
   if (!panel) return;
   panel.hidden = !canViewDataIntegrity();
   if (panel.hidden) return;
+  const fixButton = qs("#fixIntegrityButton");
+  if (fixButton) fixButton.hidden = !canFixDataIntegrity();
   if (!state.dataIntegrityReport || force) {
     state.dataIntegrityReport = await api("/api/data-integrity", { silentLoading: !force, loadingMessage: "Проверяем целостность данных" });
   }
@@ -7715,6 +7734,21 @@ function bindEvents() {
   qs("#refreshIntegrityButton")?.addEventListener("click", async () => {
     await renderDataIntegrity(true);
     showToast("Проверка целостности обновлена");
+  });
+  qs("#fixIntegrityButton")?.addEventListener("click", async () => {
+    if (!canFixDataIntegrity()) {
+      showToast("Исправление целостности недоступно для текущей роли");
+      return;
+    }
+    const result = await api("/api/data-integrity/fix", {
+      method: "POST",
+      body: JSON.stringify({}),
+      loadingMessage: "Исправляем безопасные проблемы данных",
+    });
+    state.dataIntegrityReport = result.after;
+    await renderDataIntegrity();
+    const applied = Number(result.cleanup?.applied_entities || 0);
+    showToast(applied ? `Исправлено записей: ${applied}. Backup: ${result.backup}` : "Безопасных исправлений не требовалось");
   });
   qsa("[data-integrity-filter]").forEach((button) =>
     button.addEventListener("click", async () => {
@@ -8426,6 +8460,16 @@ function bindEvents() {
     }
 
     if (event.target.closest("a")) return;
+
+    const toggleTodayProjectButton = event.target.closest("[data-toggle-today-project]");
+    if (toggleTodayProjectButton) {
+      const projectId = Number(toggleTodayProjectButton.dataset.toggleTodayProject);
+      if (!state.expandedTodayProjectIds) state.expandedTodayProjectIds = new Set();
+      if (state.expandedTodayProjectIds.has(projectId)) state.expandedTodayProjectIds.delete(projectId);
+      else state.expandedTodayProjectIds.add(projectId);
+      await renderToday();
+      return;
+    }
 
     const projectButton = event.target.closest("[data-open-project]");
     if (projectButton) {

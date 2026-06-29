@@ -3906,6 +3906,22 @@ textarea {
   font-size: 12px;
 }
 
+.today-object-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.today-object-actions .tiny {
+  min-height: 30px;
+}
+
+.today-object-details {
+  display: grid;
+  gap: 4px;
+  padding-top: 2px;
+}
+
 .today-task-card,
 .today-material-card {
   align-content: start;

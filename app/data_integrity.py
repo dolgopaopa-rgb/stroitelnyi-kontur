@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import re
 from datetime import date
 from typing import Any
 
@@ -57,6 +58,47 @@ def _count_by(db: sqlite3.Connection, table: str, column: str) -> dict[str, int]
         """
     ).fetchall()
     return {str(row["key"]): int(row["count"]) for row in rows}
+
+
+DOCUMENT_GENERIC_TYPES = {"", "document", "documents", "other", "unclassified"}
+
+
+def _document_name(row: sqlite3.Row) -> str:
+    return f"{row['title'] or ''} {row['file_name'] or ''}".lower()
+
+
+def _document_type_suggestion(row: sqlite3.Row) -> str:
+    raw = str(row["type"] or "").strip()
+    if raw and raw not in DOCUMENT_GENERIC_TYPES:
+        return raw
+
+    name = _document_name(row)
+    mime = str(row["mime_type"] or "").lower()
+    related_type = str(row["related_type"] or "").lower()
+    process_type = str(row["process_type"] or "").lower()
+    is_media = mime.startswith(("image/", "video/")) or bool(re.search(r"\.(mov|mp4|jpe?g|png|webp)$", name))
+
+    if process_type.startswith("variation:"):
+        return "extra_work_attachment"
+    if related_type == "material_receipt":
+        return "photo_video" if is_media else "extra_work_attachment"
+    if is_media:
+        if re.search(r"кнопка|экран|ошибка|скрин|skrin|oshibka|screen|screenshot|feedback|интерфейс", name):
+            return "service_screenshot"
+        return "photo_video"
+    if re.search(r"проект|пдф|узел|решени", name):
+        return "project"
+    if re.search(r"смет|задани[ея]\s+на\s+работ|smetter|work_assignment|purchase", name):
+        return "estimate"
+    if re.search(r"договор|допник|доп\.?\s*соглаш|contract", name):
+        return "contract"
+    if re.search(r"\bакт\b|кс-?2|кс-?3", name):
+        return "act"
+    if re.search(r"сч[её]т|invoice", name):
+        return "invoice"
+    if re.search(r"скрин|skrin|служеб|интерфейс|feedback|ошибка|oshibka|экран|screen|screenshot", name):
+        return "service_screenshot"
+    return "unclassified"
 
 
 def _truthy(value: object) -> bool:
@@ -260,8 +302,8 @@ def _photo_report_violations(db: sqlite3.Connection, violations: list[Violation]
                 object_title=duplicate_rows[0]["project_title"] or "",
                 reason="Несколько ручных фотоотчётов без задачи с одинаковыми объектом, датой и автором.",
                 severity="warning",
-                recommendation="Открыть, объединить или пометить дублем. Автоматически не объединять.",
-                auto_fix_safe=False,
+                recommendation="Оставить самый новый отчёт, остальные пометить дублем.",
+                auto_fix_safe=True,
             )
 
     signal_rows = db.execute(
@@ -289,8 +331,8 @@ def _photo_report_violations(db: sqlite3.Connection, violations: list[Violation]
                 object_title=signal["project_title"] or "",
                 reason="Есть сигнал «нет фотоотчёта» за дату, где уже есть действующий отчёт.",
                 severity="warning",
-                recommendation="Скрыть или пересчитать сигнал после проверки отчёта.",
-                auto_fix_safe=False,
+                recommendation="Удалить устаревший сигнал, так как фотоотчёт уже есть.",
+                auto_fix_safe=True,
             )
 
 
@@ -492,8 +534,8 @@ def _other_violations(db: sqlite3.Connection, violations: list[Violation]) -> No
                 entity_id=row["id"],
                 reason=f"Уведомление связано с отсутствующей сущностью {row['related_type']} #{row['related_id']}.",
                 severity="warning",
-                recommendation="Скрыть уведомление или восстановить связанную сущность.",
-                auto_fix_safe=False,
+                recommendation="Удалить уведомление, которое ведёт в отсутствующую сущность.",
+                auto_fix_safe=True,
             )
 
     duplicate_signals = db.execute(
@@ -514,8 +556,8 @@ def _other_violations(db: sqlite3.Connection, violations: list[Violation]) -> No
             entity_id=row["ids"],
             reason=f"Дублирующийся сигнал: {row['title']} ({row['count']} повторов за день).",
             severity="warning",
-            recommendation="Сгруппировать сигналы или скрыть лишние повторы.",
-            auto_fix_safe=False,
+            recommendation="Оставить самый новый сигнал, лишние повторы удалить.",
+            auto_fix_safe=True,
         )
 
     document_rows = db.execute(
@@ -527,6 +569,8 @@ def _other_violations(db: sqlite3.Connection, violations: list[Violation]) -> No
         """
     ).fetchall()
     for row in document_rows:
+        suggested_type = _document_type_suggestion(row)
+        can_fix = suggested_type not in DOCUMENT_GENERIC_TYPES
         _add(
             violations,
             violation_type="document_without_classification",
@@ -535,8 +579,8 @@ def _other_violations(db: sqlite3.Connection, violations: list[Violation]) -> No
             object_title=row["project_title"] or "",
             reason="Документ требует проверки классификации.",
             severity="info",
-            recommendation="Выбрать тип документа или оставить «Не разобрано» до ручной проверки.",
-            auto_fix_safe=False,
+            recommendation=f"Auto-classify document as {suggested_type}." if can_fix else "Leave document for manual classification.",
+            auto_fix_safe=can_fix,
         )
 
 
@@ -573,4 +617,259 @@ def run_data_integrity_checks(db: sqlite3.Connection) -> dict[str, Any]:
             "legacy_status": _count_by(db, "material_request_batches", "status"),
         },
         "violations": violations,
+    }
+
+
+def plan_data_integrity_fixes(db: sqlite3.Connection) -> dict[str, Any]:
+    inactive_photo_statuses = ("archived", "cancelled", "duplicate", "invalid_empty", "rejected", "superseded")
+    inactive_sql = ",".join("?" for _ in inactive_photo_statuses)
+    actions: list[dict[str, Any]] = []
+
+    mismatch_rows = db.execute(
+        """
+        SELECT pr.id,
+               COALESCE(pr.files_count, 0) AS files_count,
+               (SELECT COUNT(*) FROM photo_report_documents prd WHERE prd.photo_report_id = pr.id) AS actual_files_count
+        FROM photo_reports pr
+        WHERE COALESCE(pr.files_count, 0) != (
+            SELECT COUNT(*)
+            FROM photo_report_documents prd
+            WHERE prd.photo_report_id = pr.id
+        )
+        """
+    ).fetchall()
+    if mismatch_rows:
+        actions.append(
+            {
+                "action": "recount_photo_report_files_count",
+                "entity_type": "photo_report",
+                "count": len(mismatch_rows),
+                "ids": [int(row["id"]) for row in mismatch_rows],
+            }
+        )
+
+    manual_rows = db.execute(
+        f"""
+        SELECT pr.*,
+               (SELECT COUNT(*) FROM photo_report_documents prd WHERE prd.photo_report_id = pr.id) AS actual_files_count
+        FROM photo_reports pr
+        WHERE pr.task_id IS NULL
+          AND pr.status NOT IN ({inactive_sql})
+        ORDER BY pr.project_id, pr.report_date, pr.author_id,
+                 actual_files_count DESC,
+                 datetime(COALESCE(pr.created_at, '1970-01-01')) DESC,
+                 pr.id DESC
+        """,
+        inactive_photo_statuses,
+    ).fetchall()
+    grouped_manual: dict[tuple[object, object, object], list[sqlite3.Row]] = {}
+    for row in manual_rows:
+        grouped_manual.setdefault((row["project_id"], row["report_date"], row["author_id"]), []).append(row)
+    duplicate_photo_ids: list[int] = []
+    for rows in grouped_manual.values():
+        if len(rows) > 1:
+            duplicate_photo_ids.extend(int(row["id"]) for row in rows[1:])
+    if duplicate_photo_ids:
+        actions.append(
+            {
+                "action": "mark_manual_photo_report_duplicates",
+                "entity_type": "photo_report",
+                "count": len(duplicate_photo_ids),
+                "ids": duplicate_photo_ids,
+            }
+        )
+
+    signal_rows = db.execute(
+        f"""
+        SELECT n.id
+        FROM notifications n
+        WHERE (
+            LOWER(COALESCE(n.title, '') || ' ' || COALESCE(n.text, '')) LIKE '%нет фотоотч%'
+            OR LOWER(COALESCE(n.title, '') || ' ' || COALESCE(n.text, '')) LIKE '%без фотоотч%'
+        )
+        AND n.project_id IS NOT NULL
+        AND EXISTS (
+            SELECT 1
+            FROM photo_reports pr
+            WHERE pr.project_id = n.project_id
+              AND pr.report_date = date(n.created_at)
+              AND COALESCE(pr.files_count, 0) > 0
+              AND pr.status NOT IN ({inactive_sql})
+        )
+        """,
+        inactive_photo_statuses,
+    ).fetchall()
+    stale_no_photo_ids = [int(row["id"]) for row in signal_rows]
+    if stale_no_photo_ids:
+        actions.append(
+            {
+                "action": "delete_stale_no_photo_signals",
+                "entity_type": "notification",
+                "count": len(stale_no_photo_ids),
+                "ids": stale_no_photo_ids,
+            }
+        )
+
+    table_by_type = {
+        "task": "tasks",
+        "photo_report": "photo_reports",
+        "material_request_batch": "material_request_batches",
+        "object_remark": "object_remarks",
+        "variation": "variations",
+        "project": "projects",
+    }
+    missing_entity_ids: list[int] = []
+    notification_rows = db.execute(
+        """
+        SELECT id, related_type, related_id
+        FROM notifications
+        WHERE related_type IS NOT NULL
+          AND related_type != ''
+          AND related_id IS NOT NULL
+        """
+    ).fetchall()
+    for row in notification_rows:
+        table = table_by_type.get(str(row["related_type"] or ""))
+        if table and not _row_exists(db, table, row["related_id"]):
+            missing_entity_ids.append(int(row["id"]))
+    if missing_entity_ids:
+        actions.append(
+            {
+                "action": "delete_notifications_missing_entity",
+                "entity_type": "notification",
+                "count": len(missing_entity_ids),
+                "ids": missing_entity_ids,
+            }
+        )
+
+    duplicate_rows = db.execute(
+        """
+        SELECT project_id, related_type, related_id, title, date(created_at) AS day,
+               GROUP_CONCAT(id) AS ids
+        FROM notifications
+        WHERE COALESCE(title, '') != ''
+        GROUP BY project_id, related_type, related_id, title, date(created_at)
+        HAVING COUNT(*) > 1
+        """
+    ).fetchall()
+    duplicate_notification_ids: list[int] = []
+    for row in duplicate_rows:
+        ids = [int(item) for item in str(row["ids"] or "").split(",") if item]
+        if len(ids) > 1:
+            duplicate_notification_ids.extend(sorted(ids, reverse=True)[1:])
+    duplicate_notification_ids = sorted(set(duplicate_notification_ids) - set(missing_entity_ids) - set(stale_no_photo_ids))
+    if duplicate_notification_ids:
+        actions.append(
+            {
+                "action": "delete_duplicate_signals",
+                "entity_type": "notification",
+                "count": len(duplicate_notification_ids),
+                "ids": duplicate_notification_ids,
+            }
+        )
+
+    document_rows = db.execute(
+        """
+        SELECT *
+        FROM documents
+        WHERE COALESCE(type, '') IN ('', 'other', 'unclassified')
+        """
+    ).fetchall()
+    document_updates: dict[str, list[int]] = {}
+    for row in document_rows:
+        suggested_type = _document_type_suggestion(row)
+        if suggested_type in DOCUMENT_GENERIC_TYPES:
+            continue
+        document_updates.setdefault(suggested_type, []).append(int(row["id"]))
+    for document_type, ids in sorted(document_updates.items()):
+        actions.append(
+            {
+                "action": "classify_documents",
+                "entity_type": "document",
+                "document_type": document_type,
+                "count": len(ids),
+                "ids": ids,
+            }
+        )
+
+    return {
+        "agent": "Data Integrity Agent",
+        "mode": "plan",
+        "auto_fix_safe": True,
+        "actions": actions,
+        "total_actions": len(actions),
+        "total_entities": sum(int(action["count"]) for action in actions),
+    }
+
+
+def _apply_id_update(db: sqlite3.Connection, sql: str, ids: list[int]) -> int:
+    if not ids:
+        return 0
+    db.executemany(sql, [(item_id,) for item_id in ids])
+    return len(ids)
+
+
+def apply_data_integrity_fixes(db: sqlite3.Connection, *, dry_run: bool = True) -> dict[str, Any]:
+    plan = plan_data_integrity_fixes(db)
+    applied: list[dict[str, Any]] = []
+    if dry_run:
+        return {**plan, "mode": "dry_run", "applied": applied}
+
+    for action in plan["actions"]:
+        ids = [int(item) for item in action.get("ids", [])]
+        name = str(action.get("action") or "")
+        count = 0
+        if name == "recount_photo_report_files_count":
+            before_changes = db.total_changes
+            db.execute(
+                """
+                UPDATE photo_reports
+                SET files_count = (
+                    SELECT COUNT(*)
+                    FROM photo_report_documents prd
+                    WHERE prd.photo_report_id = photo_reports.id
+                ),
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE files_count IS NULL
+                   OR files_count != (
+                       SELECT COUNT(*)
+                       FROM photo_report_documents prd
+                       WHERE prd.photo_report_id = photo_reports.id
+                   )
+                """
+            )
+            count = int(db.total_changes - before_changes)
+        elif name == "mark_manual_photo_report_duplicates":
+            count = _apply_id_update(
+                db,
+                """
+                UPDATE photo_reports
+                SET status = 'duplicate',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                ids,
+            )
+        elif name in {"delete_stale_no_photo_signals", "delete_notifications_missing_entity", "delete_duplicate_signals"}:
+            count = _apply_id_update(db, "DELETE FROM notifications WHERE id = ?", ids)
+        elif name == "classify_documents":
+            document_type = str(action.get("document_type") or "").strip()
+            if document_type:
+                db.executemany(
+                    """
+                    UPDATE documents
+                    SET type = ?,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                    """,
+                    [(document_type, item_id) for item_id in ids],
+                )
+                count = len(ids)
+        applied.append({k: v for k, v in action.items() if k != "ids"} | {"applied": count})
+
+    return {
+        **plan,
+        "mode": "apply",
+        "applied": applied,
+        "applied_entities": sum(int(item.get("applied") or 0) for item in applied),
     }

@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { spawnSync } from "node:child_process";
 import { openApp } from "../helpers/auth";
 
-test("Data Integrity Agent detects manual duplicate photo reports without auto-fix", async ({ page }, testInfo) => {
+test("Data Integrity Agent fixes manual duplicate photo reports safely", async ({ page }, testInfo) => {
   const remoteBase = process.env.KONTUR_BASE_URL || "";
   test.skip(Boolean(remoteBase && !remoteBase.includes("127.0.0.1") && !remoteBase.includes("localhost")), "local DB fixture test is skipped for remote production targets");
 
@@ -47,6 +47,19 @@ print("ok")
   });
   const duplicateViolations = (report.violations || []).filter((item: any) => item.violation_type === "manual_photo_report_duplicate");
   expect(duplicateViolations.length).toBeGreaterThan(0);
-  expect(duplicateViolations.some((item: any) => item.auto_fix_safe === false)).toBeTruthy();
+  expect(duplicateViolations.some((item: any) => item.auto_fix_safe === true)).toBeTruthy();
+
+  const cleanup = await page.evaluate(async () => {
+    const response = await fetch("/api/data-integrity/fix", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    return { status: response.status, body: await response.json() };
+  });
+  expect(cleanup.status).toBe(200);
+  expect(cleanup.body.cleanup?.applied_entities || 0).toBeGreaterThan(0);
+  const afterViolations = cleanup.body.after?.violations || [];
+  expect(afterViolations.filter((item: any) => item.violation_type === "manual_photo_report_duplicate")).toHaveLength(0);
   testInfo.annotations.push({ type: "a3-fixture", description: marker });
 });

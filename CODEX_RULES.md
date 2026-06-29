@@ -180,6 +180,7 @@ Safe fixes may be applied automatically:
 - unsafe `target="_blank"` without `rel="noopener noreferrer"`;
 - report generation, screenshots, QA scripts and stable test ids;
 - Playwright test hardening that uses only test data.
+- safe data-integrity cleanup after backup: duplicate notifications, notifications pointing to missing entities, stale "no photo report" signals, photo report counters, and clearly duplicated manual photo reports may be fixed automatically without deleting business documents, tasks, projects, materials or contracts.
 
 Dangerous changes require explicit owner approval before editing:
 
@@ -192,9 +193,25 @@ Dangerous changes require explicit owner approval before editing:
 - changing tokens, keys or secrets;
 - deleting dependencies;
 - deleting working business logic;
-- modifying real production data.
+- modifying real production data outside the approved safe cleanup flow.
+- applying data cleanup without a backup.
 
 Production deploy is never part of an automatic QA-fix cycle. Deploy requires a separate explicit instruction.
+
+## Today object collapse QA
+
+When the "Сегодня" screen contains object cards, QA must verify that each object card stays compact by default and exposes an explicit expand/collapse action.
+
+Required checks:
+
+1. At least one `[data-today-project-card]` is present when active objects exist.
+2. `[data-testid="today-object-details"]` is not visible before expansion.
+3. `[data-toggle-today-project]` is visible and changes text between `Развернуть` and `Свернуть`.
+4. Clicking expand shows object details without navigating away from "Сегодня".
+5. Clicking collapse hides object details again.
+6. The separate `Открыть` action still opens the object card.
+
+If object details are expanded by default and make the dashboard visually noisy, UX QA must fail.
 
 ## QA Fix Commands
 

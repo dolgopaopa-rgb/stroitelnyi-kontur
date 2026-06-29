@@ -494,7 +494,10 @@
                 <h2>Целостность данных</h2>
                 <p class="muted">Read-only проверка задач, фотоотчётов, материалов, сигналов, документов и блокеров.</p>
               </div>
-              <button class="secondary" id="refreshIntegrityButton" type="button">Запустить проверку</button>
+              <div class="row-actions">
+                <button class="secondary" id="refreshIntegrityButton" type="button">Запустить проверку</button>
+                <button class="primary" id="fixIntegrityButton" type="button">Исправить безопасно</button>
+              </div>
             </div>
             <div class="compact-stats" id="dataIntegrityStats"></div>
             <div class="material-quick-filters" id="dataIntegrityFilters" role="tablist" aria-label="Фильтры целостности данных">
