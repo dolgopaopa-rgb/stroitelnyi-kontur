@@ -15,7 +15,7 @@ const jsFiles = [
 ];
 
 function run(command, args) {
-  const result = spawnSync(command, args, { encoding: "utf8", shell: process.platform === "win32" });
+  const result = spawnSync(command, args, { encoding: "utf8", shell: false });
   return { code: result.status || 0, output: `${result.stdout || ""}${result.stderr || ""}`.trim() };
 }
 

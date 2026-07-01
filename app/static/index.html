@@ -321,6 +321,7 @@
                 <h2>Появившиеся работы</h2>
               </div>
               <form class="form embedded compact-form" id="workExtraForm">
+                <input name="id" type="hidden" />
                 <label>Объект <select name="project_id" required></select></label>
                 <label>Раздел / этап сметы <select name="estimate_section"></select></label>
                 <label>
@@ -348,7 +349,8 @@
                 </label>
                 <label>Комментарий <textarea name="comment" rows="3" placeholder="Причина появления, кто согласовал, что нужно решить"></textarea></label>
                 <div class="form-actions">
-                  <button class="primary" type="submit">Добавить работу</button>
+                  <button class="secondary" id="cancelWorkExtraEditButton" type="button" hidden>Отменить правку</button>
+                  <button class="primary" id="workExtraSubmitButton" type="submit">Добавить работу</button>
                 </div>
               </form>
               <div class="table" id="workExtraRows"></div>
@@ -812,7 +814,7 @@
         <label>
           Файлы готовой сметы
           <input name="attachments" type="file" multiple accept=".pdf,.xlsx,.xls,.doc,.docx,.zip,.rar,.7z,.jpg,.jpeg,.png,.webp" />
-          <span class="field-hint">Можно приложить смету, КП, PDF, Excel, архив или сопроводительные материалы.</span>
+          <span class="field-hint">Можно выбрать сразу несколько файлов: смету, КП, PDF, Excel, архивы и сопроводительные материалы.</span>
         </label>
         <div class="form-actions">
           <button type="button" class="secondary" data-close="estimateJobDoneDialog">Отмена</button>
@@ -1150,6 +1152,6 @@
       </div>
     </div>
     <div class="toast" id="toast"></div>
-    <script src="/static/app.compat.js?v=20260627-mobile-project-hero"></script>
+    <script src="/static/app.compat.js?v=20260701-feedback-estimates-works"></script>
   </body>
 </html>

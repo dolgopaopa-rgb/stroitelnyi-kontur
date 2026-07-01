@@ -51,6 +51,7 @@ const state = {
   expandedLists: {},
   expandedTodayProjectIds: new Set(),
   selectedWorkProjectId: initialProjectId,
+  workExtraItems: [],
   selectedRemarkProjectId: initialProjectId,
   selectedPhotoProjectId: initialProjectId,
   openWorkStages: {},
@@ -174,7 +175,7 @@ const statusLabelMap = {
   estimate_in_work: "В расчете",
   estimate_done: "Смета сдана",
   estimate_hold: "Пауза",
-  estimate_returned: "Возвращено менеджеру",
+  estimate_returned: "На доработке",
   estimate_question: "Нужно уточнение",
   owner: "Ген.директор",
   construction_manager: "Рук. по строительству",
@@ -526,7 +527,7 @@ function canStartEstimateJob(job) {
 
 function canFinishEstimateJob(job) {
   const role = currentRoleBase();
-  if (!["estimate_in_work", "estimate_question"].includes(job.status)) return false;
+  if (!["estimate_in_work", "estimate_question", "estimate_returned"].includes(job.status)) return false;
   return ["owner", "construction_manager"].includes(role) || (role === "estimator" && isOwnEstimateJob(job, "estimator_id")) || managerControlsPartnerEstimateJob(job);
 }
 
@@ -541,8 +542,11 @@ function canManageEstimateJobFiles(job) {
 
 function canReturnEstimateJob(job) {
   const role = currentRoleBase();
-  if (["estimate_done", "estimate_returned"].includes(job.status)) return false;
-  return ["owner", "construction_manager"].includes(role) || (role === "estimator" && isOwnEstimateJob(job, "estimator_id"));
+  if (job.status === "estimate_returned") return false;
+  if (["owner", "construction_manager"].includes(role)) return true;
+  if (role === "sales_manager") return job.status === "estimate_done" && isOwnEstimateJob(job, "manager_id");
+  if (role === "estimator") return job.status !== "estimate_done" && isOwnEstimateJob(job, "estimator_id");
+  return false;
 }
 
 function canQuestionEstimateJob(job) {
@@ -3316,7 +3320,7 @@ function renderEstimateJobRow(job) {
         ${canAnswerQuestion ? `<button class="secondary tiny" type="button" data-edit-estimate-job="${job.id}">Ответить на уточнение</button>` : canEdit ? `<button class="secondary tiny" type="button" data-edit-estimate-job="${job.id}">Редактировать</button>` : ""}
         ${canStart ? `<button class="secondary tiny" type="button" data-estimate-job-status="estimate_in_work" data-estimate-job-id="${job.id}">В работу</button>` : ""}
         ${canQuestion ? `<button class="secondary tiny" type="button" data-estimate-job-status="estimate_question" data-estimate-job-id="${job.id}">Уточнить</button>` : ""}
-        ${canReturn ? `<button class="secondary tiny danger-outline" type="button" data-estimate-job-status="estimate_returned" data-estimate-job-id="${job.id}">Вернуть менеджеру</button>` : ""}
+        ${canReturn ? `<button class="secondary tiny danger-outline" type="button" data-estimate-job-status="estimate_returned" data-estimate-job-id="${job.id}">Вернуть на доработку</button>` : ""}
         ${canFinish ? `<button class="primary tiny" type="button" data-estimate-job-status="estimate_done" data-estimate-job-id="${job.id}">Сдано</button>` : ""}
         ${canManageFiles ? `<button class="secondary tiny" type="button" data-open-estimate-files="${job.id}">Добавить файл</button>` : ""}
         ${canDelete ? `<button class="danger-button tiny" type="button" data-delete-estimate-job="${job.id}">Удалить</button>` : ""}
@@ -5521,6 +5525,55 @@ function applyWorkExtraRateSelection() {
   recalcWorkExtraTotal();
 }
 
+function canEditWorkExtraRow(row) {
+  const role = currentRoleBase();
+  if (["owner", "construction_manager"].includes(role)) return true;
+  if (role !== "foreman") return false;
+  const userId = Number(currentUserId() || 0);
+  const project = state.projects.find((item) => Number(item.id) === Number(row.project_id));
+  return Boolean(userId && [Number(row.creator_id || 0), Number(project?.foreman_id || 0)].includes(userId));
+}
+
+function canEditWorkExtraState(row) {
+  const status = String(row.status || "new");
+  const variationStatus = String(row.variation_status || "");
+  const variationDecision = String(row.variation_financial_decision || "");
+  return ["", "new", "returned", "revision_requested"].includes(status) &&
+    ["", "decision_required", "new"].includes(variationStatus) &&
+    ["", "not_decided"].includes(variationDecision);
+}
+
+function resetWorkExtraForm({ keepProject = true } = {}) {
+  const form = qs("#workExtraForm");
+  if (!form) return;
+  const projectId = keepProject ? workProjectId() : "";
+  form.reset();
+  form.elements.id.value = "";
+  if (projectId) form.elements.project_id.value = String(projectId);
+  qs("#workExtraSubmitButton").textContent = "Добавить работу";
+  qs("#cancelWorkExtraEditButton").hidden = true;
+  recalcWorkExtraTotal();
+}
+
+function fillWorkExtraForm(row) {
+  const form = qs("#workExtraForm");
+  if (!form) return;
+  form.elements.id.value = row.id || "";
+  form.elements.project_id.value = row.project_id || workProjectId() || "";
+  form.elements.estimate_section.value = row.estimate_section || "";
+  form.elements.source_work_item_id.value = row.source_work_item_id || "";
+  form.elements.title.value = row.title || "";
+  form.elements.unit.value = row.unit || "";
+  form.elements.quantity.value = row.quantity || "";
+  form.elements.unit_price.value = numberValue(row.unit_price) > 0 ? numberValue(row.unit_price).toFixed(2) : "";
+  form.elements.total_price.value = numberValue(row.total_price) > 0 ? numberValue(row.total_price).toFixed(2) : "";
+  form.elements.reason.value = row.reason || "additional_work";
+  form.elements.comment.value = row.comment || "";
+  qs("#workExtraSubmitButton").textContent = "Сохранить изменения";
+  qs("#cancelWorkExtraEditButton").hidden = false;
+  form.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 function taskTimeline(task) {
   const actionTitle = {
     create: "Поставлена",
@@ -5778,6 +5831,7 @@ async function renderWorks() {
     api(`/api/work-items?project_id=${projectId}`),
     api(`/api/work-extra-items?project_id=${projectId}`),
   ]);
+  state.workExtraItems = Array.isArray(extraWorks) ? extraWorks : [];
   fillWorkExtraSectionSelect(works);
   fillWorkExtraRateSelect(works);
   const project = state.projects.find((item) => Number(item.id) === Number(projectId));
@@ -5840,7 +5894,9 @@ async function renderWorks() {
   qs("#workExtraRows").innerHTML = extraWorks.length
     ? extraWorks
         .map(
-          (row) => `
+          (row) => {
+            const canEditExtra = canEditWorkExtraRow(row) && canEditWorkExtraState(row);
+            return `
           <div class="row estimate-material-row">
             <div class="material-main">
               <strong>${row.title}</strong>
@@ -5853,8 +5909,10 @@ async function renderWorks() {
               ${numberValue(row.unit_price) > 0 ? pill(`Расценка: ${money(row.unit_price)}`, "") : ""}
               ${numberValue(row.total_price) > 0 ? pill(`Сумма: ${money(row.total_price)}`, "success") : ""}
               ${pill(workReasonLabel(row.reason), row.reason === "company_cost" || row.reason === "rework" ? "danger" : "warning")}
+              ${canEditExtra ? `<button class="secondary tiny" type="button" data-edit-work-extra="${row.id}">Изменить</button>` : ""}
             </div>
-          </div>`
+          </div>`;
+          }
         )
         .join("")
     : `<p class="muted">Появившихся работ по объекту пока нет.</p>`;
@@ -7884,16 +7942,29 @@ function bindEvents() {
   qs('#workProjectForm select[name="project_id"]').addEventListener("change", async (event) => {
     state.selectedWorkProjectId = Number(event.target.value);
     qs('#workExtraForm select[name="project_id"]').value = event.target.value;
+    resetWorkExtraForm({ keepProject: true });
     await renderWorks();
   });
   qs('#workExtraForm select[name="project_id"]').addEventListener("change", async (event) => {
     state.selectedWorkProjectId = Number(event.target.value);
     qs('#workProjectForm select[name="project_id"]').value = event.target.value;
+    resetWorkExtraForm({ keepProject: true });
     await renderWorks();
   });
   qs('#workExtraForm select[name="source_work_item_id"]')?.addEventListener("change", applyWorkExtraRateSelection);
   qs('#workExtraForm input[name="quantity"]')?.addEventListener("input", recalcWorkExtraTotal);
   qs('#workExtraForm input[name="unit_price"]')?.addEventListener("input", recalcWorkExtraTotal);
+  qs("#cancelWorkExtraEditButton")?.addEventListener("click", () => resetWorkExtraForm());
+  qs("#workExtraRows")?.addEventListener("click", (event) => {
+    const editButton = event.target.closest("[data-edit-work-extra]");
+    if (!editButton) return;
+    const row = state.workExtraItems.find((item) => Number(item.id) === Number(editButton.dataset.editWorkExtra));
+    if (!row) {
+      showToast("Работа не найдена. Обновите список.");
+      return;
+    }
+    fillWorkExtraForm(row);
+  });
   qs("#printWorksButton").addEventListener("click", () => {
     const projectId = workProjectId();
     if (projectId) window.open(`/api/work-items/print?project_id=${encodeURIComponent(projectId)}`, "_blank", "noopener");
@@ -8178,10 +8249,10 @@ function bindEvents() {
         return;
       }
       if (status === "estimate_returned") {
-        const comment = window.prompt("Что менеджеру нужно исправить или добавить в задании?");
+        const comment = window.prompt("Что нужно исправить или добавить перед повторной сдачей сметы?");
         if (comment === null) return;
         if (!comment.trim()) {
-          showToast("Укажите причину возврата задания менеджеру");
+          showToast("Укажите причину возврата сметы на доработку");
           return;
         }
         body.return_comment = comment.trim();
@@ -8204,7 +8275,7 @@ function bindEvents() {
       await renderDashboard();
       const statusToast = {
         estimate_done: "Смета отмечена как сданная",
-        estimate_returned: "Задание возвращено менеджеру",
+        estimate_returned: "Смета возвращена на доработку",
         estimate_in_work: "Сметное задание взято в работу",
         estimate_question: "Уточнение отправлено менеджеру",
       };
@@ -8771,13 +8842,14 @@ function bindEvents() {
     event.preventDefault();
     const form = qs("#workExtraForm");
     const payload = formToJson(form);
+    const id = payload.id;
+    delete payload.id;
     payload.creator_id = currentUserId();
-    await api("/api/work-extra-items", { method: "POST", body: JSON.stringify(payload) });
-    form.reset();
+    await api(id ? `/api/work-extra-items/${id}/update` : "/api/work-extra-items", { method: "POST", body: JSON.stringify(payload) });
     state.selectedWorkProjectId = Number(qs('#workProjectForm select[name="project_id"]').value);
-    form.elements.project_id.value = state.selectedWorkProjectId;
+    resetWorkExtraForm();
     await loadAll();
-    showToast("Работа добавлена и отправлена в допработы на решение");
+    showToast(id ? "Появившаяся работа обновлена" : "Работа добавлена и отправлена в допработы на решение");
   });
   qs("#supplierLocationForm").addEventListener("submit", async (event) => {
     event.preventDefault();

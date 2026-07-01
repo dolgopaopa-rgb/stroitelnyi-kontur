@@ -85,6 +85,7 @@
     expandedLists: {},
     expandedTodayProjectIds: /* @__PURE__ */ new Set(),
     selectedWorkProjectId: initialProjectId,
+    workExtraItems: [],
     selectedRemarkProjectId: initialProjectId,
     selectedPhotoProjectId: initialProjectId,
     openWorkStages: {},
@@ -204,7 +205,7 @@
     estimate_in_work: "В расчете",
     estimate_done: "Смета сдана",
     estimate_hold: "Пауза",
-    estimate_returned: "Возвращено менеджеру",
+    estimate_returned: "На доработке",
     estimate_question: "Нужно уточнение",
     owner: "Ген.директор",
     construction_manager: "Рук. по строительству",
@@ -494,7 +495,7 @@
   }
   function canFinishEstimateJob(job) {
     const role = currentRoleBase();
-    if (!["estimate_in_work", "estimate_question"].includes(job.status)) return false;
+    if (!["estimate_in_work", "estimate_question", "estimate_returned"].includes(job.status)) return false;
     return ["owner", "construction_manager"].includes(role) || role === "estimator" && isOwnEstimateJob(job, "estimator_id") || managerControlsPartnerEstimateJob(job);
   }
   function canManageEstimateJobFiles(job) {
@@ -507,8 +508,11 @@
   }
   function canReturnEstimateJob(job) {
     const role = currentRoleBase();
-    if (["estimate_done", "estimate_returned"].includes(job.status)) return false;
-    return ["owner", "construction_manager"].includes(role) || role === "estimator" && isOwnEstimateJob(job, "estimator_id");
+    if (job.status === "estimate_returned") return false;
+    if (["owner", "construction_manager"].includes(role)) return true;
+    if (role === "sales_manager") return job.status === "estimate_done" && isOwnEstimateJob(job, "manager_id");
+    if (role === "estimator") return job.status !== "estimate_done" && isOwnEstimateJob(job, "estimator_id");
+    return false;
   }
   function canQuestionEstimateJob(job) {
     const role = currentRoleBase();
@@ -2728,7 +2732,7 @@
     const canDelete = canDeleteEstimateJob(job);
     const canAnswerQuestion = canEdit && job.status === "estimate_question" && ["owner", "construction_manager", "sales_manager"].includes(currentRoleBase());
     const smetterHref = estimateSmetterHref(job);
-    return '\n    <article class="row estimate-job-row">\n      <div class="estimate-job-main">\n        <div class="stack-line">\n          <strong>'.concat(escapeHtml(job.title), "</strong>\n          ").concat(pill(label(job.status), statusLevel2), "\n          ").concat(pill(job.due_date || "без срока", job.status === "estimate_done" ? "success" : levelByDate(job.due_date)), '\n        </div>\n        <div class="muted">').concat(escapeHtml(job.customer_name || "Заказчик не указан"), " · ").concat(escapeHtml(job.project_title || "без карточки объекта"), " · ").concat(estimateJobTypeLabel(job.estimate_type), '</div>\n        <div class="muted">получено: ').concat(formatDateRu(job.received_at) || "не указано", " · выдал задание: ").concat(escapeHtml(job.manager_name || "не назначен"), " · сметчик: ").concat(escapeHtml(job.estimator_name || "не назначен"), '</div>\n        <div class="estimate-job-flags">\n          ').concat(pill(estimateSiteCostsLabel(job.site_costs_policy), job.site_costs_policy === "exclude" ? "warning" : job.site_costs_policy === "clarify" ? "blue" : "success"), "\n          ").concat(isPartnerEstimateJob(job) ? pill("Партнерская смета", "blue") : "", "\n        </div>\n        ").concat(job.site_costs_comment ? '<p class="muted">Организация площадки: '.concat(escapeHtml(job.site_costs_comment), "</p>") : "", "\n        ").concat(smetterHref ? '<a class="link-button inline-link" href="'.concat(escapeAttr(smetterHref), '" target="_blank" rel="noopener noreferrer">Открыть Сметтер</a>') : "", "\n        ").concat(job.comment ? "<p>".concat(linkifyText(job.comment), "</p>") : "", "\n        ").concat(job.question_comment ? '<div class="estimate-question-note"><strong>Вопрос сметчика</strong><p>'.concat(linkifyText(job.question_comment), "</p></div>") : "", "\n        ").concat(job.return_comment ? '<p class="muted danger-text">Возврат менеджеру: '.concat(linkifyText(job.return_comment), "</p>") : "", "\n        ").concat(job.result_comment ? '<p class="muted">Итог: '.concat(linkifyText(job.result_comment), "</p>") : "", "\n        ").concat(renderEstimateJobFiles(job.files, job.id, canManageFiles), '\n      </div>\n      <div class="estimate-job-actions">\n        ').concat(canAnswerQuestion ? '<button class="secondary tiny" type="button" data-edit-estimate-job="'.concat(job.id, '">Ответить на уточнение</button>') : canEdit ? '<button class="secondary tiny" type="button" data-edit-estimate-job="'.concat(job.id, '">Редактировать</button>') : "", "\n        ").concat(canStart ? '<button class="secondary tiny" type="button" data-estimate-job-status="estimate_in_work" data-estimate-job-id="'.concat(job.id, '">В работу</button>') : "", "\n        ").concat(canQuestion ? '<button class="secondary tiny" type="button" data-estimate-job-status="estimate_question" data-estimate-job-id="'.concat(job.id, '">Уточнить</button>') : "", "\n        ").concat(canReturn ? '<button class="secondary tiny danger-outline" type="button" data-estimate-job-status="estimate_returned" data-estimate-job-id="'.concat(job.id, '">Вернуть менеджеру</button>') : "", "\n        ").concat(canFinish ? '<button class="primary tiny" type="button" data-estimate-job-status="estimate_done" data-estimate-job-id="'.concat(job.id, '">Сдано</button>') : "", "\n        ").concat(canManageFiles ? '<button class="secondary tiny" type="button" data-open-estimate-files="'.concat(job.id, '">Добавить файл</button>') : "", "\n        ").concat(canDelete ? '<button class="danger-button tiny" type="button" data-delete-estimate-job="'.concat(job.id, '">Удалить</button>') : "", "\n      </div>\n    </article>");
+    return '\n    <article class="row estimate-job-row">\n      <div class="estimate-job-main">\n        <div class="stack-line">\n          <strong>'.concat(escapeHtml(job.title), "</strong>\n          ").concat(pill(label(job.status), statusLevel2), "\n          ").concat(pill(job.due_date || "без срока", job.status === "estimate_done" ? "success" : levelByDate(job.due_date)), '\n        </div>\n        <div class="muted">').concat(escapeHtml(job.customer_name || "Заказчик не указан"), " · ").concat(escapeHtml(job.project_title || "без карточки объекта"), " · ").concat(estimateJobTypeLabel(job.estimate_type), '</div>\n        <div class="muted">получено: ').concat(formatDateRu(job.received_at) || "не указано", " · выдал задание: ").concat(escapeHtml(job.manager_name || "не назначен"), " · сметчик: ").concat(escapeHtml(job.estimator_name || "не назначен"), '</div>\n        <div class="estimate-job-flags">\n          ').concat(pill(estimateSiteCostsLabel(job.site_costs_policy), job.site_costs_policy === "exclude" ? "warning" : job.site_costs_policy === "clarify" ? "blue" : "success"), "\n          ").concat(isPartnerEstimateJob(job) ? pill("Партнерская смета", "blue") : "", "\n        </div>\n        ").concat(job.site_costs_comment ? '<p class="muted">Организация площадки: '.concat(escapeHtml(job.site_costs_comment), "</p>") : "", "\n        ").concat(smetterHref ? '<a class="link-button inline-link" href="'.concat(escapeAttr(smetterHref), '" target="_blank" rel="noopener noreferrer">Открыть Сметтер</a>') : "", "\n        ").concat(job.comment ? "<p>".concat(linkifyText(job.comment), "</p>") : "", "\n        ").concat(job.question_comment ? '<div class="estimate-question-note"><strong>Вопрос сметчика</strong><p>'.concat(linkifyText(job.question_comment), "</p></div>") : "", "\n        ").concat(job.return_comment ? '<p class="muted danger-text">Возврат менеджеру: '.concat(linkifyText(job.return_comment), "</p>") : "", "\n        ").concat(job.result_comment ? '<p class="muted">Итог: '.concat(linkifyText(job.result_comment), "</p>") : "", "\n        ").concat(renderEstimateJobFiles(job.files, job.id, canManageFiles), '\n      </div>\n      <div class="estimate-job-actions">\n        ').concat(canAnswerQuestion ? '<button class="secondary tiny" type="button" data-edit-estimate-job="'.concat(job.id, '">Ответить на уточнение</button>') : canEdit ? '<button class="secondary tiny" type="button" data-edit-estimate-job="'.concat(job.id, '">Редактировать</button>') : "", "\n        ").concat(canStart ? '<button class="secondary tiny" type="button" data-estimate-job-status="estimate_in_work" data-estimate-job-id="'.concat(job.id, '">В работу</button>') : "", "\n        ").concat(canQuestion ? '<button class="secondary tiny" type="button" data-estimate-job-status="estimate_question" data-estimate-job-id="'.concat(job.id, '">Уточнить</button>') : "", "\n        ").concat(canReturn ? '<button class="secondary tiny danger-outline" type="button" data-estimate-job-status="estimate_returned" data-estimate-job-id="'.concat(job.id, '">Вернуть на доработку</button>') : "", "\n        ").concat(canFinish ? '<button class="primary tiny" type="button" data-estimate-job-status="estimate_done" data-estimate-job-id="'.concat(job.id, '">Сдано</button>') : "", "\n        ").concat(canManageFiles ? '<button class="secondary tiny" type="button" data-open-estimate-files="'.concat(job.id, '">Добавить файл</button>') : "", "\n        ").concat(canDelete ? '<button class="danger-button tiny" type="button" data-delete-estimate-job="'.concat(job.id, '">Удалить</button>') : "", "\n      </div>\n    </article>");
   }
   function fillEstimateJobForm(job = {}) {
     var _a, _b;
@@ -3012,36 +3016,15 @@
     return '\n    <button class="row clickable today-material-card" type="button" data-open-material-batch="'.concat(batch.key, '" data-testid="material-card">\n      <div class="stack-line">\n        ').concat(pill(statusLabel(materialPipelineStatus(batch)), materialPipelineLevel(batch)), "\n        ").concat(batch.delivery_urgency === "urgent" ? pill("Срочно", "danger") : "", "\n        ").concat(overrun ? pill("Факт выше сметы", "danger") : "", "\n      </div>\n      <strong>").concat(escapeHtml(firstItem.title || materialBatchTitle(batch)), '</strong>\n      <div class="muted">').concat(escapeHtml(batch.project_title || "Объект не указан"), " · ").concat(escapeHtml(firstItem.requested_quantity || firstItem.estimated_quantity || ""), " ").concat(escapeHtml(firstItem.requested_unit || firstItem.estimate_material_unit || ""), '</div>\n      <div class="muted">позиций: ').concat(materialActiveItems(batch).length, " · основание: ").concat(escapeHtml(materialBatchBasisSummary(batch) || "не указано"), " · срок: ").concat(batch.needed_at ? formatDateRu(batch.needed_at) : "без срока", " · отвечает: ").concat(escapeHtml(batch.procurement_name || "Снабжение"), "</div>\n      </button>");
   }
   function renderTodayObjectCard(project, tasks, materialRows) {
+    var _a;
     const taskRows = projectTasks(project.id, tasks);
     const openTasks = taskRows.filter(isOpenTask);
     const overdueTasks = taskRows.filter(taskCountsAsOverdue);
     const blockers = projectBlockerCount(project, tasks, materialRows);
     const riskyMaterials = projectMaterialBatches(project.id, materialRows).filter(materialIsRisky);
     const latestPhoto = latestPhotoReportDate(project.id);
-    const isExpanded = state.expandedTodayProjectIds?.has(Number(project.id));
-    return `
-    <article class="today-object-card ${isExpanded ? "is-expanded" : ""}" data-today-project-card="${project.id}" data-testid="object-card">
-      <div class="today-object-head">
-        <strong>${escapeHtml(project.title || "Объект")}</strong>
-        ${pill(statusLabel(project.status), statusLevel(project.status))}
-      </div>
-      <div class="today-object-metrics">
-        ${pill(`открыто: ${openTasks.length}`, openTasks.length ? "blue" : "")}
-        ${overdueTasks.length ? pill(`просрочено: ${overdueTasks.length}`, "danger") : ""}
-        ${blockers ? pill(`блокеры: ${blockers}`, "danger") : ""}
-        ${riskyMaterials.length ? pill(`материалы под риском: ${riskyMaterials.length}`, "warning") : ""}
-      </div>
-      <div class="today-object-actions">
-        <button class="secondary tiny" type="button" data-toggle-today-project="${project.id}" aria-expanded="${isExpanded ? "true" : "false"}">${isExpanded ? "Свернуть" : "Развернуть"}</button>
-        <button class="secondary tiny" type="button" data-open-project="${project.id}">Открыть</button>
-      </div>
-      ${isExpanded ? `
-        <div class="today-object-details" data-testid="today-object-details">
-          <div class="muted">ответственный: ${escapeHtml(project.foreman_name || "прораб не назначен")} · этап: ${statusLabel(project.stage || project.status)}</div>
-          <div class="muted">последний фотоотчёт: ${latestPhoto ? formatDateRu(latestPhoto) : "не найден"}</div>
-          ${project.deadline ? `<div class="muted">ближайший срок: ${formatDateRu(project.deadline)}</div>` : ""}
-        </div>` : ""}
-    </article>`;
+    const isExpanded = (_a = state.expandedTodayProjectIds) == null ? void 0 : _a.has(Number(project.id));
+    return '\n    <article class="today-object-card '.concat(isExpanded ? "is-expanded" : "", '" data-today-project-card="').concat(project.id, '" data-testid="object-card">\n      <div class="today-object-head">\n        <strong>').concat(escapeHtml(project.title || "Объект"), "</strong>\n        ").concat(pill(statusLabel(project.status), statusLevel(project.status)), '\n      </div>\n      <div class="today-object-metrics">\n        ').concat(pill("открыто: ".concat(openTasks.length), openTasks.length ? "blue" : ""), "\n        ").concat(overdueTasks.length ? pill("просрочено: ".concat(overdueTasks.length), "danger") : "", "\n        ").concat(blockers ? pill("блокеры: ".concat(blockers), "danger") : "", "\n        ").concat(riskyMaterials.length ? pill("материалы под риском: ".concat(riskyMaterials.length), "warning") : "", '\n      </div>\n      <div class="today-object-actions">\n        <button class="secondary tiny" type="button" data-toggle-today-project="').concat(project.id, '" aria-expanded="').concat(isExpanded ? "true" : "false", '">').concat(isExpanded ? "Свернуть" : "Развернуть", '</button>\n        <button class="secondary tiny" type="button" data-open-project="').concat(project.id, '">Открыть</button>\n      </div>\n      ').concat(isExpanded ? '\n        <div class="today-object-details" data-testid="today-object-details">\n          <div class="muted">ответственный: '.concat(escapeHtml(project.foreman_name || "прораб не назначен"), " · этап: ").concat(statusLabel(project.stage || project.status), '</div>\n          <div class="muted">последний фотоотчёт: ').concat(latestPhoto ? formatDateRu(latestPhoto) : "не найден", "</div>\n          ").concat(project.deadline ? '<div class="muted">ближайший срок: '.concat(formatDateRu(project.deadline), "</div>") : "", "\n        </div>") : "", "\n    </article>");
   }
   function todayDecisionItems({ overdueTasks = [], returnedTasks = [], waitingTasks = [], riskyMaterials = [], noPhotoProjects = [], blockers = [], remarks = [] }) {
     const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
@@ -4170,6 +4153,49 @@
     if (unitPrice && numberValue(unitPrice) > 0) form.elements.unit_price.value = numberValue(unitPrice).toFixed(2);
     recalcWorkExtraTotal();
   }
+  function canEditWorkExtraRow(row) {
+    const role = currentRoleBase();
+    if (["owner", "construction_manager"].includes(role)) return true;
+    if (role !== "foreman") return false;
+    const userId = Number(currentUserId() || 0);
+    const project = state.projects.find((item) => Number(item.id) === Number(row.project_id));
+    return Boolean(userId && [Number(row.creator_id || 0), Number((project == null ? void 0 : project.foreman_id) || 0)].includes(userId));
+  }
+  function canEditWorkExtraState(row) {
+    const status = String(row.status || "new");
+    const variationStatus = String(row.variation_status || "");
+    const variationDecision = String(row.variation_financial_decision || "");
+    return ["", "new", "returned", "revision_requested"].includes(status) && ["", "decision_required", "new"].includes(variationStatus) && ["", "not_decided"].includes(variationDecision);
+  }
+  function resetWorkExtraForm({ keepProject = true } = {}) {
+    const form = qs("#workExtraForm");
+    if (!form) return;
+    const projectId = keepProject ? workProjectId() : "";
+    form.reset();
+    form.elements.id.value = "";
+    if (projectId) form.elements.project_id.value = String(projectId);
+    qs("#workExtraSubmitButton").textContent = "Добавить работу";
+    qs("#cancelWorkExtraEditButton").hidden = true;
+    recalcWorkExtraTotal();
+  }
+  function fillWorkExtraForm(row) {
+    const form = qs("#workExtraForm");
+    if (!form) return;
+    form.elements.id.value = row.id || "";
+    form.elements.project_id.value = row.project_id || workProjectId() || "";
+    form.elements.estimate_section.value = row.estimate_section || "";
+    form.elements.source_work_item_id.value = row.source_work_item_id || "";
+    form.elements.title.value = row.title || "";
+    form.elements.unit.value = row.unit || "";
+    form.elements.quantity.value = row.quantity || "";
+    form.elements.unit_price.value = numberValue(row.unit_price) > 0 ? numberValue(row.unit_price).toFixed(2) : "";
+    form.elements.total_price.value = numberValue(row.total_price) > 0 ? numberValue(row.total_price).toFixed(2) : "";
+    form.elements.reason.value = row.reason || "additional_work";
+    form.elements.comment.value = row.comment || "";
+    qs("#workExtraSubmitButton").textContent = "Сохранить изменения";
+    qs("#cancelWorkExtraEditButton").hidden = false;
+    form.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
   function taskTimeline(task) {
     var _a, _b;
     const actionTitle = {
@@ -4305,6 +4331,7 @@
       api("/api/work-items?project_id=".concat(projectId)),
       api("/api/work-extra-items?project_id=".concat(projectId))
     ]);
+    state.workExtraItems = Array.isArray(extraWorks) ? extraWorks : [];
     fillWorkExtraSectionSelect(works);
     fillWorkExtraRateSelect(works);
     const project = state.projects.find((item) => Number(item.id) === Number(projectId));
@@ -4319,7 +4346,10 @@
       ).join(""), "\n            </div>\n          </details>")
     ).join("") : '<p class="muted">Список работ пока пуст. Если файл уже выбран и сохранен, значит программа не распознала строки в этой выгрузке.</p>');
     qs("#workExtraRows").innerHTML = extraWorks.length ? extraWorks.map(
-      (row) => '\n          <div class="row estimate-material-row">\n            <div class="material-main">\n              <strong>'.concat(row.title, '</strong>\n              <div class="muted">').concat(row.project_title || "", " · ").concat(row.estimate_section || "без раздела", " · ").concat(row.creator_name || "автор не указан", "</div>\n              ").concat(row.source_work_title ? '<div class="muted">Расценка: '.concat(escapeHtml(row.source_work_title), "</div>") : "", "\n              ").concat(row.comment ? '<div class="muted">'.concat(row.comment, "</div>") : "", '\n            </div>\n            <div class="stack-line">\n              ').concat(pill("".concat(row.quantity || 0, " ").concat(row.unit || ""), "blue"), "\n              ").concat(numberValue(row.unit_price) > 0 ? pill("Расценка: ".concat(money(row.unit_price)), "") : "", "\n              ").concat(numberValue(row.total_price) > 0 ? pill("Сумма: ".concat(money(row.total_price)), "success") : "", "\n              ").concat(pill(workReasonLabel(row.reason), row.reason === "company_cost" || row.reason === "rework" ? "danger" : "warning"), "\n            </div>\n          </div>")
+      (row) => {
+        const canEditExtra = canEditWorkExtraRow(row) && canEditWorkExtraState(row);
+        return '\n          <div class="row estimate-material-row">\n            <div class="material-main">\n              <strong>'.concat(row.title, '</strong>\n              <div class="muted">').concat(row.project_title || "", " · ").concat(row.estimate_section || "без раздела", " · ").concat(row.creator_name || "автор не указан", "</div>\n              ").concat(row.source_work_title ? '<div class="muted">Расценка: '.concat(escapeHtml(row.source_work_title), "</div>") : "", "\n              ").concat(row.comment ? '<div class="muted">'.concat(row.comment, "</div>") : "", '\n            </div>\n            <div class="stack-line">\n              ').concat(pill("".concat(row.quantity || 0, " ").concat(row.unit || ""), "blue"), "\n              ").concat(numberValue(row.unit_price) > 0 ? pill("Расценка: ".concat(money(row.unit_price)), "") : "", "\n              ").concat(numberValue(row.total_price) > 0 ? pill("Сумма: ".concat(money(row.total_price)), "success") : "", "\n              ").concat(pill(workReasonLabel(row.reason), row.reason === "company_cost" || row.reason === "rework" ? "danger" : "warning"), "\n              ").concat(canEditExtra ? '<button class="secondary tiny" type="button" data-edit-work-extra="'.concat(row.id, '">Изменить</button>') : "", "\n            </div>\n          </div>");
+      }
     ).join("") : '<p class="muted">Появившихся работ по объекту пока нет.</p>';
   }
   async function renderLocations() {
@@ -5523,7 +5553,7 @@
     showToast("Ничего не найдено. Попробуйте другое слово.");
   }
   function bindEvents() {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H, _I, _J, _K;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H, _I, _J, _K, _L, _M, _N;
     bindStableDetailsTouchGuard();
     bindWheelPageScroll();
     initPullToRefresh();
@@ -5641,7 +5671,8 @@
       await renderDataIntegrity(true);
       showToast("Проверка целостности обновлена");
     });
-    qs("#fixIntegrityButton")?.addEventListener("click", async () => {
+    (_r = qs("#fixIntegrityButton")) == null ? void 0 : _r.addEventListener("click", async () => {
+      var _a2;
       if (!canFixDataIntegrity()) {
         showToast("Исправление целостности недоступно для текущей роли");
         return;
@@ -5653,8 +5684,8 @@
       });
       state.dataIntegrityReport = result.after;
       await renderDataIntegrity();
-      const applied = Number(result.cleanup?.applied_entities || 0);
-      showToast(applied ? `Исправлено записей: ${applied}. Backup: ${result.backup}` : "Безопасных исправлений не требовалось");
+      const applied = Number(((_a2 = result.cleanup) == null ? void 0 : _a2.applied_entities) || 0);
+      showToast(applied ? "Исправлено записей: ".concat(applied, ". Backup: ").concat(result.backup) : "Безопасных исправлений не требовалось");
     });
     qsa("[data-integrity-filter]").forEach(
       (button) => button.addEventListener("click", async () => {
@@ -5662,7 +5693,7 @@
         await renderDataIntegrity();
       })
     );
-    (_r = qs("#refreshFeedbackButton")) == null ? void 0 : _r.addEventListener("click", async () => {
+    (_s = qs("#refreshFeedbackButton")) == null ? void 0 : _s.addEventListener("click", async () => {
       try {
         await renderFeedback();
         showToast("Обратная связь обновлена");
@@ -5670,7 +5701,7 @@
         showToast(error.message || "Не удалось обновить обратную связь");
       }
     });
-    (_s = qs("#deleteSelectedFeedbackButton")) == null ? void 0 : _s.addEventListener("click", async () => {
+    (_t = qs("#deleteSelectedFeedbackButton")) == null ? void 0 : _t.addEventListener("click", async () => {
       if (!canDeleteFeedback()) {
         showToast("Удаление сообщений недоступно для текущей роли");
         return;
@@ -5691,16 +5722,16 @@
       showToast("Удалено сообщений: ".concat(result.deleted || ids.length));
     });
     qsa("[data-close]").forEach((button) => button.addEventListener("click", () => qs("#".concat(button.dataset.close)).close()));
-    (_t = qs("#mediaPreviewClose")) == null ? void 0 : _t.addEventListener("click", closeMediaPreview);
-    (_u = qs("#mediaPreviewCloseBottom")) == null ? void 0 : _u.addEventListener("click", closeMediaPreview);
-    (_v = qs("#mediaPreviewPrev")) == null ? void 0 : _v.addEventListener("click", () => moveMediaPreview(-1));
-    (_w = qs("#mediaPreviewNext")) == null ? void 0 : _w.addEventListener("click", () => moveMediaPreview(1));
-    (_x = qs("#mediaPreviewDialog")) == null ? void 0 : _x.addEventListener("close", () => {
+    (_u = qs("#mediaPreviewClose")) == null ? void 0 : _u.addEventListener("click", closeMediaPreview);
+    (_v = qs("#mediaPreviewCloseBottom")) == null ? void 0 : _v.addEventListener("click", closeMediaPreview);
+    (_w = qs("#mediaPreviewPrev")) == null ? void 0 : _w.addEventListener("click", () => moveMediaPreview(-1));
+    (_x = qs("#mediaPreviewNext")) == null ? void 0 : _x.addEventListener("click", () => moveMediaPreview(1));
+    (_y = qs("#mediaPreviewDialog")) == null ? void 0 : _y.addEventListener("close", () => {
       const body = qs("#mediaPreviewBody");
       if (body) body.innerHTML = "";
       state.mediaPreview = { items: [], index: 0, touchX: null };
     });
-    (_y = qs("#mediaPreviewBody")) == null ? void 0 : _y.addEventListener(
+    (_z = qs("#mediaPreviewBody")) == null ? void 0 : _z.addEventListener(
       "touchstart",
       (event) => {
         var _a2, _b2, _c2;
@@ -5708,7 +5739,7 @@
       },
       { passive: true }
     );
-    (_z = qs("#mediaPreviewBody")) == null ? void 0 : _z.addEventListener(
+    (_A = qs("#mediaPreviewBody")) == null ? void 0 : _A.addEventListener(
       "touchend",
       (event) => {
         var _a2, _b2, _c2;
@@ -5720,14 +5751,14 @@
       },
       { passive: true }
     );
-    (_A = qs("#mediaPreviewDialog")) == null ? void 0 : _A.addEventListener("keydown", (event) => {
+    (_B = qs("#mediaPreviewDialog")) == null ? void 0 : _B.addEventListener("keydown", (event) => {
       if (event.key === "ArrowLeft") moveMediaPreview(-1);
       if (event.key === "ArrowRight") moveMediaPreview(1);
     });
-    (_B = qs("#estimateImagePrev")) == null ? void 0 : _B.addEventListener("click", () => moveEstimateGallery(-1));
-    (_C = qs("#estimateImageNext")) == null ? void 0 : _C.addEventListener("click", () => moveEstimateGallery(1));
+    (_C = qs("#estimateImagePrev")) == null ? void 0 : _C.addEventListener("click", () => moveEstimateGallery(-1));
+    (_D = qs("#estimateImageNext")) == null ? void 0 : _D.addEventListener("click", () => moveEstimateGallery(1));
     let estimateGalleryTouchX = null;
-    (_D = qs("#estimateImageStage")) == null ? void 0 : _D.addEventListener(
+    (_E = qs("#estimateImageStage")) == null ? void 0 : _E.addEventListener(
       "touchstart",
       (event) => {
         var _a2, _b2, _c2;
@@ -5735,7 +5766,7 @@
       },
       { passive: true }
     );
-    (_E = qs("#estimateImageStage")) == null ? void 0 : _E.addEventListener(
+    (_F = qs("#estimateImageStage")) == null ? void 0 : _F.addEventListener(
       "touchend",
       (event) => {
         var _a2, _b2, _c2;
@@ -5792,16 +5823,29 @@
     qs('#workProjectForm select[name="project_id"]').addEventListener("change", async (event) => {
       state.selectedWorkProjectId = Number(event.target.value);
       qs('#workExtraForm select[name="project_id"]').value = event.target.value;
+      resetWorkExtraForm({ keepProject: true });
       await renderWorks();
     });
     qs('#workExtraForm select[name="project_id"]').addEventListener("change", async (event) => {
       state.selectedWorkProjectId = Number(event.target.value);
       qs('#workProjectForm select[name="project_id"]').value = event.target.value;
+      resetWorkExtraForm({ keepProject: true });
       await renderWorks();
     });
-    (_F = qs('#workExtraForm select[name="source_work_item_id"]')) == null ? void 0 : _F.addEventListener("change", applyWorkExtraRateSelection);
-    (_G = qs('#workExtraForm input[name="quantity"]')) == null ? void 0 : _G.addEventListener("input", recalcWorkExtraTotal);
-    (_H = qs('#workExtraForm input[name="unit_price"]')) == null ? void 0 : _H.addEventListener("input", recalcWorkExtraTotal);
+    (_G = qs('#workExtraForm select[name="source_work_item_id"]')) == null ? void 0 : _G.addEventListener("change", applyWorkExtraRateSelection);
+    (_H = qs('#workExtraForm input[name="quantity"]')) == null ? void 0 : _H.addEventListener("input", recalcWorkExtraTotal);
+    (_I = qs('#workExtraForm input[name="unit_price"]')) == null ? void 0 : _I.addEventListener("input", recalcWorkExtraTotal);
+    (_J = qs("#cancelWorkExtraEditButton")) == null ? void 0 : _J.addEventListener("click", () => resetWorkExtraForm());
+    (_K = qs("#workExtraRows")) == null ? void 0 : _K.addEventListener("click", (event) => {
+      const editButton = event.target.closest("[data-edit-work-extra]");
+      if (!editButton) return;
+      const row = state.workExtraItems.find((item) => Number(item.id) === Number(editButton.dataset.editWorkExtra));
+      if (!row) {
+        showToast("Работа не найдена. Обновите список.");
+        return;
+      }
+      fillWorkExtraForm(row);
+    });
     qs("#printWorksButton").addEventListener("click", () => {
       const projectId = workProjectId();
       if (projectId) window.open("/api/work-items/print?project_id=".concat(encodeURIComponent(projectId)), "_blank", "noopener");
@@ -6060,10 +6104,10 @@
           return;
         }
         if (status === "estimate_returned") {
-          const comment = window.prompt("Что менеджеру нужно исправить или добавить в задании?");
+          const comment = window.prompt("Что нужно исправить или добавить перед повторной сдачей сметы?");
           if (comment === null) return;
           if (!comment.trim()) {
-            showToast("Укажите причину возврата задания менеджеру");
+            showToast("Укажите причину возврата сметы на доработку");
             return;
           }
           body.return_comment = comment.trim();
@@ -6086,7 +6130,7 @@
         await renderDashboard();
         const statusToast = {
           estimate_done: "Смета отмечена как сданная",
-          estimate_returned: "Задание возвращено менеджеру",
+          estimate_returned: "Смета возвращена на доработку",
           estimate_in_work: "Сметное задание взято в работу",
           estimate_question: "Уточнение отправлено менеджеру"
         };
@@ -6489,8 +6533,8 @@
       qs('#taskForm input[name="creator_id"]').value = currentUserId() || "";
       submitForm("taskDialog", "taskForm", "/api/tasks", "Задача создана");
     });
-    (_I = qs("#photoReportForm")) == null ? void 0 : _I.addEventListener("submit", submitPhotoReportForm);
-    (_J = qs("#objectRemarkForm")) == null ? void 0 : _J.addEventListener("submit", submitObjectRemarkForm);
+    (_L = qs("#photoReportForm")) == null ? void 0 : _L.addEventListener("submit", submitPhotoReportForm);
+    (_M = qs("#objectRemarkForm")) == null ? void 0 : _M.addEventListener("submit", submitObjectRemarkForm);
     qs("#estimateJobForm").addEventListener("submit", async (event) => {
       var _a2;
       event.preventDefault();
@@ -6636,13 +6680,14 @@
       event.preventDefault();
       const form = qs("#workExtraForm");
       const payload = formToJson(form);
+      const id = payload.id;
+      delete payload.id;
       payload.creator_id = currentUserId();
-      await api("/api/work-extra-items", { method: "POST", body: JSON.stringify(payload) });
-      form.reset();
+      await api(id ? "/api/work-extra-items/".concat(id, "/update") : "/api/work-extra-items", { method: "POST", body: JSON.stringify(payload) });
       state.selectedWorkProjectId = Number(qs('#workProjectForm select[name="project_id"]').value);
-      form.elements.project_id.value = state.selectedWorkProjectId;
+      resetWorkExtraForm();
       await loadAll();
-      showToast("Работа добавлена и отправлена в допработы на решение");
+      showToast(id ? "Появившаяся работа обновлена" : "Работа добавлена и отправлена в допработы на решение");
     });
     qs("#supplierLocationForm").addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -6678,7 +6723,7 @@
       switchView("materials");
       showToast("Материалы сметы загружены в объект");
     });
-    (_K = qs("#knowledgeFolderForm")) == null ? void 0 : _K.addEventListener("submit", async (event) => {
+    (_N = qs("#knowledgeFolderForm")) == null ? void 0 : _N.addEventListener("submit", async (event) => {
       event.preventDefault();
       const form = qs("#knowledgeFolderForm");
       try {

@@ -2261,14 +2261,20 @@ def can_change_estimate_job_status(row, status: str, account: dict | None, db=No
         if status == "estimate_in_work":
             return row["status"] in {"estimate_new", "estimate_hold"}
         if status == "estimate_done":
-            return row["status"] in {"estimate_in_work", "estimate_question"}
+            return row["status"] in {"estimate_in_work", "estimate_question", "estimate_returned"}
+        if status == "estimate_returned":
+            return row["status"] == "estimate_done"
+        return False
+    if role == "sales_manager" and estimate_job_owned_by_account(row, account, "manager_id"):
+        if status == "estimate_returned":
+            return row["status"] == "estimate_done"
         return False
     if role != "estimator" or not estimate_job_owned_by_account(row, account, "estimator_id"):
         return False
     if status == "estimate_in_work":
         return row["status"] in {"estimate_new", "estimate_hold"}
     if status == "estimate_done":
-        return row["status"] in {"estimate_in_work", "estimate_question"}
+        return row["status"] in {"estimate_in_work", "estimate_question", "estimate_returned"}
     if status == "estimate_returned":
         return row["status"] in {"estimate_new", "estimate_hold", "estimate_in_work"}
     if status == "estimate_question":
@@ -5740,11 +5746,14 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 rows = db.execute(
                     f"""
                     SELECT w.*, p.title AS project_title, u.name AS creator_name,
-                           source.title AS source_work_title, source.section AS source_work_section
+                           source.title AS source_work_title, source.section AS source_work_section,
+                           v.id AS variation_id, v.status AS variation_status,
+                           v.financial_decision AS variation_financial_decision
                     FROM work_extra_items w
                     JOIN projects p ON p.id = w.project_id
                     LEFT JOIN users u ON u.id = w.creator_id
                     LEFT JOIN work_items source ON source.id = w.source_work_item_id
+                    LEFT JOIN variations v ON v.source_type = 'work_extra_item' AND v.source_id = w.id
                     {where}
                     ORDER BY w.created_at DESC
                     """,
@@ -6673,7 +6682,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         status,
                         delivered_at if status == "estimate_done" else None,
                         result_comment,
-                        return_comment if status == "estimate_returned" else row["return_comment"] or "",
+                        return_comment if status == "estimate_returned" else ("" if status == "estimate_done" else row["return_comment"] or ""),
                         question_comment if status == "estimate_question" else row["question_comment"] or "",
                         estimate_job_id,
                     ),
@@ -6684,7 +6693,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 notification_title = "Статус сметы изменен"
                 notification_message = f"{row['title']}: {status}"
                 if status == "estimate_returned":
-                    notification_title = "Сметное задание возвращено менеджеру"
+                    notification_title = "Смета возвращена на доработку"
                     notification_message = f"{row['title']}. Причина: {return_comment}"
                 elif status == "estimate_question":
                     notification_title = "Уточнение по сметному заданию"
@@ -9270,6 +9279,129 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     (int(data["project_id"]), f"Создана допработа/отклонение: {data.get('title') or 'Новая допработка'}", actor_id),
                 )
                 json_response(self, {"id": variation_id}, 201)
+                return
+
+            work_extra_update = re.match(r"^/api/work-extra-items/(\d+)/update$", path)
+            if work_extra_update:
+                work_extra_id = int(work_extra_update.group(1))
+                row = db.execute(
+                    """
+                    SELECT w.*, p.foreman_id,
+                           v.id AS variation_id, v.status AS variation_status,
+                           v.financial_decision AS variation_financial_decision
+                    FROM work_extra_items w
+                    JOIN projects p ON p.id = w.project_id
+                    LEFT JOIN variations v ON v.source_type = 'work_extra_item' AND v.source_id = w.id
+                    WHERE w.id = ?
+                    """,
+                    (work_extra_id,),
+                ).fetchone()
+                if not row:
+                    json_response(self, {"error": "Work extra item not found"}, 404)
+                    return
+                role = account_role(account)
+                actor_id = account_user_id(account)
+                can_edit = role in {"owner", "construction_manager"} or (
+                    role == "foreman"
+                    and actor_id
+                    and actor_id in {int(row["creator_id"] or 0), int(row["foreman_id"] or 0)}
+                )
+                variation_status = str(row["variation_status"] or "")
+                variation_decision = str(row["variation_financial_decision"] or "")
+                can_edit_state = str(row["status"] or "new") in {"", "new", "returned", "revision_requested"} and variation_status in {"", "decision_required", "new"} and variation_decision in {"", "not_decided"}
+                if not can_edit:
+                    json_response(self, {"error": "Forbidden"}, 403)
+                    return
+                if not can_edit_state:
+                    json_response(self, {"error": "Эту работу уже нельзя менять: по ней принято решение."}, 409)
+                    return
+                require_fields(
+                    data,
+                    [
+                        ("title", "Наименование работы"),
+                        ("unit", "Ед. измерения"),
+                        ("quantity", "Количество"),
+                        ("reason", "Причина"),
+                    ],
+                )
+                project_id = int(row["project_id"])
+                source_work_item_id = int(data.get("source_work_item_id") or 0) or None
+                source_work = None
+                if source_work_item_id:
+                    source_work = db.execute(
+                        "SELECT * FROM work_items WHERE id = ? AND project_id = ?",
+                        (source_work_item_id, project_id),
+                    ).fetchone()
+                    if not source_work:
+                        json_response(self, {"error": "Позиция задания на работы не найдена по выбранному объекту"}, 400)
+                        return
+                quantity = number_value(data.get("quantity"))
+                unit_price = number_value(data.get("unit_price"))
+                if source_work and unit_price <= 0:
+                    unit_price = number_value(source_work["unit_price"])
+                total_price = number_value(data.get("total_price"))
+                if total_price <= 0 and unit_price > 0:
+                    total_price = quantity * unit_price
+                db.execute(
+                    """
+                    UPDATE work_extra_items
+                    SET title = ?,
+                        unit = ?,
+                        quantity = ?,
+                        source_work_item_id = ?,
+                        unit_price = ?,
+                        total_price = ?,
+                        reason = ?,
+                        estimate_section = ?,
+                        comment = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        data.get("title"),
+                        data.get("unit"),
+                        quantity,
+                        source_work_item_id,
+                        unit_price,
+                        total_price,
+                        data.get("reason") or "additional_work",
+                        data.get("estimate_section") or "",
+                        data.get("comment") or "",
+                        work_extra_id,
+                    ),
+                )
+                if row["variation_id"]:
+                    variation_type = "additional_work" if data.get("reason") == "additional_work" else "disputed_position"
+                    db.execute(
+                        """
+                        UPDATE variations
+                        SET title = ?,
+                            type = ?,
+                            amount = ?,
+                            description = ?,
+                            estimate_section = ?
+                        WHERE id = ?
+                        """,
+                        (
+                            data.get("title"),
+                            variation_type,
+                            total_price,
+                            data.get("comment") or "",
+                            data.get("estimate_section") or "",
+                            int(row["variation_id"]),
+                        ),
+                    )
+                db.execute(
+                    """
+                    INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
+                    VALUES (?, 'work_extra', ?, ?, 'internal', 'work_extra_item')
+                    """,
+                    (
+                        project_id,
+                        f"Появившаяся работа обновлена: {data.get('title') or 'без названия'}",
+                        actor_id,
+                    ),
+                )
+                json_response(self, {"id": work_extra_id, "variation_id": row["variation_id"]})
                 return
 
             if path == "/api/work-extra-items":

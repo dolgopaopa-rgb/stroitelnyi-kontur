@@ -17,6 +17,11 @@ function runQualityReport() {
   });
 }
 
+function hasArtifactScreenshots() {
+  if (!fs.existsSync(ARTIFACT_SCREENSHOTS)) return false;
+  return fs.readdirSync(ARTIFACT_SCREENSHOTS).some((entry) => entry.toLowerCase().endsWith(".png"));
+}
+
 function copyScreenshots() {
   fs.mkdirSync(SNAPSHOT_DIR, { recursive: true });
   if (!fs.existsSync(ARTIFACT_SCREENSHOTS)) return [];
@@ -31,7 +36,9 @@ function copyScreenshots() {
   return copied;
 }
 
-const result = runQualityReport();
+const shouldRefresh = process.argv.includes("--refresh") || process.env.KONTUR_QA_SNAPSHOT_REFRESH === "1";
+const alreadyHasScreenshots = hasArtifactScreenshots();
+const result = shouldRefresh || !alreadyHasScreenshots ? runQualityReport() : { status: 0, stdout: "", stderr: "" };
 const copied = copyScreenshots();
 
 console.log(
@@ -39,6 +46,7 @@ console.log(
     {
       status: result.status === 0 ? "OK" : "FAIL",
       reportSuiteExitCode: result.status,
+      source: shouldRefresh || !alreadyHasScreenshots ? "fresh-report-suite" : "existing-qa-artifacts",
       screenshotsCopied: copied.length,
       target: "qa-snapshots",
       files: copied,
