@@ -11,5 +11,5 @@ export STAGING_STORAGE_PROVIDER="${STAGING_STORAGE_PROVIDER:-local}"
 export STAGING_MAX_TOKEN="${STAGING_MAX_TOKEN:-}"
 
 mkdir -p data/backups qa-artifacts/latest
-docker compose -f docker-compose.staging.yml up -d --build
+docker compose -f docker-compose.staging.yml up -d --build staging_app
 docker compose -f docker-compose.staging.yml ps
