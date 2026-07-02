@@ -860,6 +860,7 @@ async function runReadonly(results, playwright) {
     add(results, "Read-only Safety QA Agent", "Audit write methods return 403", writeMethodsOk ? "OK" : "FAIL", JSON.stringify(writeStatuses), writeMethodsOk ? "normal" : "blocker");
     const activeWriteButtons = await page.evaluate(() => {
       const dangerousText = /(добавить|создать|сохранить|удалить|принять|вернуть|готово|выполнено|запросить|отправить)/i;
+      const safeViewText = /^(Развернуть|Свернуть|Открыть|Показать|Скрыть|Посмотреть|Назад|Закрыть)$/i;
       const isVisible = (node) => {
         const style = getComputedStyle(node);
         return style.visibility !== "hidden" && style.display !== "none" && node.getClientRects().length > 0;
@@ -867,7 +868,7 @@ async function runReadonly(results, playwright) {
       return [...document.querySelectorAll("button, [role='button']")]
         .filter((node) => isVisible(node) && !node.disabled && node.getAttribute("aria-disabled") !== "true")
         .map((node) => (node.textContent || "").trim())
-        .filter((text) => dangerousText.test(text));
+        .filter((text) => dangerousText.test(text) && !safeViewText.test(text));
     });
     add(results, "Read-only Safety QA Agent", "Read-only write buttons are hidden or disabled", activeWriteButtons.length ? "FAIL" : "OK", `active_write_buttons=${activeWriteButtons.join(" | ") || "none"}`, activeWriteButtons.length ? "blocker" : "normal");
     const sensitiveText = await page.evaluate(() => document.body.innerText || "");

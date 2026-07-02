@@ -1311,9 +1311,12 @@
     }[view] || "".concat(view, "-page");
   }
   function clearProjectDetail() {
+    var _a;
     const detail = qs("#projectDetail");
     if (!detail) return;
     detail.innerHTML = '<p class="muted">&#1042;&#1099;&#1073;&#1077;&#1088;&#1080;&#1090;&#1077; &#1086;&#1073;&#1098;&#1077;&#1082;&#1090; &#1080;&#1079; &#1089;&#1087;&#1080;&#1089;&#1082;&#1072;.</p>';
+    detail.hidden = true;
+    (_a = detail.closest(".split")) == null ? void 0 : _a.classList.add("is-list-only");
   }
   function sortableOrderKey(zoneId) {
     return "sortable-order:".concat(zoneId);
@@ -3469,7 +3472,7 @@
     const mime = String(doc.mime_type || "");
     const previewKind = filePreviewKind(rawTitle, mime);
     if (previewKind === "image") {
-      return '<a class="media-thumb" href="'.concat(href, '" data-media-preview="image" data-media-url="').concat(href, '" data-media-title="').concat(title, '" data-media-mime="').concat(escapeHtml(mime), '"><span class="media-thumb-placeholder">Фото</span><span>').concat(title, "</span></a>");
+      return '<a class="media-thumb" href="'.concat(href, '" data-media-preview="image" data-media-url="').concat(href, '" data-media-title="').concat(title, '" data-media-mime="').concat(escapeHtml(mime), '"><img src="').concat(href, '" alt="').concat(title, '" loading="lazy" /><span>').concat(title, "</span></a>");
     }
     if (previewKind === "video") {
       return '<a class="media-thumb video" href="'.concat(href, '" data-media-preview="video" data-media-url="').concat(href, '" data-media-title="').concat(title, '" data-media-mime="').concat(escapeHtml(mime), '"><span>Видео</span><small>').concat(title, "</small></a>");
@@ -3734,8 +3737,14 @@
     ).join(""), "\n    </div>");
   }
   async function renderProjectDetail(projectId) {
+    var _a;
     const project = await api("/api/projects/".concat(projectId));
     state.selectedProjectId = project.id;
+    const detail = qs("#projectDetail");
+    if (detail) {
+      detail.hidden = false;
+      (_a = detail.closest(".split")) == null ? void 0 : _a.classList.remove("is-list-only");
+    }
     const docs = visibleDocuments(project.documents || []);
     const tabs = projectTabs();
     if (!tabs.includes(state.selectedProjectTab)) state.selectedProjectTab = tabs[0] || "overview";
@@ -4181,6 +4190,8 @@
   function fillWorkExtraForm(row) {
     const form = qs("#workExtraForm");
     if (!form) return;
+    const details = form.closest(".work-extra-form-details");
+    if (details) details.open = true;
     form.elements.id.value = row.id || "";
     form.elements.project_id.value = row.project_id || workProjectId() || "";
     form.elements.estimate_section.value = row.estimate_section || "";

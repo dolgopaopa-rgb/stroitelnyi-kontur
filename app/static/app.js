@@ -1549,6 +1549,8 @@ function clearProjectDetail() {
   const detail = qs("#projectDetail");
   if (!detail) return;
   detail.innerHTML = `<p class="muted">&#1042;&#1099;&#1073;&#1077;&#1088;&#1080;&#1090;&#1077; &#1086;&#1073;&#1098;&#1077;&#1082;&#1090; &#1080;&#1079; &#1089;&#1087;&#1080;&#1089;&#1082;&#1072;.</p>`;
+  detail.hidden = true;
+  detail.closest(".split")?.classList.add("is-list-only");
 }
 
 function sortableOrderKey(zoneId) {
@@ -4292,7 +4294,7 @@ function mediaPreviewLink(doc) {
   const mime = String(doc.mime_type || "");
   const previewKind = filePreviewKind(rawTitle, mime);
   if (previewKind === "image") {
-    return `<a class="media-thumb" href="${href}" data-media-preview="image" data-media-url="${href}" data-media-title="${title}" data-media-mime="${escapeHtml(mime)}"><span class="media-thumb-placeholder">Фото</span><span>${title}</span></a>`;
+    return `<a class="media-thumb" href="${href}" data-media-preview="image" data-media-url="${href}" data-media-title="${title}" data-media-mime="${escapeHtml(mime)}"><img src="${href}" alt="${title}" loading="lazy" /><span>${title}</span></a>`;
   }
   if (previewKind === "video") {
     return `<a class="media-thumb video" href="${href}" data-media-preview="video" data-media-url="${href}" data-media-title="${title}" data-media-mime="${escapeHtml(mime)}"><span>Видео</span><small>${title}</small></a>`;
@@ -4870,6 +4872,11 @@ function renderProjectMaterialList(project) {
 async function renderProjectDetail(projectId) {
   const project = await api(`/api/projects/${projectId}`);
   state.selectedProjectId = project.id;
+  const detail = qs("#projectDetail");
+  if (detail) {
+    detail.hidden = false;
+    detail.closest(".split")?.classList.remove("is-list-only");
+  }
   const docs = visibleDocuments(project.documents || []);
   const tabs = projectTabs();
   if (!tabs.includes(state.selectedProjectTab)) state.selectedProjectTab = tabs[0] || "overview";
@@ -5558,6 +5565,8 @@ function resetWorkExtraForm({ keepProject = true } = {}) {
 function fillWorkExtraForm(row) {
   const form = qs("#workExtraForm");
   if (!form) return;
+  const details = form.closest(".work-extra-form-details");
+  if (details) details.open = true;
   form.elements.id.value = row.id || "";
   form.elements.project_id.value = row.project_id || workProjectId() || "";
   form.elements.estimate_section.value = row.estimate_section || "";

@@ -4715,6 +4715,355 @@ textarea {
   opacity: 0.92;
 }
 
+/* Compact workspace polish: reduce empty stretched areas on dense operational pages. */
+.compact-ui-v1 .today-grid,
+.compact-ui-v1 .layout-two,
+.compact-ui-v1 .split,
+.compact-ui-v1 .works-layout,
+.compact-ui-v1 .photo-reports-layout,
+.compact-ui-v1 .dashboard-sortable {
+  align-items: start;
+}
+
+.compact-ui-v1 .today-grid > .panel,
+.compact-ui-v1 .layout-two > .panel,
+.compact-ui-v1 .layout-two > details.panel,
+.compact-ui-v1 .split > .panel,
+.compact-ui-v1 .dashboard-sortable > .panel {
+  align-self: start;
+}
+
+.compact-ui-v1 .split.is-list-only,
+.compact-ui-v1 #projectsView .split.is-list-only {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.compact-ui-v1 .split.is-list-only > .panel:first-child,
+.compact-ui-v1 #projectsView .split.is-list-only > .panel:first-child {
+  width: 100%;
+  max-width: none;
+}
+
+.compact-ui-v1 .split.is-list-only #projectRows.project-table-mode,
+.compact-ui-v1 #projectsView .split.is-list-only #projectRows.project-table-mode {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(460px, 1fr));
+  border: 0;
+  gap: 8px;
+  overflow: visible;
+}
+
+.compact-ui-v1 .split.is-list-only #projectRows.project-table-mode .row,
+.compact-ui-v1 #projectsView .split.is-list-only #projectRows.project-table-mode .row {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+
+.compact-ui-v1 #projectsView .split.is-list-only #projectRows.project-table-mode .project-list-card {
+  grid-template-columns: minmax(220px, 1.2fr) minmax(150px, 0.8fr) minmax(170px, 0.8fr);
+}
+
+.compact-ui-v1 .split.is-list-only #projectDetail {
+  display: none;
+}
+
+.compact-ui-v1 #projectsView .panel-head {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+.compact-ui-v1 #projectsView .panel-head h2 {
+  font-size: 17px;
+}
+
+.compact-ui-v1 .project-list-tools {
+  margin-left: auto;
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+
+.compact-ui-v1 #projectsView .segmented-control {
+  flex: 0 0 auto;
+}
+
+.compact-ui-v1 #projectsView .segment {
+  min-height: 30px;
+  font-size: 12px;
+  padding-inline: 9px;
+}
+
+.compact-ui-v1 #projectsView #projectRows .row {
+  padding: 8px 10px;
+}
+
+.compact-ui-v1 #projectsView .project-table-mode .project-list-card {
+  grid-template-columns: minmax(220px, 1.4fr) minmax(170px, 0.9fr) minmax(170px, 0.9fr);
+}
+
+.compact-ui-v1 .today-role-panel {
+  grid-template-columns: minmax(0, 1fr) minmax(300px, auto);
+}
+
+.compact-ui-v1 .today-primary-actions {
+  justify-content: flex-end;
+}
+
+.compact-ui-v1 .today-focus-panel .list,
+.compact-ui-v1 #todayMaterials,
+.compact-ui-v1 #todayComments,
+.compact-ui-v1 #todayObjects,
+.compact-ui-v1 #todayNoPhoto {
+  align-content: start;
+}
+
+.compact-ui-v1 .works-layout {
+  grid-template-columns: minmax(0, 1.35fr) minmax(340px, 0.65fr);
+}
+
+.compact-ui-v1 #worksView .work-process-note {
+  padding: 8px 10px;
+  gap: 3px;
+}
+
+.compact-ui-v1 #worksView .work-process-note p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.compact-ui-v1 .form-collapsible {
+  margin-bottom: 8px;
+}
+
+.compact-ui-v1 .form-collapsible summary,
+.compact-ui-v1 .side-help-panel summary,
+.compact-ui-v1 .integrity-rows-details summary {
+  min-height: 34px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.compact-ui-v1 .form-collapsible[open] summary,
+.compact-ui-v1 .side-help-panel[open] summary,
+.compact-ui-v1 .integrity-rows-details[open] summary {
+  margin-bottom: 8px;
+}
+
+.compact-ui-v1 .work-extra-form-details .compact-form {
+  padding-top: 0;
+}
+
+.compact-ui-v1 .photo-reports-layout {
+  grid-template-columns: minmax(0, 1fr) 280px;
+}
+
+.compact-ui-v1 .photo-reports-layout > .panel:first-child {
+  min-width: 0;
+}
+
+.compact-ui-v1 .side-help-panel {
+  padding: 10px;
+}
+
+.compact-ui-v1 .side-help-panel .hint-box {
+  margin: 0;
+  padding: 9px;
+}
+
+.compact-ui-v1 #photosView .photo-report-card {
+  grid-template-columns: minmax(260px, 0.8fr) minmax(320px, 1.2fr);
+  gap: 10px;
+  padding: 9px;
+}
+
+.compact-ui-v1 #photosView .photo-report-main .muted,
+.compact-ui-v1 #photosView .photo-report-main p {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.compact-ui-v1 #photosView .media-grid {
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 6px;
+}
+
+.compact-ui-v1 #photosView .media-thumb {
+  min-height: 86px;
+  padding: 5px;
+}
+
+.compact-ui-v1 #photosView .media-thumb img,
+.compact-ui-v1 #photosView .media-thumb-placeholder {
+  height: 72px;
+  min-height: 72px;
+}
+
+.compact-ui-v1 .media-thumb span,
+.compact-ui-v1 .media-thumb small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compact-ui-v1 #estimatesView .estimate-job-list {
+  gap: 6px;
+}
+
+.compact-ui-v1 #estimatesView .estimate-job-row {
+  padding: 8px 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.compact-ui-v1 #estimatesView .estimate-job-main {
+  gap: 3px;
+}
+
+.compact-ui-v1 #estimatesView .estimate-job-main > p,
+.compact-ui-v1 #estimatesView .estimate-question-note p {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin: 0;
+}
+
+.compact-ui-v1 #estimatesView .estimate-job-files {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 5px;
+  max-width: 920px;
+}
+
+.compact-ui-v1 #estimatesView .estimate-file-card {
+  max-width: none;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.compact-ui-v1 #estimatesView .estimate-file-card .estimate-file-print {
+  min-width: 52px;
+}
+
+.compact-ui-v1 #estimatesView .estimate-file-card > .estimate-file-button,
+.compact-ui-v1 #estimatesView .estimate-file-card > a {
+  max-width: none;
+}
+
+.compact-ui-v1 #eventsView #dataIntegrityPanel {
+  padding: 10px;
+}
+
+.compact-ui-v1 #eventsView #dataIntegrityPanel .panel-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.compact-ui-v1 #eventsView #dataIntegrityPanel .panel-head p {
+  margin: 0;
+  font-size: 12px;
+}
+
+.compact-ui-v1 #eventsView #dataIntegrityStats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.compact-ui-v1 #eventsView #dataIntegrityStats .metric {
+  min-height: 42px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  padding: 7px 9px;
+}
+
+.compact-ui-v1 #eventsView #dataIntegrityStats .metric strong {
+  font-size: 20px;
+}
+
+.compact-ui-v1 #eventsView #dataIntegrityFilters {
+  margin-bottom: 8px;
+}
+
+.compact-ui-v1 #eventsView #dataIntegrityRows {
+  gap: 5px;
+}
+
+.compact-ui-v1 #eventsView #dataIntegrityRows .row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 7px 9px;
+}
+
+.compact-ui-v1 #eventsView #dataIntegrityRows .row .material-main > div:not(.stack-line) {
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.compact-ui-v1 #eventsView .timeline {
+  gap: 6px;
+}
+
+.compact-ui-v1 #eventsView .timeline-item {
+  padding: 7px 9px;
+}
+
+@media (max-width: 980px) {
+  .compact-ui-v1 .today-role-panel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .compact-ui-v1 .today-primary-actions {
+    justify-content: flex-start;
+  }
+
+  .compact-ui-v1 .works-layout,
+  .compact-ui-v1 .photo-reports-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .compact-ui-v1 #photosView .photo-report-card {
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+    min-width: 0;
+  }
+
+  .compact-ui-v1 #photosView .media-grid {
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  }
+
+  .compact-ui-v1 #projectsView .panel-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .compact-ui-v1 .project-list-tools {
+    margin-left: 0;
+    overflow-x: auto;
+  }
+
+  .compact-ui-v1 .split.is-list-only #projectRows.project-table-mode,
+  .compact-ui-v1 #projectsView .split.is-list-only #projectRows.project-table-mode {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .compact-ui-v1 #projectsView .split.is-list-only #projectRows.project-table-mode .project-list-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .compact-ui-v1 #eventsView #dataIntegrityStats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .compact-ui-v1 .document-file-manager .knowledge-row,
 .compact-ui-v1 #documentCards .row {
   min-height: 44px;
