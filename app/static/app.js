@@ -3313,39 +3313,56 @@ function renderEstimateJobRow(job) {
   const canArchive = canArchiveEstimateJob(job);
   const canAnswerQuestion = canEdit && job.status === "estimate_question" && ["owner", "construction_manager", "sales_manager"].includes(currentRoleBase());
   const smetterHref = estimateSmetterHref(job);
+  const collapsibleKey = `estimate-job:${job.id}`;
+  const summaryTitle = job.project_title || job.customer_name || job.title || "Сметное задание";
+  const summarySubTitle = job.project_title && job.title && job.title !== job.project_title ? job.title : "";
+  const currentFilesCount = (job.files || []).filter((file) => Number(file.is_current ?? 1) !== 0).length;
   return `
-    <article class="row estimate-job-row">
-      <div class="estimate-job-main">
-        <div class="stack-line">
-          <strong>${escapeHtml(job.title)}</strong>
+    <details class="row estimate-job-row estimate-job-collapsible" data-collapsible-key="${escapeAttr(collapsibleKey)}"${openAttrForKey(collapsibleKey)}>
+      <summary class="estimate-job-summary">
+        <span class="estimate-job-summary-main">
+          <strong>${escapeHtml(summaryTitle)}</strong>
+          ${summarySubTitle ? `<span class="muted">${escapeHtml(summarySubTitle)}</span>` : ""}
+        </span>
+        <span class="estimate-job-summary-badges">
           ${pill(label(job.status), statusLevel)}
           ${pill(job.due_date || "без срока", job.status === "estimate_done" ? "success" : levelByDate(job.due_date))}
+          ${currentFilesCount ? pill(`Файлы: ${currentFilesCount}`, "blue") : ""}
+        </span>
+      </summary>
+      <div class="estimate-job-body">
+        <div class="estimate-job-main">
+          <div class="stack-line">
+            <strong>${escapeHtml(job.title)}</strong>
+            ${pill(label(job.status), statusLevel)}
+            ${pill(job.due_date || "без срока", job.status === "estimate_done" ? "success" : levelByDate(job.due_date))}
+          </div>
+          <div class="muted">${escapeHtml(job.customer_name || "Заказчик не указан")} · ${escapeHtml(job.project_title || "без карточки объекта")} · ${estimateJobTypeLabel(job.estimate_type)}</div>
+          <div class="muted">получено: ${formatDateRu(job.received_at) || "не указано"} · выдал задание: ${escapeHtml(job.manager_name || "не назначен")} · сметчик: ${escapeHtml(job.estimator_name || "не назначен")}</div>
+          <div class="estimate-job-flags">
+            ${pill(estimateSiteCostsLabel(job.site_costs_policy), job.site_costs_policy === "exclude" ? "warning" : job.site_costs_policy === "clarify" ? "blue" : "success")}
+            ${isPartnerEstimateJob(job) ? pill("Партнерская смета", "blue") : ""}
+          </div>
+          ${job.site_costs_comment ? `<p class="muted">Организация площадки: ${escapeHtml(job.site_costs_comment)}</p>` : ""}
+          ${smetterHref ? `<a class="link-button inline-link" href="${escapeAttr(smetterHref)}" target="_blank" rel="noopener noreferrer">Открыть Сметтер</a>` : ""}
+          ${job.comment ? `<p>${linkifyText(job.comment)}</p>` : ""}
+          ${job.question_comment ? `<div class="estimate-question-note"><strong>Вопрос сметчика</strong><p>${linkifyText(job.question_comment)}</p></div>` : ""}
+          ${job.return_comment ? `<p class="muted danger-text">Возврат менеджеру: ${linkifyText(job.return_comment)}</p>` : ""}
+          ${job.result_comment ? `<p class="muted">Итог: ${linkifyText(job.result_comment)}</p>` : ""}
+          ${renderEstimateJobFiles(job.files, job.id, canManageFiles)}
         </div>
-        <div class="muted">${escapeHtml(job.customer_name || "Заказчик не указан")} · ${escapeHtml(job.project_title || "без карточки объекта")} · ${estimateJobTypeLabel(job.estimate_type)}</div>
-        <div class="muted">получено: ${formatDateRu(job.received_at) || "не указано"} · выдал задание: ${escapeHtml(job.manager_name || "не назначен")} · сметчик: ${escapeHtml(job.estimator_name || "не назначен")}</div>
-        <div class="estimate-job-flags">
-          ${pill(estimateSiteCostsLabel(job.site_costs_policy), job.site_costs_policy === "exclude" ? "warning" : job.site_costs_policy === "clarify" ? "blue" : "success")}
-          ${isPartnerEstimateJob(job) ? pill("Партнерская смета", "blue") : ""}
+        <div class="estimate-job-actions">
+          ${canAnswerQuestion ? `<button class="secondary tiny" type="button" data-edit-estimate-job="${job.id}">Ответить на уточнение</button>` : canEdit ? `<button class="secondary tiny" type="button" data-edit-estimate-job="${job.id}">Редактировать</button>` : ""}
+          ${canStart ? `<button class="secondary tiny" type="button" data-estimate-job-status="estimate_in_work" data-estimate-job-id="${job.id}">В работу</button>` : ""}
+          ${canQuestion ? `<button class="secondary tiny" type="button" data-estimate-job-status="estimate_question" data-estimate-job-id="${job.id}">Уточнить</button>` : ""}
+          ${canReturn ? `<button class="secondary tiny danger-outline" type="button" data-estimate-job-status="estimate_returned" data-estimate-job-id="${job.id}">Вернуть на доработку</button>` : ""}
+          ${canFinish ? `<button class="primary tiny" type="button" data-estimate-job-status="estimate_done" data-estimate-job-id="${job.id}">Сдано</button>` : ""}
+          ${canManageFiles ? `<button class="secondary tiny" type="button" data-open-estimate-files="${job.id}">Добавить файл</button>` : ""}
+          ${canArchive ? `<button class="secondary tiny" type="button" data-estimate-job-status="archived" data-estimate-job-id="${job.id}">В архив</button>` : ""}
+          ${canDelete ? `<button class="danger-button tiny" type="button" data-delete-estimate-job="${job.id}">Удалить</button>` : ""}
         </div>
-        ${job.site_costs_comment ? `<p class="muted">Организация площадки: ${escapeHtml(job.site_costs_comment)}</p>` : ""}
-        ${smetterHref ? `<a class="link-button inline-link" href="${escapeAttr(smetterHref)}" target="_blank" rel="noopener noreferrer">Открыть Сметтер</a>` : ""}
-        ${job.comment ? `<p>${linkifyText(job.comment)}</p>` : ""}
-        ${job.question_comment ? `<div class="estimate-question-note"><strong>Вопрос сметчика</strong><p>${linkifyText(job.question_comment)}</p></div>` : ""}
-        ${job.return_comment ? `<p class="muted danger-text">Возврат менеджеру: ${linkifyText(job.return_comment)}</p>` : ""}
-        ${job.result_comment ? `<p class="muted">Итог: ${linkifyText(job.result_comment)}</p>` : ""}
-        ${renderEstimateJobFiles(job.files, job.id, canManageFiles)}
       </div>
-      <div class="estimate-job-actions">
-        ${canAnswerQuestion ? `<button class="secondary tiny" type="button" data-edit-estimate-job="${job.id}">Ответить на уточнение</button>` : canEdit ? `<button class="secondary tiny" type="button" data-edit-estimate-job="${job.id}">Редактировать</button>` : ""}
-        ${canStart ? `<button class="secondary tiny" type="button" data-estimate-job-status="estimate_in_work" data-estimate-job-id="${job.id}">В работу</button>` : ""}
-        ${canQuestion ? `<button class="secondary tiny" type="button" data-estimate-job-status="estimate_question" data-estimate-job-id="${job.id}">Уточнить</button>` : ""}
-        ${canReturn ? `<button class="secondary tiny danger-outline" type="button" data-estimate-job-status="estimate_returned" data-estimate-job-id="${job.id}">Вернуть на доработку</button>` : ""}
-        ${canFinish ? `<button class="primary tiny" type="button" data-estimate-job-status="estimate_done" data-estimate-job-id="${job.id}">Сдано</button>` : ""}
-        ${canManageFiles ? `<button class="secondary tiny" type="button" data-open-estimate-files="${job.id}">Добавить файл</button>` : ""}
-        ${canArchive ? `<button class="secondary tiny" type="button" data-estimate-job-status="archived" data-estimate-job-id="${job.id}">В архив</button>` : ""}
-        ${canDelete ? `<button class="danger-button tiny" type="button" data-delete-estimate-job="${job.id}">Удалить</button>` : ""}
-      </div>
-    </article>`;
+    </details>`;
 }
 
 function fillEstimateJobForm(job = {}) {

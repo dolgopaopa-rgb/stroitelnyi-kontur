@@ -2983,6 +2983,67 @@ h2 {
   align-items: start;
 }
 
+.estimate-job-collapsible {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.estimate-job-collapsible > summary {
+  list-style: none;
+}
+
+.estimate-job-collapsible > summary::-webkit-details-marker {
+  display: none;
+}
+
+.estimate-job-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.estimate-job-summary::before {
+  content: "▸";
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.estimate-job-collapsible[open] .estimate-job-summary::before {
+  content: "▾";
+}
+
+.estimate-job-summary-main {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.estimate-job-summary-main strong,
+.estimate-job-summary-main .muted {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.estimate-job-summary-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.estimate-job-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  padding-top: 8px;
+}
+
 .estimate-job-actions {
   display: flex;
   flex-wrap: wrap;
@@ -4932,7 +4993,7 @@ textarea {
 
 .compact-ui-v1 #estimatesView .estimate-job-row {
   padding: 8px 10px;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
 }
 
@@ -6028,6 +6089,23 @@ textarea {
   }
 
   .estimate-job-actions {
+    justify-content: flex-start;
+  }
+
+  .estimate-job-summary,
+  .estimate-job-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .estimate-job-summary::before {
+    display: none;
+  }
+
+  .estimate-job-summary-main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .estimate-job-summary-badges {
     justify-content: flex-start;
   }
 

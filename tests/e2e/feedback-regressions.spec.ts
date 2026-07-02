@@ -114,3 +114,23 @@ test("estimate jobs have archive mode and project card can be collapsed explicit
   expect(app).toContain("data-collapse-project-detail");
   expect(app).toContain("Карточка объекта свернута");
 });
+
+test("estimate job files are collapsed under object summary", async ({ page }) => {
+  await openApp(page, "/estimates");
+
+  const html = readProjectFile("app/static/index.html");
+  const app = readProjectFile("app/static/app.js");
+  const compat = readProjectFile("app/static/app.compat.js");
+  const styles = readProjectFile("app/static/styles.css");
+
+  expect(html).toContain("20260702-estimate-files-collapse");
+  expect(app).toContain("estimate-job-collapsible");
+  expect(app).toContain("estimate-job-summary");
+  expect(app).toContain("estimate-job-body");
+  expect(app).toContain("data-collapsible-key");
+  expect(app).toContain("Файлы:");
+  expect(compat).toContain("estimate-job-collapsible");
+  expect(styles).toContain(".estimate-job-collapsible");
+  expect(styles).toContain(".estimate-job-summary");
+  expect(styles).toContain(".estimate-job-body");
+});
