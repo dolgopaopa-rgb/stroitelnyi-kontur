@@ -198,6 +198,21 @@ Dangerous changes require explicit owner approval before editing:
 
 Production deploy is never part of an automatic QA-fix cycle. Deploy requires a separate explicit instruction.
 
+## Staging-first UI redesign
+
+Large UX/UI redesign work must go through staging before production.
+
+1. Do not deploy redesign changes directly to production while colleagues are using the main site.
+2. Use `codex/ui-redesign-staging` for redesign releases.
+3. Deploy redesign work to the staging site first.
+4. Keep staging data in a separate Docker volume from production.
+5. Before every staging release, keep a rollback commit/hash.
+6. Before every production release, run a production backup and record the previous production commit.
+7. Production promotion requires explicit approval after staging review.
+8. The Claude Design prototype is a reference and task brief, not production code.
+9. Do not ship Claude runtime tags such as `sc-if`, `sc-for`, or `{{ }}` to production.
+10. Each redesign release must be small enough to revert safely.
+
 ## Today object collapse QA
 
 When the "Сегодня" screen contains object cards, QA must verify that each object card stays compact by default and exposes an explicit expand/collapse action.

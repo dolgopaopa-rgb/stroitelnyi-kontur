@@ -1,0 +1,54 @@
+services:
+  app:
+    build:
+      context: .
+      args:
+        APP_COMMIT_SHA: ${APP_COMMIT_SHA:-}
+        APP_BUILD_TIME: ${APP_BUILD_TIME:-}
+        APP_VERSION: ${APP_VERSION:-}
+    restart: unless-stopped
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8765
+      APP_DATA_DIR: /data
+      BACKUP_DIR: /backups
+      APP_BASIC_AUTH_USER: ${APP_BASIC_AUTH_USER:-admin}
+      APP_BASIC_AUTH_PASSWORD: ${APP_BASIC_AUTH_PASSWORD:?Set APP_BASIC_AUTH_PASSWORD in .env}
+      APP_ACCESS_ACCOUNTS: ${APP_ACCESS_ACCOUNTS:-}
+      APP_SESSION_SECRET: ${APP_SESSION_SECRET:-}
+      APP_SESSION_TTL_SECONDS: ${APP_SESSION_TTL_SECONDS:-7776000}
+      APP_COMMIT_SHA: ${APP_COMMIT_SHA:-}
+      APP_BUILD_TIME: ${APP_BUILD_TIME:-}
+      APP_VERSION: ${APP_VERSION:-}
+      APP_DEPLOYED_AT: ${APP_DEPLOYED_AT:-}
+      APP_ENVIRONMENT: staging
+      STORAGE_PROVIDER: ${STAGING_STORAGE_PROVIDER:-local}
+      YANDEX_DISK_TOKEN: ${STAGING_YANDEX_DISK_TOKEN:-}
+      YANDEX_DISK_ROOT: ${STAGING_YANDEX_DISK_ROOT:-/Stroitelnyi kontur STAGING}
+      APP_PUBLIC_URL: ${STAGING_PUBLIC_URL:-https://staging.79-143-30-43.sslip.io}
+      MAX_API_URL: ${MAX_API_URL:-https://platform-api.max.ru}
+      MAX_TOKEN: ${STAGING_MAX_TOKEN:-}
+    volumes:
+      - staging_app_data:/data
+      - ./data/backups:/backups
+      - ./qa-artifacts:/srv/stroitelnyi-kontur/qa-artifacts
+    expose:
+      - "8765"
+    networks:
+      default:
+      production_proxy:
+        aliases:
+          - kontur-staging-app
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/health').read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+networks:
+  production_proxy:
+    external: true
+    name: ${PRODUCTION_PROXY_NETWORK:-stroitelnyi-kontur_default}
+
+volumes:
+  staging_app_data:

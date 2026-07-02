@@ -13,6 +13,7 @@ app/construction.db
 .venv/
 venv/
 .codex-remote-attachments/
+.tmp/
 
 data/
 backups/
