@@ -228,6 +228,47 @@ npm run qa:report
 
 Visual snapshots are stored in `qa-snapshots`.
 
+## Employee-facing MAX updates
+
+Starting with the next MAX message, employee-facing updates must be visually easier to read and more polished than a plain text list.
+
+Rules for colleague-facing MAX messages:
+
+1. Do not include technical details: commits, file names, test names, server paths, implementation reasons, stack traces, or internal QA wording.
+2. Use a clear title with an emoji and bold text.
+3. Split the message into short sections with bold headings and emojis.
+4. Use visual markers for each item:
+   - `✅` for what is ready;
+   - `🆕` for what is new;
+   - `📱` for mobile changes;
+   - `📎` for files/documents;
+   - `🧭` for where to find it;
+   - `🙏` for requests to colleagues.
+5. Keep each bullet short: one idea per line.
+6. Separate blocks with blank lines so the message does not look like one continuous wall of text.
+7. If some changes are only prepared but not deployed, write it plainly as "готовится к ближайшему обновлению", not as if it is already available.
+8. End with a simple action for colleagues: what to check, where to click, or what screenshot to send.
+9. Before sending, check that Russian text is readable and not replaced by question marks.
+10. Send through `app/send_max_message.py --message-base64` or the container equivalent, never through raw shell text.
+
+Preferred structure:
+
+```text
+**✅ Строительный контур — обновление**
+
+**🆕 Что появилось**
+— ...
+
+**📱 Что стало удобнее**
+— ...
+
+**🧭 Где проверить**
+— ...
+
+**🙏 Просьба**
+— ...
+```
+
 ## Release A2 photo report QA
 
 Release A2 changes are not complete until the following checks are present in `qa-report.json` and snapshot:

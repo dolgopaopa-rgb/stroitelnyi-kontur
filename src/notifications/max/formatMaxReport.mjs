@@ -111,3 +111,35 @@ export function validateMaxReport(message) {
     hasCorruptedText,
   };
 }
+
+export function formatMaxEmployeeUpdate(input = {}) {
+  const title = input.title || "Строительный контур — обновление";
+  const ready = input.ready || [];
+  const mobile = input.mobile || [];
+  const where = input.where || [];
+  const request = input.request || "Если что-то отображается не так, напишите в чат и приложите скриншот.";
+  const pending = input.pending || [];
+
+  const section = (heading, items, empty = "") => {
+    const list = (items || []).filter(Boolean);
+    if (!list.length && !empty) return "";
+    return [heading, list.length ? list.map((item) => `— ${item}`).join("\n") : empty].join("\n");
+  };
+
+  return [
+    `**✅ ${title}**`,
+    "",
+    section("**🆕 Что появилось**", ready),
+    "",
+    section("**📱 Что стало удобнее**", mobile),
+    "",
+    section("**🧭 Где проверить**", where),
+    "",
+    section("**⏳ Что готовится к ближайшему обновлению**", pending),
+    "",
+    "**🙏 Просьба**",
+    `— ${request}`,
+  ]
+    .filter((part) => String(part || "").trim())
+    .join("\n");
+}
