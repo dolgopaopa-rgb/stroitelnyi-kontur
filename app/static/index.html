@@ -17,12 +17,12 @@
   <body>
     <div class="app" data-testid="qa-scroll-root">
       <aside class="sidebar">
-        <div class="brand">
+        <a class="brand" href="/today" aria-label="На главную страницу">
           <img class="brand-mark" src="/static/assets/g2-logo-192.png" alt="" />
           <div>
             <strong>Строительный контур</strong>
           </div>
-        </div>
+        </a>
         <nav class="nav">
           <button class="nav-button active" data-view="today" data-testid="nav-today"><span class="nav-icon">◉</span><span>Сегодня</span></button>
           <button class="nav-button" data-view="dashboard" data-testid="nav-signals"><span class="nav-icon">⌂</span><span>Сигналы</span></button>
@@ -1152,6 +1152,6 @@
       </div>
     </div>
     <div class="toast" id="toast"></div>
-    <script src="/static/app.compat.js?v=20260702-feedback-delete-controls"></script>
+    <script src="/static/app.compat.js?v=20260702-header-home-feedback-owner-delete"></script>
   </body>
 </html>

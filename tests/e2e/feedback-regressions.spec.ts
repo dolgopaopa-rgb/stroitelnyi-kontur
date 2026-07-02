@@ -42,19 +42,57 @@ test("extra work items can be edited before final decision", async ({ page }) =>
   expect(server).toContain("Эту работу уже нельзя менять: по ней принято решение.");
 });
 
-test("feedback delete controls are available to feedback managers", async ({ page }) => {
+test("feedback delete controls are available only to owner", async ({ page }) => {
   await openApp(page, "/feedback");
-  await switchRole(page, "finance_director");
+  expect(await switchRole(page, "owner")).toBeTruthy();
   await expect(page.locator("#feedbackView")).toHaveClass(/active/);
   await expect(page.locator("#deleteSelectedFeedbackButton")).toBeVisible();
+  await expect(page.locator("[data-feedback-delete]").first()).toBeVisible();
+
+  expect(await switchRole(page, "construction_manager")).toBeTruthy();
+  await expect(page.locator("#deleteSelectedFeedbackButton")).toBeHidden();
+  await expect(page.locator("[data-feedback-delete]")).toHaveCount(0);
+
+  expect(await switchRole(page, "finance_director")).toBeTruthy();
+  await expect(page.locator("#deleteSelectedFeedbackButton")).toBeHidden();
+  await expect(page.locator("[data-feedback-delete]")).toHaveCount(0);
 
   const app = readProjectFile("app/static/app.js");
   const server = readProjectFile("app/server.py");
 
-  expect(app).toContain('["owner", "construction_manager", "finance_director"].includes(currentRoleBase())');
+  expect(app).toContain('currentRoleBase() === "owner"');
   expect(app).toContain("data-feedback-delete");
   expect(app).toContain("/api/feedback/delete-bulk");
-  expect(server).toContain('{"owner", "construction_manager", "finance_director"}');
+  expect(server).toContain('account_role(account) == "owner"');
   expect(server).toContain('path == "/api/feedback/delete-bulk"');
   expect(server).toContain('^/api/feedback/(\\d+)/delete$');
+});
+
+test("brand link opens home and compact topbar controls stay readable", async ({ page }) => {
+  await page.setViewportSize({ width: 936, height: 650 });
+  await openApp(page, "/feedback");
+
+  await expect(page.locator(".brand")).toHaveAttribute("href", "/today");
+  await page.locator(".brand").click();
+  await expect(page).toHaveURL(/\/today/);
+  await expect(page.locator("#todayView")).toHaveClass(/active/);
+
+  const layout = await page.evaluate(() => {
+    const labels = [".topbar-object-switch", ".global-search", ".density-switcher", ".role-switcher"];
+    return labels.map((selector) => {
+      const node = document.querySelector(selector);
+      const box = node?.getBoundingClientRect();
+      return {
+        selector,
+        width: Math.round(box?.width || 0),
+        height: Math.round(box?.height || 0),
+        visible: Boolean(box && box.width > 0 && box.height > 0),
+      };
+    });
+  });
+
+  for (const item of layout) {
+    expect(item.visible, `${item.selector} must be visible`).toBeTruthy();
+    expect(item.width, `${item.selector} must not collapse in narrow desktop`).toBeGreaterThanOrEqual(120);
+  }
 });

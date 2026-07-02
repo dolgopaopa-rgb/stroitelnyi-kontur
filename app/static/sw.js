@@ -1,9 +1,9 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260702-feedback-delete-controls";
+const CACHE_NAME = "stroitelnyi-kontur-20260702-header-home-feedback-owner-delete";
 const CORE_ASSETS = [
   "/",
-  "/static/styles.css?v=20260702-feedback-delete-controls",
-  "/static/app.compat.js?v=20260702-feedback-delete-controls",
-  "/static/manifest.webmanifest?v=20260702-feedback-delete-controls",
+  "/static/styles.css?v=20260702-header-home-feedback-owner-delete",
+  "/static/app.compat.js?v=20260702-header-home-feedback-owner-delete",
+  "/static/manifest.webmanifest?v=20260702-header-home-feedback-owner-delete",
   "/static/assets/g2-logo-192.png",
   "/static/assets/g2-logo-512.png"
 ];

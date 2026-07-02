@@ -455,7 +455,7 @@
     return ["owner", "construction_manager"].includes(currentRoleBase());
   }
   function canDeleteFeedback() {
-    return ["owner", "construction_manager", "finance_director"].includes(currentRoleBase());
+    return currentRoleBase() === "owner";
   }
   function canManageFeedback() {
     return ["owner", "construction_manager", "finance_director"].includes(currentRoleBase());
@@ -5607,6 +5607,7 @@
       await renderObjectRemarks();
       await renderPhotoReports();
       await renderDocuments();
+      await renderFeedback({ silent: true });
       await renderEvents();
       fillMaterialProjectSelect();
       updateMaterialActorHint();

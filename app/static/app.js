@@ -470,7 +470,7 @@ function canDeleteKnowledgeBase() {
 }
 
 function canDeleteFeedback() {
-  return ["owner", "construction_manager", "finance_director"].includes(currentRoleBase());
+  return currentRoleBase() === "owner";
 }
 
 function canManageFeedback() {
@@ -7729,6 +7729,7 @@ function bindEvents() {
     await renderObjectRemarks();
     await renderPhotoReports();
     await renderDocuments();
+    await renderFeedback({ silent: true });
     await renderEvents();
     fillMaterialProjectSelect();
     updateMaterialActorHint();
