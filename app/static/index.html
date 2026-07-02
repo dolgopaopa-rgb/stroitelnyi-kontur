@@ -229,7 +229,13 @@
           <div class="panel estimate-crm-panel">
             <div class="panel-head">
               <h2>Сметные задания</h2>
-              <button class="primary" id="newEstimateJobButton" type="button">Добавить задание</button>
+              <div class="estimate-job-tools">
+                <div class="segmented-control" role="tablist" aria-label="Режим списка смет">
+                  <button class="segment active" type="button" data-estimate-list-mode="active">В работе</button>
+                  <button class="segment" type="button" data-estimate-list-mode="archive">Архив</button>
+                </div>
+                <button class="primary" id="newEstimateJobButton" type="button">Добавить задание</button>
+              </div>
             </div>
             <div class="compact-stats" id="estimateJobStats"></div>
             <div class="estimate-schedule" id="estimateJobSchedule"></div>

@@ -2883,6 +2883,20 @@ h2 {
   gap: 10px;
 }
 
+.estimate-job-tools,
+.project-hero-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.project-hero-actions {
+  justify-content: flex-start;
+  margin-top: 10px;
+}
+
 #estimatesView .task-stats {
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }

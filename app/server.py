@@ -2252,6 +2252,8 @@ def can_change_estimate_job_status(row, status: str, account: dict | None, db=No
     role = account_role(account)
     if role in {"owner", "construction_manager"}:
         return True
+    if status == "archived":
+        return role == "sales_manager" and estimate_job_owned_by_account(row, account, "manager_id") and row["status"] != "estimate_in_work"
     if (
         db is not None
         and role == "sales_manager"
@@ -5578,7 +5580,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     "contracts_soon": db.execute("SELECT COUNT(*) AS count FROM contracts WHERE ends_at <= '2026-05-27' AND status = 'active'").fetchone()["count"],
                     "estimate_jobs_open": db.execute("SELECT COUNT(*) AS count FROM estimate_jobs WHERE status IN ('estimate_new', 'estimate_in_work', 'estimate_returned', 'estimate_question')").fetchone()["count"],
                     "estimate_jobs_done": db.execute("SELECT COUNT(*) AS count FROM estimate_jobs WHERE status = 'estimate_done'").fetchone()["count"],
-                    "estimate_jobs_overdue": db.execute("SELECT COUNT(*) AS count FROM estimate_jobs WHERE status != 'estimate_done' AND due_date IS NOT NULL AND due_date < date('now')").fetchone()["count"],
+                    "estimate_jobs_overdue": db.execute("SELECT COUNT(*) AS count FROM estimate_jobs WHERE status NOT IN ('estimate_done', 'archived') AND due_date IS NOT NULL AND due_date < date('now')").fetchone()["count"],
                 }
                 json_response(self, payload)
                 return
@@ -5605,7 +5607,8 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             WHEN 'estimate_in_work' THEN 4
                             WHEN 'estimate_hold' THEN 5
                             WHEN 'estimate_done' THEN 6
-                            ELSE 7
+                            WHEN 'archived' THEN 7
+                            ELSE 8
                         END,
                         CASE
                             WHEN j.status = 'estimate_done'
@@ -6650,7 +6653,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     json_response(self, {"id": estimate_job_id})
                     return
                 status = data.get("status") or row["status"]
-                if status not in {"estimate_new", "estimate_in_work", "estimate_done", "estimate_hold", "estimate_returned", "estimate_question"}:
+                if status not in {"estimate_new", "estimate_in_work", "estimate_done", "estimate_hold", "estimate_returned", "estimate_question", "archived"}:
                     json_response(self, {"error": "Unknown status"}, 400)
                     return
                 if not can_change_estimate_job_status(row, status, account, db):
@@ -6664,7 +6667,9 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 if status == "estimate_question" and not question_comment:
                     json_response(self, {"error": "Напишите уточняющий вопрос менеджеру"}, 400)
                     return
-                delivered_at = data.get("delivered_at") or (date.today().isoformat() if status == "estimate_done" else None)
+                delivered_at = row["delivered_at"] if status == "archived" else None
+                if status == "estimate_done":
+                    delivered_at = data.get("delivered_at") or date.today().isoformat()
                 result_comment = data.get("result_comment") or row["result_comment"] or ""
                 attachments = [item for item in data.get("attachments") or [] if isinstance(item, dict) and item.get("file_base64")]
                 db.execute(
@@ -6680,7 +6685,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     """,
                     (
                         status,
-                        delivered_at if status == "estimate_done" else None,
+                        delivered_at,
                         result_comment,
                         return_comment if status == "estimate_returned" else ("" if status == "estimate_done" else row["return_comment"] or ""),
                         question_comment if status == "estimate_question" else row["question_comment"] or "",
@@ -6702,6 +6707,9 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     notification_message = f"{row['title']} взято сметчиком в работу."
                 elif status == "estimate_done":
                     notification_message = f"{row['title']} отмечено как сданное."
+                elif status == "archived":
+                    notification_title = "Сметное задание перемещено в архив"
+                    notification_message = f"{row['title']} убрано из рабочего списка смет."
                 notify_users(
                     db,
                     {row["manager_id"], row["estimator_id"], user_id_by_role(db, "construction_manager"), user_id_by_role(db, "owner")} - {None},

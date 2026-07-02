@@ -96,3 +96,21 @@ test("brand link opens home and compact topbar controls stay readable", async ({
     expect(item.width, `${item.selector} must not collapse in narrow desktop`).toBeGreaterThanOrEqual(120);
   }
 });
+
+test("estimate jobs have archive mode and project card can be collapsed explicitly", async ({ page }) => {
+  await openApp(page, "/estimates");
+
+  const html = readProjectFile("app/static/index.html");
+  const app = readProjectFile("app/static/app.js");
+  const server = readProjectFile("app/server.py");
+
+  expect(html).toContain('data-estimate-list-mode="archive"');
+  expect(app).toContain("visibleEstimateJobs");
+  expect(app).toContain('data-estimate-job-status="archived"');
+  expect(app).toContain("canArchiveEstimateJob");
+  expect(server).toContain('"archived"');
+  expect(server).toContain("status NOT IN ('estimate_done', 'archived')");
+
+  expect(app).toContain("data-collapse-project-detail");
+  expect(app).toContain("Карточка объекта свернута");
+});

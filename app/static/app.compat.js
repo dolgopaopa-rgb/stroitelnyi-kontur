@@ -68,6 +68,7 @@
     selectedProjectId: initialProjectId,
     selectedProjectTab: "overview",
     projectListMode: "active",
+    estimateListMode: "active",
     materialListMode: "active",
     materialPipelineFilter: "all",
     materialQuickFilter: "all",
@@ -471,6 +472,14 @@
     }
     return false;
   }
+
+  function canArchiveEstimateJob(job) {
+    const role = currentRoleBase();
+    if (!job || job.status === "archived") return false;
+    if (["owner", "construction_manager"].includes(role)) return true;
+    if (role === "sales_manager" && isOwnEstimateJob(job, "manager_id")) return job.status !== "estimate_in_work";
+    return false;
+  }
   function isOwnEstimateJob(job, field) {
     const userId = currentUserId();
     return Boolean(userId && Number((job == null ? void 0 : job[field]) || 0) === Number(userId));
@@ -483,6 +492,7 @@
   }
   function canEditEstimateJob(job) {
     const role = currentRoleBase();
+    if (job.status === "archived") return false;
     if (["owner", "construction_manager"].includes(role)) return true;
     if (role === "sales_manager") return isOwnEstimateJob(job, "manager_id");
     if (role === "estimator") return isOwnEstimateJob(job, "estimator_id") && !["estimate_done", "estimate_returned"].includes(job.status);
@@ -2548,6 +2558,7 @@
     }[priority] || "";
   }
   function estimateJobStatusLevel(job) {
+    if (job.status === "archived") return "";
     if (job.status === "estimate_done") return "success";
     if (levelByDate(job.due_date) === "danger") return "danger";
     return {
@@ -2610,11 +2621,16 @@
     return {
       active: jobs.filter((job) => ["estimate_new", "estimate_in_work", "estimate_question"].includes(job.status)).length,
       done: jobs.filter((job) => job.status === "estimate_done").length,
-      overdue: jobs.filter((job) => job.status !== "estimate_done" && levelByDate(job.due_date) === "danger").length,
+      overdue: jobs.filter((job) => !["estimate_done", "archived"].includes(job.status) && levelByDate(job.due_date) === "danger").length,
       hold: jobs.filter((job) => job.status === "estimate_hold").length,
       returned: jobs.filter((job) => job.status === "estimate_returned").length,
       questions: jobs.filter((job) => job.status === "estimate_question").length
     };
+  }
+
+  function visibleEstimateJobs(jobs = state.estimateJobs || []) {
+    if (state.estimateListMode === "archive") return jobs.filter((job) => job.status === "archived");
+    return jobs.filter((job) => job.status !== "archived");
   }
   function renderEstimateJobStats(jobs) {
     const stats = estimateJobStats(jobs);
@@ -2643,7 +2659,7 @@
     return Math.max(8, Math.min(100, (current - start) / total * 100));
   }
   function renderEstimateSchedule(jobs) {
-    const activeJobs = jobs.filter((job) => job.status !== "estimate_done").slice(0, 8);
+    const activeJobs = jobs.filter((job) => !["estimate_done", "archived"].includes(job.status)).slice(0, 8);
     if (!activeJobs.length) return '<p class="muted">Активных сметных заданий нет.</p>';
     return activeJobs.map(
       (job) => '\n      <div class="estimate-timeline-row">\n        <div class="estimate-timeline-main">\n          <strong>'.concat(escapeHtml(job.title), "</strong>\n          <span>").concat(escapeHtml(job.estimator_name || "сметчик не назначен"), " · ").concat(formatDateRu(job.received_at), " → ").concat(formatDateRu(job.due_date), "</span>\n          ").concat(job.question_comment ? "<em>Вопрос сметчика: ".concat(escapeHtml(job.question_comment), "</em>") : "", '\n        </div>\n        <div class="estimate-timeline-track ').concat(estimateJobStatusLevel(job), '"><i style="width: ').concat(estimateJobProgress(job), '%"></i></div>\n        ').concat(pill(label(job.status), estimateJobStatusLevel(job)), "\n      </div>")
@@ -2733,9 +2749,10 @@
     const canQuestion = canQuestionEstimateJob(job);
     const canManageFiles = canManageEstimateJobFiles(job);
     const canDelete = canDeleteEstimateJob(job);
+    const canArchive = canArchiveEstimateJob(job);
     const canAnswerQuestion = canEdit && job.status === "estimate_question" && ["owner", "construction_manager", "sales_manager"].includes(currentRoleBase());
     const smetterHref = estimateSmetterHref(job);
-    return '\n    <article class="row estimate-job-row">\n      <div class="estimate-job-main">\n        <div class="stack-line">\n          <strong>'.concat(escapeHtml(job.title), "</strong>\n          ").concat(pill(label(job.status), statusLevel2), "\n          ").concat(pill(job.due_date || "без срока", job.status === "estimate_done" ? "success" : levelByDate(job.due_date)), '\n        </div>\n        <div class="muted">').concat(escapeHtml(job.customer_name || "Заказчик не указан"), " · ").concat(escapeHtml(job.project_title || "без карточки объекта"), " · ").concat(estimateJobTypeLabel(job.estimate_type), '</div>\n        <div class="muted">получено: ').concat(formatDateRu(job.received_at) || "не указано", " · выдал задание: ").concat(escapeHtml(job.manager_name || "не назначен"), " · сметчик: ").concat(escapeHtml(job.estimator_name || "не назначен"), '</div>\n        <div class="estimate-job-flags">\n          ').concat(pill(estimateSiteCostsLabel(job.site_costs_policy), job.site_costs_policy === "exclude" ? "warning" : job.site_costs_policy === "clarify" ? "blue" : "success"), "\n          ").concat(isPartnerEstimateJob(job) ? pill("Партнерская смета", "blue") : "", "\n        </div>\n        ").concat(job.site_costs_comment ? '<p class="muted">Организация площадки: '.concat(escapeHtml(job.site_costs_comment), "</p>") : "", "\n        ").concat(smetterHref ? '<a class="link-button inline-link" href="'.concat(escapeAttr(smetterHref), '" target="_blank" rel="noopener noreferrer">Открыть Сметтер</a>') : "", "\n        ").concat(job.comment ? "<p>".concat(linkifyText(job.comment), "</p>") : "", "\n        ").concat(job.question_comment ? '<div class="estimate-question-note"><strong>Вопрос сметчика</strong><p>'.concat(linkifyText(job.question_comment), "</p></div>") : "", "\n        ").concat(job.return_comment ? '<p class="muted danger-text">Возврат менеджеру: '.concat(linkifyText(job.return_comment), "</p>") : "", "\n        ").concat(job.result_comment ? '<p class="muted">Итог: '.concat(linkifyText(job.result_comment), "</p>") : "", "\n        ").concat(renderEstimateJobFiles(job.files, job.id, canManageFiles), '\n      </div>\n      <div class="estimate-job-actions">\n        ').concat(canAnswerQuestion ? '<button class="secondary tiny" type="button" data-edit-estimate-job="'.concat(job.id, '">Ответить на уточнение</button>') : canEdit ? '<button class="secondary tiny" type="button" data-edit-estimate-job="'.concat(job.id, '">Редактировать</button>') : "", "\n        ").concat(canStart ? '<button class="secondary tiny" type="button" data-estimate-job-status="estimate_in_work" data-estimate-job-id="'.concat(job.id, '">В работу</button>') : "", "\n        ").concat(canQuestion ? '<button class="secondary tiny" type="button" data-estimate-job-status="estimate_question" data-estimate-job-id="'.concat(job.id, '">Уточнить</button>') : "", "\n        ").concat(canReturn ? '<button class="secondary tiny danger-outline" type="button" data-estimate-job-status="estimate_returned" data-estimate-job-id="'.concat(job.id, '">Вернуть на доработку</button>') : "", "\n        ").concat(canFinish ? '<button class="primary tiny" type="button" data-estimate-job-status="estimate_done" data-estimate-job-id="'.concat(job.id, '">Сдано</button>') : "", "\n        ").concat(canManageFiles ? '<button class="secondary tiny" type="button" data-open-estimate-files="'.concat(job.id, '">Добавить файл</button>') : "", "\n        ").concat(canDelete ? '<button class="danger-button tiny" type="button" data-delete-estimate-job="'.concat(job.id, '">Удалить</button>') : "", "\n      </div>\n    </article>");
+    return '\n    <article class="row estimate-job-row">\n      <div class="estimate-job-main">\n        <div class="stack-line">\n          <strong>'.concat(escapeHtml(job.title), "</strong>\n          ").concat(pill(label(job.status), statusLevel2), "\n          ").concat(pill(job.due_date || "без срока", job.status === "estimate_done" ? "success" : levelByDate(job.due_date)), '\n        </div>\n        <div class="muted">').concat(escapeHtml(job.customer_name || "Заказчик не указан"), " · ").concat(escapeHtml(job.project_title || "без карточки объекта"), " · ").concat(estimateJobTypeLabel(job.estimate_type), '</div>\n        <div class="muted">получено: ').concat(formatDateRu(job.received_at) || "не указано", " · выдал задание: ").concat(escapeHtml(job.manager_name || "не назначен"), " · сметчик: ").concat(escapeHtml(job.estimator_name || "не назначен"), '</div>\n        <div class="estimate-job-flags">\n          ').concat(pill(estimateSiteCostsLabel(job.site_costs_policy), job.site_costs_policy === "exclude" ? "warning" : job.site_costs_policy === "clarify" ? "blue" : "success"), "\n          ").concat(isPartnerEstimateJob(job) ? pill("Партнерская смета", "blue") : "", "\n        </div>\n        ").concat(job.site_costs_comment ? '<p class="muted">Организация площадки: '.concat(escapeHtml(job.site_costs_comment), "</p>") : "", "\n        ").concat(smetterHref ? '<a class="link-button inline-link" href="'.concat(escapeAttr(smetterHref), '" target="_blank" rel="noopener noreferrer">Открыть Сметтер</a>') : "", "\n        ").concat(job.comment ? "<p>".concat(linkifyText(job.comment), "</p>") : "", "\n        ").concat(job.question_comment ? '<div class="estimate-question-note"><strong>Вопрос сметчика</strong><p>'.concat(linkifyText(job.question_comment), "</p></div>") : "", "\n        ").concat(job.return_comment ? '<p class="muted danger-text">Возврат менеджеру: '.concat(linkifyText(job.return_comment), "</p>") : "", "\n        ").concat(job.result_comment ? '<p class="muted">Итог: '.concat(linkifyText(job.result_comment), "</p>") : "", "\n        ").concat(renderEstimateJobFiles(job.files, job.id, canManageFiles), '\n      </div>\n      <div class="estimate-job-actions">\n        ').concat(canAnswerQuestion ? '<button class="secondary tiny" type="button" data-edit-estimate-job="'.concat(job.id, '">Ответить на уточнение</button>') : canEdit ? '<button class="secondary tiny" type="button" data-edit-estimate-job="'.concat(job.id, '">Редактировать</button>') : "", "\n        ").concat(canStart ? '<button class="secondary tiny" type="button" data-estimate-job-status="estimate_in_work" data-estimate-job-id="'.concat(job.id, '">В работу</button>') : "", "\n        ").concat(canQuestion ? '<button class="secondary tiny" type="button" data-estimate-job-status="estimate_question" data-estimate-job-id="'.concat(job.id, '">Уточнить</button>') : "", "\n        ").concat(canReturn ? '<button class="secondary tiny danger-outline" type="button" data-estimate-job-status="estimate_returned" data-estimate-job-id="'.concat(job.id, '">Вернуть на доработку</button>') : "", "\n        ").concat(canFinish ? '<button class="primary tiny" type="button" data-estimate-job-status="estimate_done" data-estimate-job-id="'.concat(job.id, '">Сдано</button>') : "", "\n        ").concat(canManageFiles ? '<button class="secondary tiny" type="button" data-open-estimate-files="'.concat(job.id, '">Добавить файл</button>') : "", "\n        ").concat(canArchive ? '<button class="secondary tiny" type="button" data-estimate-job-status="archived" data-estimate-job-id="'.concat(job.id, '">В архив</button>') : "", "\n        ").concat(canDelete ? '<button class="danger-button tiny" type="button" data-delete-estimate-job="'.concat(job.id, '">Удалить</button>') : "", "\n      </div>\n    </article>");
   }
   function fillEstimateJobForm(job = {}) {
     var _a, _b;
@@ -3306,10 +3323,11 @@
       rowsNode.innerHTML = "";
       return;
     }
-    const jobs = state.estimateJobs || [];
+    qsa("[data-estimate-list-mode]").forEach((button) => button.classList.toggle("active", button.dataset.estimateListMode === state.estimateListMode));
+    const jobs = visibleEstimateJobs();
     statsNode.innerHTML = renderEstimateJobStats(jobs);
     scheduleNode.innerHTML = renderEstimateSchedule(jobs);
-    rowsNode.innerHTML = jobs.length ? jobs.map(renderEstimateJobRow).join("") : '<p class="muted">Сметных заданий пока нет. Нажмите “Добавить задание”, чтобы зафиксировать входящую смету в работе.</p>';
+    rowsNode.innerHTML = jobs.length ? jobs.map(renderEstimateJobRow).join("") : '<p class="muted">'.concat(state.estimateListMode === "archive" ? "В архиве сметных заданий пока нет." : "Активных сметных заданий пока нет. Нажмите “Добавить задание”, чтобы зафиксировать входящую смету в работе.", "</p>");
   }
   function notificationTargetAttrs(row) {
     if (row.related_type === "material_request_batch" && row.related_id) return 'data-open-material-batch="batch-'.concat(row.related_id, '"');
@@ -3695,7 +3713,7 @@
     const riskyMaterials = batches.filter(materialIsRisky);
     const openRemarks = (project.object_remarks || []).filter((remark) => !["accepted", "closed"].includes(remark.status));
     const blockers = (project.blockers || []).filter((blocker) => !["resolved", "closed"].includes(blocker.status)).length;
-    return '\n    <section class="project-hero">\n      <div class="project-hero-main" data-testid="object-summary">\n        <div class="stack-line">\n          <h2>'.concat(escapeHtml(project.title || "Объект"), "</h2>\n          ").concat(pill(statusLabel(project.status), statusLevel(project.status)), '\n        </div>\n        <div class="project-hero-meta">\n          <span>Ответственный: <strong>').concat(escapeHtml(project.foreman_name || "прораб не назначен"), "</strong></span>\n          <span>Этап: <strong>").concat(statusLabel(project.stage || project.status), "</strong></span>\n          <span>Ближайший дедлайн: <strong>").concat(project.planned_end_date ? formatDateRu(project.planned_end_date) : "не задан", "</strong></span>\n          <span>Последний фотоотчёт: <strong>").concat(latestPhoto ? formatDateRu(latestPhoto) : "не найден", '</strong></span>\n        </div>\n      </div>\n      <div class="project-hero-stats">\n        <div class="info"><span>Открытые задачи</span><strong>').concat(openTasks.length, '</strong></div>\n        <div class="info ').concat(overdueTasks.length ? "danger" : "", '"><span>Просрочено</span><strong>').concat(overdueTasks.length, '</strong></div>\n        <div class="info ').concat(blockers ? "danger" : "", '"><span>Блокеры</span><strong>').concat(blockers, '</strong></div>\n        <div class="info ').concat(riskyMaterials.length ? "warning" : "", '"><span>Материалы под риском</span><strong>').concat(riskyMaterials.length, '</strong></div>\n        <div class="info ').concat(openRemarks.length ? "warning" : "", '"><span>Открытые замечания</span><strong>').concat(openRemarks.length, "</strong></div>\n      </div>\n    </section>");
+    return '\n    <section class="project-hero">\n      <div class="project-hero-main" data-testid="object-summary">\n        <div class="stack-line">\n          <h2>'.concat(escapeHtml(project.title || "Объект"), "</h2>\n          ").concat(pill(statusLabel(project.status), statusLevel(project.status)), '\n        </div>\n        <div class="project-hero-meta">\n          <span>Ответственный: <strong>').concat(escapeHtml(project.foreman_name || "прораб не назначен"), "</strong></span>\n          <span>Этап: <strong>").concat(statusLabel(project.stage || project.status), "</strong></span>\n          <span>Ближайший дедлайн: <strong>").concat(project.planned_end_date ? formatDateRu(project.planned_end_date) : "не задан", "</strong></span>\n          <span>Последний фотоотчёт: <strong>").concat(latestPhoto ? formatDateRu(latestPhoto) : "не найден", '</strong></span>\n        </div>\n        <div class="project-hero-actions">\n          <button class="secondary tiny" type="button" data-collapse-project-detail>Свернуть карточку</button>\n        </div>\n      </div>\n      <div class="project-hero-stats">\n        <div class="info"><span>Открытые задачи</span><strong>').concat(openTasks.length, '</strong></div>\n        <div class="info ').concat(overdueTasks.length ? "danger" : "", '"><span>Просрочено</span><strong>').concat(overdueTasks.length, '</strong></div>\n        <div class="info ').concat(blockers ? "danger" : "", '"><span>Блокеры</span><strong>').concat(blockers, '</strong></div>\n        <div class="info ').concat(riskyMaterials.length ? "warning" : "", '"><span>Материалы под риском</span><strong>').concat(riskyMaterials.length, '</strong></div>\n        <div class="info ').concat(openRemarks.length ? "warning" : "", '"><span>Открытые замечания</span><strong>').concat(openRemarks.length, "</strong></div>\n      </div>\n    </section>");
   }
   function renderProjectAttention(project) {
     const items = projectAttentionItems(project);
@@ -5811,6 +5829,12 @@
         await renderMaterials();
       })
     );
+    qsa("[data-estimate-list-mode]").forEach(
+      (button) => button.addEventListener("click", async () => {
+        state.estimateListMode = button.dataset.estimateListMode || "active";
+        await renderEstimateJobs();
+      })
+    );
     qsa("[data-material-pipeline-filter]").forEach(
       (button) => button.addEventListener("click", async () => {
         state.materialPipelineFilter = button.dataset.materialPipelineFilter || "all";
@@ -6133,6 +6157,10 @@
           }
           body.question_comment = comment.trim();
         }
+        if (status === "archived") {
+          const confirmed = confirm("Переместить сметное задание в архив? Оно уйдет из рабочего списка, но останется доступным во вкладке «Архив».");
+          if (!confirmed) return;
+        }
         await api("/api/estimate-jobs/".concat(id, "/status"), {
           method: "POST",
           body: JSON.stringify(body)
@@ -6144,7 +6172,8 @@
           estimate_done: "Смета отмечена как сданная",
           estimate_returned: "Смета возвращена на доработку",
           estimate_in_work: "Сметное задание взято в работу",
-          estimate_question: "Уточнение отправлено менеджеру"
+          estimate_question: "Уточнение отправлено менеджеру",
+          archived: "Сметное задание перемещено в архив"
         };
         showToast(statusToast[status] || "Статус сметного задания изменен");
         return;
@@ -6382,6 +6411,14 @@
         return;
       }
       if (event.target.closest("a")) return;
+      const collapseProjectDetailButton = event.target.closest("[data-collapse-project-detail]");
+      if (collapseProjectDetailButton) {
+        state.selectedProjectId = null;
+        await renderProjects();
+        clearProjectDetail();
+        showToast("Карточка объекта свернута");
+        return;
+      }
       const toggleTodayProjectButton = event.target.closest("[data-toggle-today-project]");
       if (toggleTodayProjectButton) {
         const projectId = Number(toggleTodayProjectButton.dataset.toggleTodayProject);

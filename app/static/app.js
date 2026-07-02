@@ -34,6 +34,7 @@ const state = {
   selectedProjectId: initialProjectId,
   selectedProjectTab: "overview",
   projectListMode: "active",
+  estimateListMode: "active",
   materialListMode: "active",
   materialPipelineFilter: "all",
   materialQuickFilter: "all",
@@ -498,6 +499,14 @@ function canDeleteEstimateJob(job) {
   return false;
 }
 
+function canArchiveEstimateJob(job) {
+  const role = currentRoleBase();
+  if (!job || job.status === "archived") return false;
+  if (["owner", "construction_manager"].includes(role)) return true;
+  if (role === "sales_manager" && isOwnEstimateJob(job, "manager_id")) return job.status !== "estimate_in_work";
+  return false;
+}
+
 function isOwnEstimateJob(job, field) {
   const userId = currentUserId();
   return Boolean(userId && Number(job?.[field] || 0) === Number(userId));
@@ -513,6 +522,7 @@ function managerControlsPartnerEstimateJob(job) {
 
 function canEditEstimateJob(job) {
   const role = currentRoleBase();
+  if (job.status === "archived") return false;
   if (["owner", "construction_manager"].includes(role)) return true;
   if (role === "sales_manager") return isOwnEstimateJob(job, "manager_id");
   if (role === "estimator") return isOwnEstimateJob(job, "estimator_id") && !["estimate_done", "estimate_returned"].includes(job.status);
@@ -3045,6 +3055,7 @@ function taskPriorityLevel(priority) {
 }
 
 function estimateJobStatusLevel(job) {
+  if (job.status === "archived") return "";
   if (job.status === "estimate_done") return "success";
   if (levelByDate(job.due_date) === "danger") return "danger";
   return {
@@ -3114,11 +3125,16 @@ function estimateJobStats(jobs) {
   return {
     active: jobs.filter((job) => ["estimate_new", "estimate_in_work", "estimate_question"].includes(job.status)).length,
     done: jobs.filter((job) => job.status === "estimate_done").length,
-    overdue: jobs.filter((job) => job.status !== "estimate_done" && levelByDate(job.due_date) === "danger").length,
+    overdue: jobs.filter((job) => !["estimate_done", "archived"].includes(job.status) && levelByDate(job.due_date) === "danger").length,
     hold: jobs.filter((job) => job.status === "estimate_hold").length,
     returned: jobs.filter((job) => job.status === "estimate_returned").length,
     questions: jobs.filter((job) => job.status === "estimate_question").length,
   };
+}
+
+function visibleEstimateJobs(jobs = state.estimateJobs || []) {
+  if (state.estimateListMode === "archive") return jobs.filter((job) => job.status === "archived");
+  return jobs.filter((job) => job.status !== "archived");
 }
 
 function renderEstimateJobStats(jobs) {
@@ -3160,7 +3176,7 @@ function estimateJobProgress(job) {
 }
 
 function renderEstimateSchedule(jobs) {
-  const activeJobs = jobs.filter((job) => job.status !== "estimate_done").slice(0, 8);
+  const activeJobs = jobs.filter((job) => !["estimate_done", "archived"].includes(job.status)).slice(0, 8);
   if (!activeJobs.length) return `<p class="muted">Активных сметных заданий нет.</p>`;
   return activeJobs
     .map(
@@ -3294,6 +3310,7 @@ function renderEstimateJobRow(job) {
   const canQuestion = canQuestionEstimateJob(job);
   const canManageFiles = canManageEstimateJobFiles(job);
   const canDelete = canDeleteEstimateJob(job);
+  const canArchive = canArchiveEstimateJob(job);
   const canAnswerQuestion = canEdit && job.status === "estimate_question" && ["owner", "construction_manager", "sales_manager"].includes(currentRoleBase());
   const smetterHref = estimateSmetterHref(job);
   return `
@@ -3325,6 +3342,7 @@ function renderEstimateJobRow(job) {
         ${canReturn ? `<button class="secondary tiny danger-outline" type="button" data-estimate-job-status="estimate_returned" data-estimate-job-id="${job.id}">Вернуть на доработку</button>` : ""}
         ${canFinish ? `<button class="primary tiny" type="button" data-estimate-job-status="estimate_done" data-estimate-job-id="${job.id}">Сдано</button>` : ""}
         ${canManageFiles ? `<button class="secondary tiny" type="button" data-open-estimate-files="${job.id}">Добавить файл</button>` : ""}
+        ${canArchive ? `<button class="secondary tiny" type="button" data-estimate-job-status="archived" data-estimate-job-id="${job.id}">В архив</button>` : ""}
         ${canDelete ? `<button class="danger-button tiny" type="button" data-delete-estimate-job="${job.id}">Удалить</button>` : ""}
       </div>
     </article>`;
@@ -4081,12 +4099,13 @@ async function renderEstimateJobs() {
     rowsNode.innerHTML = "";
     return;
   }
-  const jobs = state.estimateJobs || [];
+  qsa("[data-estimate-list-mode]").forEach((button) => button.classList.toggle("active", button.dataset.estimateListMode === state.estimateListMode));
+  const jobs = visibleEstimateJobs();
   statsNode.innerHTML = renderEstimateJobStats(jobs);
   scheduleNode.innerHTML = renderEstimateSchedule(jobs);
   rowsNode.innerHTML = jobs.length
     ? jobs.map(renderEstimateJobRow).join("")
-    : `<p class="muted">Сметных заданий пока нет. Нажмите “Добавить задание”, чтобы зафиксировать входящую смету в работе.</p>`;
+    : `<p class="muted">${state.estimateListMode === "archive" ? "В архиве сметных заданий пока нет." : "Активных сметных заданий пока нет. Нажмите “Добавить задание”, чтобы зафиксировать входящую смету в работе."}</p>`;
 }
 
 function notificationTargetAttrs(row) {
@@ -4737,6 +4756,9 @@ function renderProjectHero(project) {
           <span>Этап: <strong>${statusLabel(project.stage || project.status)}</strong></span>
           <span>Ближайший дедлайн: <strong>${project.planned_end_date ? formatDateRu(project.planned_end_date) : "не задан"}</strong></span>
           <span>Последний фотоотчёт: <strong>${latestPhoto ? formatDateRu(latestPhoto) : "не найден"}</strong></span>
+        </div>
+        <div class="project-hero-actions">
+          <button class="secondary tiny" type="button" data-collapse-project-detail>Свернуть карточку</button>
         </div>
       </div>
       <div class="project-hero-stats">
@@ -7929,6 +7951,12 @@ function bindEvents() {
       await renderMaterials();
     })
   );
+  qsa("[data-estimate-list-mode]").forEach((button) =>
+    button.addEventListener("click", async () => {
+      state.estimateListMode = button.dataset.estimateListMode || "active";
+      await renderEstimateJobs();
+    })
+  );
   qsa("[data-material-pipeline-filter]").forEach((button) =>
     button.addEventListener("click", async () => {
       state.materialPipelineFilter = button.dataset.materialPipelineFilter || "all";
@@ -8276,6 +8304,10 @@ function bindEvents() {
         }
         body.question_comment = comment.trim();
       }
+      if (status === "archived") {
+        const confirmed = confirm("Переместить сметное задание в архив? Оно уйдет из рабочего списка, но останется доступным во вкладке «Архив».");
+        if (!confirmed) return;
+      }
       await api(`/api/estimate-jobs/${id}/status`, {
         method: "POST",
         body: JSON.stringify(body),
@@ -8288,6 +8320,7 @@ function bindEvents() {
         estimate_returned: "Смета возвращена на доработку",
         estimate_in_work: "Сметное задание взято в работу",
         estimate_question: "Уточнение отправлено менеджеру",
+        archived: "Сметное задание перемещено в архив",
       };
       showToast(statusToast[status] || "Статус сметного задания изменен");
       return;
@@ -8541,6 +8574,15 @@ function bindEvents() {
     }
 
     if (event.target.closest("a")) return;
+
+    const collapseProjectDetailButton = event.target.closest("[data-collapse-project-detail]");
+    if (collapseProjectDetailButton) {
+      state.selectedProjectId = null;
+      await renderProjects();
+      clearProjectDetail();
+      showToast("Карточка объекта свернута");
+      return;
+    }
 
     const toggleTodayProjectButton = event.target.closest("[data-toggle-today-project]");
     if (toggleTodayProjectButton) {
