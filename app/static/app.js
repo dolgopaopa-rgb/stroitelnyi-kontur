@@ -470,7 +470,7 @@ function canDeleteKnowledgeBase() {
 }
 
 function canDeleteFeedback() {
-  return ["owner", "construction_manager"].includes(currentRoleBase());
+  return ["owner", "construction_manager", "finance_director"].includes(currentRoleBase());
 }
 
 function canManageFeedback() {

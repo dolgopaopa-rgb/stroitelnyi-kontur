@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { openApp } from "../helpers/auth";
+import { openApp, switchRole } from "../helpers/auth";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -40,4 +40,21 @@ test("extra work items can be edited before final decision", async ({ page }) =>
   expect(app).toContain("canEditWorkExtraState");
   expect(server).toContain('^/api/work-extra-items/(\\d+)/update$');
   expect(server).toContain("Эту работу уже нельзя менять: по ней принято решение.");
+});
+
+test("feedback delete controls are available to feedback managers", async ({ page }) => {
+  await openApp(page, "/feedback");
+  await switchRole(page, "finance_director");
+  await expect(page.locator("#feedbackView")).toHaveClass(/active/);
+  await expect(page.locator("#deleteSelectedFeedbackButton")).toBeVisible();
+
+  const app = readProjectFile("app/static/app.js");
+  const server = readProjectFile("app/server.py");
+
+  expect(app).toContain('["owner", "construction_manager", "finance_director"].includes(currentRoleBase())');
+  expect(app).toContain("data-feedback-delete");
+  expect(app).toContain("/api/feedback/delete-bulk");
+  expect(server).toContain('{"owner", "construction_manager", "finance_director"}');
+  expect(server).toContain('path == "/api/feedback/delete-bulk"');
+  expect(server).toContain('^/api/feedback/(\\d+)/delete$');
 });

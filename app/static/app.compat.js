@@ -455,7 +455,7 @@
     return ["owner", "construction_manager"].includes(currentRoleBase());
   }
   function canDeleteFeedback() {
-    return ["owner", "construction_manager"].includes(currentRoleBase());
+    return ["owner", "construction_manager", "finance_director"].includes(currentRoleBase());
   }
   function canManageFeedback() {
     return ["owner", "construction_manager", "finance_director"].includes(currentRoleBase());

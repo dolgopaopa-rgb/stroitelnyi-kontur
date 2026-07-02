@@ -2199,7 +2199,7 @@ def can_access_ui_lab(account: dict | None) -> bool:
 
 
 def can_delete_feedback(account: dict | None) -> bool:
-    return account_role(account) in {"owner", "construction_manager"}
+    return account_role(account) in {"owner", "construction_manager", "finance_director"}
 
 
 def can_view_estimate_jobs(account: dict | None) -> bool:
