@@ -2,12 +2,13 @@
 set -euo pipefail
 
 PRODUCTION_DIR="${PRODUCTION_DIR:-/opt/stroitelnyi-kontur}"
+PRODUCTION_COMPOSE_PROJECT="${PRODUCTION_COMPOSE_PROJECT:-stroitelnyi-kontur}"
 STAGING_DIR="${STAGING_DIR:-/opt/stroitelnyi-kontur-staging}"
 STAGING_COMPOSE_PROJECT="${STAGING_COMPOSE_PROJECT:-stroitelnyi-kontur-staging}"
 
 cd "$PRODUCTION_DIR"
 mkdir -p data/backups
-docker compose exec -T app python app/backup_sqlite.py >/tmp/kontur-prod-backup.log
+COMPOSE_PROJECT_NAME="$PRODUCTION_COMPOSE_PROJECT" docker compose exec -T app python app/backup_sqlite.py >/tmp/kontur-prod-backup.log
 LATEST_BACKUP="$(ls -1t data/backups/*.db | head -1)"
 
 cd "$STAGING_DIR"
