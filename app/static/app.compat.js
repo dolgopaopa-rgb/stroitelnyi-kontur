@@ -1828,6 +1828,7 @@
           health: item.batch_health || "normal",
           health_comment: item.batch_health_comment || "",
           requiring_review: Number(item.batch_requiring_review || 0) === 1,
+          is_blocker: Number(item.batch_is_blocker || item.is_blocker || 0) === 1,
           procurement_responsible_id: item.batch_procurement_responsible_id || "",
           supplier_comment: item.batch_supplier_comment || "",
           planned_delivery_date: item.batch_planned_delivery_date || "",
@@ -1904,14 +1905,26 @@
     if (batch == null ? void 0 : batch.requiring_review) return "warning";
     return statusLevel(String((batch == null ? void 0 : batch.health) || "normal"));
   }
+  function materialBatchHasOpenProblem(batch) {
+    const status = materialPipelineStatus(batch);
+    const rawStatus = String((batch == null ? void 0 : batch.status) || "");
+    const health = String((batch == null ? void 0 : batch.health) || "");
+    const receiptStatus = String((batch == null ? void 0 : batch.receipt_status) || "");
+    return status === "problem" || health === "problem" || receiptStatus === "problem" || rawStatus === "receipt_issue" || ["returned", "revision_requested"].includes(rawStatus) || Number((batch == null ? void 0 : batch.is_blocker) || 0) === 1 || Number((batch == null ? void 0 : batch.blocks_project) || 0) === 1;
+  }
+  function materialBatchIsFinalForAttention(batch) {
+    return ["delivered", "closed", "cancelled"].includes(materialPipelineStatus(batch));
+  }
   function materialIsRisky(batch) {
     const status = materialPipelineStatus(batch);
+    const explicitProblem = materialBatchHasOpenProblem(batch);
+    if (explicitProblem) return true;
+    if (materialBatchIsFinalForAttention(batch)) return false;
     const actualOverrun = Number(batch.actual_purchase_amount || 0) > 0 && Number(batch.actual_purchase_amount || 0) > Number(batch.total_amount || 0);
-    return status === "problem" || batch.requiring_review || ["at_risk"].includes(batch.health) || ["returned", "revision_requested"].includes(batch.status) || batch.delivery_urgency === "urgent" && !["delivered", "closed"].includes(status) || actualOverrun;
+    return batch.requiring_review || ["at_risk"].includes(batch.health) || batch.delivery_urgency === "urgent" && !["delivered", "closed"].includes(status) || actualOverrun;
   }
   function materialBatchIsClosedForAttention(batch) {
-    const status = materialPipelineStatus(batch);
-    return ["delivered", "closed", "cancelled"].includes(status) && !materialIsRisky(batch);
+    return materialBatchIsFinalForAttention(batch) && !materialBatchHasOpenProblem(batch);
   }
   function materialReceiptAttachment(batch) {
     if (!batch.receipt_document_id) return "";

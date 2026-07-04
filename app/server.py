@@ -1767,6 +1767,21 @@ def snapshot_material_pipeline_status(row: dict) -> str:
     return "needs_approval"
 
 
+def snapshot_material_has_open_problem(row: dict) -> bool:
+    pipeline = snapshot_material_pipeline_status(row)
+    raw_status = str(row.get("batch_status") or row.get("status") or row.get("procurement_status") or "")
+    health = str(row.get("batch_health") or row.get("health") or "")
+    receipt_status = str(row.get("batch_receipt_status") or row.get("receipt_status") or "")
+    return (
+        pipeline == "problem"
+        or health == "problem"
+        or receipt_status == "problem"
+        or raw_status == "receipt_issue"
+        or raw_status in {"returned", "revision_requested"}
+        or int(row.get("batch_is_blocker") or row.get("is_blocker") or 0) == 1
+    )
+
+
 TASK_STATUS_ALIASES = {
     "completed_pending_acceptance": "waiting_check",
     "in_progress_task": "in_progress",
@@ -3379,7 +3394,8 @@ def blockers_payload(db, account: dict | None, project_id: int | None = None) ->
             f"""
             SELECT b.id AS linked_material_request_id, b.project_id, p.title AS project_title,
                    p.foreman_id, p.foreman_id AS project_foreman_id,
-                   b.needed_at AS due_date, b.status, b.delivery_urgency, b.comment,
+                   b.needed_at AS due_date, b.status, b.stage, b.health, b.requiring_review,
+                   b.is_blocker, b.delivery_urgency, b.comment,
                    b.revision_comment, b.procurement_comment, b.receipt_status,
                    b.actual_purchase_amount, b.created_at,
                    creator.id AS created_by, creator.name AS created_by_name,
@@ -3395,8 +3411,18 @@ def blockers_payload(db, account: dict | None, project_id: int | None = None) ->
             GROUP BY b.id
             HAVING b.is_blocker = 1
                 OR b.status IN ('revision_requested', 'receipt_issue')
-                OR b.delivery_urgency = 'urgent'
-                OR (COALESCE(b.actual_purchase_amount, 0) > COALESCE(planned_amount, 0) AND COALESCE(planned_amount, 0) > 0)
+                OR b.health = 'problem'
+                OR b.receipt_status = 'problem'
+                OR (
+                    COALESCE(b.stage, '') NOT IN ('delivered', 'closed', 'cancelled')
+                    AND COALESCE(b.status, '') NOT IN ('received', 'closed', 'archived', 'cancelled')
+                    AND (
+                        b.delivery_urgency = 'urgent'
+                        OR b.health = 'at_risk'
+                        OR COALESCE(b.requiring_review, 0) = 1
+                        OR (COALESCE(b.actual_purchase_amount, 0) > COALESCE(planned_amount, 0) AND COALESCE(planned_amount, 0) > 0)
+                    )
+                )
             ORDER BY b.needed_at, b.created_at DESC
             LIMIT 80
             """,
@@ -3647,6 +3673,7 @@ def get_project_detail(project_id: int, account: dict | None = None) -> dict | N
                        p.foreman_id AS project_foreman_id, p.title AS project_title,
                        b.status AS batch_status, b.stage AS batch_stage, b.health AS batch_health,
                        b.health_comment AS batch_health_comment, b.requiring_review AS batch_requiring_review,
+                       b.is_blocker AS batch_is_blocker,
                        b.procurement_responsible_id AS batch_procurement_responsible_id,
                        b.supplier_comment AS batch_supplier_comment,
                        b.planned_delivery_date AS batch_planned_delivery_date,
@@ -4204,6 +4231,7 @@ class AppHandler(BaseHTTPRequestHandler):
                            b.stage AS batch_stage, b.health AS batch_health,
                            b.health_comment AS batch_health_comment,
                            b.requiring_review AS batch_requiring_review,
+                           b.is_blocker AS batch_is_blocker,
                            b.procurement_responsible_id AS batch_procurement_responsible_id,
                            b.supplier_comment AS batch_supplier_comment,
                            b.planned_delivery_date AS batch_planned_delivery_date,
@@ -4393,9 +4421,18 @@ class AppHandler(BaseHTTPRequestHandler):
 
         def material_is_risky(row: dict) -> bool:
             pipeline = snapshot_material_pipeline_status(row)
-            actual = float(row.get("actual_purchase_amount") or 0)
+            if snapshot_material_has_open_problem(row):
+                return True
+            if pipeline in {"delivered", "closed", "cancelled"}:
+                return False
+            actual = float(row.get("actual_purchase_amount") or row.get("batch_actual_purchase_amount") or 0)
             planned = float(row.get("batch_total_amount") or row.get("total_amount") or 0)
-            return pipeline == "problem" or str(row.get("batch_status") or row.get("status") or "") in {"returned", "revision_requested"} or str(row.get("batch_delivery_urgency") or "") == "urgent" or (actual > planned > 0)
+            return (
+                str(row.get("batch_delivery_urgency") or row.get("delivery_urgency") or "") == "urgent"
+                or str(row.get("batch_health") or row.get("health") or "") == "at_risk"
+                or int(row.get("batch_requiring_review") or row.get("requiring_review") or 0) == 1
+                or (actual > planned > 0)
+            )
 
         def project_attention(project: dict) -> list[tuple[str, int, str]]:
             pid = int(project.get("id") or 0)
@@ -5809,6 +5846,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                            creator.role AS creator_role,
                            b.status AS batch_status, b.stage AS batch_stage, b.health AS batch_health,
                            b.health_comment AS batch_health_comment, b.requiring_review AS batch_requiring_review,
+                           b.is_blocker AS batch_is_blocker,
                            b.procurement_responsible_id AS batch_procurement_responsible_id,
                            b.supplier_comment AS batch_supplier_comment,
                            b.planned_delivery_date AS batch_planned_delivery_date,

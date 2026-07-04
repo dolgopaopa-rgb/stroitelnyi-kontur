@@ -312,8 +312,14 @@ function runFeedbackFixStaticChecks(results) {
     },
     {
       name: "Delivered material requests do not stay overdue",
-      ok: appText.includes("materialBatchIsClosedForAttention") && appText.includes("if (materialBatchIsClosedForAttention(batch)) return 0"),
-      details: "Delivered/closed non-problem material batches are excluded from attention risk scoring.",
+      ok:
+        appText.includes("materialBatchHasOpenProblem") &&
+        appText.includes("materialBatchIsFinalForAttention") &&
+        appText.includes("if (materialBatchIsFinalForAttention(batch)) return false") &&
+        appText.includes("if (materialBatchIsClosedForAttention(batch)) return 0") &&
+        serverText.includes("snapshot_material_has_open_problem") &&
+        serverText.includes("COALESCE(b.stage, '') NOT IN ('delivered', 'closed', 'cancelled')"),
+      details: "Delivered/closed non-problem material batches are excluded from delivery risk and attention scoring.",
     },
     {
       name: "Procurement can postpone or cancel material delivery without losing prices",

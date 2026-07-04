@@ -1,9 +1,9 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260702-estimate-files-collapse";
+const CACHE_NAME = "stroitelnyi-kontur-20260704-material-risk-final";
 const CORE_ASSETS = [
   "/",
-  "/static/styles.css?v=20260702-estimate-files-collapse",
-  "/static/app.compat.js?v=20260702-estimate-files-collapse",
-  "/static/manifest.webmanifest?v=20260702-estimate-files-collapse",
+  "/static/styles.css?v=20260704-material-risk-final",
+  "/static/app.compat.js?v=20260704-material-risk-final",
+  "/static/manifest.webmanifest?v=20260704-material-risk-final",
   "/static/assets/g2-logo-192.png",
   "/static/assets/g2-logo-512.png"
 ];

@@ -123,7 +123,7 @@ test("estimate job files are collapsed under object summary", async ({ page }) =
   const compat = readProjectFile("app/static/app.compat.js");
   const styles = readProjectFile("app/static/styles.css");
 
-  expect(html).toContain("20260702-estimate-files-collapse");
+  expect(html).toContain("20260704-material-risk-final");
   expect(app).toContain("estimate-job-collapsible");
   expect(app).toContain("estimate-job-summary");
   expect(app).toContain("estimate-job-body");
@@ -133,4 +133,24 @@ test("estimate job files are collapsed under object summary", async ({ page }) =
   expect(styles).toContain(".estimate-job-collapsible");
   expect(styles).toContain(".estimate-job-summary");
   expect(styles).toContain(".estimate-job-body");
+});
+
+test("delivered material batches do not stay in delivery risk", async ({ page }) => {
+  await openApp(page, "/materials");
+
+  const html = readProjectFile("app/static/index.html");
+  const app = readProjectFile("app/static/app.js");
+  const compat = readProjectFile("app/static/app.compat.js");
+  const server = readProjectFile("app/server.py");
+
+  expect(html).toContain("20260704-material-risk-final");
+  expect(app).toContain("function materialBatchHasOpenProblem");
+  expect(app).toContain("function materialBatchIsFinalForAttention");
+  expect(app).toContain("if (materialBatchIsFinalForAttention(batch)) return false");
+  expect(app).toContain("batch_is_blocker");
+  expect(compat).toContain("materialBatchHasOpenProblem");
+  expect(server).toContain("def snapshot_material_has_open_problem");
+  expect(server).toContain("COALESCE(b.stage, '') NOT IN ('delivered', 'closed', 'cancelled')");
+  expect(server).toContain("COALESCE(b.status, '') NOT IN ('received', 'closed', 'archived', 'cancelled')");
+  expect(server).toContain("b.is_blocker AS batch_is_blocker");
 });
