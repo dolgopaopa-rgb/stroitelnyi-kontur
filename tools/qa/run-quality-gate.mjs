@@ -233,6 +233,40 @@ async function route(page, viewOrPath) {
   await page.waitForTimeout(500);
 }
 
+async function ensureMobilePhotoReportFixture(page) {
+  return page.evaluate(async (imageBase64) => {
+    const projectsResponse = await fetch("/api/projects", { cache: "no-store" });
+    if (!projectsResponse.ok) return { ok: false, reason: `projects ${projectsResponse.status}` };
+    const projects = await projectsResponse.json();
+    const project =
+      projects.find((item) => Number(item.foreman_id || 0) === 7) ||
+      projects.find((item) => Number(item.foreman_id || 0)) ||
+      projects[0];
+    if (!project) return { ok: false, reason: "no project" };
+    const stamp = Date.now();
+    const firstName = `qa-mobile-photo-report-${stamp}-1.png`;
+    const secondName = `qa-mobile-photo-report-${stamp}-2.png`;
+    const createResponse = await fetch("/api/photo-reports", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        project_id: Number(project.id),
+        report_date: new Date().toISOString().slice(0, 10),
+        author_id: Number(project.foreman_id || 7),
+        stage: "QA",
+        zones: "Mobile QA",
+        comment: `QA photo report fixture ${stamp}`,
+        status: "review",
+        attachments: [
+          { title: firstName, file_name: firstName, mime_type: "image/png", file_base64: imageBase64 },
+          { title: secondName, file_name: secondName, mime_type: "image/png", file_base64: imageBase64 },
+        ],
+      }),
+    });
+    return { ok: createResponse.ok, reason: createResponse.ok ? "created" : `photo-report ${createResponse.status}` };
+  }, tinyPngBase64);
+}
+
 async function visibleTextLength(page) {
   return page.evaluate(() => (document.body?.innerText || "").trim().length);
 }
@@ -1405,6 +1439,7 @@ async function runMobile(results, playwright) {
         };
       });
       const estimatesOk = !estimatesLayout.overlapped;
+      const photoFixture = await ensureMobilePhotoReportFixture(page).catch((error) => ({ ok: false, reason: String(error) }));
       await route(page, "photos");
       await page.waitForTimeout(250);
       const photosLayout = await page.evaluate(async () => {
@@ -1446,6 +1481,7 @@ async function runMobile(results, playwright) {
         };
       });
       const photosOk =
+        photoFixture.ok &&
         photosLayout.layoutChildren > 0 &&
         photosLayout.minLayoutWidth > minExpectedWidth &&
         photosLayout.cards > 0 &&
@@ -1539,7 +1575,7 @@ async function runMobile(results, playwright) {
         projectHeroLayout.verticalTextCount === 0;
       const status = navVisible && !overflow && actions > 0 && plusSeparated && mobileMenuOk && todayGridOk && estimatesOk && photosOk && photoPreviewOk && projectHeroOk ? "OK" : "FAIL";
       const plusDetails = plusBox ? `${Math.round(plusBox.width)}x${Math.round(plusBox.height)}@${Math.round(plusBox.x)}` : "missing";
-      add(results, "Mobile QA Agent", `Viewport ${viewport.width}x${viewport.height}`, status, `nav=${navVisible}; horizontalOverflow=${overflow}; actions=${actions}; plusSeparated=${plusSeparated}; plusBox=${plusDetails}; mobileMenuOk=${mobileMenuOk}; moreVisible=${moreVisible}; feedbackMenuVisible=${feedbackMenuVisible}; feedbackOpens=${feedbackOpens}; todayGridOk=${todayGridOk}; minGridChildWidth=${todayLayout.minGridChildWidth}; minDecisionWidth=${todayLayout.minDecisionWidth}; minExpectedWidth=${minExpectedWidth}; projectHeroOk=${projectHeroOk}; projectHero=${JSON.stringify(projectHeroLayout)}; estimatesOverlap=${estimatesLayout.overlapped}; estimateRows=${estimatesLayout.rows}; estimateRowBottom=${estimatesLayout.rowBottom}; navTop=${estimatesLayout.navTop}; photosOk=${photosOk}; photoPreviewOk=${photoPreviewOk}; photoPreview=${photoPreviewDetails}; photoLayoutChildren=${photosLayout.layoutChildren}; photoMinLayoutWidth=${photosLayout.minLayoutWidth}; photoCards=${photosLayout.cards}; photoMinCardWidth=${photosLayout.minCardWidth}; photoThumbs=${photosLayout.thumbs}; photoMinThumbWidth=${photosLayout.minThumbWidth}; photoResponse=${photosLayout.responseStatus}; photoType=${photosLayout.responseType}`, status === "FAIL" ? "blocker" : "normal");
+      add(results, "Mobile QA Agent", `Viewport ${viewport.width}x${viewport.height}`, status, `nav=${navVisible}; horizontalOverflow=${overflow}; actions=${actions}; plusSeparated=${plusSeparated}; plusBox=${plusDetails}; mobileMenuOk=${mobileMenuOk}; moreVisible=${moreVisible}; feedbackMenuVisible=${feedbackMenuVisible}; feedbackOpens=${feedbackOpens}; todayGridOk=${todayGridOk}; minGridChildWidth=${todayLayout.minGridChildWidth}; minDecisionWidth=${todayLayout.minDecisionWidth}; minExpectedWidth=${minExpectedWidth}; projectHeroOk=${projectHeroOk}; projectHero=${JSON.stringify(projectHeroLayout)}; estimatesOverlap=${estimatesLayout.overlapped}; estimateRows=${estimatesLayout.rows}; estimateRowBottom=${estimatesLayout.rowBottom}; navTop=${estimatesLayout.navTop}; photoFixture=${photoFixture.ok ? "ok" : photoFixture.reason}; photosOk=${photosOk}; photoPreviewOk=${photoPreviewOk}; photoPreview=${photoPreviewDetails}; photoLayoutChildren=${photosLayout.layoutChildren}; photoMinLayoutWidth=${photosLayout.minLayoutWidth}; photoCards=${photosLayout.cards}; photoMinCardWidth=${photosLayout.minCardWidth}; photoThumbs=${photosLayout.thumbs}; photoMinThumbWidth=${photosLayout.minThumbWidth}; photoResponse=${photosLayout.responseStatus}; photoType=${photosLayout.responseType}`, status === "FAIL" ? "blocker" : "normal");
     } finally {
       await browser.close().catch(() => {});
     }
