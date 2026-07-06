@@ -160,6 +160,113 @@ button {
   color: white;
 }
 
+.assistant-page {
+  display: grid;
+  gap: var(--panel-gap);
+}
+
+.assistant-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  background: linear-gradient(180deg, #ffffff 0%, #edf6f4 100%);
+}
+
+.assistant-hero h2 {
+  margin: 3px 0 6px;
+  font-size: 22px;
+}
+
+.assistant-safe-badge {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--success-soft);
+  color: var(--success);
+  font-weight: 700;
+  padding: 8px 12px;
+  border: 1px solid #c8e5d2;
+}
+
+.assistant-warning {
+  border-color: #f0cf98;
+  background: var(--warning-soft);
+}
+
+.assistant-warning strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.assistant-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+  gap: var(--panel-gap);
+}
+
+.assistant-question-label {
+  display: grid;
+  gap: 6px;
+}
+
+.assistant-question-label textarea {
+  resize: vertical;
+  min-height: 92px;
+  background: #f8fafb;
+}
+
+.assistant-answer {
+  margin-top: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: #f8fafb;
+  padding: var(--space-3);
+  display: grid;
+  gap: 7px;
+}
+
+.assistant-answer-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.assistant-answer-sources code {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 3px 6px;
+  color: var(--text);
+}
+
+.assistant-question-list {
+  display: grid;
+  gap: 8px;
+}
+
+.assistant-question-list .secondary {
+  justify-content: flex-start;
+  text-align: left;
+  min-height: 36px;
+}
+
+.assistant-question-list .secondary.active {
+  border-color: var(--brand);
+  background: #e2f1ee;
+  color: var(--brand-strong);
+}
+
+.assistant-source-list,
+.assistant-limit-list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 7px;
+}
+
 .main {
   padding: 18px 20px;
   min-width: 0;
@@ -6469,5 +6576,21 @@ textarea {
 
   h1 {
     font-size: 20px;
+  }
+}
+
+@media (max-width: 760px) {
+  .assistant-hero,
+  .assistant-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .assistant-hero {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .assistant-safe-badge {
+    align-self: flex-start;
   }
 }
