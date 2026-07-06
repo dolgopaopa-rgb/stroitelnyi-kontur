@@ -38,6 +38,7 @@
   var initialProjectId = Number(initialRoute.get("project") || 0) || null;
   var routeViewMap = {
     "/today": "today",
+    "/assistant": "assistant",
     "/objects": "projects",
     "/tasks": "tasks",
     "/materials": "materials",
@@ -142,6 +143,7 @@
   var sortableDragSource = null;
   var viewTitles = {
     today: "Сегодня",
+    assistant: "Помощник",
     dashboard: "Сигналы",
     projects: "Объекты",
     estimates: "Сметы",
@@ -529,7 +531,7 @@
     return ["owner", "construction_manager"].includes(role) || role === "estimator" && isOwnEstimateJob(job, "estimator_id");
   }
   var viewAccess = {
-    owner: ["today", "dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "object_remarks", "photos", "locations", "documents", "feedback", "events"],
+    owner: ["today", "assistant", "dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "object_remarks", "photos", "locations", "documents", "feedback", "events"],
     construction_manager: ["today", "dashboard", "projects", "tasks", "works", "materials", "object_remarks", "photos", "documents", "feedback", "events"],
     ai_auditor: ["today", "dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "object_remarks", "photos", "locations", "documents", "feedback", "events"],
     finance_director: ["today", "dashboard", "projects", "tasks", "works", "materials", "variations", "object_remarks", "photos", "locations", "documents", "feedback", "events"],
@@ -586,6 +588,7 @@
   };
   var defaultNavLabels = {
     today: "Сегодня",
+    assistant: "Помощник",
     dashboard: "Сигналы",
     projects: "Объекты",
     estimates: "Сметы",
@@ -1304,6 +1307,7 @@
   function viewPageTestId(view) {
     return {
       today: "today-page",
+      assistant: "assistant-page",
       dashboard: "signals-page",
       projects: "objects-page",
       estimates: "estimates-page",
@@ -1318,6 +1322,69 @@
       feedback: "feedback-page",
       events: "events-page"
     }[view] || "".concat(view, "-page");
+  }
+  var assistantQuestionAnswers = {
+    contour: {
+      title: "Что такое Контур?",
+      text: "Контур — основная рабочая система компании. В ней собраны объекты, задачи, материалы, фотоотчёты, документы, замечания и рабочие сигналы.",
+      sources: ["КОНТУР.md", "проекты/Контур.md"]
+    },
+    sections: {
+      title: "Какие разделы есть в Контуре?",
+      text: "Основные разделы: Сегодня, Сигналы, Объекты, Сметы, Задачи, Работы, Материалы, Допработы, Замечания, Фотоотчёты, Локации, База знаний, Обратная связь и Журнал.",
+      sources: ["проекты/Карта-разделов-Контура.md"]
+    },
+    users: {
+      title: "Кто пользуется Контуром?",
+      text: "Контуром пользуются роли продаж, производства и руководства: менеджер, сметчик, руководитель строительства, прораб, технический надзор, снабжение и генеральный директор.",
+      sources: ["КОНТУР.md", "проекты/Роли-пользователей-Контура.md"]
+    },
+    decisions: {
+      title: "Где находится журнал решений?",
+      text: "Журнал решений хранится в цифровой системе Д²Дом. Главный файл: решения/ЖУРНАЛ-РЕШЕНИЙ.md.",
+      sources: ["решения/ЖУРНАЛ-РЕШЕНИЙ.md"]
+    },
+    accepted_decisions: {
+      title: "Какие решения уже утверждены?",
+      text: "Утверждённые решения фиксируются в журнале решений. На текущем этапе важны решения о единой памяти Д²Дом OS, Контуре как основной системе и безопасном режиме первого Помощника.",
+      sources: ["решения/ЖУРНАЛ-РЕШЕНИЙ.md"]
+    },
+    forbidden: {
+      title: "Что запрещено менять без подтверждения?",
+      text: "Без подтверждения владельца нельзя менять рабочие данные, базу, права доступа, деплой, внешние интеграции, клиентские документы, договоры, сметы и персональные данные.",
+      sources: ["ПРАВИЛА-РАБОТЫ-ПРОЕКТА.md", "проекты/Ограничения-первого-запуска-Помощника.md"]
+    },
+    stage: {
+      title: "Какой сейчас этап проекта?",
+      text: "После подготовки безопасного плана начинается первый технический каркас раздела «Помощник» в Контуре. Каркас нужен только для проверки места в интерфейсе и ограничений.",
+      sources: ["ТЕКУЩЕЕ-СОСТОЯНИЕ-ПРОЕКТА.md"]
+    },
+    truth: {
+      title: "Какие документы являются источниками истины?",
+      text: "Источники истины — стартовые документы, журнал решений, правила работы проекта, описание Контура, карта источников истины и утверждённые проектные документы.",
+      sources: ["ИСТОЧНИКИ-ИСТИНЫ.md"]
+    },
+    first_functions: {
+      title: "Какие функции Помощника можно внедрить первыми?",
+      text: "Первыми можно внедрить справочные ответы, быстрые вопросы, показ источников, подсказки по разделам и черновики без сохранения в систему.",
+      sources: ["проекты/Первый-безопасный-вариант-Помощника.md"]
+    },
+    blocked_functions: {
+      title: "Какие функции пока запрещены?",
+      text: "Пока запрещены изменение данных, работа с договорами, сметами, персональными данными, подключение внешних сервисов, отправка сообщений и автономные действия.",
+      sources: ["проекты/Ограничения-первого-запуска-Помощника.md"]
+    }
+  };
+  function selectAssistantQuestion(key) {
+    const answer = assistantQuestionAnswers[key];
+    const input = qs("#assistantQuestionInput");
+    const answerBox = qs("#assistantAnswer");
+    if (!answer || !answerBox) return;
+    if (input) input.value = answer.title;
+    answerBox.innerHTML = "\n    <strong>".concat(escapeHtml(answer.title), "</strong>\n    <p>").concat(escapeHtml(answer.text), '</p>\n    <div class="assistant-answer-sources">\n      <span>Источники:</span>\n      ').concat(answer.sources.map((source) => "<code>".concat(escapeHtml(source), "</code>")).join(""), "\n    </div>\n  ");
+    qsa("[data-assistant-question]").forEach((button) => {
+      button.classList.toggle("active", button.dataset.assistantQuestion === key);
+    });
   }
   function clearProjectDetail() {
     var _a;
@@ -3193,7 +3260,7 @@
     syncMobileQuickActions();
   }
   function mobileMenuViewsForRole() {
-    const order = ["today", "dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "object_remarks", "photos", "locations", "documents", "feedback", "events"];
+    const order = ["today", "assistant", "dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "object_remarks", "photos", "locations", "documents", "feedback", "events"];
     const allowed = allowedViews();
     return order.filter((view) => allowed.includes(view));
   }
@@ -5625,6 +5692,7 @@
     });
     qsa("[data-view]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
     qsa("[data-view-target]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.viewTarget)));
+    qsa("[data-assistant-question]").forEach((button) => button.addEventListener("click", () => selectAssistantQuestion(button.dataset.assistantQuestion)));
     qsa("[data-project-display]").forEach(
       (button) => button.addEventListener("click", () => {
         state.projectDisplayMode = button.dataset.projectDisplay === "cards" ? "cards" : "table";

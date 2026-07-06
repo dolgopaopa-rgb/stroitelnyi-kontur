@@ -3878,6 +3878,7 @@ class AppHandler(BaseHTTPRequestHandler):
         spa_routes = {
             "/",
             "/today",
+            "/assistant",
             "/objects",
             "/tasks",
             "/materials",
