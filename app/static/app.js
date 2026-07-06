@@ -935,6 +935,20 @@ function firstUrlFromText(value) {
   return match[0].replace(/[),.;]+$/, "");
 }
 
+function urlsFromText(value) {
+  const text = String(value ?? "");
+  const matches = text.match(/https?:\/\/[^\s<>"']+/gi) || [];
+  const seen = new Set();
+  return matches
+    .map((url) => url.replace(/[),.;]+$/, ""))
+    .filter((url) => {
+      const key = url.toLowerCase();
+      if (!url || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
 function phoneDigits(value) {
   return String(value || "").replace(/\D/g, "");
 }
@@ -1023,7 +1037,8 @@ function yandexCoordinateDestination(mapsUrl) {
 }
 
 function yandexMapsUrl(address, mapsUrl = "") {
-  const destination = yandexCoordinateDestination(mapsUrl) || String(address || "").trim();
+  const addressText = String(address || "").trim();
+  const destination = addressText || yandexCoordinateDestination(mapsUrl);
   if (!destination) return "";
   return `https://yandex.ru/maps/?rtext=~${encodeURIComponent(destination)}&rtt=auto`;
 }
@@ -3284,6 +3299,35 @@ function renderEstimateJobFiles(files = [], jobId = "", canManageFiles = false) 
     </div>`;
 }
 
+function estimateJobQuickLinks(job, smetterHref = "") {
+  const links = [];
+  const addLink = (href, label) => {
+    const cleanHref = String(href || "").trim();
+    if (!cleanHref) return;
+    if (links.some((item) => item.href.toLowerCase() === cleanHref.toLowerCase())) return;
+    links.push({ href: cleanHref, label });
+  };
+  if (smetterHref) addLink(smetterHref, "Сметтер");
+  [job.source, job.comment, job.question_comment, job.return_comment, job.result_comment].forEach((value) => {
+    urlsFromText(value).forEach((url) => addLink(url, "Ссылка задания"));
+  });
+  return links;
+}
+
+function renderEstimateJobLink(link, index = 0) {
+  const labelText = link.label || `Ссылка ${index + 1}`;
+  return `<a class="pill link-pill estimate-job-link" href="${escapeAttr(link.href)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">${escapeHtml(labelText)}</a>`;
+}
+
+function renderEstimateJobLinks(links) {
+  if (!links.length) return "";
+  return `
+    <div class="estimate-job-links">
+      <strong>Ссылки из задания</strong>
+      <div class="stack-line">${links.map(renderEstimateJobLink).join("")}</div>
+    </div>`;
+}
+
 function renderEstimateGallery() {
   const gallery = state.estimateGallery || { files: [], index: 0 };
   const files = gallery.files || [];
@@ -3336,6 +3380,7 @@ function renderEstimateJobRow(job) {
   const canArchive = canArchiveEstimateJob(job);
   const canAnswerQuestion = canEdit && job.status === "estimate_question" && ["owner", "construction_manager", "sales_manager"].includes(currentRoleBase());
   const smetterHref = estimateSmetterHref(job);
+  const quickLinks = estimateJobQuickLinks(job, smetterHref);
   const collapsibleKey = `estimate-job:${job.id}`;
   const summaryTitle = job.project_title || job.customer_name || job.title || "Сметное задание";
   const summarySubTitle = job.project_title && job.title && job.title !== job.project_title ? job.title : "";
@@ -3351,6 +3396,8 @@ function renderEstimateJobRow(job) {
           ${pill(label(job.status), statusLevel)}
           ${pill(job.due_date || "без срока", job.status === "estimate_done" ? "success" : levelByDate(job.due_date))}
           ${currentFilesCount ? pill(`Файлы: ${currentFilesCount}`, "blue") : ""}
+          ${quickLinks.slice(0, 2).map(renderEstimateJobLink).join("")}
+          ${quickLinks.length > 2 ? pill(`ещё ${quickLinks.length - 2}`, "blue") : ""}
         </span>
       </summary>
       <div class="estimate-job-body">
@@ -3368,6 +3415,7 @@ function renderEstimateJobRow(job) {
           </div>
           ${job.site_costs_comment ? `<p class="muted">Организация площадки: ${escapeHtml(job.site_costs_comment)}</p>` : ""}
           ${smetterHref ? `<a class="link-button inline-link" href="${escapeAttr(smetterHref)}" target="_blank" rel="noopener noreferrer">Открыть Сметтер</a>` : ""}
+          ${renderEstimateJobLinks(quickLinks)}
           ${job.comment ? `<p>${linkifyText(job.comment)}</p>` : ""}
           ${job.question_comment ? `<div class="estimate-question-note"><strong>Вопрос сметчика</strong><p>${linkifyText(job.question_comment)}</p></div>` : ""}
           ${job.return_comment ? `<p class="muted danger-text">Возврат менеджеру: ${linkifyText(job.return_comment)}</p>` : ""}
@@ -4972,6 +5020,7 @@ async function renderProjectDetail(projectId) {
     ],
     ["edit", renderProjectEditPanel(project)],
     ["contract", renderProjectContractPanel(project)],
+    ["variationApproval", renderProjectVariationApprovalPanel(project)],
     ["workflow", renderProjectWorkflow(project)],
     ["documents", renderDocumentSummary(docs, project.contracts || [])],
   ];
@@ -5055,6 +5104,43 @@ function renderProjectContractPanel(project) {
       <div class="form-actions">
         <span class="muted">Добавляйте договор, допсоглашение, материалы и работы по нему из одного окна.</span>
         <button class="primary" type="button" data-add-contract="${project.id}">Добавить договор / доп. соглашение</button>
+      </div>
+    </section>`;
+}
+
+function renderProjectVariationApprovalPanel(project) {
+  const variations = Array.isArray(project.variations) ? project.variations : [];
+  const openStatuses = new Set(["decision_required", "in_review", "new", "draft", "waiting_check", "needs_approval"]);
+  const rows = variations.filter((item) => openStatuses.has(String(item.status || "")));
+  const canCreate = canView("variations") && currentRoleBase() !== "ai_auditor";
+  const statusPill = rows.length ? pill(`${rows.length} ждёт решения`, "warning") : pill("Новых нет", "success");
+  const rowHtml = rows.length
+    ? rows
+        .slice(0, 3)
+        .map(
+          (item) => `
+          <button class="row clickable variation-approval-row" type="button" data-open-variation="${escapeAttr(item.id)}">
+            <div>
+              <strong>${escapeHtml(item.title || "Допработа")}</strong>
+              <div class="muted">${variationType(item.type)}${item.due_date ? ` · срок: ${formatDateRu(item.due_date)}` : ""}</div>
+            </div>
+            ${pill(label(item.status), variationStatusLevel(item.status))}
+            ${canViewFinancials() ? pill(variationAmountLabel(item), Number(item.amount || 0) > 0 ? "warning" : "danger") : ""}
+          </button>`
+        )
+        .join("")
+    : `<p class="muted">Допработ на согласовании по этому объекту сейчас нет.</p>`;
+  return `
+    <section class="workflow-panel compact-workflow variation-approval-panel">
+      <div class="stack-line">
+        <h3>Согласование допработ</h3>
+        ${statusPill}
+      </div>
+      <p class="muted">Здесь видно, какие допработы, отклонения и спорные позиции ждут решения.</p>
+      <div class="variation-approval-list">${rowHtml}</div>
+      <div class="form-actions">
+        ${canCreate ? `<button class="primary" type="button" data-create-project-variation="${escapeAttr(project.id)}">Добавить допработу</button>` : ""}
+        <button class="secondary" type="button" data-view-target="variations">Открыть раздел</button>
       </div>
     </section>`;
 }
@@ -7831,7 +7917,11 @@ function bindEvents() {
   });
   qs('#estimateJobFileForm select[name="mode"]')?.addEventListener("change", updateEstimateFileDialogMode);
   qs("#newMaterialButton").addEventListener("click", async () => openNewMaterialDialog());
-  qs("#newVariationButton").addEventListener("click", () => qs("#variationDialog").showModal());
+  qs("#newVariationButton").addEventListener("click", () => {
+    const form = qs("#variationForm");
+    form.reset();
+    qs("#variationDialog").showModal();
+  });
   qs("#newObjectRemarkButton")?.addEventListener("click", () => {
     const form = qs("#objectRemarkForm");
     form.reset();
@@ -8390,6 +8480,15 @@ function bindEvents() {
     const variationButton = event.target.closest("[data-open-variation]");
     if (variationButton) {
       await openVariationDialog(variationButton.dataset.openVariation);
+      return;
+    }
+
+    const createProjectVariationButton = event.target.closest("[data-create-project-variation]");
+    if (createProjectVariationButton) {
+      const form = qs("#variationForm");
+      form.reset();
+      if (form.elements.project_id) form.elements.project_id.value = createProjectVariationButton.dataset.createProjectVariation || "";
+      qs("#variationDialog").showModal();
       return;
     }
 

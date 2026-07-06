@@ -1283,6 +1283,26 @@ h2 {
   text-align: left;
 }
 
+.variation-approval-list {
+  display: grid;
+  gap: 6px;
+}
+
+.variation-approval-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+}
+
+.variation-approval-row strong,
+.variation-approval-row .muted {
+  overflow-wrap: anywhere;
+}
+
 .preserve-lines {
   white-space: pre-wrap;
 }
@@ -3144,6 +3164,25 @@ h2 {
 
 .estimate-question-note p {
   margin-top: 3px;
+}
+
+.estimate-job-links {
+  display: grid;
+  gap: 5px;
+  padding: 7px 9px;
+  border: 1px solid #cfe3df;
+  border-radius: 8px;
+  background: #f2faf8;
+}
+
+.estimate-job-links strong {
+  font-size: 12px;
+  color: var(--brand);
+}
+
+.estimate-job-link {
+  text-decoration: none;
+  white-space: nowrap;
 }
 
 .danger-outline {
