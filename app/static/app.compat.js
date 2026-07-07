@@ -91,6 +91,7 @@
     selectedPhotoProjectId: initialProjectId,
     openWorkStages: {},
     estimateGallery: { jobId: null, files: [], index: 0 },
+    managerEstimateNoticeKey: "",
     knowledgeFolders: [],
     knowledgeCurrentFolderId: localStorage.getItem("knowledgeCurrentFolderId") || "",
     knowledgeClassificationOnly: false,
@@ -2655,6 +2656,58 @@
     if (state.estimateListMode === "archive") return jobs.filter((job) => job.status === "archived");
     return jobs.filter((job) => job.status !== "archived");
   }
+  function currentEstimateFilesCount(job) {
+    return (((job == null ? void 0 : job.files) || []).filter((file) => {
+      var _a;
+      return Number((_a = file.is_current) != null ? _a : 1) !== 0;
+    })).length;
+  }
+  function submittedEstimateJobsForManager(jobs = state.estimateJobs || []) {
+    if (currentRoleBase() !== "sales_manager") return [];
+    return jobs.filter((job) => job.status === "estimate_done").filter((job) => isOwnEstimateJob(job, "manager_id")).sort((a, b) => String(b.delivered_at || b.updated_at || b.created_at || "").localeCompare(String(a.delivered_at || a.updated_at || a.created_at || "")) || Number(b.id || 0) - Number(a.id || 0));
+  }
+  function managerEstimateNoticeStorageKey(jobs) {
+    const userId = currentUserId() || "manager";
+    const ids = jobs.map((job) => "".concat(job.id, ":").concat(job.delivered_at || job.updated_at || job.status)).join("|");
+    return "managerEstimateNotice:v1:".concat(userId, ":").concat(ids);
+  }
+  function renderManagerEstimateNoticeItems(jobs, { compact = false } = {}) {
+    const rows = jobs.slice(0, compact ? 3 : 12);
+    if (!rows.length) return '<p class="muted">Новых сданных смет пока нет.</p>';
+    return rows.map((job) => {
+      const filesCount = currentEstimateFilesCount(job);
+      const deliveredAt = formatDateRu(job.delivered_at || job.updated_at || job.created_at);
+      return '\n        <button class="manager-estimate-notice-item" type="button" data-manager-estimate-open-section>\n          <span class="manager-estimate-notice-main">\n            <strong>'.concat(escapeHtml(job.project_title || job.title || job.customer_name || "Смета сдана"), "</strong>\n            <small>").concat(escapeHtml(job.customer_name || "заказчик не указан"), " · сметчик: ").concat(escapeHtml(job.estimator_name || "не назначен")).concat(deliveredAt ? " · сдано: ".concat(deliveredAt) : "", '</small>\n          </span>\n          <span class="manager-estimate-notice-meta">\n            ').concat(pill("Смета сдана", "success"), "\n            ").concat(filesCount ? pill("Файлы: ".concat(filesCount), "blue") : pill("Файлы не приложены", "warning"), "\n          </span>\n        </button>");
+    }).join("");
+  }
+  function syncManagerEstimateNotice({ forceDialog = false } = {}) {
+    const jobs = submittedEstimateJobsForManager();
+    const panel = qs("#managerEstimateNoticePanel");
+    const preview = qs("#managerEstimateNoticePreview");
+    const list = qs("#managerEstimateNoticeList");
+    if (panel) panel.hidden = !jobs.length;
+    if (preview) preview.innerHTML = renderManagerEstimateNoticeItems(jobs, { compact: true });
+    if (list) list.innerHTML = renderManagerEstimateNoticeItems(jobs);
+    if (!jobs.length) return;
+    const key = managerEstimateNoticeStorageKey(jobs);
+    const alreadySeen = localStorage.getItem(key) === "1";
+    if (!forceDialog && (alreadySeen || state.managerEstimateNoticeKey === key)) return;
+    state.managerEstimateNoticeKey = key;
+    localStorage.setItem(key, "1");
+    const dialog = qs("#managerEstimateNoticeDialog");
+    try {
+      if (dialog && !dialog.open && !document.querySelector("dialog[open]")) dialog.showModal();
+    } catch (error) {
+      console.warn("Manager estimate notice could not be opened", error);
+    }
+  }
+  async function openManagerEstimateNoticeSection() {
+    const dialog = qs("#managerEstimateNoticeDialog");
+    if (dialog == null ? void 0 : dialog.open) dialog.close();
+    state.estimateListMode = "active";
+    await switchView("estimates");
+    await renderEstimateJobs();
+  }
   function renderEstimateJobStats(jobs) {
     const stats = estimateJobStats(jobs);
     const total = Math.max(jobs.length, 1);
@@ -3364,6 +3417,7 @@
       (project) => '\n          <button class="row clickable" type="button" data-open-project="'.concat(project.id, '">\n            <strong>').concat(escapeHtml(project.title), '</strong>\n            <div class="muted">последний фотоотчёт: ').concat(latestPhotoReportDate(project.id) ? formatDateRu(latestPhotoReportDate(project.id)) : "не найден", "</div>\n          </button>"),
       { limit: 5, moreTarget: 'data-view-target="photos"' }
     ) : '<p class="muted">По всем активным объектам есть фотоотчёт за сегодня.</p>';
+    syncManagerEstimateNotice();
   }
   async function renderEstimateJobs() {
     const statsNode = qs("#estimateJobStats");
@@ -3381,6 +3435,7 @@
     statsNode.innerHTML = renderEstimateJobStats(jobs);
     scheduleNode.innerHTML = renderEstimateSchedule(jobs);
     rowsNode.innerHTML = jobs.length ? jobs.map(renderEstimateJobRow).join("") : '<p class="muted">'.concat(state.estimateListMode === "archive" ? "В архиве сметных заданий пока нет." : "Активных сметных заданий пока нет. Нажмите “Добавить задание”, чтобы зафиксировать входящую смету в работе.", "</p>");
+    syncManagerEstimateNotice();
   }
   function notificationTargetAttrs(row) {
     if (row.related_type === "material_request_batch" && row.related_id) return 'data-open-material-batch="batch-'.concat(row.related_id, '"');
@@ -5997,6 +6052,16 @@
       if (viewTargetButton) {
         switchView(viewTargetButton.dataset.viewTarget);
         if (viewTargetButton.closest("#mobileQuickSheet")) toggleMobileQuickActions(false);
+        return;
+      }
+      const managerEstimateNoticeButton = event.target.closest("[data-open-manager-estimate-notice]");
+      if (managerEstimateNoticeButton) {
+        syncManagerEstimateNotice({ forceDialog: true });
+        return;
+      }
+      const managerEstimateOpenButton = event.target.closest("[data-manager-estimate-open-section]");
+      if (managerEstimateOpenButton) {
+        await openManagerEstimateNoticeSection();
         return;
       }
       const taskFilterButton = event.target.closest("[data-task-filter]");

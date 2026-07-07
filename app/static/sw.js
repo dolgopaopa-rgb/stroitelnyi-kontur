@@ -1,9 +1,9 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260707-estimate-file-fix";
+const CACHE_NAME = "stroitelnyi-kontur-20260707-manager-estimate-notice";
 const CORE_ASSETS = [
   "/",
-  "/static/styles.css?v=20260707-estimate-file-fix",
-  "/static/app.compat.js?v=20260707-estimate-file-fix",
-  "/static/manifest.webmanifest?v=20260707-estimate-file-fix",
+  "/static/styles.css?v=20260707-manager-estimate-notice",
+  "/static/app.compat.js?v=20260707-manager-estimate-notice",
+  "/static/manifest.webmanifest?v=20260707-manager-estimate-notice",
   "/static/assets/g2-logo-192.png",
   "/static/assets/g2-logo-512.png"
 ];

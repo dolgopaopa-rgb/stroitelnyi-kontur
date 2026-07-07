@@ -146,7 +146,7 @@ test("estimate job files are collapsed under object summary", async ({ page }) =
   const compat = readProjectFile("app/static/app.compat.js");
   const styles = readProjectFile("app/static/styles.css");
 
-  expect(html).toContain("20260707-estimate-file-fix");
+  expect(html).toContain("20260707-manager-estimate-notice");
   expect(app).toContain("estimate-job-collapsible");
   expect(app).toContain("estimate-job-summary");
   expect(app).toContain("estimate-job-body");
@@ -176,6 +176,27 @@ test("estimate file replacement cannot silently fail", async ({ page }) => {
   expect(server).toContain("Не удалось сохранить файлы сметы");
 });
 
+test("sales manager sees submitted estimate notification", async ({ page }) => {
+  await openApp(page, "/today");
+
+  const html = readProjectFile("app/static/index.html");
+  const app = readProjectFile("app/static/app.js");
+  const styles = readProjectFile("app/static/styles.css");
+
+  expect(html).toContain('id="managerEstimateNoticePanel"');
+  expect(html).toContain('id="managerEstimateNoticeDialog"');
+  expect(html).toContain("Новые сданные сметы");
+  expect(app).toContain("function submittedEstimateJobsForManager");
+  expect(app).toContain('currentRoleBase() !== "sales_manager"');
+  expect(app).toContain('job.status === "estimate_done"');
+  expect(app).toContain('isOwnEstimateJob(job, "manager_id")');
+  expect(app).toContain("managerEstimateNoticeStorageKey");
+  expect(app).toContain("data-open-manager-estimate-notice");
+  expect(app).toContain("data-manager-estimate-open-section");
+  expect(styles).toContain(".manager-estimate-notice-panel");
+  expect(styles).toContain(".manager-estimate-notice-item");
+});
+
 test("delivered material batches do not stay in delivery risk", async ({ page }) => {
   await openApp(page, "/materials");
 
@@ -184,7 +205,7 @@ test("delivered material batches do not stay in delivery risk", async ({ page })
   const compat = readProjectFile("app/static/app.compat.js");
   const server = readProjectFile("app/server.py");
 
-  expect(html).toContain("20260707-estimate-file-fix");
+  expect(html).toContain("20260707-manager-estimate-notice");
   expect(app).toContain("function materialBatchHasOpenProblem");
   expect(app).toContain("function materialBatchIsFinalForAttention");
   expect(app).toContain("if (materialBatchIsFinalForAttention(batch)) return false");

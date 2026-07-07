@@ -57,6 +57,7 @@ const state = {
   selectedPhotoProjectId: initialProjectId,
   openWorkStages: {},
   estimateGallery: { jobId: null, files: [], index: 0 },
+  managerEstimateNoticeKey: "",
   knowledgeFolders: [],
   knowledgeCurrentFolderId: localStorage.getItem("knowledgeCurrentFolderId") || "",
   knowledgeClassificationOnly: false,
@@ -3175,6 +3176,79 @@ function visibleEstimateJobs(jobs = state.estimateJobs || []) {
   return jobs.filter((job) => job.status !== "archived");
 }
 
+function currentEstimateFilesCount(job) {
+  return (job?.files || []).filter((file) => Number(file.is_current ?? 1) !== 0).length;
+}
+
+function submittedEstimateJobsForManager(jobs = state.estimateJobs || []) {
+  if (currentRoleBase() !== "sales_manager") return [];
+  return jobs
+    .filter((job) => job.status === "estimate_done")
+    .filter((job) => isOwnEstimateJob(job, "manager_id"))
+    .sort((a, b) =>
+      String(b.delivered_at || b.updated_at || b.created_at || "").localeCompare(String(a.delivered_at || a.updated_at || a.created_at || "")) ||
+      Number(b.id || 0) - Number(a.id || 0)
+    );
+}
+
+function managerEstimateNoticeStorageKey(jobs) {
+  const userId = currentUserId() || "manager";
+  const ids = jobs.map((job) => `${job.id}:${job.delivered_at || job.updated_at || job.status}`).join("|");
+  return `managerEstimateNotice:v1:${userId}:${ids}`;
+}
+
+function renderManagerEstimateNoticeItems(jobs, { compact = false } = {}) {
+  const rows = jobs.slice(0, compact ? 3 : 12);
+  if (!rows.length) return `<p class="muted">Новых сданных смет пока нет.</p>`;
+  return rows
+    .map((job) => {
+      const filesCount = currentEstimateFilesCount(job);
+      const deliveredAt = formatDateRu(job.delivered_at || job.updated_at || job.created_at);
+      return `
+        <button class="manager-estimate-notice-item" type="button" data-manager-estimate-open-section>
+          <span class="manager-estimate-notice-main">
+            <strong>${escapeHtml(job.project_title || job.title || job.customer_name || "Смета сдана")}</strong>
+            <small>${escapeHtml(job.customer_name || "заказчик не указан")} · сметчик: ${escapeHtml(job.estimator_name || "не назначен")}${deliveredAt ? ` · сдано: ${deliveredAt}` : ""}</small>
+          </span>
+          <span class="manager-estimate-notice-meta">
+            ${pill("Смета сдана", "success")}
+            ${filesCount ? pill(`Файлы: ${filesCount}`, "blue") : pill("Файлы не приложены", "warning")}
+          </span>
+        </button>`;
+    })
+    .join("");
+}
+
+function syncManagerEstimateNotice({ forceDialog = false } = {}) {
+  const jobs = submittedEstimateJobsForManager();
+  const panel = qs("#managerEstimateNoticePanel");
+  const preview = qs("#managerEstimateNoticePreview");
+  const list = qs("#managerEstimateNoticeList");
+  if (panel) panel.hidden = !jobs.length;
+  if (preview) preview.innerHTML = renderManagerEstimateNoticeItems(jobs, { compact: true });
+  if (list) list.innerHTML = renderManagerEstimateNoticeItems(jobs);
+  if (!jobs.length) return;
+  const key = managerEstimateNoticeStorageKey(jobs);
+  const alreadySeen = localStorage.getItem(key) === "1";
+  if (!forceDialog && (alreadySeen || state.managerEstimateNoticeKey === key)) return;
+  state.managerEstimateNoticeKey = key;
+  localStorage.setItem(key, "1");
+  const dialog = qs("#managerEstimateNoticeDialog");
+  try {
+    if (dialog && !dialog.open && !document.querySelector("dialog[open]")) dialog.showModal();
+  } catch (error) {
+    console.warn("Manager estimate notice could not be opened", error);
+  }
+}
+
+async function openManagerEstimateNoticeSection() {
+  const dialog = qs("#managerEstimateNoticeDialog");
+  if (dialog?.open) dialog.close();
+  state.estimateListMode = "active";
+  await switchView("estimates");
+  await renderEstimateJobs();
+}
+
 function renderEstimateJobStats(jobs) {
   const stats = estimateJobStats(jobs);
   const total = Math.max(jobs.length, 1);
@@ -4174,6 +4248,7 @@ async function renderToday() {
         { limit: 5, moreTarget: 'data-view-target="photos"' }
       )
     : `<p class="muted">По всем активным объектам есть фотоотчёт за сегодня.</p>`;
+  syncManagerEstimateNotice();
 }
 
 async function renderEstimateJobs() {
@@ -4194,6 +4269,7 @@ async function renderEstimateJobs() {
   rowsNode.innerHTML = jobs.length
     ? jobs.map(renderEstimateJobRow).join("")
     : `<p class="muted">${state.estimateListMode === "archive" ? "В архиве сметных заданий пока нет." : "Активных сметных заданий пока нет. Нажмите “Добавить задание”, чтобы зафиксировать входящую смету в работе."}</p>`;
+  syncManagerEstimateNotice();
 }
 
 function notificationTargetAttrs(row) {
@@ -8179,6 +8255,18 @@ function bindEvents() {
     if (viewTargetButton) {
       switchView(viewTargetButton.dataset.viewTarget);
       if (viewTargetButton.closest("#mobileQuickSheet")) toggleMobileQuickActions(false);
+      return;
+    }
+
+    const managerEstimateNoticeButton = event.target.closest("[data-open-manager-estimate-notice]");
+    if (managerEstimateNoticeButton) {
+      syncManagerEstimateNotice({ forceDialog: true });
+      return;
+    }
+
+    const managerEstimateOpenButton = event.target.closest("[data-manager-estimate-open-section]");
+    if (managerEstimateOpenButton) {
+      await openManagerEstimateNoticeSection();
       return;
     }
 
