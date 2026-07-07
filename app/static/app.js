@@ -3342,8 +3342,12 @@ function renderEstimateJobFiles(files = [], jobId = "", canManageFiles = false) 
             const replaceButton = canManageFiles && isCurrent ? `<button class="estimate-file-print" type="button" data-replace-estimate-file="${escapeAttr(file.id)}" data-estimate-job-id="${escapeAttr(jobId)}">Заменить</button>` : "";
             const deleteButton = canManageFiles ? `<button class="estimate-file-print danger-outline" type="button" data-delete-estimate-file="${escapeAttr(file.id)}">Удалить</button>` : "";
             const meta = `<span>${fileName}</span><span>${versionText}${note}</span>`;
-            const canPreview = canPreviewInlineFile(file.file_name || file.title || "", file.mime_type);
+            const previewKind = filePreviewKind(file.file_name || file.title || "", file.mime_type);
+            const canPreview = Boolean(previewKind);
             const actionLabel = fileOpenAction(file.file_name || file.title || "", file.mime_type);
+            const previewAttrs = canPreview
+              ? `data-media-preview="${previewKind}" data-media-url="${href}" data-media-title="${escapeAttr(file.title || file.file_name || "Файл")}" data-media-mime="${escapeAttr(file.mime_type || "")}"`
+              : `target="_blank" rel="noopener noreferrer" download`;
             if (isEstimateImageFile(file)) {
               return `
           <div class="estimate-file-card ${isCurrent ? "" : "previous-version"}">
@@ -3358,7 +3362,7 @@ function renderEstimateJobFiles(files = [], jobId = "", canManageFiles = false) 
             }
             return `
           <div class="estimate-file-card ${isCurrent ? "" : "previous-version"}">
-            <a href="${href}" target="_blank" rel="noopener noreferrer" ${canPreview ? "" : "download"}>
+            <a href="${href}" ${previewAttrs}>
               <strong>${escapeHtml(file.title || file.file_name || "Файл")}</strong>
               ${meta}
               <span>${actionLabel}</span>
@@ -8236,7 +8240,7 @@ function bindEvents() {
     const mediaPreviewButton = event.target.closest("[data-media-preview]");
     if (mediaPreviewButton) {
       event.preventDefault();
-      const galleryRoot = mediaPreviewButton.closest(".media-grid, .remark-media-grid, .photo-report-card, .object-remark-card, .document-list, .knowledge-list");
+      const galleryRoot = mediaPreviewButton.closest(".media-grid, .remark-media-grid, .photo-report-card, .object-remark-card, .document-list, .knowledge-list, .estimate-job-files");
       const galleryItems = qsa("[data-media-preview]", galleryRoot || document).map(mediaPreviewItemFromLink).filter((item) => item.href);
       const clickedHref = mediaPreviewButton.dataset.mediaUrl || mediaPreviewButton.getAttribute("href") || "";
       const clickedIndex = Math.max(0, galleryItems.findIndex((item) => item.href === clickedHref));

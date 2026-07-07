@@ -200,7 +200,12 @@ test("estimate job files are collapsed under object summary", async ({ page }) =
   expect(app).toContain("estimate-job-body");
   expect(app).toContain("data-collapsible-key");
   expect(app).toContain("Файлы:");
+  expect(app).toContain('data-media-preview="${previewKind}"');
+  expect(app).toContain(".estimate-job-files");
+  expect(html).toContain("Закрыть просмотр");
   expect(compat).toContain("estimate-job-collapsible");
+  expect(compat).toContain("data-media-preview");
+  expect(compat).toContain(".estimate-job-files");
   expect(styles).toContain(".estimate-job-collapsible");
   expect(styles).toContain(".estimate-job-summary");
   expect(styles).toContain(".estimate-job-body");
