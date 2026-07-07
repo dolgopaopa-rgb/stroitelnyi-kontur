@@ -6503,11 +6503,20 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     )
                     if new_file_id:
                         saved_ids.append(new_file_id)
+                    else:
+                        json_response(self, {"error": "Не удалось сохранить новую версию файла"}, 400)
+                        return
+                elif replace_file_id and not attachments:
+                    json_response(self, {"error": "Для замены выберите новую версию файла"}, 400)
+                    return
                 elif attachments:
                     for attachment in attachments:
                         new_file_id = save_estimate_job_file(db, estimate_job_id, attachment, account_user_id(account))
                         if new_file_id:
                             saved_ids.append(new_file_id)
+                    if not saved_ids:
+                        json_response(self, {"error": "Не удалось сохранить файлы сметы"}, 400)
+                        return
                 action_text = "заменен файл сметы" if replace_file_id and attachments else ("добавлен файл сметы" if attachments else "обновлена ссылка на Сметтер")
                 notify_users(
                     db,

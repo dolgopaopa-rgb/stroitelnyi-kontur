@@ -3882,7 +3882,7 @@
     const canCreate = canView("variations") && currentRoleBase() !== "ai_auditor";
     const statusPill = rows.length ? pill("".concat(rows.length, " ждёт решения"), "warning") : pill("Новых нет", "success");
     const rowHtml = rows.length ? rows.slice(0, 3).map(
-      (item) => '\n          <button class="row clickable variation-approval-row" type="button" data-open-variation="'.concat(escapeAttr(item.id), '">\n            <div>\n              <strong>').concat(escapeHtml(item.title || "Допработа"), "</strong>\n              <div class=\"muted\">").concat(variationType(item.type)).concat(item.due_date ? " · срок: ".concat(formatDateRu(item.due_date)) : "", "</div>\n            </div>\n            ").concat(pill(label(item.status), variationStatusLevel(item.status)), "\n            ").concat(canViewFinancials() ? pill(variationAmountLabel(item), Number(item.amount || 0) > 0 ? "warning" : "danger") : "", "\n          </button>")
+      (item) => '\n          <button class="row clickable variation-approval-row" type="button" data-open-variation="'.concat(escapeAttr(item.id), '">\n            <div>\n              <strong>').concat(escapeHtml(item.title || "Допработа"), '</strong>\n              <div class="muted">').concat(variationType(item.type)).concat(item.due_date ? " · срок: ".concat(formatDateRu(item.due_date)) : "", "</div>\n            </div>\n            ").concat(pill(label(item.status), variationStatusLevel(item.status)), "\n            ").concat(canViewFinancials() ? pill(variationAmountLabel(item), Number(item.amount || 0) > 0 ? "warning" : "danger") : "", "\n          </button>")
     ).join("") : '<p class="muted">Допработ на согласовании по этому объекту сейчас нет.</p>';
     return '\n    <section class="workflow-panel compact-workflow variation-approval-panel">\n      <div class="stack-line">\n        <h3>Согласование допработ</h3>\n        '.concat(statusPill, '\n      </div>\n      <p class="muted">Здесь видно, какие допработы, отклонения и спорные позиции ждут решения.</p>\n      <div class="variation-approval-list">').concat(rowHtml, '</div>\n      <div class="form-actions">\n        ').concat(canCreate ? '<button class="primary" type="button" data-create-project-variation="'.concat(escapeAttr(project.id), '">Добавить допработу</button>') : "", '\n        <button class="secondary" type="button" data-view-target="variations">Открыть раздел</button>\n      </div>\n    </section>');
   }
@@ -6709,15 +6709,24 @@
       showToast("Смета сдана, файлы сохранены");
     });
     qs("#estimateJobFileForm").addEventListener("submit", async (event) => {
-      var _a2, _b2;
+      var _a2, _b2, _c2;
       event.preventDefault();
       const form = qs("#estimateJobFileForm");
       const id = form.elements.id.value;
       const mode = form.elements.mode.value || "add";
       const attachments = Array.from(((_a2 = form.elements.attachments) == null ? void 0 : _a2.files) || []);
       const smetterUrl = ((_b2 = form.elements.smetter_url) == null ? void 0 : _b2.value.trim()) || "";
+      const submitButton = form.querySelector('button[type="submit"]');
       if (!id) {
         showToast("Не найдено сметное задание");
+        return;
+      }
+      if (mode === "replace" && !form.elements.replace_file_id.value) {
+        showToast("Выберите файл, который нужно заменить");
+        return;
+      }
+      if (mode === "replace" && !attachments.length) {
+        showToast("Для замены выберите новую версию файла");
         return;
       }
       if (!attachments.length && !smetterUrl) {
@@ -6728,24 +6737,38 @@
         showToast("Для замены выберите один новый файл");
         return;
       }
-      const payload = {
-        replacement_note: form.elements.replacement_note.value || "",
-        smetter_url: smetterUrl,
-        attachments: await Promise.all(attachments.map((file) => fileDocumentPayload(file, file.name, "estimate_job_file", "estimate_job")))
-      };
-      if (mode === "replace") {
-        payload.replace_file_id = form.elements.replace_file_id.value;
+      if (submitButton) submitButton.disabled = true;
+      const loadingKey = "estimate-file-save-".concat(Date.now());
+      setAppLoading(true, mode === "replace" ? "Сохраняем новую версию файла" : "Сохраняем файлы сметы", loadingKey);
+      try {
+        const payload = {
+          replacement_note: form.elements.replacement_note.value || "",
+          smetter_url: smetterUrl,
+          attachments: await Promise.all(attachments.map((file) => fileDocumentPayload(file, file.name, "estimate_job_file", "estimate_job")))
+        };
+        if (mode === "replace") {
+          payload.replace_file_id = form.elements.replace_file_id.value;
+        }
+        const result = await api("/api/estimate-jobs/".concat(id, "/files"), {
+          method: "POST",
+          body: JSON.stringify(payload),
+          loadingMessage: mode === "replace" ? "Загружаем новую версию файла" : "Загружаем файлы сметы"
+        });
+        if (attachments.length && !((_c2 = result.files) == null ? void 0 : _c2.length)) {
+          throw new Error("Файл не сохранился. Попробуйте ещё раз или сообщите в чат.");
+        }
+        qs("#estimateJobFileDialog").close();
+        form.reset();
+        await loadCoreData();
+        await renderEstimateJobs();
+        await renderDashboard();
+        showToast(attachments.length ? mode === "replace" ? "Файл сметы заменен, старая версия сохранена" : "Файлы сметы добавлены" : "Ссылка на Сметтер сохранена");
+      } catch (error) {
+        showToast(error.message || "Не удалось сохранить файлы сметы");
+      } finally {
+        setAppLoading(false, "", loadingKey);
+        if (submitButton) submitButton.disabled = false;
       }
-      await api("/api/estimate-jobs/".concat(id, "/files"), {
-        method: "POST",
-        body: JSON.stringify(payload)
-      });
-      qs("#estimateJobFileDialog").close();
-      form.reset();
-      await loadCoreData();
-      await renderEstimateJobs();
-      await renderDashboard();
-      showToast(attachments.length ? mode === "replace" ? "Файл сметы заменен, старая версия сохранена" : "Файлы сметы добавлены" : "Ссылка на Сметтер сохранена");
     });
     qs("#materialForm").addEventListener("submit", (event) => {
       event.preventDefault();

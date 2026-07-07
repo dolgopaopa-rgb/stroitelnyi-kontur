@@ -43,8 +43,20 @@ test("extra work items can be edited before final decision", async ({ page }) =>
 });
 
 test("feedback delete controls are available only to owner", async ({ page }) => {
+  const externalId = `e2e-feedback-delete-${Date.now()}-${Math.random()}`;
+  const createResponse = await page.request.post("/api/feedback", {
+    data: {
+      source: "e2e",
+      external_id: externalId,
+      sender_name: "E2E",
+      text: "Проверка кнопки удаления обратной связи",
+      attachments: [],
+    },
+  });
+  expect(createResponse.ok()).toBeTruthy();
+
   await openApp(page, "/feedback");
-  expect(await switchRole(page, "owner")).toBeTruthy();
+  await switchRole(page, "owner");
   await expect(page.locator("#feedbackView")).toHaveClass(/active/);
   await expect(page.locator("#deleteSelectedFeedbackButton")).toBeVisible();
   await expect(page.locator("[data-feedback-delete]").first()).toBeVisible();
@@ -134,7 +146,7 @@ test("estimate job files are collapsed under object summary", async ({ page }) =
   const compat = readProjectFile("app/static/app.compat.js");
   const styles = readProjectFile("app/static/styles.css");
 
-  expect(html).toContain("20260704-material-risk-final");
+  expect(html).toContain("20260707-estimate-file-fix");
   expect(app).toContain("estimate-job-collapsible");
   expect(app).toContain("estimate-job-summary");
   expect(app).toContain("estimate-job-body");
@@ -146,6 +158,24 @@ test("estimate job files are collapsed under object summary", async ({ page }) =
   expect(styles).toContain(".estimate-job-body");
 });
 
+test("estimate file replacement cannot silently fail", async ({ page }) => {
+  await openApp(page, "/estimates");
+
+  const html = readProjectFile("app/static/index.html");
+  const app = readProjectFile("app/static/app.js");
+  const server = readProjectFile("app/server.py");
+
+  expect(html).toContain('id="estimateJobFileForm"');
+  expect(html).toContain('value="replace"');
+  expect(app).toContain("Для замены выберите новую версию файла");
+  expect(app).toContain("Сохраняем новую версию файла");
+  expect(app).toContain("Файл не сохранился. Попробуйте ещё раз или сообщите в чат.");
+  expect(app).toContain("submitButton.disabled = true");
+  expect(server).toContain("Для замены выберите новую версию файла");
+  expect(server).toContain("Не удалось сохранить новую версию файла");
+  expect(server).toContain("Не удалось сохранить файлы сметы");
+});
+
 test("delivered material batches do not stay in delivery risk", async ({ page }) => {
   await openApp(page, "/materials");
 
@@ -154,7 +184,7 @@ test("delivered material batches do not stay in delivery risk", async ({ page })
   const compat = readProjectFile("app/static/app.compat.js");
   const server = readProjectFile("app/server.py");
 
-  expect(html).toContain("20260704-material-risk-final");
+  expect(html).toContain("20260707-estimate-file-fix");
   expect(app).toContain("function materialBatchHasOpenProblem");
   expect(app).toContain("function materialBatchIsFinalForAttention");
   expect(app).toContain("if (materialBatchIsFinalForAttention(batch)) return false");

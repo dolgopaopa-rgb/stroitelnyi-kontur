@@ -599,6 +599,7 @@ async function runScroll(results, page) {
 }
 
 async function runButtons(results, page) {
+  await selectRole(page, "owner");
   await route(page, "today");
   const targets = [
     ['[data-testid="nav-objects"]', "Open objects"],
@@ -709,9 +710,10 @@ async function runButtons(results, page) {
   );
   await selectRole(page, "owner");
   await route(page, "materials");
-  const pipelineButtons = page.locator('[data-material-pipeline-filter]');
-  const pipelineCount = await pipelineButtons.count().catch(() => 0);
-  let pipelineOk = pipelineCount >= 8;
+  const pipelineButtons = page.locator('[data-material-pipeline-filter]:visible');
+  const pipelineCount = await page.locator('[data-material-pipeline-filter]').count().catch(() => 0);
+  const visiblePipelineCount = await pipelineButtons.count().catch(() => 0);
+  let pipelineOk = pipelineCount >= 8 && visiblePipelineCount >= 8;
   if (pipelineOk) {
     const target = pipelineButtons.nth(1);
     const filter = await target.getAttribute("data-material-pipeline-filter");
@@ -720,7 +722,7 @@ async function runButtons(results, page) {
     const activeFilter = await page.locator("[data-material-pipeline-filter].active").getAttribute("data-material-pipeline-filter").catch(() => "");
     pipelineOk = activeFilter === filter;
   }
-  add(results, "Button QA Agent", "Material pipeline tabs switch", pipelineCount ? (pipelineOk ? "OK" : "FAIL") : "PARTIAL", `pipeline_buttons=${pipelineCount}; switched=${pipelineOk}`, pipelineOk || !pipelineCount ? "normal" : "blocker", "", { buttonsChecked: pipelineCount ? 1 : 0 });
+  add(results, "Button QA Agent", "Material pipeline tabs switch", pipelineCount ? (pipelineOk ? "OK" : "FAIL") : "PARTIAL", `pipeline_buttons=${pipelineCount}; visible=${visiblePipelineCount}; switched=${pipelineOk}`, pipelineOk || !pipelineCount ? "normal" : "blocker", "", { buttonsChecked: visiblePipelineCount ? 1 : 0 });
   await page.setViewportSize({ width: 390, height: 844 });
   await route(page, "today");
   const plus = page.locator('[data-testid="mobile-plus-button"]').first();
@@ -2135,7 +2137,7 @@ async function main() {
     if (["lint", "all", "report"].includes(suite)) await runLint(results);
     if (["typecheck", "all", "report"].includes(suite)) await runTypecheck(results);
     if (["unit", "all", "report"].includes(suite)) await runUnit(results);
-    if (isLocalBaseUrl && ["all", "report", "mobile"].includes(suite)) ensureLocalQaFixtures(results);
+    if (isLocalBaseUrl && ["all", "report", "mobile", "buttons"].includes(suite)) ensureLocalQaFixtures(results);
 
     const needsBrowser = ["smoke", "scroll", "buttons", "navigation", "roles", "readonly", "mobile", "photo_report_integrity", "all", "report"].includes(suite);
     let playwright = null;

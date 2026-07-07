@@ -8941,8 +8941,17 @@ function bindEvents() {
     const mode = form.elements.mode.value || "add";
     const attachments = Array.from(form.elements.attachments?.files || []);
     const smetterUrl = form.elements.smetter_url?.value.trim() || "";
+    const submitButton = form.querySelector('button[type="submit"]');
     if (!id) {
       showToast("Не найдено сметное задание");
+      return;
+    }
+    if (mode === "replace" && !form.elements.replace_file_id.value) {
+      showToast("Выберите файл, который нужно заменить");
+      return;
+    }
+    if (mode === "replace" && !attachments.length) {
+      showToast("Для замены выберите новую версию файла");
       return;
     }
     if (!attachments.length && !smetterUrl) {
@@ -8953,24 +8962,38 @@ function bindEvents() {
       showToast("Для замены выберите один новый файл");
       return;
     }
-    const payload = {
-      replacement_note: form.elements.replacement_note.value || "",
-      smetter_url: smetterUrl,
-      attachments: await Promise.all(attachments.map((file) => fileDocumentPayload(file, file.name, "estimate_job_file", "estimate_job"))),
-    };
-    if (mode === "replace") {
-      payload.replace_file_id = form.elements.replace_file_id.value;
+    if (submitButton) submitButton.disabled = true;
+    const loadingKey = `estimate-file-save-${Date.now()}`;
+    setAppLoading(true, mode === "replace" ? "Сохраняем новую версию файла" : "Сохраняем файлы сметы", loadingKey);
+    try {
+      const payload = {
+        replacement_note: form.elements.replacement_note.value || "",
+        smetter_url: smetterUrl,
+        attachments: await Promise.all(attachments.map((file) => fileDocumentPayload(file, file.name, "estimate_job_file", "estimate_job"))),
+      };
+      if (mode === "replace") {
+        payload.replace_file_id = form.elements.replace_file_id.value;
+      }
+      const result = await api(`/api/estimate-jobs/${id}/files`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+        loadingMessage: mode === "replace" ? "Загружаем новую версию файла" : "Загружаем файлы сметы",
+      });
+      if (attachments.length && !result.files?.length) {
+        throw new Error("Файл не сохранился. Попробуйте ещё раз или сообщите в чат.");
+      }
+      qs("#estimateJobFileDialog").close();
+      form.reset();
+      await loadCoreData();
+      await renderEstimateJobs();
+      await renderDashboard();
+      showToast(attachments.length ? (mode === "replace" ? "Файл сметы заменен, старая версия сохранена" : "Файлы сметы добавлены") : "Ссылка на Сметтер сохранена");
+    } catch (error) {
+      showToast(error.message || "Не удалось сохранить файлы сметы");
+    } finally {
+      setAppLoading(false, "", loadingKey);
+      if (submitButton) submitButton.disabled = false;
     }
-    await api(`/api/estimate-jobs/${id}/files`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-    qs("#estimateJobFileDialog").close();
-    form.reset();
-    await loadCoreData();
-    await renderEstimateJobs();
-    await renderDashboard();
-    showToast(attachments.length ? (mode === "replace" ? "Файл сметы заменен, старая версия сохранена" : "Файлы сметы добавлены") : "Ссылка на Сметтер сохранена");
   });
   qs("#materialForm").addEventListener("submit", (event) => {
     event.preventDefault();
