@@ -2209,6 +2209,10 @@ def can_manage_feedback(account: dict | None) -> bool:
     return account_role(account) in {"owner", "construction_manager", "finance_director", "ai_auditor"}
 
 
+def can_ingest_feedback(account: dict | None) -> bool:
+    return bool(account) and not is_read_only_account(account)
+
+
 def can_access_ui_lab(account: dict | None) -> bool:
     return account_role(account) in {"owner", "ai_auditor"}
 
@@ -6080,7 +6084,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 )
                 return
             if path == "/api/feedback":
-                if not can_manage_feedback(account):
+                if not can_ingest_feedback(account):
                     json_response(self, {"error": "Forbidden"}, 403)
                     return
                 source = str(data.get("source") or "max").strip() or "max"

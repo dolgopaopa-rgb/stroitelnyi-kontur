@@ -68,6 +68,17 @@ test("feedback delete controls are available only to owner", async ({ page }) =>
   expect(server).toContain('^/api/feedback/(\\d+)/delete$');
 });
 
+test("feedback ingest is separated from feedback management", async ({ page }) => {
+  await openApp(page, "/feedback");
+
+  const server = readProjectFile("app/server.py");
+
+  expect(server).toContain("def can_ingest_feedback");
+  expect(server).toContain("not is_read_only_account(account)");
+  expect(server).toContain("if not can_ingest_feedback(account):");
+  expect(server).toContain("if not can_manage_feedback(account):");
+});
+
 test("brand link opens home and compact topbar controls stay readable", async ({ page }) => {
   await page.setViewportSize({ width: 936, height: 650 });
   await openApp(page, "/feedback");
