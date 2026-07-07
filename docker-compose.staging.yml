@@ -28,6 +28,8 @@ services:
       APP_PUBLIC_URL: ${STAGING_PUBLIC_URL:-https://staging.79-143-30-43.sslip.io}
       MAX_API_URL: ${MAX_API_URL:-https://platform-api.max.ru}
       MAX_TOKEN: ${STAGING_MAX_TOKEN:-}
+      MAX_FEEDBACK_INGEST_TOKEN: ${STAGING_MAX_FEEDBACK_INGEST_TOKEN:-}
+      MAX_FEEDBACK_ALLOW_BOT_TOKEN: ${MAX_FEEDBACK_ALLOW_BOT_TOKEN:-1}
     volumes:
       - staging_app_data:/data
       - ./data/backups:/backups

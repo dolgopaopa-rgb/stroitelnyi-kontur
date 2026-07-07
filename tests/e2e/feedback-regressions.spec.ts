@@ -87,8 +87,56 @@ test("feedback ingest is separated from feedback management", async ({ page }) =
 
   expect(server).toContain("def can_ingest_feedback");
   expect(server).toContain("not is_read_only_account(account)");
-  expect(server).toContain("if not can_ingest_feedback(account):");
+  expect(server).toContain("feedback_ingest_request_authorized");
   expect(server).toContain("if not can_manage_feedback(account):");
+});
+
+test("MAX feedback webhook accepts one latest message without browser session and deduplicates it", async ({ page }) => {
+  const externalId = `max-ksenia-latest-${Date.now()}-${Math.random()}`;
+  const payload = {
+    source: "max",
+    message: {
+      id: externalId,
+      text: "Ксения: последнее замечание по смете для проверки импорта из MAX.",
+      chat: { id: "-74707261482336", title: "Рабочий чат MAX" },
+      sender: { id: "ksenia-estimator", name: "Ксения" },
+      attachments: [{ title: "Скриншот замечания", type: "image" }],
+    },
+  };
+
+  const createResponse = await page.request.post("/api/feedback/max", {
+    headers: { "X-Feedback-Token": process.env.MAX_FEEDBACK_INGEST_TOKEN || "e2e-feedback-ingest-token" },
+    data: payload,
+  });
+  expect(createResponse.status()).toBe(201);
+  const created = await createResponse.json();
+  expect(created.duplicate).toBeFalsy();
+
+  const duplicateResponse = await page.request.post("/api/feedback/max", {
+    headers: { "X-Feedback-Token": process.env.MAX_FEEDBACK_INGEST_TOKEN || "e2e-feedback-ingest-token" },
+    data: payload,
+  });
+  expect(duplicateResponse.status()).toBe(200);
+  const duplicate = await duplicateResponse.json();
+  expect(duplicate.duplicate).toBeTruthy();
+  expect(duplicate.id).toBe(created.id);
+
+  const queryTokenResponse = await page.request.post("/api/feedback/max?token=e2e-feedback-ingest-token", {
+    data: {
+      source: "max",
+      message: {
+        id: `${externalId}-query-token`,
+        text: "Ксения: проверка импорта через webhook URL.",
+        chat: { id: "-74707261482336", title: "Рабочий чат MAX" },
+        sender: { id: "ksenia-estimator", name: "Ксения" },
+      },
+    },
+  });
+  expect(queryTokenResponse.status()).toBe(201);
+
+  const server = readProjectFile("app/server.py");
+  expect(server).toContain("feedback_ingest_request_authorized(self)");
+  expect(server).toContain("if not feedback_ingest_request_authorized(self) and not can_ingest_feedback(account):");
 });
 
 test("brand link opens home and compact topbar controls stay readable", async ({ page }) => {

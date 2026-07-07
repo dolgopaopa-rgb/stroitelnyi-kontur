@@ -27,7 +27,11 @@ export default defineConfig({
         command: `python app/server.py`,
         url: `${baseURL}/health`,
         reuseExistingServer: false,
-        env: { HOST: "127.0.0.1", PORT: localQaPort },
+        env: {
+          HOST: "127.0.0.1",
+          PORT: localQaPort,
+          MAX_FEEDBACK_INGEST_TOKEN: process.env.MAX_FEEDBACK_INGEST_TOKEN || "e2e-feedback-ingest-token",
+        },
         timeout: 30_000
       },
   projects: [

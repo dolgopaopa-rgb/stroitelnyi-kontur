@@ -37,6 +37,7 @@ MAX_API_URL = os.environ.get("MAX_API_URL", "https://platform-api.max.ru").rstri
 APP_PUBLIC_URL = os.environ.get("APP_PUBLIC_URL", "").rstrip("/")
 SESSION_COOKIE_NAME = "kontur_session"
 SESSION_TTL_SECONDS = int(os.environ.get("APP_SESSION_TTL_SECONDS", str(90 * 24 * 60 * 60)) or 0)
+FEEDBACK_INGEST_PATHS = {"/api/feedback", "/api/feedback/max", "/api/max/feedback"}
 
 
 def backup_database_before_cleanup() -> str:
@@ -1266,6 +1267,178 @@ def clean_feedback_decision_comment(value: object) -> str:
     if not text or max_message_text_is_corrupted(text):
         return ""
     return text
+
+
+def feedback_ingest_tokens() -> list[str]:
+    tokens = [
+        os.environ.get("MAX_FEEDBACK_INGEST_TOKEN", ""),
+        os.environ.get("FEEDBACK_INGEST_TOKEN", ""),
+    ]
+    if os.environ.get("MAX_FEEDBACK_ALLOW_BOT_TOKEN", "1").strip().lower() not in {"0", "false", "no"}:
+        tokens.append(os.environ.get("MAX_TOKEN", ""))
+    return [token.strip() for token in tokens if str(token or "").strip()]
+
+
+def request_bearer_token(handler: BaseHTTPRequestHandler) -> str:
+    value = str(handler.headers.get("Authorization") or "").strip()
+    match = re.match(r"^Bearer\s+(.+)$", value, flags=re.IGNORECASE)
+    return match.group(1).strip() if match else ""
+
+
+def request_feedback_ingest_token(handler: BaseHTTPRequestHandler) -> str:
+    for header in ("X-Feedback-Token", "X-Max-Feedback-Token", "X-Kontur-Feedback-Token"):
+        value = str(handler.headers.get(header) or "").strip()
+        if value:
+            return value
+    query = parse_qs(urlparse(handler.path).query)
+    for key in ("token", "feedback_token", "max_feedback_token"):
+        value = str((query.get(key) or [""])[0] or "").strip()
+        if value:
+            return value
+    return request_bearer_token(handler)
+
+
+def feedback_ingest_request_authorized(handler: BaseHTTPRequestHandler) -> bool:
+    incoming = request_feedback_ingest_token(handler)
+    if not incoming:
+        return False
+    return any(hmac.compare_digest(incoming, token) for token in feedback_ingest_tokens())
+
+
+def first_text_value(*values: object) -> str:
+    for value in values:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def dict_or_empty(value: object) -> dict:
+    return value if isinstance(value, dict) else {}
+
+
+def normalize_feedback_attachments(value: object) -> list:
+    if not isinstance(value, list):
+        return []
+    normalized = []
+    for item in value[:30]:
+        if isinstance(item, dict):
+            safe_item = {
+                str(key): item.get(key)
+                for key in ("title", "name", "file_name", "url", "type", "mime_type", "file_id", "preview_url")
+                if item.get(key) is not None
+            }
+            if safe_item:
+                normalized.append(safe_item)
+        elif str(item or "").strip():
+            normalized.append({"title": str(item).strip()})
+    return normalized
+
+
+def normalize_feedback_payload(data: dict) -> dict:
+    message = dict_or_empty(data.get("message"))
+    chat = dict_or_empty(data.get("chat")) or dict_or_empty(message.get("chat"))
+    sender = (
+        dict_or_empty(data.get("sender"))
+        or dict_or_empty(data.get("from"))
+        or dict_or_empty(data.get("user"))
+        or dict_or_empty(message.get("sender"))
+        or dict_or_empty(message.get("from"))
+        or dict_or_empty(message.get("user"))
+    )
+    source = first_text_value(data.get("source"), "max") or "max"
+    text = first_text_value(
+        data.get("text"),
+        data.get("body"),
+        data.get("caption"),
+        message.get("text"),
+        message.get("body"),
+        message.get("caption"),
+    )
+    chat_id = first_text_value(data.get("chat_id"), chat.get("id"), chat.get("chat_id"))
+    chat_title = first_text_value(data.get("chat_title"), chat.get("title"), chat.get("name"))
+    sender_id = first_text_value(data.get("sender_id"), sender.get("id"), sender.get("user_id"))
+    sender_name = first_text_value(
+        data.get("sender_name"),
+        sender.get("name"),
+        sender.get("full_name"),
+        " ".join(part for part in [str(sender.get("first_name") or "").strip(), str(sender.get("last_name") or "").strip()] if part),
+        sender.get("username"),
+    )
+    attachments = normalize_feedback_attachments(data.get("attachments") or message.get("attachments") or message.get("files"))
+    message_created_at = first_text_value(
+        data.get("created_at"),
+        data.get("timestamp"),
+        data.get("date"),
+        message.get("created_at"),
+        message.get("timestamp"),
+        message.get("date"),
+    )
+    external_id = first_text_value(
+        data.get("external_id"),
+        data.get("message_id"),
+        data.get("update_id"),
+        data.get("event_id"),
+        message.get("external_id"),
+        message.get("id"),
+        message.get("message_id"),
+    )
+    if not external_id:
+        stable_payload = json.dumps(
+            {
+                "source": source,
+                "chat_id": chat_id,
+                "sender_id": sender_id,
+                "created_at": message_created_at,
+                "text": text,
+                "attachments": attachments,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        external_id = "generated:" + hashlib.sha256(stable_payload.encode("utf-8")).hexdigest()[:24]
+    return {
+        "source": source,
+        "external_id": external_id,
+        "chat_id": chat_id,
+        "chat_title": chat_title,
+        "sender_id": sender_id,
+        "sender_name": sender_name,
+        "text": text,
+        "attachments": attachments,
+    }
+
+
+def insert_feedback_item(db, data: dict) -> dict:
+    payload = normalize_feedback_payload(data)
+    if not payload["text"] and not payload["attachments"]:
+        raise ValueError("Сообщение MAX пустое.")
+    existing = db.execute(
+        "SELECT id FROM feedback_items WHERE source = ? AND external_id = ?",
+        (payload["source"], payload["external_id"]),
+    ).fetchone()
+    if existing:
+        return {"id": existing["id"], "duplicate": True}
+    cursor = db.execute(
+        """
+        INSERT INTO feedback_items (
+            source, external_id, chat_id, chat_title, sender_id, sender_name,
+            text, attachments_json, status, decision_comment
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new', '')
+        """,
+        (
+            payload["source"],
+            payload["external_id"],
+            payload["chat_id"],
+            payload["chat_title"],
+            payload["sender_id"],
+            payload["sender_name"],
+            payload["text"],
+            json.dumps(payload["attachments"], ensure_ascii=False),
+        ),
+    )
+    return {"id": cursor.lastrowid, "duplicate": False}
 
 
 def normalize_max_message_text(text: str) -> str:
@@ -3948,6 +4121,14 @@ class AppHandler(BaseHTTPRequestHandler):
             except Exception:
                 json_response(self, {"error": "Не удалось прочитать данные входа"}, 400)
             return
+        if parsed.path in FEEDBACK_INGEST_PATHS and feedback_ingest_request_authorized(self):
+            try:
+                self.handle_api_post(parsed.path, read_json(self))
+            except PermissionError as exc:
+                json_response(self, {"error": str(exc)}, 403)
+            except Exception as exc:
+                json_response(self, {"error": str(exc)}, 400)
+            return
         if is_authorized(self) and is_read_only_account(current_access_account(self)):
             json_response(self, {"error": "Режим ИИ-аудитора: изменения запрещены."}, 403)
             return
@@ -6083,40 +6264,12 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     },
                 )
                 return
-            if path == "/api/feedback":
-                if not can_ingest_feedback(account):
+            if path in FEEDBACK_INGEST_PATHS:
+                if not feedback_ingest_request_authorized(self) and not can_ingest_feedback(account):
                     json_response(self, {"error": "Forbidden"}, 403)
                     return
-                source = str(data.get("source") or "max").strip() or "max"
-                external_id = str(data.get("external_id") or "").strip() or None
-                if external_id:
-                    existing = db.execute(
-                        "SELECT id FROM feedback_items WHERE source = ? AND external_id = ?",
-                        (source, external_id),
-                    ).fetchone()
-                    if existing:
-                        json_response(self, {"id": existing["id"], "duplicate": True}, 200)
-                        return
-                cursor = db.execute(
-                    """
-                    INSERT INTO feedback_items (
-                        source, external_id, chat_id, chat_title, sender_id, sender_name,
-                        text, attachments_json, status, decision_comment
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new', '')
-                    """,
-                    (
-                        source,
-                        external_id,
-                        str(data.get("chat_id") or ""),
-                        str(data.get("chat_title") or ""),
-                        str(data.get("sender_id") or ""),
-                        str(data.get("sender_name") or ""),
-                        str(data.get("text") or ""),
-                        json.dumps(data.get("attachments") or [], ensure_ascii=False),
-                    ),
-                )
-                json_response(self, {"id": cursor.lastrowid}, 201)
+                result = insert_feedback_item(db, data)
+                json_response(self, result, 200 if result.get("duplicate") else 201)
                 return
 
             if path == "/api/photo-reports":
