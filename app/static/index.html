@@ -25,6 +25,7 @@
         </a>
         <nav class="nav">
           <button class="nav-button active" data-view="today" data-testid="nav-today"><span class="nav-icon">◉</span><span>Сегодня</span></button>
+          <button class="nav-button" data-view="assistant" data-testid="nav-assistant"><span class="nav-icon">?</span><span>Помощник</span></button>
           <button class="nav-button" data-view="dashboard" data-testid="nav-signals"><span class="nav-icon">⌂</span><span>Сигналы</span></button>
           <button class="nav-button" data-view="projects" data-testid="nav-objects"><span class="nav-icon">▦</span><span>Объекты</span></button>
           <button class="nav-button" data-view="estimates" data-testid="nav-estimates"><span class="nav-icon">≋</span><span>Сметы</span></button>
@@ -149,6 +150,91 @@
               </div>
               <div class="list" id="todayNoPhoto" data-testid="today-no-photo-report-list"></div>
             </section>
+          </div>
+        </section>
+
+        <section class="view" id="assistantView" data-testid="assistant-page">
+          <div class="assistant-page">
+            <section class="panel assistant-hero">
+              <div>
+                <span class="eyebrow">Безопасный режим чтения</span>
+                <h2>Помощник Д²Дом</h2>
+                <p class="muted">Помощник работает в безопасном режиме. Он ничего не изменяет в Контуре и предназначен для поиска информации, подсказок и навигации по знаниям компании.</p>
+              </div>
+              <div class="assistant-safe-badge">Только чтение</div>
+            </section>
+
+            <section class="panel assistant-warning">
+              <strong>Ограничение первого этапа</strong>
+              <p>На первом этапе Помощник не работает с договорами, сметами, персональными данными и клиентскими документами.</p>
+            </section>
+
+            <div class="assistant-grid">
+              <section class="panel">
+                <div class="panel-head">
+                  <h2>Вопрос</h2>
+                  <span class="muted">Макет будущего ввода</span>
+                </div>
+                <label class="assistant-question-label">
+                  <span>Что хотите узнать?</span>
+                  <textarea id="assistantQuestionInput" data-testid="assistant-question-field" rows="4" readonly>На первом этапе можно выбрать быстрый вопрос ниже. Свободная обработка вопроса будет добавлена только после отдельного решения владельца.</textarea>
+                </label>
+                <div class="assistant-answer" id="assistantAnswer" data-testid="assistant-answer">
+                  <strong>Выберите быстрый вопрос</strong>
+                  <p class="muted">Контур покажет безопасный пример ответа и список источников. Данные в системе не изменяются.</p>
+                </div>
+              </section>
+
+              <section class="panel">
+                <div class="panel-head">
+                  <h2>Быстрые вопросы</h2>
+                </div>
+                <div class="assistant-question-list" id="assistantQuestionList" data-testid="assistant-quick-questions">
+                  <button class="secondary" type="button" data-assistant-question="contour">Что такое Контур?</button>
+                  <button class="secondary" type="button" data-assistant-question="sections">Какие разделы есть в Контуре?</button>
+                  <button class="secondary" type="button" data-assistant-question="users">Кто пользуется Контуром?</button>
+                  <button class="secondary" type="button" data-assistant-question="decisions">Где находится журнал решений?</button>
+                  <button class="secondary" type="button" data-assistant-question="accepted_decisions">Какие решения уже утверждены?</button>
+                  <button class="secondary" type="button" data-assistant-question="forbidden">Что запрещено менять без подтверждения?</button>
+                  <button class="secondary" type="button" data-assistant-question="stage">Какой сейчас этап проекта?</button>
+                  <button class="secondary" type="button" data-assistant-question="truth">Какие документы являются источниками истины?</button>
+                  <button class="secondary" type="button" data-assistant-question="first_functions">Какие функции Помощника можно внедрить первыми?</button>
+                  <button class="secondary" type="button" data-assistant-question="blocked_functions">Какие функции пока запрещены?</button>
+                </div>
+              </section>
+            </div>
+
+            <div class="assistant-grid">
+              <section class="panel">
+                <div class="panel-head">
+                  <h2>Источники ответов</h2>
+                </div>
+                <ul class="assistant-source-list" data-testid="assistant-sources">
+                  <li>НАЧАТЬ-ЗДЕСЬ.md</li>
+                  <li>ТЕКУЩЕЕ-СОСТОЯНИЕ-ПРОЕКТА.md</li>
+                  <li>КОНТУР.md</li>
+                  <li>решения/ЖУРНАЛ-РЕШЕНИЙ.md</li>
+                  <li>проекты/Первый-безопасный-вариант-Помощника.md</li>
+                  <li>проекты/Правила-ответов-Помощника.md</li>
+                </ul>
+              </section>
+
+              <section class="panel">
+                <div class="panel-head">
+                  <h2>Что Помощник пока не делает</h2>
+                </div>
+                <ul class="assistant-limit-list" data-testid="assistant-limits">
+                  <li>не меняет данные;</li>
+                  <li>не создаёт документы;</li>
+                  <li>не отправляет сообщения клиентам;</li>
+                  <li>не изменяет сметы;</li>
+                  <li>не изменяет договоры;</li>
+                  <li>не изменяет задачи;</li>
+                  <li>не работает с персональными данными;</li>
+                  <li>не выполняет действия без подтверждения.</li>
+                </ul>
+              </section>
+            </div>
           </div>
         </section>
 
