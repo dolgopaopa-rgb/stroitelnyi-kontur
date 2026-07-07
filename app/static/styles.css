@@ -1390,6 +1390,26 @@ h2 {
   text-align: left;
 }
 
+.variation-approval-list {
+  display: grid;
+  gap: 6px;
+}
+
+.variation-approval-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+}
+
+.variation-approval-row strong,
+.variation-approval-row .muted {
+  overflow-wrap: anywhere;
+}
+
 .preserve-lines {
   white-space: pre-wrap;
 }
@@ -2848,6 +2868,78 @@ h2 {
   color: var(--blue);
 }
 
+.manager-estimate-notice-panel {
+  margin: 10px 0 12px;
+  border-color: #acd0ca;
+  background: linear-gradient(180deg, #f7fffd 0%, #eef8f6 100%);
+}
+
+.manager-estimate-notice-preview,
+.manager-estimate-notice-list {
+  display: grid;
+  gap: 8px;
+}
+
+.manager-estimate-notice-item {
+  width: 100%;
+  border: 1px solid #c9ded9;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 10px;
+  color: inherit;
+  text-align: left;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.manager-estimate-notice-item:hover {
+  border-color: var(--brand);
+  box-shadow: 0 6px 16px rgba(21, 82, 75, 0.09);
+}
+
+.manager-estimate-notice-main {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.manager-estimate-notice-main strong,
+.manager-estimate-notice-main small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.manager-estimate-notice-main small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.manager-estimate-notice-meta {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 700px) {
+  .manager-estimate-notice-item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .manager-estimate-notice-main strong,
+  .manager-estimate-notice-main small {
+    white-space: normal;
+  }
+
+  .manager-estimate-notice-meta {
+    justify-content: flex-start;
+  }
+}
+
 .attention-item.decision-item {
   min-height: 72px;
   grid-template-columns: minmax(84px, auto) minmax(0, 1fr);
@@ -3251,6 +3343,25 @@ h2 {
 
 .estimate-question-note p {
   margin-top: 3px;
+}
+
+.estimate-job-links {
+  display: grid;
+  gap: 5px;
+  padding: 7px 9px;
+  border: 1px solid #cfe3df;
+  border-radius: 8px;
+  background: #f2faf8;
+}
+
+.estimate-job-links strong {
+  font-size: 12px;
+  color: var(--brand);
+}
+
+.estimate-job-link {
+  text-decoration: none;
+  white-space: nowrap;
 }
 
 .danger-outline {

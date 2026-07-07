@@ -58,6 +58,7 @@ const state = {
   selectedPhotoProjectId: initialProjectId,
   openWorkStages: {},
   estimateGallery: { jobId: null, files: [], index: 0 },
+  managerEstimateNoticeKey: "",
   knowledgeFolders: [],
   knowledgeCurrentFolderId: localStorage.getItem("knowledgeCurrentFolderId") || "",
   knowledgeClassificationOnly: false,
@@ -938,6 +939,20 @@ function firstUrlFromText(value) {
   return match[0].replace(/[),.;]+$/, "");
 }
 
+function urlsFromText(value) {
+  const text = String(value ?? "");
+  const matches = text.match(/https?:\/\/[^\s<>"']+/gi) || [];
+  const seen = new Set();
+  return matches
+    .map((url) => url.replace(/[),.;]+$/, ""))
+    .filter((url) => {
+      const key = url.toLowerCase();
+      if (!url || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
 function phoneDigits(value) {
   return String(value || "").replace(/\D/g, "");
 }
@@ -1026,7 +1041,8 @@ function yandexCoordinateDestination(mapsUrl) {
 }
 
 function yandexMapsUrl(address, mapsUrl = "") {
-  const destination = yandexCoordinateDestination(mapsUrl) || String(address || "").trim();
+  const addressText = String(address || "").trim();
+  const destination = addressText || yandexCoordinateDestination(mapsUrl);
   if (!destination) return "";
   return `https://yandex.ru/maps/?rtext=~${encodeURIComponent(destination)}&rtt=auto`;
 }
@@ -3236,6 +3252,79 @@ function visibleEstimateJobs(jobs = state.estimateJobs || []) {
   return jobs.filter((job) => job.status !== "archived");
 }
 
+function currentEstimateFilesCount(job) {
+  return (job?.files || []).filter((file) => Number(file.is_current ?? 1) !== 0).length;
+}
+
+function submittedEstimateJobsForManager(jobs = state.estimateJobs || []) {
+  if (currentRoleBase() !== "sales_manager") return [];
+  return jobs
+    .filter((job) => job.status === "estimate_done")
+    .filter((job) => isOwnEstimateJob(job, "manager_id"))
+    .sort((a, b) =>
+      String(b.delivered_at || b.updated_at || b.created_at || "").localeCompare(String(a.delivered_at || a.updated_at || a.created_at || "")) ||
+      Number(b.id || 0) - Number(a.id || 0)
+    );
+}
+
+function managerEstimateNoticeStorageKey(jobs) {
+  const userId = currentUserId() || "manager";
+  const ids = jobs.map((job) => `${job.id}:${job.delivered_at || job.updated_at || job.status}`).join("|");
+  return `managerEstimateNotice:v1:${userId}:${ids}`;
+}
+
+function renderManagerEstimateNoticeItems(jobs, { compact = false } = {}) {
+  const rows = jobs.slice(0, compact ? 3 : 12);
+  if (!rows.length) return `<p class="muted">Новых сданных смет пока нет.</p>`;
+  return rows
+    .map((job) => {
+      const filesCount = currentEstimateFilesCount(job);
+      const deliveredAt = formatDateRu(job.delivered_at || job.updated_at || job.created_at);
+      return `
+        <button class="manager-estimate-notice-item" type="button" data-manager-estimate-open-section>
+          <span class="manager-estimate-notice-main">
+            <strong>${escapeHtml(job.project_title || job.title || job.customer_name || "Смета сдана")}</strong>
+            <small>${escapeHtml(job.customer_name || "заказчик не указан")} · сметчик: ${escapeHtml(job.estimator_name || "не назначен")}${deliveredAt ? ` · сдано: ${deliveredAt}` : ""}</small>
+          </span>
+          <span class="manager-estimate-notice-meta">
+            ${pill("Смета сдана", "success")}
+            ${filesCount ? pill(`Файлы: ${filesCount}`, "blue") : pill("Файлы не приложены", "warning")}
+          </span>
+        </button>`;
+    })
+    .join("");
+}
+
+function syncManagerEstimateNotice({ forceDialog = false } = {}) {
+  const jobs = submittedEstimateJobsForManager();
+  const panel = qs("#managerEstimateNoticePanel");
+  const preview = qs("#managerEstimateNoticePreview");
+  const list = qs("#managerEstimateNoticeList");
+  if (panel) panel.hidden = !jobs.length;
+  if (preview) preview.innerHTML = renderManagerEstimateNoticeItems(jobs, { compact: true });
+  if (list) list.innerHTML = renderManagerEstimateNoticeItems(jobs);
+  if (!jobs.length) return;
+  const key = managerEstimateNoticeStorageKey(jobs);
+  const alreadySeen = localStorage.getItem(key) === "1";
+  if (!forceDialog && (alreadySeen || state.managerEstimateNoticeKey === key)) return;
+  state.managerEstimateNoticeKey = key;
+  localStorage.setItem(key, "1");
+  const dialog = qs("#managerEstimateNoticeDialog");
+  try {
+    if (dialog && !dialog.open && !document.querySelector("dialog[open]")) dialog.showModal();
+  } catch (error) {
+    console.warn("Manager estimate notice could not be opened", error);
+  }
+}
+
+async function openManagerEstimateNoticeSection() {
+  const dialog = qs("#managerEstimateNoticeDialog");
+  if (dialog?.open) dialog.close();
+  state.estimateListMode = "active";
+  await switchView("estimates");
+  await renderEstimateJobs();
+}
+
 function renderEstimateJobStats(jobs) {
   const stats = estimateJobStats(jobs);
   const total = Math.max(jobs.length, 1);
@@ -3360,6 +3449,35 @@ function renderEstimateJobFiles(files = [], jobId = "", canManageFiles = false) 
     </div>`;
 }
 
+function estimateJobQuickLinks(job, smetterHref = "") {
+  const links = [];
+  const addLink = (href, label) => {
+    const cleanHref = String(href || "").trim();
+    if (!cleanHref) return;
+    if (links.some((item) => item.href.toLowerCase() === cleanHref.toLowerCase())) return;
+    links.push({ href: cleanHref, label });
+  };
+  if (smetterHref) addLink(smetterHref, "Сметтер");
+  [job.source, job.comment, job.question_comment, job.return_comment, job.result_comment].forEach((value) => {
+    urlsFromText(value).forEach((url) => addLink(url, "Ссылка задания"));
+  });
+  return links;
+}
+
+function renderEstimateJobLink(link, index = 0) {
+  const labelText = link.label || `Ссылка ${index + 1}`;
+  return `<a class="pill link-pill estimate-job-link" href="${escapeAttr(link.href)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">${escapeHtml(labelText)}</a>`;
+}
+
+function renderEstimateJobLinks(links) {
+  if (!links.length) return "";
+  return `
+    <div class="estimate-job-links">
+      <strong>Ссылки из задания</strong>
+      <div class="stack-line">${links.map(renderEstimateJobLink).join("")}</div>
+    </div>`;
+}
+
 function renderEstimateGallery() {
   const gallery = state.estimateGallery || { files: [], index: 0 };
   const files = gallery.files || [];
@@ -3412,6 +3530,7 @@ function renderEstimateJobRow(job) {
   const canArchive = canArchiveEstimateJob(job);
   const canAnswerQuestion = canEdit && job.status === "estimate_question" && ["owner", "construction_manager", "sales_manager"].includes(currentRoleBase());
   const smetterHref = estimateSmetterHref(job);
+  const quickLinks = estimateJobQuickLinks(job, smetterHref);
   const collapsibleKey = `estimate-job:${job.id}`;
   const summaryTitle = job.project_title || job.customer_name || job.title || "Сметное задание";
   const summarySubTitle = job.project_title && job.title && job.title !== job.project_title ? job.title : "";
@@ -3427,6 +3546,8 @@ function renderEstimateJobRow(job) {
           ${pill(label(job.status), statusLevel)}
           ${pill(job.due_date || "без срока", job.status === "estimate_done" ? "success" : levelByDate(job.due_date))}
           ${currentFilesCount ? pill(`Файлы: ${currentFilesCount}`, "blue") : ""}
+          ${quickLinks.slice(0, 2).map(renderEstimateJobLink).join("")}
+          ${quickLinks.length > 2 ? pill(`ещё ${quickLinks.length - 2}`, "blue") : ""}
         </span>
       </summary>
       <div class="estimate-job-body">
@@ -3444,6 +3565,7 @@ function renderEstimateJobRow(job) {
           </div>
           ${job.site_costs_comment ? `<p class="muted">Организация площадки: ${escapeHtml(job.site_costs_comment)}</p>` : ""}
           ${smetterHref ? `<a class="link-button inline-link" href="${escapeAttr(smetterHref)}" target="_blank" rel="noopener noreferrer">Открыть Сметтер</a>` : ""}
+          ${renderEstimateJobLinks(quickLinks)}
           ${job.comment ? `<p>${linkifyText(job.comment)}</p>` : ""}
           ${job.question_comment ? `<div class="estimate-question-note"><strong>Вопрос сметчика</strong><p>${linkifyText(job.question_comment)}</p></div>` : ""}
           ${job.return_comment ? `<p class="muted danger-text">Возврат менеджеру: ${linkifyText(job.return_comment)}</p>` : ""}
@@ -4202,6 +4324,7 @@ async function renderToday() {
         { limit: 5, moreTarget: 'data-view-target="photos"' }
       )
     : `<p class="muted">По всем активным объектам есть фотоотчёт за сегодня.</p>`;
+  syncManagerEstimateNotice();
 }
 
 async function renderEstimateJobs() {
@@ -4222,6 +4345,7 @@ async function renderEstimateJobs() {
   rowsNode.innerHTML = jobs.length
     ? jobs.map(renderEstimateJobRow).join("")
     : `<p class="muted">${state.estimateListMode === "archive" ? "В архиве сметных заданий пока нет." : "Активных сметных заданий пока нет. Нажмите “Добавить задание”, чтобы зафиксировать входящую смету в работе."}</p>`;
+  syncManagerEstimateNotice();
 }
 
 function notificationTargetAttrs(row) {
@@ -5048,6 +5172,7 @@ async function renderProjectDetail(projectId) {
     ],
     ["edit", renderProjectEditPanel(project)],
     ["contract", renderProjectContractPanel(project)],
+    ["variationApproval", renderProjectVariationApprovalPanel(project)],
     ["workflow", renderProjectWorkflow(project)],
     ["documents", renderDocumentSummary(docs, project.contracts || [])],
   ];
@@ -5131,6 +5256,43 @@ function renderProjectContractPanel(project) {
       <div class="form-actions">
         <span class="muted">Добавляйте договор, допсоглашение, материалы и работы по нему из одного окна.</span>
         <button class="primary" type="button" data-add-contract="${project.id}">Добавить договор / доп. соглашение</button>
+      </div>
+    </section>`;
+}
+
+function renderProjectVariationApprovalPanel(project) {
+  const variations = Array.isArray(project.variations) ? project.variations : [];
+  const openStatuses = new Set(["decision_required", "in_review", "new", "draft", "waiting_check", "needs_approval"]);
+  const rows = variations.filter((item) => openStatuses.has(String(item.status || "")));
+  const canCreate = canView("variations") && currentRoleBase() !== "ai_auditor";
+  const statusPill = rows.length ? pill(`${rows.length} ждёт решения`, "warning") : pill("Новых нет", "success");
+  const rowHtml = rows.length
+    ? rows
+        .slice(0, 3)
+        .map(
+          (item) => `
+          <button class="row clickable variation-approval-row" type="button" data-open-variation="${escapeAttr(item.id)}">
+            <div>
+              <strong>${escapeHtml(item.title || "Допработа")}</strong>
+              <div class="muted">${variationType(item.type)}${item.due_date ? ` · срок: ${formatDateRu(item.due_date)}` : ""}</div>
+            </div>
+            ${pill(label(item.status), variationStatusLevel(item.status))}
+            ${canViewFinancials() ? pill(variationAmountLabel(item), Number(item.amount || 0) > 0 ? "warning" : "danger") : ""}
+          </button>`
+        )
+        .join("")
+    : `<p class="muted">Допработ на согласовании по этому объекту сейчас нет.</p>`;
+  return `
+    <section class="workflow-panel compact-workflow variation-approval-panel">
+      <div class="stack-line">
+        <h3>Согласование допработ</h3>
+        ${statusPill}
+      </div>
+      <p class="muted">Здесь видно, какие допработы, отклонения и спорные позиции ждут решения.</p>
+      <div class="variation-approval-list">${rowHtml}</div>
+      <div class="form-actions">
+        ${canCreate ? `<button class="primary" type="button" data-create-project-variation="${escapeAttr(project.id)}">Добавить допработу</button>` : ""}
+        <button class="secondary" type="button" data-view-target="variations">Открыть раздел</button>
       </div>
     </section>`;
 }
@@ -7908,7 +8070,11 @@ function bindEvents() {
   });
   qs('#estimateJobFileForm select[name="mode"]')?.addEventListener("change", updateEstimateFileDialogMode);
   qs("#newMaterialButton").addEventListener("click", async () => openNewMaterialDialog());
-  qs("#newVariationButton").addEventListener("click", () => qs("#variationDialog").showModal());
+  qs("#newVariationButton").addEventListener("click", () => {
+    const form = qs("#variationForm");
+    form.reset();
+    qs("#variationDialog").showModal();
+  });
   qs("#newObjectRemarkButton")?.addEventListener("click", () => {
     const form = qs("#objectRemarkForm");
     form.reset();
@@ -8166,6 +8332,18 @@ function bindEvents() {
     if (viewTargetButton) {
       switchView(viewTargetButton.dataset.viewTarget);
       if (viewTargetButton.closest("#mobileQuickSheet")) toggleMobileQuickActions(false);
+      return;
+    }
+
+    const managerEstimateNoticeButton = event.target.closest("[data-open-manager-estimate-notice]");
+    if (managerEstimateNoticeButton) {
+      syncManagerEstimateNotice({ forceDialog: true });
+      return;
+    }
+
+    const managerEstimateOpenButton = event.target.closest("[data-manager-estimate-open-section]");
+    if (managerEstimateOpenButton) {
+      await openManagerEstimateNoticeSection();
       return;
     }
 
@@ -8467,6 +8645,15 @@ function bindEvents() {
     const variationButton = event.target.closest("[data-open-variation]");
     if (variationButton) {
       await openVariationDialog(variationButton.dataset.openVariation);
+      return;
+    }
+
+    const createProjectVariationButton = event.target.closest("[data-create-project-variation]");
+    if (createProjectVariationButton) {
+      const form = qs("#variationForm");
+      form.reset();
+      if (form.elements.project_id) form.elements.project_id.value = createProjectVariationButton.dataset.createProjectVariation || "";
+      qs("#variationDialog").showModal();
       return;
     }
 
@@ -8919,8 +9106,17 @@ function bindEvents() {
     const mode = form.elements.mode.value || "add";
     const attachments = Array.from(form.elements.attachments?.files || []);
     const smetterUrl = form.elements.smetter_url?.value.trim() || "";
+    const submitButton = form.querySelector('button[type="submit"]');
     if (!id) {
       showToast("Не найдено сметное задание");
+      return;
+    }
+    if (mode === "replace" && !form.elements.replace_file_id.value) {
+      showToast("Выберите файл, который нужно заменить");
+      return;
+    }
+    if (mode === "replace" && !attachments.length) {
+      showToast("Для замены выберите новую версию файла");
       return;
     }
     if (!attachments.length && !smetterUrl) {
@@ -8931,24 +9127,38 @@ function bindEvents() {
       showToast("Для замены выберите один новый файл");
       return;
     }
-    const payload = {
-      replacement_note: form.elements.replacement_note.value || "",
-      smetter_url: smetterUrl,
-      attachments: await Promise.all(attachments.map((file) => fileDocumentPayload(file, file.name, "estimate_job_file", "estimate_job"))),
-    };
-    if (mode === "replace") {
-      payload.replace_file_id = form.elements.replace_file_id.value;
+    if (submitButton) submitButton.disabled = true;
+    const loadingKey = `estimate-file-save-${Date.now()}`;
+    setAppLoading(true, mode === "replace" ? "Сохраняем новую версию файла" : "Сохраняем файлы сметы", loadingKey);
+    try {
+      const payload = {
+        replacement_note: form.elements.replacement_note.value || "",
+        smetter_url: smetterUrl,
+        attachments: await Promise.all(attachments.map((file) => fileDocumentPayload(file, file.name, "estimate_job_file", "estimate_job"))),
+      };
+      if (mode === "replace") {
+        payload.replace_file_id = form.elements.replace_file_id.value;
+      }
+      const result = await api(`/api/estimate-jobs/${id}/files`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+        loadingMessage: mode === "replace" ? "Загружаем новую версию файла" : "Загружаем файлы сметы",
+      });
+      if (attachments.length && !result.files?.length) {
+        throw new Error("Файл не сохранился. Попробуйте ещё раз или сообщите в чат.");
+      }
+      qs("#estimateJobFileDialog").close();
+      form.reset();
+      await loadCoreData();
+      await renderEstimateJobs();
+      await renderDashboard();
+      showToast(attachments.length ? (mode === "replace" ? "Файл сметы заменен, старая версия сохранена" : "Файлы сметы добавлены") : "Ссылка на Сметтер сохранена");
+    } catch (error) {
+      showToast(error.message || "Не удалось сохранить файлы сметы");
+    } finally {
+      setAppLoading(false, "", loadingKey);
+      if (submitButton) submitButton.disabled = false;
     }
-    await api(`/api/estimate-jobs/${id}/files`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-    qs("#estimateJobFileDialog").close();
-    form.reset();
-    await loadCoreData();
-    await renderEstimateJobs();
-    await renderDashboard();
-    showToast(attachments.length ? (mode === "replace" ? "Файл сметы заменен, старая версия сохранена" : "Файлы сметы добавлены") : "Ссылка на Сметтер сохранена");
   });
   qs("#materialForm").addEventListener("submit", (event) => {
     event.preventDefault();

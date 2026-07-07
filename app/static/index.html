@@ -9,10 +9,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Строительный контур</title>
-    <link rel="manifest" href="/static/manifest.webmanifest?v=20260704-material-risk-final" />
+    <link rel="manifest" href="/static/manifest.webmanifest?v=20260707-manager-estimate-notice" />
     <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260704-material-risk-final" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260707-manager-estimate-notice" />
   </head>
   <body>
     <div class="app" data-testid="qa-scroll-root">
@@ -99,6 +99,16 @@
             <div class="today-primary-actions" id="todayPrimaryActions"></div>
           </section>
           <div class="today-kpi-strip" id="todayKpis" data-testid="today-kpi-strip"></div>
+          <section class="panel manager-estimate-notice-panel" id="managerEstimateNoticePanel" data-testid="manager-estimate-notice-panel" hidden>
+            <div class="panel-head">
+              <div>
+                <h2>Сметы сданы</h2>
+                <p class="muted">Сметчик завершил расчёт. Проверьте файлы и передайте смету дальше.</p>
+              </div>
+              <button class="link-button" type="button" data-open-manager-estimate-notice>Открыть список</button>
+            </div>
+            <div class="manager-estimate-notice-preview" id="managerEstimateNoticePreview"></div>
+          </section>
           <div class="today-grid">
             <section class="panel today-focus-panel">
               <div class="panel-head">
@@ -956,6 +966,21 @@
       </form>
     </dialog>
 
+    <dialog id="managerEstimateNoticeDialog">
+      <form method="dialog" class="form">
+        <div class="modal-head">
+          <h2>Новые сданные сметы</h2>
+          <button type="button" class="icon" data-close="managerEstimateNoticeDialog">×</button>
+        </div>
+        <p class="muted">Менеджеру нужно проверить сданные файлы, при необходимости вернуть смету на доработку или передать её дальше.</p>
+        <div class="manager-estimate-notice-list" id="managerEstimateNoticeList"></div>
+        <div class="form-actions">
+          <button type="button" class="secondary" data-close="managerEstimateNoticeDialog">Позже</button>
+          <button class="primary" type="button" data-manager-estimate-open-section>Перейти в сметы</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog id="estimateImageDialog">
       <div class="image-preview">
         <div class="modal-head">
@@ -1248,6 +1273,6 @@
       </div>
     </div>
     <div class="toast" id="toast"></div>
-    <script src="/static/app.compat.js?v=20260704-material-risk-final"></script>
+    <script src="/static/app.compat.js?v=20260707-manager-estimate-notice"></script>
   </body>
 </html>
