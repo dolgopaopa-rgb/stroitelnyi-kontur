@@ -1,9 +1,9 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260707-manager-estimate-notice";
+const CACHE_NAME = "stroitelnyi-kontur-20260708-smety-interface-6d";
 const CORE_ASSETS = [
   "/",
-  "/static/styles.css?v=20260707-manager-estimate-notice",
-  "/static/app.compat.js?v=20260707-manager-estimate-notice",
-  "/static/manifest.webmanifest?v=20260707-manager-estimate-notice",
+  "/static/styles.css?v=20260708-smety-interface-6d",
+  "/static/app.compat.js?v=20260708-smety-interface-6d",
+  "/static/manifest.webmanifest?v=20260708-smety-interface-6d",
   "/static/assets/g2-logo-192.png",
   "/static/assets/g2-logo-512.png"
 ];
