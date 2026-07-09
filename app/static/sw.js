@@ -1,9 +1,9 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260707-manager-estimate-notice";
+﻿const CACHE_NAME = "stroitelnyi-kontur-20260709-material-partial";
 const CORE_ASSETS = [
   "/",
-  "/static/styles.css?v=20260707-manager-estimate-notice",
-  "/static/app.compat.js?v=20260707-manager-estimate-notice",
-  "/static/manifest.webmanifest?v=20260707-manager-estimate-notice",
+  "/static/styles.css?v=20260709-material-partial",
+  "/static/app.compat.js?v=20260709-material-partial",
+  "/static/manifest.webmanifest?v=20260709-material-partial",
   "/static/assets/g2-logo-192.png",
   "/static/assets/g2-logo-512.png"
 ];

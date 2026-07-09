@@ -5934,6 +5934,46 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     (int(project_id),),
                 ).fetchall()
                 estimate_material_rows = rows_to_dicts(rows)
+                request_summary_rows = db.execute(
+                    """
+                    SELECT
+                        m.estimate_material_id,
+                        COUNT(DISTINCT COALESCE(m.batch_id, m.id)) AS request_batches,
+                        SUM(COALESCE(m.requested_quantity, m.estimated_quantity, 0)) AS requested_quantity,
+                        GROUP_CONCAT(DISTINCT COALESCE(b.status, m.procurement_status, 'new')) AS request_statuses,
+                        MAX(COALESCE(b.scheduled_delivery_date, b.planned_delivery_date, m.actual_delivery_date, b.needed_at, m.needed_at)) AS latest_request_date
+                    FROM material_requests m
+                    LEFT JOIN material_request_batches b ON b.id = m.batch_id
+                    WHERE m.project_id = ?
+                      AND m.estimate_material_id IS NOT NULL
+                      AND COALESCE(m.change_type, '') != 'removed'
+                      AND COALESCE(b.status, m.procurement_status, '') NOT IN ('cancelled', 'archived')
+                    GROUP BY m.estimate_material_id
+                    """,
+                    (int(project_id),),
+                ).fetchall()
+                request_summary = {
+                    int(row["estimate_material_id"]): {
+                        "request_batches": int(row["request_batches"] or 0),
+                        "requested_quantity": number_value(row["requested_quantity"]),
+                        "request_statuses": row["request_statuses"] or "",
+                        "latest_request_date": row["latest_request_date"] or "",
+                    }
+                    for row in request_summary_rows
+                    if row["estimate_material_id"]
+                }
+                for row in estimate_material_rows:
+                    row.update(
+                        request_summary.get(
+                            int(row["id"]),
+                            {
+                                "request_batches": 0,
+                                "requested_quantity": 0,
+                                "request_statuses": "",
+                                "latest_request_date": "",
+                            },
+                        )
+                    )
                 if is_ai_auditor_account(account):
                     for row in estimate_material_rows:
                         row["unit_price"] = 0
@@ -8320,23 +8360,35 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 if action == "accept":
                     active_items = db.execute(
                         """
-                        SELECT title, requested_quantity, requested_unit
+                        SELECT id, title, requested_quantity, requested_unit
                         FROM material_requests
                         WHERE batch_id = ?
                           AND COALESCE(change_type, '') != 'removed'
                         """,
                         (batch_id,),
                     ).fetchall()
+                    requested_accept_ids = data.get("accept_item_ids")
+                    accept_item_ids: set[int] = set()
+                    if isinstance(requested_accept_ids, list):
+                        for value in requested_accept_ids:
+                            try:
+                                item_id = int(value or 0)
+                            except (TypeError, ValueError):
+                                item_id = 0
+                            if item_id:
+                                accept_item_ids.add(item_id)
+                    selected_items = [item for item in active_items if not isinstance(requested_accept_ids, list) or int(item["id"]) in accept_item_ids]
+                    postponed_items = [item for item in active_items if isinstance(requested_accept_ids, list) and int(item["id"]) not in accept_item_ids]
                     missing = []
                     if not batch["project_id"]:
                         missing.append("объект")
-                    if not active_items:
+                    if not active_items or not selected_items:
                         missing.append("позиции материалов")
                     if not batch["creator_id"]:
                         missing.append("кто запросил")
                     if not batch["needed_at"]:
                         missing.append("дата, когда материал нужен")
-                    for item in active_items:
+                    for item in selected_items:
                         if not str(item["title"] or "").strip():
                             missing.append("материал")
                         if number_value(item["requested_quantity"]) <= 0:
@@ -8345,6 +8397,47 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             missing.append("единица измерения")
                     if missing:
                         raise ValueError("Нельзя принять заявку: не заполнено " + ", ".join(sorted(set(missing))) + ".")
+                    actor_user_id = user_id_by_role(db, "procurement_manager") or account_user_id(account)
+                    partial_comment = str(data.get("comment") or "").strip()
+                    postponed_batch_id = None
+                    if postponed_items:
+                        postponed_text = partial_comment or "Часть позиций отложена снабжением для отдельной обработки."
+                        cursor = db.execute(
+                            """
+                            INSERT INTO material_request_batches (
+                                project_id, creator_id, needed_at, delivery_urgency, status, stage, health,
+                                health_comment, comment, revision_comment, procurement_responsible_id,
+                                supplier_comment, procurement_comment, updated_at
+                            )
+                            VALUES (?, ?, ?, ?, 'postponed', 'approved', 'at_risk', ?, ?, NULL, ?, ?, ?, CURRENT_TIMESTAMP)
+                            """,
+                            (
+                                batch["project_id"],
+                                batch["creator_id"],
+                                batch["needed_at"],
+                                batch["delivery_urgency"],
+                                postponed_text,
+                                batch["comment"] or "",
+                                actor_user_id,
+                                "Поставщик будет выбран при отдельной обработке отложенных позиций.",
+                                postponed_text,
+                            ),
+                        )
+                        postponed_batch_id = int(cursor.lastrowid)
+                        postponed_ids = [int(item["id"]) for item in postponed_items]
+                        placeholders = ",".join("?" for _ in postponed_ids)
+                        db.execute(
+                            f"""
+                            UPDATE material_requests
+                            SET batch_id = ?,
+                                procurement_status = 'postponed',
+                                procurement_comment = ?,
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE batch_id = ?
+                              AND id IN ({placeholders})
+                            """,
+                            (postponed_batch_id, postponed_text, batch_id, *postponed_ids),
+                        )
                     db.execute(
                         """
                         UPDATE material_request_batches
@@ -8358,18 +8451,25 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             updated_at = CURRENT_TIMESTAMP
                         WHERE id = ?
                         """,
-                        (user_id_by_role(db, "procurement_manager") or account_user_id(account), batch_id),
+                        (actor_user_id, batch_id),
                     )
+                    selected_ids = [int(item["id"]) for item in selected_items]
+                    selected_placeholders = ",".join("?" for _ in selected_ids)
                     db.execute(
-                        """
+                        f"""
                         UPDATE material_requests
                         SET procurement_status = 'ordered', updated_at = CURRENT_TIMESTAMP
                         WHERE batch_id = ?
+                          AND id IN ({selected_placeholders})
                           AND COALESCE(change_type, '') != 'removed'
                         """,
-                        (batch_id,),
+                        (batch_id, *selected_ids),
                     )
                     message = f"{batch['project_title']}: заявка на материалы от {format_date_ru(batch['created_at'])} принята снабжением в работу."
+                    if postponed_items:
+                        message += f" В работу взято позиций: {len(selected_items)}. Отложено в отдельную заявку: {len(postponed_items)}."
+                        if partial_comment:
+                            message += f" Комментарий снабжения: {partial_comment}"
                     for watcher_id in watcher_ids:
                         create_notification(
                             db,
@@ -8387,9 +8487,9 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
                         VALUES (?, 'decision', ?, ?, 'internal', 'material_request')
                         """,
-                        (batch["project_id"], message, user_id_by_role(db, "procurement_manager") or 4),
+                        (batch["project_id"], message, actor_user_id or 4),
                     )
-                    json_response(self, {"id": batch_id, "status": "in_work"})
+                    json_response(self, {"id": batch_id, "status": "in_work", "postponed_batch_id": postponed_batch_id})
                     return
                 if action == "resubmit":
                     comment = str(data.get("comment") or "").strip()

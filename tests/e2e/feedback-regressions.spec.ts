@@ -42,6 +42,27 @@ test("extra work items can be edited before final decision", async ({ page }) =>
   expect(server).toContain("Эту работу уже нельзя менять: по ней принято решение.");
 });
 
+test("material requests show ordered estimate positions and support partial procurement acceptance", async () => {
+  const app = readProjectFile("app/static/app.js");
+  const compat = readProjectFile("app/static/app.compat.js");
+  const server = readProjectFile("app/server.py");
+
+  for (const source of [app, compat]) {
+    expect(source).toContain("estimateMaterialRequestSummary");
+    expect(source).toContain("В заявках:");
+    expect(source).toContain("renderMaterialAcceptSelection");
+    expect(source).toContain("collectMaterialAcceptItemIds");
+    expect(source).toContain("Снятые позиции уйдут в отдельную отложенную заявку");
+    expect(source).toContain("Укажите количество для выбранных позиций");
+  }
+
+  expect(server).toContain("request_summary_rows");
+  expect(server).toContain("accept_item_ids");
+  expect(server).toContain("postponed_batch_id");
+  expect(server).toContain("'postponed', 'approved', 'at_risk'");
+  expect(server).toContain("В работу взято позиций");
+});
+
 test("feedback delete controls are available only to owner", async ({ page }) => {
   const externalId = `e2e-feedback-delete-${Date.now()}-${Math.random()}`;
   const createResponse = await page.request.post("/api/feedback", {

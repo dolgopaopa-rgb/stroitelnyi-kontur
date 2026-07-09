@@ -336,6 +336,12 @@ function money(value) {
   return new Intl.NumberFormat("ru-RU").format(Number(value || 0)) + " ₽";
 }
 
+function quantityLabel(value) {
+  const number = Number(value || 0);
+  if (!Number.isFinite(number)) return "0";
+  return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 3 }).format(number);
+}
+
 function numberValue(value) {
   const normalized = String(value ?? "").replace(/\s/g, "").replace(",", ".");
   const number = Number(normalized);
@@ -2079,6 +2085,31 @@ function groupBySection(rows) {
   }, {});
 }
 
+function estimateMaterialRequestStatusKeys(row) {
+  return String(row.request_statuses || "")
+    .split(",")
+    .map((status) => status.trim())
+    .filter(Boolean);
+}
+
+function estimateMaterialRequestSummary(row) {
+  const requestedQuantity = Number(row.requested_quantity || 0);
+  const requestBatches = Number(row.request_batches || 0);
+  if (!requestedQuantity && !requestBatches) return "";
+  const statusPills = estimateMaterialRequestStatusKeys(row)
+    .slice(0, 3)
+    .map((status) => pill(statusLabel(materialPipelineStatus({ status })), statusLevel(materialPipelineStatus({ status }))))
+    .join("");
+  const dateText = row.latest_request_date ? ` · последняя дата: ${formatDateRu(row.latest_request_date) || row.latest_request_date}` : "";
+  return `
+    <div class="estimate-request-summary">
+      ${pill(`В заявках: ${quantityLabel(requestedQuantity)} ${row.unit || ""}`, "blue")}
+      ${requestBatches ? pill(`Заявок: ${requestBatches}`, "") : ""}
+      ${statusPills}
+      <span class="muted">${dateText}</span>
+    </div>`;
+}
+
 function estimateSectionKey(scope, projectId, section) {
   return `${scope}:${projectId || "none"}:${section || "no-section"}`;
 }
@@ -2115,11 +2146,12 @@ async function renderEstimateMaterials() {
               (row) => `
               <div class="row estimate-material-row">
                 <div class="material-main">
-                  <strong>${row.name}</strong>
-                  <div class="muted">${row.section || "Без раздела"}</div>
+                  <strong>${escapeHtml(row.name)}</strong>
+                  <div class="muted">${escapeHtml(row.section || "Без раздела")}</div>
+                  ${estimateMaterialRequestSummary(row)}
                 </div>
                 <div class="stack-line">
-                  ${pill(`${row.estimated_quantity || 0} ${row.unit || ""}`, "blue")}
+                  ${pill(`${quantityLabel(row.estimated_quantity)} ${escapeHtml(row.unit || "")}`, "blue")}
                   ${pill(money(row.total_price), "success")}
                   <span class="muted">Цена: ${money(row.unit_price)}</span>
                 </div>
@@ -2228,17 +2260,26 @@ async function loadMaterialEstimatePicker() {
         <div class="table">
           ${sectionRows
             .map(
-              (row) => `
-              <div class="row estimate-choice-row" data-estimate-id="${row.id}" data-estimated="${row.estimated_quantity || 0}">
+              (row) => {
+                const alreadyRequested = Number(row.requested_quantity || 0);
+                const estimated = Number(row.estimated_quantity || 0);
+                const defaultQuantity = Math.max(estimated - alreadyRequested, 0);
+                return `
+              <div class="row estimate-choice-row ${alreadyRequested ? "estimate-choice-has-request" : ""}" data-estimate-id="${row.id}" data-estimated="${estimated || 0}">
                 <label class="estimate-choice-title">
                   <input type="checkbox" data-material-check />
-                  <span><strong>${row.name}</strong><small>${row.estimated_quantity || 0} ${row.unit || ""} по смете · ${money(row.total_price)}</small></span>
+                  <span>
+                    <strong>${escapeHtml(row.name)}</strong>
+                    <small>${quantityLabel(row.estimated_quantity)} ${escapeHtml(row.unit || "")} по смете · ${money(row.total_price)}</small>
+                    ${estimateMaterialRequestSummary(row)}
+                  </span>
                 </label>
-                <label>Количество к заказу <input data-material-quantity type="number" min="0" step="0.001" value="${row.estimated_quantity || 0}" disabled /></label>
+                <label>Количество к заказу <input data-material-quantity type="number" min="0" step="0.001" value="${defaultQuantity || ""}" placeholder="${alreadyRequested ? "укажите доп. количество" : "0"}" disabled /></label>
                 <div class="estimate-over-reason" data-material-reason hidden>
                   <label>Причина превышения <textarea rows="2" placeholder="Почему заказываем сверх сметы"></textarea></label>
                 </div>
-              </div>`
+              </div>`;
+              }
             )
             .join("")}
         </div>
@@ -2525,6 +2566,35 @@ function collectMaterialActualItems(batch) {
     actual_unit_price: qs(`[data-material-actual-unit="${item.id}"]`)?.value || "",
     actual_total_amount: qs(`[data-material-actual-total="${item.id}"]`)?.value || "",
   }));
+}
+
+function renderMaterialAcceptSelection(items = []) {
+  if (!items.length) return "";
+  return `
+    <div class="material-accept-selection">
+      <div class="muted">Оставьте галочки на позициях, которые снабжение берёт в работу сейчас. Снятые позиции уйдут в отдельную отложенную заявку.</div>
+      <div class="table material-review-items" id="materialAcceptRows">
+        ${items
+          .map(
+            (item) => `
+            <label class="row estimate-material-row material-accept-row">
+              <input type="checkbox" data-accept-material-check="${item.id}" checked />
+              <span class="material-main">
+                <strong>${escapeHtml(item.title)}</strong>
+                <span class="muted">${escapeHtml(item.estimate_section || "без раздела")} · ${quantityLabel(item.requested_quantity || item.estimated_quantity)} ${escapeHtml(item.requested_unit || item.estimate_material_unit || "")}</span>
+              </span>
+              ${pill(materialBasisLabel(item.basis_type), materialBasisLevel(item.basis_type))}
+            </label>`
+          )
+          .join("")}
+      </div>
+    </div>`;
+}
+
+function collectMaterialAcceptItemIds() {
+  const checks = qsa("#materialAcceptRows [data-accept-material-check]");
+  if (!checks.length) return null;
+  return checks.filter((input) => input.checked).map((input) => Number(input.dataset.acceptMaterialCheck || 0)).filter(Boolean);
 }
 
 function canCreateVariationFromBatch(batch) {
@@ -6468,7 +6538,8 @@ async function openMaterialBatchDialog(batchKey) {
       canReview
         ? `<section class="workflow-panel">
             <h3>Решение снабжения</h3>
-            <label>Комментарий при возврате <textarea id="materialBatchReturnComment" rows="3" placeholder="Например: не понятно количество, уточните позицию"></textarea></label>
+            ${renderMaterialAcceptSelection(activeItems)}
+            <label>Комментарий <textarea id="materialBatchReturnComment" rows="3" placeholder="Например: лист алюминия отложен, остальное привезём сегодня"></textarea></label>
             ${personalNotifyControl()}
             <div class="form-actions">
               <button class="primary" type="button" data-material-batch-action="accept" data-material-batch-id="${batch.id}">Принять в работу</button>
@@ -8753,6 +8824,17 @@ function bindEvents() {
       let body = {};
       if (action === "delete" && !confirm("Удалить заявку на материалы? Это можно сделать только до принятия снабжением в работу.")) return;
       if (action === "cancel_delivery" && !confirm("Отменить доставку по этой заявке? Внесенные цены закупки сохранятся в заявке.")) return;
+      if (action === "accept") {
+        const acceptItemIds = collectMaterialAcceptItemIds();
+        if (Array.isArray(acceptItemIds) && !acceptItemIds.length) {
+          showToast("Выберите хотя бы одну позицию, которую нужно взять в работу");
+          return;
+        }
+        body = {
+          accept_item_ids: acceptItemIds,
+          comment: qs("#materialBatchReturnComment")?.value || "",
+        };
+      }
       if (action === "return") {
         body = { comment: qs("#materialBatchReturnComment")?.value || "" };
       }
@@ -9173,6 +9255,10 @@ function bindEvents() {
       quantity: row.querySelector("[data-material-quantity]").value,
       reason: row.querySelector("[data-material-reason] textarea").value,
     }));
+    if (selectedRows.some((row) => Number(row.querySelector("[data-material-quantity]")?.value || 0) <= 0)) {
+      showToast("Укажите количество для выбранных позиций");
+      return;
+    }
     const extra_items = collectExtraMaterials();
     const incompleteExtra = extra_items.some((item) => !item.material || !item.name || !item.unit || Number(item.quantity || 0) <= 0 || !item.reason);
     if (incompleteExtra) {

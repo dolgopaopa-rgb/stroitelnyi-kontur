@@ -1896,6 +1896,18 @@ h2 {
   background: var(--danger-soft);
 }
 
+.estimate-choice-row.estimate-choice-has-request {
+  border-left-color: var(--brand);
+}
+
+.estimate-request-summary {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-top: 3px;
+}
+
 .estimate-choice-title {
   display: flex;
   grid-template-columns: none;
@@ -1968,6 +1980,21 @@ h2 {
 .material-review-items {
   max-height: min(48vh, 520px);
   overflow: auto;
+}
+
+.material-accept-selection {
+  display: grid;
+  gap: 8px;
+}
+
+.material-accept-row {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.material-accept-row > input {
+  width: auto;
+  margin: 0;
 }
 
 .material-batch-edit-panel h4 {
