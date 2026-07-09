@@ -2961,7 +2961,7 @@
       var _a;
       return Number((_a = file.is_current) != null ? _a : 1) !== 0;
     }).length;
-    return '\n    <details class="row estimate-job-row estimate-job-collapsible" data-collapsible-key="'.concat(escapeAttr(collapsibleKey), '"').concat(openAttrForKey(collapsibleKey), '>\n      <summary class="estimate-job-summary">\n        <span class="estimate-job-summary-main">\n          <strong>').concat(escapeHtml(summaryTitle), "</strong>\n          ").concat(summarySubTitle ? '<span class="muted">'.concat(escapeHtml(summarySubTitle), "</span>") : "", '\n        </span>\n        <span class="estimate-job-summary-badges">\n          ').concat(pill(label(job.status), statusLevel2), "\n          ").concat(pill(job.due_date || "без срока", job.status === "estimate_done" ? "success" : levelByDate(job.due_date)), "\n          ").concat(currentFilesCount ? pill("Файлы: ".concat(currentFilesCount), "blue") : "", "\n          ").concat(quickLinks.slice(0, 2).map(renderEstimateJobLink).join(""), "\n          ").concat(quickLinks.length > 2 ? pill("ещё ".concat(quickLinks.length - 2), "blue") : "", '\n        </span>\n      </summary>\n      <div class="estimate-job-body">\n        <div class="estimate-job-main">\n          <div class="stack-line">\n            <strong>').concat(escapeHtml(job.title), "</strong>\n            ").concat(pill(label(job.status), statusLevel2), "\n            ").concat(pill(job.due_date || "без срока", job.status === "estimate_done" ? "success" : levelByDate(job.due_date)), '\n          </div>\n          <div class="muted">').concat(escapeHtml(job.customer_name || "Заказчик не указан"), " · ").concat(escapeHtml(job.project_title || "без карточки объекта"), " · ").concat(estimateJobTypeLabel(job.estimate_type), '</div>\n          <div class="muted">получено: ').concat(formatDateRu(job.received_at) || "не указано", " · выдал задание: ").concat(escapeHtml(job.manager_name || "не назначен"), " · сметчик: ").concat(escapeHtml(job.estimator_name || "не назначен"), '</div>\n          <div class="estimate-job-flags">\n            ').concat(pill(estimateSiteCostsLabel(job.site_costs_policy), job.site_costs_policy === "exclude" ? "warning" : job.site_costs_policy === "clarify" ? "blue" : "success"), "\n            ").concat(isPartnerEstimateJob(job) ? pill("Партнерская смета", "blue") : "", "\n          </div>\n          ").concat(job.site_costs_comment ? '<p class="muted">Организация площадки: '.concat(escapeHtml(job.site_costs_comment), "</p>") : "", "\n          ").concat(smetterHref ? '<a class="link-button inline-link" href="'.concat(escapeAttr(smetterHref), '" target="_blank" rel="noopener noreferrer">Открыть Сметтер</a>') : "", "\n          ").concat(renderEstimateJobLinks(quickLinks), "\n          ").concat(job.comment ? "<p>".concat(linkifyText(job.comment), "</p>") : "", "\n          ").concat(job.question_comment ? '<div class="estimate-question-note"><strong>Вопрос сметчика</strong><p>'.concat(linkifyText(job.question_comment), "</p></div>") : "", "\n          ").concat(job.return_comment ? '<p class="muted danger-text">Возврат менеджеру: '.concat(linkifyText(job.return_comment), "</p>") : "", "\n          ").concat(job.result_comment ? '<p class="muted">Итог: '.concat(linkifyText(job.result_comment), "</p>") : "", "\n          ").concat(renderEstimateJobFiles(job.files, job.id, canManageFiles), '\n        </div>\n        <div class="estimate-job-actions">\n          ').concat(canAnswerQuestion ? '<button class="secondary tiny" type="button" data-edit-estimate-job="'.concat(job.id, '">Ответить на уточнение</button>') : canEdit ? '<button class="secondary tiny" type="button" data-edit-estimate-job="'.concat(job.id, '">Редактировать</button>') : "", "\n          ").concat(canStart ? '<button class="secondary tiny" type="button" data-estimate-job-status="estimate_in_work" data-estimate-job-id="'.concat(job.id, '">В работу</button>') : "", "\n          ").concat(canQuestion ? '<button class="secondary tiny" type="button" data-estimate-job-status="estimate_question" data-estimate-job-id="'.concat(job.id, '">Уточнить</button>') : "", "\n          ").concat(canReturn ? '<button class="secondary tiny danger-outline" type="button" data-estimate-job-status="estimate_returned" data-estimate-job-id="'.concat(job.id, '">Вернуть на доработку</button>') : "", "\n          ").concat(canFinish ? '<button class="primary tiny" type="button" data-estimate-job-status="estimate_done" data-estimate-job-id="'.concat(job.id, '">Сдано</button>') : "", "\n          ").concat(canManageFiles ? '<button class="secondary tiny" type="button" data-open-estimate-files="'.concat(job.id, '">Добавить файл</button>') : "", "\n          ").concat(canManageFiles ? '<button class="secondary tiny" type="button" data-open-estimate-files="'.concat(job.id, '" data-estimate-file-mode="link">Изменить ссылку</button>') : "", "\n          ").concat(canArchive ? '<button class="secondary tiny" type="button" data-estimate-job-status="archived" data-estimate-job-id="'.concat(job.id, '">В архив</button>') : "", "\n          ").concat(canDelete ? '<button class="danger-button tiny" type="button" data-delete-estimate-job="'.concat(job.id, '">Удалить</button>') : "", "\n        </div>\n      </div>\n    </details>");
+    return '\n    <details class="row estimate-job-row estimate-job-collapsible" data-collapsible-key="'.concat(escapeAttr(collapsibleKey), '"').concat(openAttrForKey(collapsibleKey), '>\n      <summary class="estimate-job-summary">\n        <span class="estimate-job-summary-main">\n          <strong>').concat(escapeHtml(summaryTitle), "</strong>\n          ").concat(summarySubTitle ? '<span class="muted">'.concat(escapeHtml(summarySubTitle), "</span>") : "", '\n        </span>\n        <span class="estimate-job-summary-badges">\n          ').concat(pill(label(job.status), statusLevel2), "\n          ").concat(pill(job.due_date || "без срока", job.status === "estimate_done" ? "success" : levelByDate(job.due_date)), "\n          ").concat(currentFilesCount ? pill("Файлы: ".concat(currentFilesCount), "blue") : "", "\n          ").concat(quickLinks.slice(0, 2).map(renderEstimateJobLink).join(""), "\n          ").concat(quickLinks.length > 2 ? pill("ещё ".concat(quickLinks.length - 2), "blue") : "", '\n        </span>\n      </summary>\n      <div class="estimate-job-body">\n        <div class="estimate-job-main">\n          <div class="stack-line">\n            <strong>').concat(escapeHtml(job.title), "</strong>\n            ").concat(pill(label(job.status), statusLevel2), "\n            ").concat(pill(job.due_date || "без срока", job.status === "estimate_done" ? "success" : levelByDate(job.due_date)), '\n          </div>\n          <div class="muted">').concat(escapeHtml(job.customer_name || "Заказчик не указан"), " · ").concat(escapeHtml(job.project_title || "без карточки объекта"), " · ").concat(estimateJobTypeLabel(job.estimate_type), '</div>\n          <div class="muted">получено: ').concat(formatDateRu(job.received_at) || "не указано", " · выдал задание: ").concat(escapeHtml(job.manager_name || "не назначен"), " · сметчик: ").concat(escapeHtml(job.estimator_name || "не назначен"), '</div>\n          <div class="estimate-job-flags">\n            ').concat(pill(estimateSiteCostsLabel(job.site_costs_policy), job.site_costs_policy === "exclude" ? "warning" : job.site_costs_policy === "clarify" ? "blue" : "success"), "\n            ").concat(isPartnerEstimateJob(job) ? pill("Партнерская смета", "blue") : "", "\n          </div>\n          ").concat(job.site_costs_comment ? '<p class="muted">Организация площадки: '.concat(escapeHtml(job.site_costs_comment), "</p>") : "", "\n          ").concat(smetterHref ? '<a class="link-button inline-link" href="'.concat(escapeAttr(smetterHref), '" target="_blank" rel="noopener noreferrer">Открыть Сметтер</a>') : "", "\n          ").concat(renderEstimateJobLinks(quickLinks), "\n          ").concat(job.comment ? "<p>".concat(linkifyText(job.comment), "</p>") : "", "\n          ").concat(job.question_comment ? '<div class="estimate-question-note"><strong>Вопрос сметчика</strong><p>'.concat(linkifyText(job.question_comment), "</p></div>") : "", "\n          ").concat(job.return_comment ? '<p class="muted danger-text">Возврат менеджеру: '.concat(linkifyText(job.return_comment), "</p>") : "", "\n          ").concat(job.result_comment ? '<p class="muted">Итог: '.concat(linkifyText(job.result_comment), "</p>") : "", "\n          ").concat(renderEstimateJobFiles(job.files, job.id, canManageFiles), '\n        </div>\n        <div class="estimate-job-actions">\n          ').concat(canAnswerQuestion ? '<button class="secondary tiny" type="button" data-edit-estimate-job="'.concat(job.id, '">Ответить на уточнение</button>') : canEdit ? '<button class="secondary tiny" type="button" data-edit-estimate-job="'.concat(job.id, '">Редактировать</button>') : "", "\n          ").concat(canStart ? '<button class="secondary tiny" type="button" data-estimate-job-status="estimate_in_work" data-estimate-job-id="'.concat(job.id, '">В работу</button>') : "", "\n          ").concat(canQuestion ? '<button class="secondary tiny" type="button" data-estimate-job-status="estimate_question" data-estimate-job-id="'.concat(job.id, '">Уточнить</button>') : "", "\n          ").concat(canReturn ? '<button class="secondary tiny danger-outline" type="button" data-estimate-job-status="estimate_returned" data-estimate-job-id="'.concat(job.id, '">Вернуть на доработку</button>') : "", "\n          ").concat(canFinish ? '<button class="primary tiny" type="button" data-estimate-job-status="estimate_done" data-estimate-job-id="'.concat(job.id, '">Сдано</button>') : "", "\n          ").concat(canManageFiles ? '<button class="secondary tiny" type="button" data-open-estimate-files="'.concat(job.id, '">Добавить файл</button>') : "", "\n          ").concat(canManageFiles ? '<button class="secondary tiny" type="button" data-open-estimate-files="'.concat(job.id, '" data-estimate-file-mode="link">Изменить ссылку</button>') : "", "\n          ").concat(canManageFiles ? '<button class="secondary tiny" type="button" data-open-estimate-files="'.concat(job.id, '" data-estimate-file-mode="comment">Изменить комментарий</button>') : "", "\n          ").concat(canArchive ? '<button class="secondary tiny" type="button" data-estimate-job-status="archived" data-estimate-job-id="'.concat(job.id, '">В архив</button>') : "", "\n          ").concat(canDelete ? '<button class="danger-button tiny" type="button" data-delete-estimate-job="'.concat(job.id, '">Удалить</button>') : "", "\n        </div>\n      </div>\n    </details>");
   }
   function fillEstimateJobForm(job = {}) {
     var _a, _b;
@@ -3018,7 +3018,9 @@
     form.reset();
     form.elements.id.value = job.id;
     form.elements.smetter_url.value = job.smetter_url || estimateSmetterHref(job) || "";
-    qs("#estimateJobFileTitle").textContent = modeOverride === "link" ? "Ссылка на Сметтер: ".concat(job.title) : "Файлы сметы: ".concat(job.title);
+    form.elements.result_comment.value = job.result_comment || "";
+    form.dataset.originalResultComment = job.result_comment || "";
+    qs("#estimateJobFileTitle").textContent = modeOverride === "link" ? "Ссылка на Сметтер: ".concat(job.title) : modeOverride === "comment" ? "Комментарий сметчика: ".concat(job.title) : "Файлы сметы: ".concat(job.title);
     const currentFiles = (job.files || []).filter((file) => {
       var _a;
       return Number((_a = file.is_current) != null ? _a : 1) !== 0;
@@ -3044,6 +3046,11 @@
       setTimeout(() => {
         var _a;
         return (_a = form.elements.smetter_url) == null ? void 0 : _a.focus();
+      }, 0);
+    } else if (modeOverride === "comment") {
+      setTimeout(() => {
+        var _a;
+        return (_a = form.elements.result_comment) == null ? void 0 : _a.focus();
       }, 0);
     }
   }
@@ -6897,13 +6904,15 @@
       showToast("Смета сдана, файлы сохранены");
     });
     qs("#estimateJobFileForm").addEventListener("submit", async (event) => {
-      var _a2, _b2, _c2;
+      var _a2, _b2, _c2, _d2;
       event.preventDefault();
       const form = qs("#estimateJobFileForm");
       const id = form.elements.id.value;
       const mode = form.elements.mode.value || "add";
       const attachments = Array.from(((_a2 = form.elements.attachments) == null ? void 0 : _a2.files) || []);
       const smetterUrl = ((_b2 = form.elements.smetter_url) == null ? void 0 : _b2.value.trim()) || "";
+      const resultComment = ((_c2 = form.elements.result_comment) == null ? void 0 : _c2.value) || "";
+      const resultCommentChanged = resultComment !== (form.dataset.originalResultComment || "");
       const submitButton = form.querySelector('button[type="submit"]');
       if (!id) {
         showToast("Не найдено сметное задание");
@@ -6917,8 +6926,8 @@
         showToast("Для замены выберите новую версию файла");
         return;
       }
-      if (!attachments.length && !smetterUrl) {
-        showToast("Прикрепите файл сметы или укажите ссылку на Сметтер");
+      if (!attachments.length && !smetterUrl && !resultCommentChanged) {
+        showToast("Прикрепите файл сметы, укажите ссылку на Сметтер или измените комментарий");
         return;
       }
       if (mode === "replace" && attachments.length && attachments.length !== 1) {
@@ -6932,6 +6941,7 @@
         const payload = {
           replacement_note: form.elements.replacement_note.value || "",
           smetter_url: smetterUrl,
+          result_comment: resultComment,
           attachments: await Promise.all(attachments.map((file) => fileDocumentPayload(file, file.name, "estimate_job_file", "estimate_job")))
         };
         if (mode === "replace") {
@@ -6942,7 +6952,7 @@
           body: JSON.stringify(payload),
           loadingMessage: mode === "replace" ? "Загружаем новую версию файла" : "Загружаем файлы сметы"
         });
-        if (attachments.length && !((_c2 = result.files) == null ? void 0 : _c2.length)) {
+        if (attachments.length && !((_d2 = result.files) == null ? void 0 : _d2.length)) {
           throw new Error("Файл не сохранился. Попробуйте ещё раз или сообщите в чат.");
         }
         qs("#estimateJobFileDialog").close();
@@ -6950,7 +6960,7 @@
         await loadCoreData();
         await renderEstimateJobs();
         await renderDashboard();
-        showToast(attachments.length ? mode === "replace" ? "Файл сметы заменен, старая версия сохранена" : "Файлы сметы добавлены" : "Ссылка на Сметтер сохранена");
+        showToast(attachments.length ? mode === "replace" ? "Файл сметы заменен, старая версия сохранена" : "Файлы сметы добавлены" : resultCommentChanged && !smetterUrl ? "Комментарий сметчика сохранён" : "Изменения по смете сохранены");
       } catch (error) {
         showToast(error.message || "Не удалось сохранить файлы сметы");
       } finally {

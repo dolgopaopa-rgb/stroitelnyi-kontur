@@ -5248,11 +5248,17 @@ textarea {
 
 .compact-ui-v1 #estimatesView .estimate-job-main > p,
 .compact-ui-v1 #estimatesView .estimate-question-note p {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  display: block;
+  overflow: visible;
+  white-space: normal;
   margin: 0;
+}
+
+#estimatesView .estimate-job-main p,
+#estimatesView .estimate-question-note p,
+#estimatesView .estimate-job-main .muted {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .compact-ui-v1 #estimatesView .estimate-job-files {
@@ -5265,6 +5271,14 @@ textarea {
 .compact-ui-v1 #estimatesView .estimate-file-card {
   max-width: none;
   grid-template-columns: minmax(0, 1fr) auto;
+}
+
+#estimatesView .estimate-job-files strong,
+#estimatesView .estimate-job-files span {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .compact-ui-v1 #estimatesView .estimate-file-card .estimate-file-print {

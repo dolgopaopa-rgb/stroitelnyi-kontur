@@ -6665,13 +6665,20 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     return
                 attachments = [item for item in data.get("attachments") or [] if isinstance(item, dict) and item.get("file_base64")]
                 smetter_url = str(data.get("smetter_url") or "").strip()
-                if not attachments and not smetter_url:
-                    json_response(self, {"error": "Прикрепите файл сметы или укажите ссылку на Сметтер"}, 400)
+                result_comment_present = "result_comment" in data
+                result_comment = str(data.get("result_comment") or "")
+                if not attachments and not smetter_url and not result_comment_present:
+                    json_response(self, {"error": "Прикрепите файл сметы, укажите ссылку на Сметтер или измените комментарий"}, 400)
                     return
                 if smetter_url:
                     db.execute(
                         "UPDATE estimate_jobs SET smetter_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
                         (smetter_url, estimate_job_id),
+                    )
+                if result_comment_present:
+                    db.execute(
+                        "UPDATE estimate_jobs SET result_comment = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        (result_comment, estimate_job_id),
                     )
                 replace_file_id = int(data.get("replace_file_id") or 0) or None
                 replacement_note = str(data.get("replacement_note") or "").strip()
@@ -6711,7 +6718,15 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     if not saved_ids:
                         json_response(self, {"error": "Не удалось сохранить файлы сметы"}, 400)
                         return
-                action_text = "заменен файл сметы" if replace_file_id and attachments else ("добавлен файл сметы" if attachments else "обновлена ссылка на Сметтер")
+                action_text = (
+                    "заменен файл сметы"
+                    if replace_file_id and attachments
+                    else (
+                        "добавлен файл сметы"
+                        if attachments
+                        else ("обновлен комментарий сметчика" if result_comment_present and not smetter_url else "обновлена ссылка на Сметтер")
+                    )
+                )
                 notify_users(
                     db,
                     {row["manager_id"], row["estimator_id"], user_id_by_role(db, "construction_manager"), user_id_by_role(db, "owner")} - {None},

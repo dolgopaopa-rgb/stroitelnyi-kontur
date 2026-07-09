@@ -78,6 +78,26 @@ test("completed estimates expose a direct Smetter link edit action", async () =>
   expect(server).toContain("UPDATE estimate_jobs SET smetter_url = ?");
 });
 
+test("estimate comments stay full length and can be edited after submission", async () => {
+  const html = readProjectFile("app/static/index.html");
+  const app = readProjectFile("app/static/app.js");
+  const compat = readProjectFile("app/static/app.compat.js");
+  const styles = readProjectFile("app/static/styles.css");
+  const server = readProjectFile("app/server.py");
+
+  expect(html).toContain('textarea name="result_comment"');
+  expect(app).toContain('data-estimate-file-mode="comment"');
+  expect(app).toContain("Комментарий сметчика");
+  expect(app).toContain("resultCommentChanged");
+  expect(compat).toContain('data-estimate-file-mode="comment"');
+  expect(compat).toContain("Комментарий сметчика");
+  expect(styles).toContain("#estimatesView .estimate-job-main p");
+  expect(styles).toContain("overflow: visible");
+  expect(styles).toContain("text-overflow: clip");
+  expect(server).toContain('result_comment_present = "result_comment" in data');
+  expect(server).toContain("UPDATE estimate_jobs SET result_comment = ?");
+});
+
 test("feedback delete controls are available only to owner", async ({ page }) => {
   const externalId = `e2e-feedback-delete-${Date.now()}-${Math.random()}`;
   const createResponse = await page.request.post("/api/feedback", {
@@ -222,15 +242,13 @@ test("estimate jobs have archive mode and project card can be collapsed explicit
   expect(app).toContain("Карточка объекта свернута");
 });
 
-test("estimate job files are collapsed under object summary", async ({ page }) => {
-  await openApp(page, "/estimates");
-
+test("estimate job files are collapsed under object summary", async () => {
   const html = readProjectFile("app/static/index.html");
   const app = readProjectFile("app/static/app.js");
   const compat = readProjectFile("app/static/app.compat.js");
   const styles = readProjectFile("app/static/styles.css");
 
-  expect(html).toContain("20260707-manager-estimate-notice");
+  expect(html).toContain("20260709-estimate-comments-full");
   expect(app).toContain("estimate-job-collapsible");
   expect(app).toContain("estimate-job-summary");
   expect(app).toContain("estimate-job-body");

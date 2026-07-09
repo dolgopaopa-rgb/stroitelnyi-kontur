@@ -3654,6 +3654,7 @@ function renderEstimateJobRow(job) {
           ${canFinish ? `<button class="primary tiny" type="button" data-estimate-job-status="estimate_done" data-estimate-job-id="${job.id}">Сдано</button>` : ""}
           ${canManageFiles ? `<button class="secondary tiny" type="button" data-open-estimate-files="${job.id}">Добавить файл</button>` : ""}
           ${canManageFiles ? `<button class="secondary tiny" type="button" data-open-estimate-files="${job.id}" data-estimate-file-mode="link">Изменить ссылку</button>` : ""}
+          ${canManageFiles ? `<button class="secondary tiny" type="button" data-open-estimate-files="${job.id}" data-estimate-file-mode="comment">Изменить комментарий</button>` : ""}
           ${canArchive ? `<button class="secondary tiny" type="button" data-estimate-job-status="archived" data-estimate-job-id="${job.id}">В архив</button>` : ""}
           ${canDelete ? `<button class="danger-button tiny" type="button" data-delete-estimate-job="${job.id}">Удалить</button>` : ""}
         </div>
@@ -3719,7 +3720,13 @@ function openEstimateJobFileDialog(jobId, replaceFileId = "", modeOverride = "")
   form.reset();
   form.elements.id.value = job.id;
   form.elements.smetter_url.value = job.smetter_url || estimateSmetterHref(job) || "";
-  qs("#estimateJobFileTitle").textContent = modeOverride === "link" ? `Ссылка на Сметтер: ${job.title}` : `Файлы сметы: ${job.title}`;
+  form.elements.result_comment.value = job.result_comment || "";
+  form.dataset.originalResultComment = job.result_comment || "";
+  qs("#estimateJobFileTitle").textContent = modeOverride === "link"
+    ? `Ссылка на Сметтер: ${job.title}`
+    : modeOverride === "comment"
+      ? `Комментарий сметчика: ${job.title}`
+      : `Файлы сметы: ${job.title}`;
   const currentFiles = (job.files || []).filter((file) => Number(file.is_current ?? 1) !== 0);
   form.elements.replace_file_id.innerHTML = currentFiles
     .map((file) => `<option value="${escapeAttr(file.id)}">${escapeHtml(file.title || file.file_name || "Файл")} · v${Number(file.version_no || 1)}</option>`)
@@ -3742,6 +3749,8 @@ function openEstimateJobFileDialog(jobId, replaceFileId = "", modeOverride = "")
   qs("#estimateJobFileDialog").showModal();
   if (modeOverride === "link") {
     setTimeout(() => form.elements.smetter_url?.focus(), 0);
+  } else if (modeOverride === "comment") {
+    setTimeout(() => form.elements.result_comment?.focus(), 0);
   }
 }
 
@@ -9198,6 +9207,8 @@ function bindEvents() {
     const mode = form.elements.mode.value || "add";
     const attachments = Array.from(form.elements.attachments?.files || []);
     const smetterUrl = form.elements.smetter_url?.value.trim() || "";
+    const resultComment = form.elements.result_comment?.value || "";
+    const resultCommentChanged = resultComment !== (form.dataset.originalResultComment || "");
     const submitButton = form.querySelector('button[type="submit"]');
     if (!id) {
       showToast("Не найдено сметное задание");
@@ -9211,8 +9222,8 @@ function bindEvents() {
       showToast("Для замены выберите новую версию файла");
       return;
     }
-    if (!attachments.length && !smetterUrl) {
-      showToast("Прикрепите файл сметы или укажите ссылку на Сметтер");
+    if (!attachments.length && !smetterUrl && !resultCommentChanged) {
+      showToast("Прикрепите файл сметы, укажите ссылку на Сметтер или измените комментарий");
       return;
     }
     if (mode === "replace" && attachments.length && attachments.length !== 1) {
@@ -9226,6 +9237,7 @@ function bindEvents() {
       const payload = {
         replacement_note: form.elements.replacement_note.value || "",
         smetter_url: smetterUrl,
+        result_comment: resultComment,
         attachments: await Promise.all(attachments.map((file) => fileDocumentPayload(file, file.name, "estimate_job_file", "estimate_job"))),
       };
       if (mode === "replace") {
@@ -9244,7 +9256,11 @@ function bindEvents() {
       await loadCoreData();
       await renderEstimateJobs();
       await renderDashboard();
-      showToast(attachments.length ? (mode === "replace" ? "Файл сметы заменен, старая версия сохранена" : "Файлы сметы добавлены") : "Ссылка на Сметтер сохранена");
+      showToast(attachments.length
+        ? (mode === "replace" ? "Файл сметы заменен, старая версия сохранена" : "Файлы сметы добавлены")
+        : resultCommentChanged && !smetterUrl
+          ? "Комментарий сметчика сохранён"
+          : "Изменения по смете сохранены");
     } catch (error) {
       showToast(error.message || "Не удалось сохранить файлы сметы");
     } finally {
