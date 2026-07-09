@@ -2135,7 +2135,7 @@
   function renderMaterialAcceptSelection(items = []) {
     if (!items.length) return "";
     return '\n    <div class="material-accept-selection">\n      <div class="muted">Оставьте галочки на позициях, которые снабжение берёт в работу сейчас. Снятые позиции уйдут в отдельную отложенную заявку.</div>\n      <div class="table material-review-items" id="materialAcceptRows">\n        '.concat(items.map(
-      (item) => '\n            <label class="row estimate-material-row material-accept-row">\n              <input type="checkbox" data-accept-material-check="'.concat(item.id, '" checked />\n              <span class="material-main">\n                <strong>').concat(escapeHtml(item.title), "</strong>\n                <span class=\"muted\">").concat(escapeHtml(item.estimate_section || "без раздела"), " · ").concat(quantityLabel(item.requested_quantity || item.estimated_quantity), " ").concat(escapeHtml(item.requested_unit || item.estimate_material_unit || ""), "</span>\n              </span>\n              ").concat(pill(materialBasisLabel(item.basis_type), materialBasisLevel(item.basis_type)), "\n            </label>")
+      (item) => '\n            <label class="row estimate-material-row material-accept-row">\n              <input type="checkbox" data-accept-material-check="'.concat(item.id, '" checked />\n              <span class="material-main">\n                <strong>').concat(escapeHtml(item.title), '</strong>\n                <span class="muted">').concat(escapeHtml(item.estimate_section || "без раздела"), " · ").concat(quantityLabel(item.requested_quantity || item.estimated_quantity), " ").concat(escapeHtml(item.requested_unit || item.estimate_material_unit || ""), "</span>\n              </span>\n              ").concat(pill(materialBasisLabel(item.basis_type), materialBasisLevel(item.basis_type)), "\n            </label>")
     ).join(""), "\n      </div>\n    </div>");
   }
   function collectMaterialAcceptItemIds() {
@@ -2756,14 +2756,16 @@
     return jobs.filter((job) => job.status !== "archived");
   }
   function currentEstimateFilesCount(job) {
-    return (((job == null ? void 0 : job.files) || []).filter((file) => {
+    return ((job == null ? void 0 : job.files) || []).filter((file) => {
       var _a;
       return Number((_a = file.is_current) != null ? _a : 1) !== 0;
-    })).length;
+    }).length;
   }
   function submittedEstimateJobsForManager(jobs = state.estimateJobs || []) {
     if (currentRoleBase() !== "sales_manager") return [];
-    return jobs.filter((job) => job.status === "estimate_done").filter((job) => isOwnEstimateJob(job, "manager_id")).sort((a, b) => String(b.delivered_at || b.updated_at || b.created_at || "").localeCompare(String(a.delivered_at || a.updated_at || a.created_at || "")) || Number(b.id || 0) - Number(a.id || 0));
+    return jobs.filter((job) => job.status === "estimate_done").filter((job) => isOwnEstimateJob(job, "manager_id")).sort(
+      (a, b) => String(b.delivered_at || b.updated_at || b.created_at || "").localeCompare(String(a.delivered_at || a.updated_at || a.created_at || "")) || Number(b.id || 0) - Number(a.id || 0)
+    );
   }
   function managerEstimateNoticeStorageKey(jobs) {
     const userId = currentUserId() || "manager";
@@ -2959,7 +2961,7 @@
       var _a;
       return Number((_a = file.is_current) != null ? _a : 1) !== 0;
     }).length;
-    return '\n    <details class="row estimate-job-row estimate-job-collapsible" data-collapsible-key="'.concat(escapeAttr(collapsibleKey), '"').concat(openAttrForKey(collapsibleKey), '>\n      <summary class="estimate-job-summary">\n        <span class="estimate-job-summary-main">\n          <strong>').concat(escapeHtml(summaryTitle), "</strong>\n          ").concat(summarySubTitle ? '<span class="muted">'.concat(escapeHtml(summarySubTitle), "</span>") : "", '\n        </span>\n        <span class="estimate-job-summary-badges">\n          ').concat(pill(label(job.status), statusLevel2), "\n          ").concat(pill(job.due_date || "без срока", job.status === "estimate_done" ? "success" : levelByDate(job.due_date)), "\n          ").concat(currentFilesCount ? pill("Файлы: ".concat(currentFilesCount), "blue") : "", "\n          ").concat(quickLinks.slice(0, 2).map(renderEstimateJobLink).join(""), "\n          ").concat(quickLinks.length > 2 ? pill("ещё ".concat(quickLinks.length - 2), "blue") : "", '\n        </span>\n      </summary>\n      <div class="estimate-job-body">\n        <div class="estimate-job-main">\n          <div class="stack-line">\n            <strong>').concat(escapeHtml(job.title), "</strong>\n            ").concat(pill(label(job.status), statusLevel2), "\n            ").concat(pill(job.due_date || "без срока", job.status === "estimate_done" ? "success" : levelByDate(job.due_date)), '\n          </div>\n          <div class="muted">').concat(escapeHtml(job.customer_name || "Заказчик не указан"), " · ").concat(escapeHtml(job.project_title || "без карточки объекта"), " · ").concat(estimateJobTypeLabel(job.estimate_type), '</div>\n          <div class="muted">получено: ').concat(formatDateRu(job.received_at) || "не указано", " · выдал задание: ").concat(escapeHtml(job.manager_name || "не назначен"), " · сметчик: ").concat(escapeHtml(job.estimator_name || "не назначен"), '</div>\n          <div class="estimate-job-flags">\n            ').concat(pill(estimateSiteCostsLabel(job.site_costs_policy), job.site_costs_policy === "exclude" ? "warning" : job.site_costs_policy === "clarify" ? "blue" : "success"), "\n            ").concat(isPartnerEstimateJob(job) ? pill("Партнерская смета", "blue") : "", "\n          </div>\n          ").concat(job.site_costs_comment ? '<p class="muted">Организация площадки: '.concat(escapeHtml(job.site_costs_comment), "</p>") : "", "\n          ").concat(smetterHref ? '<a class="link-button inline-link" href="'.concat(escapeAttr(smetterHref), '" target="_blank" rel="noopener noreferrer">Открыть Сметтер</a>') : "", "\n          ").concat(renderEstimateJobLinks(quickLinks), "\n          ").concat(job.comment ? "<p>".concat(linkifyText(job.comment), "</p>") : "", "\n          ").concat(job.question_comment ? '<div class="estimate-question-note"><strong>Вопрос сметчика</strong><p>'.concat(linkifyText(job.question_comment), "</p></div>") : "", "\n          ").concat(job.return_comment ? '<p class="muted danger-text">Возврат менеджеру: '.concat(linkifyText(job.return_comment), "</p>") : "", "\n          ").concat(job.result_comment ? '<p class="muted">Итог: '.concat(linkifyText(job.result_comment), "</p>") : "", "\n          ").concat(renderEstimateJobFiles(job.files, job.id, canManageFiles), '\n        </div>\n        <div class="estimate-job-actions">\n          ').concat(canAnswerQuestion ? '<button class="secondary tiny" type="button" data-edit-estimate-job="'.concat(job.id, '">Ответить на уточнение</button>') : canEdit ? '<button class="secondary tiny" type="button" data-edit-estimate-job="'.concat(job.id, '">Редактировать</button>') : "", "\n          ").concat(canStart ? '<button class="secondary tiny" type="button" data-estimate-job-status="estimate_in_work" data-estimate-job-id="'.concat(job.id, '">В работу</button>') : "", "\n          ").concat(canQuestion ? '<button class="secondary tiny" type="button" data-estimate-job-status="estimate_question" data-estimate-job-id="'.concat(job.id, '">Уточнить</button>') : "", "\n          ").concat(canReturn ? '<button class="secondary tiny danger-outline" type="button" data-estimate-job-status="estimate_returned" data-estimate-job-id="'.concat(job.id, '">Вернуть на доработку</button>') : "", "\n          ").concat(canFinish ? '<button class="primary tiny" type="button" data-estimate-job-status="estimate_done" data-estimate-job-id="'.concat(job.id, '">Сдано</button>') : "", "\n          ").concat(canManageFiles ? '<button class="secondary tiny" type="button" data-open-estimate-files="'.concat(job.id, '">Добавить файл</button>') : "", "\n          ").concat(canArchive ? '<button class="secondary tiny" type="button" data-estimate-job-status="archived" data-estimate-job-id="'.concat(job.id, '">В архив</button>') : "", "\n          ").concat(canDelete ? '<button class="danger-button tiny" type="button" data-delete-estimate-job="'.concat(job.id, '">Удалить</button>') : "", "\n        </div>\n      </div>\n    </details>");
+    return '\n    <details class="row estimate-job-row estimate-job-collapsible" data-collapsible-key="'.concat(escapeAttr(collapsibleKey), '"').concat(openAttrForKey(collapsibleKey), '>\n      <summary class="estimate-job-summary">\n        <span class="estimate-job-summary-main">\n          <strong>').concat(escapeHtml(summaryTitle), "</strong>\n          ").concat(summarySubTitle ? '<span class="muted">'.concat(escapeHtml(summarySubTitle), "</span>") : "", '\n        </span>\n        <span class="estimate-job-summary-badges">\n          ').concat(pill(label(job.status), statusLevel2), "\n          ").concat(pill(job.due_date || "без срока", job.status === "estimate_done" ? "success" : levelByDate(job.due_date)), "\n          ").concat(currentFilesCount ? pill("Файлы: ".concat(currentFilesCount), "blue") : "", "\n          ").concat(quickLinks.slice(0, 2).map(renderEstimateJobLink).join(""), "\n          ").concat(quickLinks.length > 2 ? pill("ещё ".concat(quickLinks.length - 2), "blue") : "", '\n        </span>\n      </summary>\n      <div class="estimate-job-body">\n        <div class="estimate-job-main">\n          <div class="stack-line">\n            <strong>').concat(escapeHtml(job.title), "</strong>\n            ").concat(pill(label(job.status), statusLevel2), "\n            ").concat(pill(job.due_date || "без срока", job.status === "estimate_done" ? "success" : levelByDate(job.due_date)), '\n          </div>\n          <div class="muted">').concat(escapeHtml(job.customer_name || "Заказчик не указан"), " · ").concat(escapeHtml(job.project_title || "без карточки объекта"), " · ").concat(estimateJobTypeLabel(job.estimate_type), '</div>\n          <div class="muted">получено: ').concat(formatDateRu(job.received_at) || "не указано", " · выдал задание: ").concat(escapeHtml(job.manager_name || "не назначен"), " · сметчик: ").concat(escapeHtml(job.estimator_name || "не назначен"), '</div>\n          <div class="estimate-job-flags">\n            ').concat(pill(estimateSiteCostsLabel(job.site_costs_policy), job.site_costs_policy === "exclude" ? "warning" : job.site_costs_policy === "clarify" ? "blue" : "success"), "\n            ").concat(isPartnerEstimateJob(job) ? pill("Партнерская смета", "blue") : "", "\n          </div>\n          ").concat(job.site_costs_comment ? '<p class="muted">Организация площадки: '.concat(escapeHtml(job.site_costs_comment), "</p>") : "", "\n          ").concat(smetterHref ? '<a class="link-button inline-link" href="'.concat(escapeAttr(smetterHref), '" target="_blank" rel="noopener noreferrer">Открыть Сметтер</a>') : "", "\n          ").concat(renderEstimateJobLinks(quickLinks), "\n          ").concat(job.comment ? "<p>".concat(linkifyText(job.comment), "</p>") : "", "\n          ").concat(job.question_comment ? '<div class="estimate-question-note"><strong>Вопрос сметчика</strong><p>'.concat(linkifyText(job.question_comment), "</p></div>") : "", "\n          ").concat(job.return_comment ? '<p class="muted danger-text">Возврат менеджеру: '.concat(linkifyText(job.return_comment), "</p>") : "", "\n          ").concat(job.result_comment ? '<p class="muted">Итог: '.concat(linkifyText(job.result_comment), "</p>") : "", "\n          ").concat(renderEstimateJobFiles(job.files, job.id, canManageFiles), '\n        </div>\n        <div class="estimate-job-actions">\n          ').concat(canAnswerQuestion ? '<button class="secondary tiny" type="button" data-edit-estimate-job="'.concat(job.id, '">Ответить на уточнение</button>') : canEdit ? '<button class="secondary tiny" type="button" data-edit-estimate-job="'.concat(job.id, '">Редактировать</button>') : "", "\n          ").concat(canStart ? '<button class="secondary tiny" type="button" data-estimate-job-status="estimate_in_work" data-estimate-job-id="'.concat(job.id, '">В работу</button>') : "", "\n          ").concat(canQuestion ? '<button class="secondary tiny" type="button" data-estimate-job-status="estimate_question" data-estimate-job-id="'.concat(job.id, '">Уточнить</button>') : "", "\n          ").concat(canReturn ? '<button class="secondary tiny danger-outline" type="button" data-estimate-job-status="estimate_returned" data-estimate-job-id="'.concat(job.id, '">Вернуть на доработку</button>') : "", "\n          ").concat(canFinish ? '<button class="primary tiny" type="button" data-estimate-job-status="estimate_done" data-estimate-job-id="'.concat(job.id, '">Сдано</button>') : "", "\n          ").concat(canManageFiles ? '<button class="secondary tiny" type="button" data-open-estimate-files="'.concat(job.id, '">Добавить файл</button>') : "", "\n          ").concat(canManageFiles ? '<button class="secondary tiny" type="button" data-open-estimate-files="'.concat(job.id, '" data-estimate-file-mode="link">Изменить ссылку</button>') : "", "\n          ").concat(canArchive ? '<button class="secondary tiny" type="button" data-estimate-job-status="archived" data-estimate-job-id="'.concat(job.id, '">В архив</button>') : "", "\n          ").concat(canDelete ? '<button class="danger-button tiny" type="button" data-delete-estimate-job="'.concat(job.id, '">Удалить</button>') : "", "\n        </div>\n      </div>\n    </details>");
   }
   function fillEstimateJobForm(job = {}) {
     var _a, _b;
@@ -3009,20 +3011,22 @@
     if (replaceWrap) replaceWrap.hidden = mode !== "replace";
     if (fileInput) fileInput.multiple = mode !== "replace";
   }
-  function openEstimateJobFileDialog(jobId, replaceFileId = "") {
+  function openEstimateJobFileDialog(jobId, replaceFileId = "", modeOverride = "") {
     const job = state.estimateJobs.find((item) => Number(item.id) === Number(jobId));
     const form = qs("#estimateJobFileForm");
     if (!job || !form) return;
     form.reset();
     form.elements.id.value = job.id;
     form.elements.smetter_url.value = job.smetter_url || estimateSmetterHref(job) || "";
-    qs("#estimateJobFileTitle").textContent = "Файлы сметы: ".concat(job.title);
+    qs("#estimateJobFileTitle").textContent = modeOverride === "link" ? "Ссылка на Сметтер: ".concat(job.title) : "Файлы сметы: ".concat(job.title);
     const currentFiles = (job.files || []).filter((file) => {
       var _a;
       return Number((_a = file.is_current) != null ? _a : 1) !== 0;
     });
     form.elements.replace_file_id.innerHTML = currentFiles.map((file) => '<option value="'.concat(escapeAttr(file.id), '">').concat(escapeHtml(file.title || file.file_name || "Файл"), " · v").concat(Number(file.version_no || 1), "</option>")).join("");
-    if (replaceFileId) {
+    if (modeOverride === "link") {
+      form.elements.mode.value = "add";
+    } else if (replaceFileId) {
       form.elements.mode.value = "replace";
       form.elements.replace_file_id.value = String(replaceFileId);
     } else {
@@ -3036,6 +3040,12 @@
     }
     updateEstimateFileDialogMode();
     qs("#estimateJobFileDialog").showModal();
+    if (modeOverride === "link") {
+      setTimeout(() => {
+        var _a;
+        return (_a = form.elements.smetter_url) == null ? void 0 : _a.focus();
+      }, 0);
+    }
   }
   function uniqueMaterialBatches(materialRows = []) {
     const batches = /* @__PURE__ */ new Map();
@@ -6132,7 +6142,7 @@
       }
     });
     document.addEventListener("click", async (event) => {
-      var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k2, _l2, _m2, _n2, _o2, _p2, _q2, _r2, _s2;
+      var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k2, _l2, _m2, _n2, _o2, _p2, _q2, _r2, _s2, _t2;
       const mediaPreviewButton = event.target.closest("[data-media-preview]");
       if (mediaPreviewButton) {
         event.preventDefault();
@@ -6344,7 +6354,7 @@
       }
       const openEstimateFilesButton = event.target.closest("[data-open-estimate-files]");
       if (openEstimateFilesButton) {
-        openEstimateJobFileDialog(openEstimateFilesButton.dataset.openEstimateFiles);
+        openEstimateJobFileDialog(openEstimateFilesButton.dataset.openEstimateFiles, "", openEstimateFilesButton.dataset.estimateFileMode || "");
         return;
       }
       const replaceEstimateFileButton = event.target.closest("[data-replace-estimate-file]");
@@ -6544,10 +6554,10 @@
           };
         }
         if (action === "return") {
-          body = { comment: ((_c2 = qs("#materialBatchReturnComment")) == null ? void 0 : _c2.value) || "" };
+          body = { comment: ((_d2 = qs("#materialBatchReturnComment")) == null ? void 0 : _d2.value) || "" };
         }
         if (action === "resubmit") {
-          body = { comment: ((_d2 = qs("#materialBatchResubmitComment")) == null ? void 0 : _d2.value) || "" };
+          body = { comment: ((_e2 = qs("#materialBatchResubmitComment")) == null ? void 0 : _e2.value) || "" };
         }
         if (action === "update") {
           const extraItems = collectExtraMaterials("#batchExtraMaterialRows");
@@ -6557,48 +6567,48 @@
             return;
           }
           body = {
-            comment: ((_e2 = qs("#materialBatchUpdateComment")) == null ? void 0 : _e2.value) || "",
-            needed_at: ((_f2 = qs("#materialBatchUpdateNeededAt")) == null ? void 0 : _f2.value) || "",
+            comment: ((_f2 = qs("#materialBatchUpdateComment")) == null ? void 0 : _f2.value) || "",
+            needed_at: ((_g2 = qs("#materialBatchUpdateNeededAt")) == null ? void 0 : _g2.value) || "",
             items: collectMaterialBatchEdits(),
             extra_items: extraItems
           };
         }
         if (action === "schedule") {
           body = {
-            scheduled_delivery_date: ((_g2 = qs("#materialBatchDeliveryDate")) == null ? void 0 : _g2.value) || "",
+            scheduled_delivery_date: ((_h2 = qs("#materialBatchDeliveryDate")) == null ? void 0 : _h2.value) || "",
             actual_items: currentBatch ? collectMaterialActualItems(currentBatch) : [],
-            comment: ((_h2 = qs("#materialBatchScheduleComment")) == null ? void 0 : _h2.value) || ""
+            comment: ((_i2 = qs("#materialBatchScheduleComment")) == null ? void 0 : _i2.value) || ""
           };
         }
         if (action === "save_actuals") {
           body = {
             actual_items: currentBatch ? collectMaterialActualItems(currentBatch) : [],
-            comment: ((_i2 = qs("#materialBatchScheduleComment")) == null ? void 0 : _i2.value) || ""
+            comment: ((_j2 = qs("#materialBatchScheduleComment")) == null ? void 0 : _j2.value) || ""
           };
         }
         if (action === "postpone_delivery" || action === "cancel_delivery") {
           body = {
             actual_items: currentBatch ? collectMaterialActualItems(currentBatch) : [],
-            comment: ((_j2 = qs("#materialBatchScheduleComment")) == null ? void 0 : _j2.value) || ""
+            comment: ((_k2 = qs("#materialBatchScheduleComment")) == null ? void 0 : _k2.value) || ""
           };
         }
         if (action === "request_again") {
           body = {
-            needed_at: ((_k2 = qs("#materialBatchRequestAgainDate")) == null ? void 0 : _k2.value) || "",
-            comment: ((_l2 = qs("#materialBatchRequestAgainComment")) == null ? void 0 : _l2.value) || ""
+            needed_at: ((_l2 = qs("#materialBatchRequestAgainDate")) == null ? void 0 : _l2.value) || "",
+            comment: ((_m2 = qs("#materialBatchRequestAgainComment")) == null ? void 0 : _m2.value) || ""
           };
         }
         if (action === "resolve_issue") {
           body = {
-            scheduled_delivery_date: ((_m2 = qs("#materialBatchResolveDate")) == null ? void 0 : _m2.value) || "",
-            comment: ((_n2 = qs("#materialBatchResolveComment")) == null ? void 0 : _n2.value) || ""
+            scheduled_delivery_date: ((_n2 = qs("#materialBatchResolveDate")) == null ? void 0 : _n2.value) || "",
+            comment: ((_o2 = qs("#materialBatchResolveComment")) == null ? void 0 : _o2.value) || ""
           };
         }
         if (action === "receive") {
-          const file = (_p2 = (_o2 = qs("#materialBatchReceiptFile")) == null ? void 0 : _o2.files) == null ? void 0 : _p2[0];
+          const file = (_q2 = (_p2 = qs("#materialBatchReceiptFile")) == null ? void 0 : _p2.files) == null ? void 0 : _q2[0];
           body = {
             receipt_status: materialBatchAction.dataset.receiptStatus || "received",
-            comment: ((_q2 = qs("#materialBatchReceiptComment")) == null ? void 0 : _q2.value) || "",
+            comment: ((_r2 = qs("#materialBatchReceiptComment")) == null ? void 0 : _r2.value) || "",
             receipt_file: file ? {
               title: file.name,
               type: "other",
@@ -6647,8 +6657,8 @@
         await api("/api/material-requests/".concat(id, "/deliver"), {
           method: "POST",
           body: JSON.stringify({
-            actual_delivery_date: ((_r2 = qs('[data-material-actual="'.concat(id, '"]'))) == null ? void 0 : _r2.value) || "",
-            procurement_comment: ((_s2 = qs('[data-material-comment="'.concat(id, '"]'))) == null ? void 0 : _s2.value) || ""
+            actual_delivery_date: ((_s2 = qs('[data-material-actual="'.concat(id, '"]'))) == null ? void 0 : _s2.value) || "",
+            procurement_comment: ((_t2 = qs('[data-material-comment="'.concat(id, '"]'))) == null ? void 0 : _t2.value) || ""
           })
         });
         await loadAll();
@@ -6958,8 +6968,8 @@
         reason: row.querySelector("[data-material-reason] textarea").value
       }));
       if (selectedRows.some((row) => {
-        var _a3;
-        return Number(((_a3 = row.querySelector("[data-material-quantity]")) == null ? void 0 : _a3.value) || 0) <= 0;
+        var _a2;
+        return Number(((_a2 = row.querySelector("[data-material-quantity]")) == null ? void 0 : _a2.value) || 0) <= 0;
       })) {
         showToast("Укажите количество для выбранных позиций");
         return;

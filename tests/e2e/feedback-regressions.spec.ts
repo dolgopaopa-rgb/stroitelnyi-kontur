@@ -63,6 +63,21 @@ test("material requests show ordered estimate positions and support partial proc
   expect(server).toContain("В работу взято позиций");
 });
 
+test("completed estimates expose a direct Smetter link edit action", async () => {
+  const app = readProjectFile("app/static/app.js");
+  const compat = readProjectFile("app/static/app.compat.js");
+  const server = readProjectFile("app/server.py");
+
+  for (const source of [app, compat]) {
+    expect(source).toContain('data-estimate-file-mode="link"');
+    expect(source).toContain('modeOverride === "link"');
+    expect(source).toContain("Ссылка на Сметтер");
+  }
+  expect(app).toContain('openEstimateJobFileDialog(openEstimateFilesButton.dataset.openEstimateFiles, "", openEstimateFilesButton.dataset.estimateFileMode || "")');
+  expect(server).toContain('smetter_url = str(data.get("smetter_url") or "").strip()');
+  expect(server).toContain("UPDATE estimate_jobs SET smetter_url = ?");
+});
+
 test("feedback delete controls are available only to owner", async ({ page }) => {
   const externalId = `e2e-feedback-delete-${Date.now()}-${Math.random()}`;
   const createResponse = await page.request.post("/api/feedback", {

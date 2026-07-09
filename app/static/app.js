@@ -3653,6 +3653,7 @@ function renderEstimateJobRow(job) {
           ${canReturn ? `<button class="secondary tiny danger-outline" type="button" data-estimate-job-status="estimate_returned" data-estimate-job-id="${job.id}">Вернуть на доработку</button>` : ""}
           ${canFinish ? `<button class="primary tiny" type="button" data-estimate-job-status="estimate_done" data-estimate-job-id="${job.id}">Сдано</button>` : ""}
           ${canManageFiles ? `<button class="secondary tiny" type="button" data-open-estimate-files="${job.id}">Добавить файл</button>` : ""}
+          ${canManageFiles ? `<button class="secondary tiny" type="button" data-open-estimate-files="${job.id}" data-estimate-file-mode="link">Изменить ссылку</button>` : ""}
           ${canArchive ? `<button class="secondary tiny" type="button" data-estimate-job-status="archived" data-estimate-job-id="${job.id}">В архив</button>` : ""}
           ${canDelete ? `<button class="danger-button tiny" type="button" data-delete-estimate-job="${job.id}">Удалить</button>` : ""}
         </div>
@@ -3711,19 +3712,21 @@ function updateEstimateFileDialogMode() {
   if (fileInput) fileInput.multiple = mode !== "replace";
 }
 
-function openEstimateJobFileDialog(jobId, replaceFileId = "") {
+function openEstimateJobFileDialog(jobId, replaceFileId = "", modeOverride = "") {
   const job = state.estimateJobs.find((item) => Number(item.id) === Number(jobId));
   const form = qs("#estimateJobFileForm");
   if (!job || !form) return;
   form.reset();
   form.elements.id.value = job.id;
   form.elements.smetter_url.value = job.smetter_url || estimateSmetterHref(job) || "";
-  qs("#estimateJobFileTitle").textContent = `Файлы сметы: ${job.title}`;
+  qs("#estimateJobFileTitle").textContent = modeOverride === "link" ? `Ссылка на Сметтер: ${job.title}` : `Файлы сметы: ${job.title}`;
   const currentFiles = (job.files || []).filter((file) => Number(file.is_current ?? 1) !== 0);
   form.elements.replace_file_id.innerHTML = currentFiles
     .map((file) => `<option value="${escapeAttr(file.id)}">${escapeHtml(file.title || file.file_name || "Файл")} · v${Number(file.version_no || 1)}</option>`)
     .join("");
-  if (replaceFileId) {
+  if (modeOverride === "link") {
+    form.elements.mode.value = "add";
+  } else if (replaceFileId) {
     form.elements.mode.value = "replace";
     form.elements.replace_file_id.value = String(replaceFileId);
   } else {
@@ -3737,6 +3740,9 @@ function openEstimateJobFileDialog(jobId, replaceFileId = "") {
   }
   updateEstimateFileDialogMode();
   qs("#estimateJobFileDialog").showModal();
+  if (modeOverride === "link") {
+    setTimeout(() => form.elements.smetter_url?.focus(), 0);
+  }
 }
 
 function uniqueMaterialBatches(materialRows = []) {
@@ -8622,7 +8628,7 @@ function bindEvents() {
 
     const openEstimateFilesButton = event.target.closest("[data-open-estimate-files]");
     if (openEstimateFilesButton) {
-      openEstimateJobFileDialog(openEstimateFilesButton.dataset.openEstimateFiles);
+      openEstimateJobFileDialog(openEstimateFilesButton.dataset.openEstimateFiles, "", openEstimateFilesButton.dataset.estimateFileMode || "");
       return;
     }
 
