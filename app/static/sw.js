@@ -1,9 +1,9 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260709-estimate-comments-full";
+const CACHE_NAME = "stroitelnyi-kontur-20260711-main-estimate-materials";
 const CORE_ASSETS = [
   "/",
-  "/static/styles.css?v=20260709-estimate-comments-full",
-  "/static/app.compat.js?v=20260709-estimate-comments-full",
-  "/static/manifest.webmanifest?v=20260709-estimate-comments-full",
+  "/static/styles.css?v=20260711-main-estimate-materials",
+  "/static/app.compat.js?v=20260711-main-estimate-materials",
+  "/static/manifest.webmanifest?v=20260711-main-estimate-materials",
   "/static/assets/g2-logo-192.png",
   "/static/assets/g2-logo-512.png"
 ];

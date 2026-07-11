@@ -63,6 +63,27 @@ test("material requests show ordered estimate positions and support partial proc
   expect(server).toContain("В работу взято позиций");
 });
 
+test("main estimate materials list is visible for procurement by default", async () => {
+  const html = readProjectFile("app/static/index.html");
+  const app = readProjectFile("app/static/app.js");
+  const compat = readProjectFile("app/static/app.compat.js");
+  const server = readProjectFile("app/server.py");
+
+  expect(html).toContain('id="toggleEstimateMaterialsButton"');
+  expect(html).toContain('id="refreshEstimateButton"');
+  expect(html).toContain('id="estimateMaterialRows"');
+  expect(app).toContain("showEstimateMaterials: true");
+  expect(app).toContain("state.showEstimateMaterials = true;");
+  expect(app).toContain("await renderEstimateMaterials();");
+  expect(server).toContain("SUM(COALESCE(m.requested_quantity, 0)) AS requested_quantity");
+
+  for (const source of [app, compat]) {
+    expect(source).toContain("renderEstimateMaterials");
+    expect(source).toContain("estimateMaterialRows");
+    expect(source).toContain("toggleEstimateMaterialsButton");
+  }
+});
+
 test("completed estimates expose a direct Smetter link edit action", async () => {
   const app = readProjectFile("app/static/app.js");
   const compat = readProjectFile("app/static/app.compat.js");
@@ -248,7 +269,7 @@ test("estimate job files are collapsed under object summary", async () => {
   const compat = readProjectFile("app/static/app.compat.js");
   const styles = readProjectFile("app/static/styles.css");
 
-  expect(html).toContain("20260709-estimate-comments-full");
+  expect(html).toContain("20260711-main-estimate-materials");
   expect(app).toContain("estimate-job-collapsible");
   expect(app).toContain("estimate-job-summary");
   expect(app).toContain("estimate-job-body");
@@ -312,7 +333,7 @@ test("delivered material batches do not stay in delivery risk", async ({ page })
   const compat = readProjectFile("app/static/app.compat.js");
   const server = readProjectFile("app/server.py");
 
-  expect(html).toContain("20260707-manager-estimate-notice");
+  expect(html).toContain("20260711-main-estimate-materials");
   expect(app).toContain("function materialBatchHasOpenProblem");
   expect(app).toContain("function materialBatchIsFinalForAttention");
   expect(app).toContain("if (materialBatchIsFinalForAttention(batch)) return false");

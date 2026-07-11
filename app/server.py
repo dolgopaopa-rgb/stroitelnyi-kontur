@@ -5939,7 +5939,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     SELECT
                         m.estimate_material_id,
                         COUNT(DISTINCT COALESCE(m.batch_id, m.id)) AS request_batches,
-                        SUM(COALESCE(m.requested_quantity, m.estimated_quantity, 0)) AS requested_quantity,
+                        SUM(COALESCE(m.requested_quantity, 0)) AS requested_quantity,
                         GROUP_CONCAT(DISTINCT COALESCE(b.status, m.procurement_status, 'new')) AS request_statuses,
                         MAX(COALESCE(b.scheduled_delivery_date, b.planned_delivery_date, m.actual_delivery_date, b.needed_at, m.needed_at)) AS latest_request_date
                     FROM material_requests m

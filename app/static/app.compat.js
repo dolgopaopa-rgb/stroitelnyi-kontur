@@ -65,7 +65,7 @@
     estimateJobs: [],
     estimateMaterials: [],
     estimatePreviewRows: [],
-    showEstimateMaterials: false,
+    showEstimateMaterials: true,
     selectedProjectId: initialProjectId,
     selectedProjectTab: "overview",
     projectListMode: "active",
@@ -6096,8 +6096,14 @@
       const suffix = projectId ? "?project_id=".concat(encodeURIComponent(projectId)) : "";
       window.open("/api/material-requests/export".concat(suffix), "_blank", "noopener");
     });
-    qs('#estimateImportForm select[name="project_id"]').addEventListener("change", renderEstimateMaterials);
-    qs("#refreshEstimateButton").addEventListener("click", renderEstimateMaterials);
+    qs('#estimateImportForm select[name="project_id"]').addEventListener("change", async () => {
+      state.showEstimateMaterials = true;
+      await renderEstimateMaterials();
+    });
+    qs("#refreshEstimateButton").addEventListener("click", async () => {
+      state.showEstimateMaterials = true;
+      await renderEstimateMaterials();
+    });
     qs("#previewEstimateButton").addEventListener("click", loadEstimatePreview);
     qs('#workProjectForm select[name="project_id"]').addEventListener("change", async (event) => {
       state.selectedWorkProjectId = Number(event.target.value);
@@ -7072,6 +7078,7 @@
         })
       });
       state.estimatePreviewRows = [];
+      state.showEstimateMaterials = true;
       qs("#estimatePreviewRows").innerHTML = '<p class="muted">Файл загружен. Можно выбрать другой файл.</p>';
       await loadAll();
       switchView("materials");
