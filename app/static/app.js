@@ -4,6 +4,7 @@ const routeViewMap = {
   "/today": "today",
   "/assistant": "assistant",
   "/objects": "projects",
+  "/estimates": "estimates",
   "/tasks": "tasks",
   "/materials": "materials",
   "/photo-reports": "photos",
@@ -36,6 +37,7 @@ const state = {
   selectedProjectTab: "overview",
   projectListMode: "active",
   estimateListMode: "active",
+  estimateQuickFilter: localStorage.getItem("estimateQuickFilter") || "",
   materialListMode: "active",
   materialPipelineFilter: "all",
   materialQuickFilter: "all",
@@ -176,7 +178,7 @@ const statusLabelMap = {
   feedback_in_work: "В работе",
   feedback_done: "Обработано",
   estimate_new: "Новое задание",
-  estimate_in_work: "В расчете",
+  estimate_in_work: "В расчёте",
   estimate_done: "Смета сдана",
   estimate_hold: "Пауза",
   estimate_returned: "На доработке",
@@ -3309,11 +3311,15 @@ function syncEstimateSiteCostsByType() {
 function estimateJobStats(jobs) {
   return {
     active: jobs.filter((job) => ["estimate_new", "estimate_in_work", "estimate_question"].includes(job.status)).length,
+    inWork: jobs.filter((job) => job.status === "estimate_in_work").length,
     done: jobs.filter((job) => job.status === "estimate_done").length,
-    overdue: jobs.filter((job) => !["estimate_done", "archived"].includes(job.status) && levelByDate(job.due_date) === "danger").length,
+    overdue: jobs.filter(estimateJobIsOverdue).length,
     hold: jobs.filter((job) => job.status === "estimate_hold").length,
     returned: jobs.filter((job) => job.status === "estimate_returned").length,
     questions: jobs.filter((job) => job.status === "estimate_question").length,
+    noFiles: jobs.filter((job) => !estimateJobHasFiles(job)).length,
+    noEstimator: jobs.filter((job) => !job.estimator_id).length,
+    needsAction: jobs.filter(estimateJobRequiresAction).length,
   };
 }
 
@@ -3322,8 +3328,183 @@ function visibleEstimateJobs(jobs = state.estimateJobs || []) {
   return jobs.filter((job) => job.status !== "archived");
 }
 
+function estimateCurrentFiles(job = {}) {
+  return (job.files || []).filter((file) => Number(file.is_current ?? 1) !== 0);
+}
+
+function estimatePreviousFiles(job = {}) {
+  return (job.files || []).filter((file) => Number(file.is_current ?? 1) === 0);
+}
+
 function currentEstimateFilesCount(job) {
-  return (job?.files || []).filter((file) => Number(file.is_current ?? 1) !== 0).length;
+  return estimateCurrentFiles(job).length;
+}
+
+function estimateJobHasFiles(job = {}) {
+  return Boolean((job.files || []).length);
+}
+
+function estimateJobHasCurrentFile(job = {}) {
+  return Boolean(estimateCurrentFiles(job).length);
+}
+
+function estimateJobIsOverdue(job = {}) {
+  return !["estimate_done", "archived"].includes(job.status) && levelByDate(job.due_date) === "danger";
+}
+
+function estimateJobIsMine(job = {}) {
+  const role = currentRoleBase();
+  if (role === "sales_manager") return isOwnEstimateJob(job, "manager_id");
+  if (role === "estimator") return isOwnEstimateJob(job, "estimator_id");
+  return true;
+}
+
+function estimateRoleFilterDefinitions(role = currentRoleBase()) {
+  if (role === "sales_manager") {
+    return [
+      ["mine", "Мои задания"],
+      ["questions", "Требуют уточнения"],
+      ["done", "Сданные"],
+      ["returned", "Возвращённые"],
+      ["overdue", "Просроченные"],
+      ["no_files", "Без файлов"],
+      ["no_estimator", "Без сметчика"],
+    ];
+  }
+  if (role === "estimator") {
+    return [
+      ["mine", "Мои задания"],
+      ["new", "Новые"],
+      ["in_work", "В работе"],
+      ["questions", "Нужно уточнение"],
+      ["overdue", "Просроченные"],
+      ["done", "Сданные"],
+      ["no_files", "Без исходных файлов"],
+    ];
+  }
+  return [
+    ["all", "Все"],
+    ["new", "Новые"],
+    ["in_work", "В работе"],
+    ["overdue", "Просроченные"],
+    ["questions", "Нужно уточнение"],
+    ["no_files", "Без файлов"],
+    ["no_estimator", "Без сметчика"],
+    ["done", "Сданные"],
+  ];
+}
+
+function defaultEstimateQuickFilter(role = currentRoleBase()) {
+  return ["sales_manager", "estimator"].includes(role) ? "mine" : "all";
+}
+
+function ensureEstimateQuickFilter() {
+  const definitions = estimateRoleFilterDefinitions();
+  const allowed = definitions.map(([id]) => id);
+  if (!allowed.includes(state.estimateQuickFilter)) {
+    state.estimateQuickFilter = defaultEstimateQuickFilter();
+    localStorage.setItem("estimateQuickFilter", state.estimateQuickFilter);
+  }
+  return definitions;
+}
+
+function estimateJobMatchesQuickFilter(job, filter = state.estimateQuickFilter) {
+  switch (filter) {
+    case "mine":
+      return estimateJobIsMine(job);
+    case "new":
+      return job.status === "estimate_new";
+    case "in_work":
+      return job.status === "estimate_in_work";
+    case "questions":
+      return job.status === "estimate_question";
+    case "done":
+      return job.status === "estimate_done";
+    case "returned":
+      return job.status === "estimate_returned";
+    case "overdue":
+      return estimateJobIsOverdue(job);
+    case "no_files":
+      return !estimateJobHasFiles(job);
+    case "no_estimator":
+      return !job.estimator_id;
+    case "all":
+    default:
+      return true;
+  }
+}
+
+function estimateFilteredJobs(jobs = visibleEstimateJobs()) {
+  ensureEstimateQuickFilter();
+  return jobs.filter((job) => estimateJobMatchesQuickFilter(job));
+}
+
+function estimateQuickFilterLabel() {
+  const match = estimateRoleFilterDefinitions().find(([id]) => id === state.estimateQuickFilter);
+  return match?.[1] || "Все";
+}
+
+function estimateCompletenessItems(job = {}) {
+  const hasSmetter = Boolean(estimateSmetterHref(job));
+  return {
+    required: [
+      ["Название задания", Boolean(String(job.title || "").trim()), "Укажите понятное название задания."],
+      ["Объект или будущий объект", Boolean(job.project_id || job.project_title), "Выберите объект или опишите будущий объект в задании."],
+      ["Клиент", Boolean(String(job.customer_name || "").trim()), "Укажите клиента в рамках текущих прав."],
+      ["Срок", Boolean(job.due_date), "Укажите срок расчёта."],
+      ["Менеджер", Boolean(job.manager_id || job.manager_name), "Назначьте менеджера."],
+      ["Сметчик", Boolean(job.estimator_id || job.estimator_name), "Назначьте сметчика."],
+      ["Комментарий менеджера", Boolean(String(job.comment || "").trim()), "Добавьте, что нужно посчитать."],
+      ["Исходные файлы или ссылка", estimateJobHasFiles(job) || hasSmetter, "Добавьте файлы или ссылку на Сметтер."],
+    ],
+    optional: [
+      ["Ссылка Smetter", hasSmetter, "Можно добавить ссылку на расчёт."],
+      ["Тип сметы", Boolean(job.estimate_type), "Помогает понять формат расчёта."],
+      ["Расходы на организацию площадки", Boolean(job.site_costs_policy), "Уточняет, включать ли организацию площадки."],
+      ["Пояснение по составу работ", Boolean(String(job.comment || "").trim()), "Полезно для сметчика."],
+    ],
+  };
+}
+
+function estimateCompletenessSummary(job = {}) {
+  const items = estimateCompletenessItems(job).required;
+  const ready = items.filter(([, ok]) => ok).length;
+  return { ready, total: items.length, missing: items.length - ready, items };
+}
+
+function estimateJobNextAction(job = {}) {
+  const role = currentRoleBase();
+  const hasFiles = estimateJobHasFiles(job);
+  const overdue = estimateJobIsOverdue(job);
+  if (job.status === "archived") return { text: "В архиве", level: "", important: false };
+  if (role === "sales_manager") {
+    if (job.status === "estimate_question") return { text: "Ответить на уточнение", level: "warning", important: true };
+    if (!hasFiles) return { text: "Добавить исходные файлы", level: "warning", important: true };
+    if (!job.estimator_id) return { text: "Назначить сметчика", level: "warning", important: true };
+    if (job.status === "estimate_done") return { text: "Проверить результат", level: "success", important: true };
+    if (overdue) return { text: "Проверить просрочку", level: "danger", important: true };
+    return { text: "Следить за сроком", level: "blue", important: false };
+  }
+  if (role === "estimator") {
+    if (!hasFiles) return { text: "Запросить исходные данные", level: "warning", important: true };
+    if (job.status === "estimate_new") return { text: "Взять в работу", level: "blue", important: true };
+    if (job.status === "estimate_in_work") return { text: "Сдать смету или уточнить", level: "blue", important: false };
+    if (job.status === "estimate_question") return { text: "Ждёт ответа менеджера", level: "warning", important: true };
+    if (job.status === "estimate_returned") return { text: "Доработать и сдать", level: "danger", important: true };
+    if (overdue) return { text: "Срок просрочен", level: "danger", important: true };
+    return { text: "Открыть задание", level: "", important: false };
+  }
+  if (overdue) return { text: "Разобрать просрочку", level: "danger", important: true };
+  if (!job.estimator_id) return { text: "Назначить сметчика", level: "warning", important: true };
+  if (!hasFiles) return { text: "Нет файлов", level: "warning", important: true };
+  if (job.status === "estimate_question") return { text: "Ждёт уточнения", level: "warning", important: true };
+  if (job.status === "estimate_returned") return { text: "На доработке", level: "danger", important: true };
+  if (job.status === "estimate_done" && !estimateJobHasCurrentFile(job)) return { text: "Сдана без файла", level: "danger", important: true };
+  return { text: "Открыть задание", level: "", important: false };
+}
+
+function estimateJobRequiresAction(job = {}) {
+  return estimateJobNextAction(job).important;
 }
 
 function submittedEstimateJobsForManager(jobs = state.estimateJobs || []) {
@@ -3399,13 +3580,14 @@ function renderEstimateJobStats(jobs) {
   const stats = estimateJobStats(jobs);
   const total = Math.max(jobs.length, 1);
   const segments = [
-    ["Все", jobs.length, ""],
-    ["В работе", stats.active, "blue"],
+    ["Требует действия", stats.needsAction, stats.needsAction ? "danger" : ""],
+    ["Новые", jobs.filter((job) => job.status === "estimate_new").length, "warning"],
+    ["В расчёте", stats.inWork, "blue"],
     ["Просрочено", stats.overdue, "danger"],
     ["Уточнение", stats.questions, "warning"],
     ["Сдано", stats.done, "success"],
-    ["Пауза", stats.hold, "warning"],
-    ["Возврат", stats.returned, "danger"],
+    ["Без файлов", stats.noFiles, stats.noFiles ? "warning" : ""],
+    ["Без сметчика", stats.noEstimator, stats.noEstimator ? "warning" : ""],
   ];
   return `
     <div class="task-stats">
@@ -3422,6 +3604,62 @@ function renderEstimateJobStats(jobs) {
     </div>`;
 }
 
+function renderEstimateQuickFilters(jobs = []) {
+  const definitions = ensureEstimateQuickFilter();
+  return `
+    <div class="estimate-quick-filters" role="tablist" aria-label="Быстрые фильтры смет">
+      ${definitions
+        .map(([id, title]) => {
+          const count = jobs.filter((job) => estimateJobMatchesQuickFilter(job, id)).length;
+          const active = id === state.estimateQuickFilter ? " active" : "";
+          return `<button class="quick-filter${active}" type="button" data-estimate-quick-filter="${escapeAttr(id)}">${escapeHtml(title)} <span>${count}</span></button>`;
+        })
+        .join("")}
+    </div>`;
+}
+
+function estimateActionSort(a, b) {
+  const levelWeight = { danger: 0, warning: 1, blue: 2, success: 3, "": 4 };
+  const actionA = estimateJobNextAction(a);
+  const actionB = estimateJobNextAction(b);
+  return (
+    (levelWeight[actionA.level] ?? 4) - (levelWeight[actionB.level] ?? 4) ||
+    String(a.due_date || "9999-12-31").localeCompare(String(b.due_date || "9999-12-31")) ||
+    Number(a.id || 0) - Number(b.id || 0)
+  );
+}
+
+function renderEstimateActionPanel(jobs = []) {
+  const urgent = jobs.filter(estimateJobRequiresAction).sort(estimateActionSort).slice(0, 5);
+  if (!urgent.length) {
+    return `
+      <div class="estimate-action-panel calm">
+        <strong>Сейчас срочных действий по фильтру «${escapeHtml(estimateQuickFilterLabel())}» нет</strong>
+        <span>Проверьте список заданий или переключите фильтр.</span>
+      </div>`;
+  }
+  return `
+    <div class="estimate-action-panel">
+      <div class="estimate-action-head">
+        <strong>Требует действия</strong>
+        <span>${urgent.length} из ${jobs.length}</span>
+      </div>
+      <div class="estimate-action-list">
+        ${urgent
+          .map((job) => {
+            const action = estimateJobNextAction(job);
+            return `
+              <button class="estimate-action-card ${action.level}" type="button" data-open-estimate-job-row="${escapeAttr(job.id)}">
+                ${pill(action.text, action.level)}
+                <strong>${escapeHtml(job.project_title || job.title || "Сметное задание")}</strong>
+                <span>${escapeHtml(job.estimator_name || "сметчик не назначен")} · срок: ${escapeHtml(formatDateRu(job.due_date) || "без срока")}</span>
+              </button>`;
+          })
+          .join("")}
+      </div>
+    </div>`;
+}
+
 function estimateJobProgress(job) {
   if (job.status === "estimate_done") return 100;
   if (!job.received_at || !job.due_date) return 15;
@@ -3435,7 +3673,7 @@ function estimateJobProgress(job) {
 
 function renderEstimateSchedule(jobs) {
   const activeJobs = jobs.filter((job) => !["estimate_done", "archived"].includes(job.status)).slice(0, 8);
-  if (!activeJobs.length) return `<p class="muted">Активных сметных заданий нет.</p>`;
+  if (!activeJobs.length) return `<p class="muted">Активных сметных заданий по текущему фильтру нет.</p>`;
   return activeJobs
     .map(
       (job) => `
@@ -3470,56 +3708,77 @@ function isEstimateImageFile(file) {
   return mime.startsWith("image/") || /\.(jpe?g|png|webp|gif|bmp|heic|heif)$/i.test(fileName);
 }
 
-function renderEstimateJobFiles(files = [], jobId = "", canManageFiles = false) {
-  if (!Array.isArray(files) || !files.length) return "";
+function renderEstimateFileCard(file, jobId = "", canManageFiles = false) {
+  const title = escapeHtml(file.title || file.file_name || "Файл");
+  const fileName = escapeHtml(file.file_name || "");
+  const href = escapeAttr(estimateFileDownloadUrl(file));
+  const isCurrent = Number(file.is_current ?? 1) !== 0;
+  const version = Number(file.version_no || 1);
+  const versionText = `v${version}${isCurrent ? " · текущая" : " · предыдущая"}`;
+  const uploadedBy = file.uploaded_by_name ? ` · загрузил: ${escapeHtml(file.uploaded_by_name)}` : "";
+  const createdAt = file.created_at ? ` · ${escapeHtml(formatDateRu(file.created_at))}` : "";
+  const note = file.replacement_note ? `<span>замена: ${escapeHtml(file.replacement_note)}</span>` : "";
+  const printButton = `<button class="estimate-file-print" type="button" data-print-estimate-file="${escapeAttr(file.id)}">Печать</button>`;
+  const replaceButton = canManageFiles && isCurrent ? `<button class="estimate-file-print" type="button" data-replace-estimate-file="${escapeAttr(file.id)}" data-estimate-job-id="${escapeAttr(jobId)}">Заменить</button>` : "";
+  const deleteButton = canManageFiles ? `<button class="estimate-file-print danger-outline" type="button" data-delete-estimate-file="${escapeAttr(file.id)}">Удалить</button>` : "";
+  const meta = `<span>${fileName || "имя файла не указано"}</span><span>${versionText}${createdAt}${uploadedBy}</span>${note}`;
+  const previewKind = filePreviewKind(file.file_name || file.title || "", file.mime_type);
+  const canPreview = Boolean(previewKind);
+  const actionLabel = fileOpenAction(file.file_name || file.title || "", file.mime_type);
+  const previewAttrs = canPreview
+    ? `data-media-preview="${previewKind}" data-media-url="${href}" data-media-title="${escapeAttr(file.title || file.file_name || "Файл")}" data-media-mime="${escapeAttr(file.mime_type || "")}"`
+    : `target="_blank" rel="noopener noreferrer" download`;
+  if (isEstimateImageFile(file)) {
+    return `
+      <div class="estimate-file-card ${isCurrent ? "" : "previous-version"}">
+        <button class="estimate-file-button" type="button" data-estimate-gallery-job="${escapeAttr(jobId)}" data-estimate-gallery-file="${escapeAttr(file.id)}">
+          <strong>${title}</strong>
+          ${meta}
+        </button>
+        ${printButton}
+        ${replaceButton}
+        ${deleteButton}
+      </div>`;
+  }
   return `
-    <div class="estimate-job-files">
-      ${files
-        .map(
-          (file) => {
-            const title = escapeHtml(file.title || file.file_name || "Файл");
-            const fileName = escapeHtml(file.file_name || "");
-            const href = escapeAttr(estimateFileDownloadUrl(file));
-            const isCurrent = Number(file.is_current ?? 1) !== 0;
-            const version = Number(file.version_no || 1);
-            const versionText = `v${version}${isCurrent ? "" : " · предыдущая"}`;
-            const note = file.replacement_note ? ` · ${escapeHtml(file.replacement_note)}` : "";
-            const printButton = `<button class="estimate-file-print" type="button" data-print-estimate-file="${escapeAttr(file.id)}">Печать</button>`;
-            const replaceButton = canManageFiles && isCurrent ? `<button class="estimate-file-print" type="button" data-replace-estimate-file="${escapeAttr(file.id)}" data-estimate-job-id="${escapeAttr(jobId)}">Заменить</button>` : "";
-            const deleteButton = canManageFiles ? `<button class="estimate-file-print danger-outline" type="button" data-delete-estimate-file="${escapeAttr(file.id)}">Удалить</button>` : "";
-            const meta = `<span>${fileName}</span><span>${versionText}${note}</span>`;
-            const previewKind = filePreviewKind(file.file_name || file.title || "", file.mime_type);
-            const canPreview = Boolean(previewKind);
-            const actionLabel = fileOpenAction(file.file_name || file.title || "", file.mime_type);
-            const previewAttrs = canPreview
-              ? `data-media-preview="${previewKind}" data-media-url="${href}" data-media-title="${escapeAttr(file.title || file.file_name || "Файл")}" data-media-mime="${escapeAttr(file.mime_type || "")}"`
-              : `target="_blank" rel="noopener noreferrer" download`;
-            if (isEstimateImageFile(file)) {
-              return `
-          <div class="estimate-file-card ${isCurrent ? "" : "previous-version"}">
-            <button class="estimate-file-button" type="button" data-estimate-gallery-job="${escapeAttr(jobId)}" data-estimate-gallery-file="${escapeAttr(file.id)}">
-              <strong>${title}</strong>
-              ${meta}
-            </button>
-            ${printButton}
-            ${replaceButton}
-            ${deleteButton}
-          </div>`;
-            }
-            return `
-          <div class="estimate-file-card ${isCurrent ? "" : "previous-version"}">
-            <a href="${href}" ${previewAttrs}>
-              <strong>${escapeHtml(file.title || file.file_name || "Файл")}</strong>
-              ${meta}
-              <span>${actionLabel}</span>
-            </a>
-            ${printButton}
-            ${replaceButton}
-            ${deleteButton}
-          </div>`;
-          }
-        )
-        .join("")}
+    <div class="estimate-file-card ${isCurrent ? "" : "previous-version"}">
+      <a href="${href}" ${previewAttrs}>
+        <strong>${title}</strong>
+        ${meta}
+        <span>${actionLabel}</span>
+      </a>
+      ${printButton}
+      ${replaceButton}
+      ${deleteButton}
+    </div>`;
+}
+
+function renderEstimateFileGroup(title, files, jobId, canManageFiles, { collapsed = false, emptyText = "" } = {}) {
+  if (!files.length && !emptyText) return "";
+  const body = files.length
+    ? `<div class="estimate-job-files">${files.map((file) => renderEstimateFileCard(file, jobId, canManageFiles)).join("")}</div>`
+    : `<p class="muted">${escapeHtml(emptyText)}</p>`;
+  return `
+    <details class="estimate-file-group"${collapsed ? "" : " open"}>
+      <summary>
+        <strong>${escapeHtml(title)}</strong>
+        <span>${files.length ? `${files.length} файл(ов)` : "нет файлов"}</span>
+      </summary>
+      ${body}
+    </details>`;
+}
+
+function renderEstimateJobFiles(files = [], jobId = "", canManageFiles = false) {
+  const safeFiles = Array.isArray(files) ? files : [];
+  const current = safeFiles.filter((file) => Number(file.is_current ?? 1) !== 0);
+  const previous = safeFiles.filter((file) => Number(file.is_current ?? 1) === 0);
+  if (!safeFiles.length) {
+    return `<div class="estimate-file-empty">К этому заданию ещё не прикреплены исходные файлы.</div>`;
+  }
+  return `
+    <div class="estimate-job-file-groups">
+      ${renderEstimateFileGroup("Текущие файлы", current, jobId, canManageFiles, { emptyText: "Текущих файлов нет." })}
+      ${renderEstimateFileGroup("Предыдущие версии", previous, jobId, canManageFiles, { collapsed: true, emptyText: "Предыдущих версий пока нет." })}
     </div>`;
 }
 
@@ -3550,6 +3809,38 @@ function renderEstimateJobLinks(links) {
       <strong>Ссылки из задания</strong>
       <div class="stack-line">${links.map(renderEstimateJobLink).join("")}</div>
     </div>`;
+}
+
+function renderEstimateCompleteness(job) {
+  const groups = estimateCompletenessItems(job);
+  const summary = estimateCompletenessSummary(job);
+  const renderItems = (items) =>
+    items
+      .map(([title, ok, hint]) => `
+        <li class="${ok ? "ok" : "missing"}">
+          <span>${ok ? "✓" : "!"}</span>
+          <strong>${escapeHtml(title)}</strong>
+          <small>${escapeHtml(ok ? "Заполнено" : hint)}</small>
+        </li>`)
+      .join("");
+  return `
+    <details class="estimate-completeness" open>
+      <summary>
+        <strong>Комплектность</strong>
+        <span>${summary.ready}/${summary.total}${summary.missing ? ` · не хватает ${summary.missing}` : " · комплект заполнен"}</span>
+      </summary>
+      <div class="estimate-completeness-grid">
+        <div>
+          <h4>Обязательные</h4>
+          <ul>${renderItems(groups.required)}</ul>
+        </div>
+        <div>
+          <h4>Желательные</h4>
+          <ul>${renderItems(groups.optional)}</ul>
+        </div>
+      </div>
+      <p class="muted">Чек-лист подсказывает, но не блокирует работу. Шаблоны, похожий объект, фото клиента и история уточнений относятся к будущим этапам.</p>
+    </details>`;
 }
 
 function renderEstimateGallery() {
@@ -3605,21 +3896,32 @@ function renderEstimateJobRow(job) {
   const canAnswerQuestion = canEdit && job.status === "estimate_question" && ["owner", "construction_manager", "sales_manager"].includes(currentRoleBase());
   const smetterHref = estimateSmetterHref(job);
   const quickLinks = estimateJobQuickLinks(job, smetterHref);
+  const nextAction = estimateJobNextAction(job);
+  const completeness = estimateCompletenessSummary(job);
   const collapsibleKey = `estimate-job:${job.id}`;
-  const summaryTitle = job.project_title || job.customer_name || job.title || "Сметное задание";
-  const summarySubTitle = job.project_title && job.title && job.title !== job.project_title ? job.title : "";
-  const currentFilesCount = (job.files || []).filter((file) => Number(file.is_current ?? 1) !== 0).length;
+  const summaryTitle = job.title || job.project_title || job.customer_name || "Сметное задание";
+  const summaryMeta = [
+    job.project_title || "без объекта",
+    job.customer_name || "клиент не указан",
+    `менеджер: ${job.manager_name || "не назначен"}`,
+    `сметчик: ${job.estimator_name || "не назначен"}`,
+  ].join(" · ");
+  const currentFilesCount = currentEstimateFilesCount(job);
+  const previousFilesCount = estimatePreviousFiles(job).length;
   return `
     <details class="row estimate-job-row estimate-job-collapsible" data-collapsible-key="${escapeAttr(collapsibleKey)}"${openAttrForKey(collapsibleKey)}>
       <summary class="estimate-job-summary">
         <span class="estimate-job-summary-main">
           <strong>${escapeHtml(summaryTitle)}</strong>
-          ${summarySubTitle ? `<span class="muted">${escapeHtml(summarySubTitle)}</span>` : ""}
+          <span class="muted">${escapeHtml(summaryMeta)}</span>
         </span>
         <span class="estimate-job-summary-badges">
           ${pill(label(job.status), statusLevel)}
           ${pill(job.due_date || "без срока", job.status === "estimate_done" ? "success" : levelByDate(job.due_date))}
-          ${currentFilesCount ? pill(`Файлы: ${currentFilesCount}`, "blue") : ""}
+          ${pill(nextAction.text, nextAction.level)}
+          ${pill(`Комплектность ${completeness.ready}/${completeness.total}`, completeness.missing ? "warning" : "success")}
+          ${currentFilesCount ? pill(`Файлы: ${currentFilesCount}`, "blue") : pill("Без файлов", "warning")}
+          ${previousFilesCount ? pill(`Версии: ${previousFilesCount}`, "") : ""}
           ${quickLinks.slice(0, 2).map(renderEstimateJobLink).join("")}
           ${quickLinks.length > 2 ? pill(`ещё ${quickLinks.length - 2}`, "blue") : ""}
         </span>
@@ -3630,6 +3932,7 @@ function renderEstimateJobRow(job) {
             <strong>${escapeHtml(job.title)}</strong>
             ${pill(label(job.status), statusLevel)}
             ${pill(job.due_date || "без срока", job.status === "estimate_done" ? "success" : levelByDate(job.due_date))}
+            ${pill(nextAction.text, nextAction.level)}
           </div>
           <div class="muted">${escapeHtml(job.customer_name || "Заказчик не указан")} · ${escapeHtml(job.project_title || "без карточки объекта")} · ${estimateJobTypeLabel(job.estimate_type)}</div>
           <div class="muted">получено: ${formatDateRu(job.received_at) || "не указано"} · выдал задание: ${escapeHtml(job.manager_name || "не назначен")} · сметчик: ${escapeHtml(job.estimator_name || "не назначен")}</div>
@@ -3644,6 +3947,7 @@ function renderEstimateJobRow(job) {
           ${job.question_comment ? `<div class="estimate-question-note"><strong>Вопрос сметчика</strong><p>${linkifyText(job.question_comment)}</p></div>` : ""}
           ${job.return_comment ? `<p class="muted danger-text">Возврат менеджеру: ${linkifyText(job.return_comment)}</p>` : ""}
           ${job.result_comment ? `<p class="muted">Итог: ${linkifyText(job.result_comment)}</p>` : ""}
+          ${renderEstimateCompleteness(job)}
           ${renderEstimateJobFiles(job.files, job.id, canManageFiles)}
         </div>
         <div class="estimate-job-actions">
@@ -4418,22 +4722,29 @@ async function renderToday() {
 
 async function renderEstimateJobs() {
   const statsNode = qs("#estimateJobStats");
+  const filtersNode = qs("#estimateQuickFilters");
+  const actionNode = qs("#estimateActionPanel");
   const scheduleNode = qs("#estimateJobSchedule");
   const rowsNode = qs("#estimateJobRows");
   if (!statsNode || !scheduleNode || !rowsNode) return;
   if (!canView("estimates")) {
     statsNode.innerHTML = "";
+    if (filtersNode) filtersNode.innerHTML = "";
+    if (actionNode) actionNode.innerHTML = "";
     scheduleNode.innerHTML = "";
     rowsNode.innerHTML = "";
     return;
   }
   qsa("[data-estimate-list-mode]").forEach((button) => button.classList.toggle("active", button.dataset.estimateListMode === state.estimateListMode));
-  const jobs = visibleEstimateJobs();
-  statsNode.innerHTML = renderEstimateJobStats(jobs);
+  const baseJobs = visibleEstimateJobs();
+  const jobs = estimateFilteredJobs(baseJobs);
+  statsNode.innerHTML = renderEstimateJobStats(baseJobs);
+  if (filtersNode) filtersNode.innerHTML = renderEstimateQuickFilters(baseJobs);
+  if (actionNode) actionNode.innerHTML = renderEstimateActionPanel(jobs);
   scheduleNode.innerHTML = renderEstimateSchedule(jobs);
   rowsNode.innerHTML = jobs.length
     ? jobs.map(renderEstimateJobRow).join("")
-    : `<p class="muted">${state.estimateListMode === "archive" ? "В архиве сметных заданий пока нет." : "Активных сметных заданий пока нет. Нажмите “Добавить задание”, чтобы зафиксировать входящую смету в работе."}</p>`;
+    : `<div class="empty-state"><strong>${state.estimateListMode === "archive" ? "В архиве сметных заданий по этому фильтру нет." : `По фильтру «${escapeHtml(estimateQuickFilterLabel())}» заданий нет.`}</strong><p class="muted">${state.estimateListMode === "archive" ? "Архивные задания появятся здесь после переноса в архив." : "Переключите фильтр или добавьте сметное задание, если нужно передать расчёт сметчику."}</p></div>`;
   syncManagerEstimateNotice();
 }
 
@@ -8613,6 +8924,25 @@ function bindEvents() {
     const editEstimateJobButton = event.target.closest("[data-edit-estimate-job]");
     if (editEstimateJobButton) {
       openEstimateJobDialog(editEstimateJobButton.dataset.editEstimateJob);
+      return;
+    }
+
+    const estimateQuickFilterButton = event.target.closest("[data-estimate-quick-filter]");
+    if (estimateQuickFilterButton) {
+      state.estimateQuickFilter = estimateQuickFilterButton.dataset.estimateQuickFilter || defaultEstimateQuickFilter();
+      localStorage.setItem("estimateQuickFilter", state.estimateQuickFilter);
+      await renderEstimateJobs();
+      return;
+    }
+
+    const openEstimateJobRowButton = event.target.closest("[data-open-estimate-job-row]");
+    if (openEstimateJobRowButton) {
+      const id = openEstimateJobRowButton.dataset.openEstimateJobRow;
+      const key = `estimate-job:${id}`;
+      state.expandedLists[key] = true;
+      await renderEstimateJobs();
+      const row = qsa("[data-collapsible-key]").find((item) => item.dataset.collapsibleKey === key);
+      row?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
 

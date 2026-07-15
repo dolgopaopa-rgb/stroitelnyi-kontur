@@ -3124,7 +3124,95 @@ h2 {
 }
 
 #estimatesView .task-stats {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+}
+
+.estimate-quick-filters,
+.material-quick-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.estimate-quick-filters .quick-filter span {
+  margin-left: 4px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.estimate-action-panel {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #ead4d4;
+  border-radius: 8px;
+  background: #fff6f6;
+}
+
+.estimate-action-panel.calm {
+  border-color: #cfe3df;
+  background: #f4fbf9;
+}
+
+.estimate-action-panel.calm span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.estimate-action-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.estimate-action-head span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.estimate-action-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px;
+}
+
+.estimate-action-card {
+  display: grid;
+  gap: 5px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.estimate-action-card.warning {
+  border-color: #ead59b;
+  background: #fffaf0;
+}
+
+.estimate-action-card.danger {
+  border-color: #efc6c6;
+  background: #fff4f4;
+}
+
+.estimate-action-card.blue {
+  border-color: #bcd6f3;
+  background: #f3f8ff;
+}
+
+.estimate-action-card strong {
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.estimate-action-card span:not(.pill) {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.25;
 }
 
 .estimate-schedule {
@@ -3242,9 +3330,7 @@ h2 {
 
 .estimate-job-summary-main {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: baseline;
-  gap: 8px;
+  gap: 3px;
   min-width: 0;
 }
 
@@ -3287,6 +3373,125 @@ h2 {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.estimate-job-file-groups,
+.estimate-completeness {
+  display: grid;
+  gap: 7px;
+}
+
+.estimate-file-group {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.estimate-file-group > summary,
+.estimate-completeness > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 9px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.estimate-file-group > summary::-webkit-details-marker,
+.estimate-completeness > summary::-webkit-details-marker {
+  display: none;
+}
+
+.estimate-file-group > summary span,
+.estimate-completeness > summary span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.estimate-file-group .estimate-job-files,
+.estimate-file-group p {
+  padding: 0 9px 9px;
+}
+
+.estimate-file-empty {
+  padding: 8px 10px;
+  border: 1px dashed #d8c98e;
+  border-radius: 8px;
+  background: #fffaf0;
+  color: #7d5a13;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.estimate-completeness {
+  border: 1px solid #d8e6e2;
+  border-radius: 8px;
+  background: #f7fcfb;
+}
+
+.estimate-completeness-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 0 9px 9px;
+}
+
+.estimate-completeness h4 {
+  margin: 0 0 5px;
+  font-size: 12px;
+}
+
+.estimate-completeness ul {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.estimate-completeness li {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 2px 6px;
+  align-items: center;
+  padding: 5px 6px;
+  border-radius: 7px;
+  background: #fff;
+}
+
+.estimate-completeness li span {
+  grid-row: span 2;
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  font-weight: 800;
+}
+
+.estimate-completeness li.ok span {
+  background: #dff4ea;
+  color: #1e7650;
+}
+
+.estimate-completeness li.missing span {
+  background: #fff0c8;
+  color: #8a5a07;
+}
+
+.estimate-completeness li strong {
+  font-size: 12px;
+}
+
+.estimate-completeness li small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.estimate-completeness > p {
+  padding: 0 9px 9px;
 }
 
 .estimate-file-card {
@@ -6351,6 +6556,52 @@ textarea {
     justify-content: flex-start;
   }
 
+  #estimatesView .estimate-crm-panel {
+    width: 100%;
+    max-width: 100%;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #estimatesView .estimate-crm-panel > *,
+  #estimatesView .panel-head,
+  #estimatesView .estimate-job-tools {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  #estimatesView .estimate-job-tools .segmented-control {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  #estimatesView .estimate-job-tools > button {
+    width: 100%;
+  }
+
+  #estimatesView .task-stats,
+  .estimate-action-list,
+  .estimate-completeness-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .estimate-quick-filters {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 3px;
+  }
+
+  .estimate-quick-filters .quick-filter {
+    flex: 0 0 auto;
+  }
+
+  .estimate-action-panel {
+    padding: 8px;
+  }
+
+  .estimate-action-card {
+    min-width: 0;
+  }
+
   .estimate-job-summary,
   .estimate-job-body {
     grid-template-columns: minmax(0, 1fr);
@@ -6366,6 +6617,17 @@ textarea {
 
   .estimate-job-summary-badges {
     justify-content: flex-start;
+  }
+
+  .estimate-file-card {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: none;
+  }
+
+  .estimate-job-files a,
+  .estimate-file-button {
+    max-width: none;
+    width: 100%;
   }
 
   #projectsView .split,

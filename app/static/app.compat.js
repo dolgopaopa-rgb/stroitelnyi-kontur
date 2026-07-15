@@ -40,6 +40,7 @@
     "/today": "today",
     "/assistant": "assistant",
     "/objects": "projects",
+    "/estimates": "estimates",
     "/tasks": "tasks",
     "/materials": "materials",
     "/photo-reports": "photos",
@@ -70,6 +71,7 @@
     selectedProjectTab: "overview",
     projectListMode: "active",
     estimateListMode: "active",
+    estimateQuickFilter: localStorage.getItem("estimateQuickFilter") || "",
     materialListMode: "active",
     materialPipelineFilter: "all",
     materialQuickFilter: "all",
@@ -206,7 +208,7 @@
     feedback_in_work: "В работе",
     feedback_done: "Обработано",
     estimate_new: "Новое задание",
-    estimate_in_work: "В расчете",
+    estimate_in_work: "В расчёте",
     estimate_done: "Смета сдана",
     estimate_hold: "Пауза",
     estimate_returned: "На доработке",
@@ -2744,22 +2746,188 @@
   function estimateJobStats(jobs) {
     return {
       active: jobs.filter((job) => ["estimate_new", "estimate_in_work", "estimate_question"].includes(job.status)).length,
+      inWork: jobs.filter((job) => job.status === "estimate_in_work").length,
       done: jobs.filter((job) => job.status === "estimate_done").length,
-      overdue: jobs.filter((job) => !["estimate_done", "archived"].includes(job.status) && levelByDate(job.due_date) === "danger").length,
+      overdue: jobs.filter(estimateJobIsOverdue).length,
       hold: jobs.filter((job) => job.status === "estimate_hold").length,
       returned: jobs.filter((job) => job.status === "estimate_returned").length,
-      questions: jobs.filter((job) => job.status === "estimate_question").length
+      questions: jobs.filter((job) => job.status === "estimate_question").length,
+      noFiles: jobs.filter((job) => !estimateJobHasFiles(job)).length,
+      noEstimator: jobs.filter((job) => !job.estimator_id).length,
+      needsAction: jobs.filter(estimateJobRequiresAction).length
     };
   }
   function visibleEstimateJobs(jobs = state.estimateJobs || []) {
     if (state.estimateListMode === "archive") return jobs.filter((job) => job.status === "archived");
     return jobs.filter((job) => job.status !== "archived");
   }
-  function currentEstimateFilesCount(job) {
-    return ((job == null ? void 0 : job.files) || []).filter((file) => {
+  function estimateCurrentFiles(job = {}) {
+    return (job.files || []).filter((file) => {
       var _a;
       return Number((_a = file.is_current) != null ? _a : 1) !== 0;
-    }).length;
+    });
+  }
+  function estimatePreviousFiles(job = {}) {
+    return (job.files || []).filter((file) => {
+      var _a;
+      return Number((_a = file.is_current) != null ? _a : 1) === 0;
+    });
+  }
+  function currentEstimateFilesCount(job) {
+    return estimateCurrentFiles(job).length;
+  }
+  function estimateJobHasFiles(job = {}) {
+    return Boolean((job.files || []).length);
+  }
+  function estimateJobHasCurrentFile(job = {}) {
+    return Boolean(estimateCurrentFiles(job).length);
+  }
+  function estimateJobIsOverdue(job = {}) {
+    return !["estimate_done", "archived"].includes(job.status) && levelByDate(job.due_date) === "danger";
+  }
+  function estimateJobIsMine(job = {}) {
+    const role = currentRoleBase();
+    if (role === "sales_manager") return isOwnEstimateJob(job, "manager_id");
+    if (role === "estimator") return isOwnEstimateJob(job, "estimator_id");
+    return true;
+  }
+  function estimateRoleFilterDefinitions(role = currentRoleBase()) {
+    if (role === "sales_manager") {
+      return [
+        ["mine", "Мои задания"],
+        ["questions", "Требуют уточнения"],
+        ["done", "Сданные"],
+        ["returned", "Возвращённые"],
+        ["overdue", "Просроченные"],
+        ["no_files", "Без файлов"],
+        ["no_estimator", "Без сметчика"]
+      ];
+    }
+    if (role === "estimator") {
+      return [
+        ["mine", "Мои задания"],
+        ["new", "Новые"],
+        ["in_work", "В работе"],
+        ["questions", "Нужно уточнение"],
+        ["overdue", "Просроченные"],
+        ["done", "Сданные"],
+        ["no_files", "Без исходных файлов"]
+      ];
+    }
+    return [
+      ["all", "Все"],
+      ["new", "Новые"],
+      ["in_work", "В работе"],
+      ["overdue", "Просроченные"],
+      ["questions", "Нужно уточнение"],
+      ["no_files", "Без файлов"],
+      ["no_estimator", "Без сметчика"],
+      ["done", "Сданные"]
+    ];
+  }
+  function defaultEstimateQuickFilter(role = currentRoleBase()) {
+    return ["sales_manager", "estimator"].includes(role) ? "mine" : "all";
+  }
+  function ensureEstimateQuickFilter() {
+    const definitions = estimateRoleFilterDefinitions();
+    const allowed = definitions.map(([id]) => id);
+    if (!allowed.includes(state.estimateQuickFilter)) {
+      state.estimateQuickFilter = defaultEstimateQuickFilter();
+      localStorage.setItem("estimateQuickFilter", state.estimateQuickFilter);
+    }
+    return definitions;
+  }
+  function estimateJobMatchesQuickFilter(job, filter = state.estimateQuickFilter) {
+    switch (filter) {
+      case "mine":
+        return estimateJobIsMine(job);
+      case "new":
+        return job.status === "estimate_new";
+      case "in_work":
+        return job.status === "estimate_in_work";
+      case "questions":
+        return job.status === "estimate_question";
+      case "done":
+        return job.status === "estimate_done";
+      case "returned":
+        return job.status === "estimate_returned";
+      case "overdue":
+        return estimateJobIsOverdue(job);
+      case "no_files":
+        return !estimateJobHasFiles(job);
+      case "no_estimator":
+        return !job.estimator_id;
+      case "all":
+      default:
+        return true;
+    }
+  }
+  function estimateFilteredJobs(jobs = visibleEstimateJobs()) {
+    ensureEstimateQuickFilter();
+    return jobs.filter((job) => estimateJobMatchesQuickFilter(job));
+  }
+  function estimateQuickFilterLabel() {
+    const match = estimateRoleFilterDefinitions().find(([id]) => id === state.estimateQuickFilter);
+    return (match == null ? void 0 : match[1]) || "Все";
+  }
+  function estimateCompletenessItems(job = {}) {
+    const hasSmetter = Boolean(estimateSmetterHref(job));
+    return {
+      required: [
+        ["Название задания", Boolean(String(job.title || "").trim()), "Укажите понятное название задания."],
+        ["Объект или будущий объект", Boolean(job.project_id || job.project_title), "Выберите объект или опишите будущий объект в задании."],
+        ["Клиент", Boolean(String(job.customer_name || "").trim()), "Укажите клиента в рамках текущих прав."],
+        ["Срок", Boolean(job.due_date), "Укажите срок расчёта."],
+        ["Менеджер", Boolean(job.manager_id || job.manager_name), "Назначьте менеджера."],
+        ["Сметчик", Boolean(job.estimator_id || job.estimator_name), "Назначьте сметчика."],
+        ["Комментарий менеджера", Boolean(String(job.comment || "").trim()), "Добавьте, что нужно посчитать."],
+        ["Исходные файлы или ссылка", estimateJobHasFiles(job) || hasSmetter, "Добавьте файлы или ссылку на Сметтер."]
+      ],
+      optional: [
+        ["Ссылка Smetter", hasSmetter, "Можно добавить ссылку на расчёт."],
+        ["Тип сметы", Boolean(job.estimate_type), "Помогает понять формат расчёта."],
+        ["Расходы на организацию площадки", Boolean(job.site_costs_policy), "Уточняет, включать ли организацию площадки."],
+        ["Пояснение по составу работ", Boolean(String(job.comment || "").trim()), "Полезно для сметчика."]
+      ]
+    };
+  }
+  function estimateCompletenessSummary(job = {}) {
+    const items = estimateCompletenessItems(job).required;
+    const ready = items.filter(([, ok]) => ok).length;
+    return { ready, total: items.length, missing: items.length - ready, items };
+  }
+  function estimateJobNextAction(job = {}) {
+    const role = currentRoleBase();
+    const hasFiles = estimateJobHasFiles(job);
+    const overdue = estimateJobIsOverdue(job);
+    if (job.status === "archived") return { text: "В архиве", level: "", important: false };
+    if (role === "sales_manager") {
+      if (job.status === "estimate_question") return { text: "Ответить на уточнение", level: "warning", important: true };
+      if (!hasFiles) return { text: "Добавить исходные файлы", level: "warning", important: true };
+      if (!job.estimator_id) return { text: "Назначить сметчика", level: "warning", important: true };
+      if (job.status === "estimate_done") return { text: "Проверить результат", level: "success", important: true };
+      if (overdue) return { text: "Проверить просрочку", level: "danger", important: true };
+      return { text: "Следить за сроком", level: "blue", important: false };
+    }
+    if (role === "estimator") {
+      if (!hasFiles) return { text: "Запросить исходные данные", level: "warning", important: true };
+      if (job.status === "estimate_new") return { text: "Взять в работу", level: "blue", important: true };
+      if (job.status === "estimate_in_work") return { text: "Сдать смету или уточнить", level: "blue", important: false };
+      if (job.status === "estimate_question") return { text: "Ждёт ответа менеджера", level: "warning", important: true };
+      if (job.status === "estimate_returned") return { text: "Доработать и сдать", level: "danger", important: true };
+      if (overdue) return { text: "Срок просрочен", level: "danger", important: true };
+      return { text: "Открыть задание", level: "", important: false };
+    }
+    if (overdue) return { text: "Разобрать просрочку", level: "danger", important: true };
+    if (!job.estimator_id) return { text: "Назначить сметчика", level: "warning", important: true };
+    if (!hasFiles) return { text: "Нет файлов", level: "warning", important: true };
+    if (job.status === "estimate_question") return { text: "Ждёт уточнения", level: "warning", important: true };
+    if (job.status === "estimate_returned") return { text: "На доработке", level: "danger", important: true };
+    if (job.status === "estimate_done" && !estimateJobHasCurrentFile(job)) return { text: "Сдана без файла", level: "danger", important: true };
+    return { text: "Открыть задание", level: "", important: false };
+  }
+  function estimateJobRequiresAction(job = {}) {
+    return estimateJobNextAction(job).important;
   }
   function submittedEstimateJobsForManager(jobs = state.estimateJobs || []) {
     if (currentRoleBase() !== "sales_manager") return [];
@@ -2813,17 +2981,43 @@
     const stats = estimateJobStats(jobs);
     const total = Math.max(jobs.length, 1);
     const segments = [
-      ["Все", jobs.length, ""],
-      ["В работе", stats.active, "blue"],
+      ["Требует действия", stats.needsAction, stats.needsAction ? "danger" : ""],
+      ["Новые", jobs.filter((job) => job.status === "estimate_new").length, "warning"],
+      ["В расчёте", stats.inWork, "blue"],
       ["Просрочено", stats.overdue, "danger"],
       ["Уточнение", stats.questions, "warning"],
       ["Сдано", stats.done, "success"],
-      ["Пауза", stats.hold, "warning"],
-      ["Возврат", stats.returned, "danger"]
+      ["Без файлов", stats.noFiles, stats.noFiles ? "warning" : ""],
+      ["Без сметчика", stats.noEstimator, stats.noEstimator ? "warning" : ""]
     ];
     return '\n    <div class="task-stats">\n      '.concat(segments.map(
       ([title, count, level]) => '\n          <div class="task-stat '.concat(level, '">\n            <span>').concat(title, "</span>\n            <strong>").concat(count, '</strong>\n            <div class="stat-bar"><i style="width: ').concat(count / total * 100, '%"></i></div>\n          </div>')
     ).join(""), "\n    </div>");
+  }
+  function renderEstimateQuickFilters(jobs = []) {
+    const definitions = ensureEstimateQuickFilter();
+    return '\n    <div class="estimate-quick-filters" role="tablist" aria-label="Быстрые фильтры смет">\n      '.concat(definitions.map(([id, title]) => {
+      const count = jobs.filter((job) => estimateJobMatchesQuickFilter(job, id)).length;
+      const active = id === state.estimateQuickFilter ? " active" : "";
+      return '<button class="quick-filter'.concat(active, '" type="button" data-estimate-quick-filter="').concat(escapeAttr(id), '">').concat(escapeHtml(title), " <span>").concat(count, "</span></button>");
+    }).join(""), "\n    </div>");
+  }
+  function estimateActionSort(a, b) {
+    var _a, _b;
+    const levelWeight = { danger: 0, warning: 1, blue: 2, success: 3, "": 4 };
+    const actionA = estimateJobNextAction(a);
+    const actionB = estimateJobNextAction(b);
+    return ((_a = levelWeight[actionA.level]) != null ? _a : 4) - ((_b = levelWeight[actionB.level]) != null ? _b : 4) || String(a.due_date || "9999-12-31").localeCompare(String(b.due_date || "9999-12-31")) || Number(a.id || 0) - Number(b.id || 0);
+  }
+  function renderEstimateActionPanel(jobs = []) {
+    const urgent = jobs.filter(estimateJobRequiresAction).sort(estimateActionSort).slice(0, 5);
+    if (!urgent.length) {
+      return '\n      <div class="estimate-action-panel calm">\n        <strong>Сейчас срочных действий по фильтру «'.concat(escapeHtml(estimateQuickFilterLabel()), "» нет</strong>\n        <span>Проверьте список заданий или переключите фильтр.</span>\n      </div>");
+    }
+    return '\n    <div class="estimate-action-panel">\n      <div class="estimate-action-head">\n        <strong>Требует действия</strong>\n        <span>'.concat(urgent.length, " из ").concat(jobs.length, '</span>\n      </div>\n      <div class="estimate-action-list">\n        ').concat(urgent.map((job) => {
+      const action = estimateJobNextAction(job);
+      return '\n              <button class="estimate-action-card '.concat(action.level, '" type="button" data-open-estimate-job-row="').concat(escapeAttr(job.id), '">\n                ').concat(pill(action.text, action.level), "\n                <strong>").concat(escapeHtml(job.project_title || job.title || "Сметное задание"), "</strong>\n                <span>").concat(escapeHtml(job.estimator_name || "сметчик не назначен"), " · срок: ").concat(escapeHtml(formatDateRu(job.due_date) || "без срока"), "</span>\n              </button>");
+    }).join(""), "\n      </div>\n    </div>");
   }
   function estimateJobProgress(job) {
     if (job.status === "estimate_done") return 100;
@@ -2837,7 +3031,7 @@
   }
   function renderEstimateSchedule(jobs) {
     const activeJobs = jobs.filter((job) => !["estimate_done", "archived"].includes(job.status)).slice(0, 8);
-    if (!activeJobs.length) return '<p class="muted">Активных сметных заданий нет.</p>';
+    if (!activeJobs.length) return '<p class="muted">Активных сметных заданий по текущему фильтру нет.</p>';
     return activeJobs.map(
       (job) => '\n      <div class="estimate-timeline-row">\n        <div class="estimate-timeline-main">\n          <strong>'.concat(escapeHtml(job.title), "</strong>\n          <span>").concat(escapeHtml(job.estimator_name || "сметчик не назначен"), " · ").concat(formatDateRu(job.received_at), " → ").concat(formatDateRu(job.due_date), "</span>\n          ").concat(job.question_comment ? "<em>Вопрос сметчика: ".concat(escapeHtml(job.question_comment), "</em>") : "", '\n        </div>\n        <div class="estimate-timeline-track ').concat(estimateJobStatusLevel(job), '"><i style="width: ').concat(estimateJobProgress(job), '%"></i></div>\n        ').concat(pill(label(job.status), estimateJobStatusLevel(job)), "\n      </div>")
     ).join("");
@@ -2855,32 +3049,49 @@
     const fileName = String((file == null ? void 0 : file.file_name) || (file == null ? void 0 : file.title) || "").toLowerCase();
     return mime.startsWith("image/") || /\.(jpe?g|png|webp|gif|bmp|heic|heif)$/i.test(fileName);
   }
+  function renderEstimateFileCard(file, jobId = "", canManageFiles = false) {
+    var _a;
+    const title = escapeHtml(file.title || file.file_name || "Файл");
+    const fileName = escapeHtml(file.file_name || "");
+    const href = escapeAttr(estimateFileDownloadUrl(file));
+    const isCurrent = Number((_a = file.is_current) != null ? _a : 1) !== 0;
+    const version = Number(file.version_no || 1);
+    const versionText = "v".concat(version).concat(isCurrent ? " · текущая" : " · предыдущая");
+    const uploadedBy = file.uploaded_by_name ? " · загрузил: ".concat(escapeHtml(file.uploaded_by_name)) : "";
+    const createdAt = file.created_at ? " · ".concat(escapeHtml(formatDateRu(file.created_at))) : "";
+    const note = file.replacement_note ? "<span>замена: ".concat(escapeHtml(file.replacement_note), "</span>") : "";
+    const printButton = '<button class="estimate-file-print" type="button" data-print-estimate-file="'.concat(escapeAttr(file.id), '">Печать</button>');
+    const replaceButton = canManageFiles && isCurrent ? '<button class="estimate-file-print" type="button" data-replace-estimate-file="'.concat(escapeAttr(file.id), '" data-estimate-job-id="').concat(escapeAttr(jobId), '">Заменить</button>') : "";
+    const deleteButton = canManageFiles ? '<button class="estimate-file-print danger-outline" type="button" data-delete-estimate-file="'.concat(escapeAttr(file.id), '">Удалить</button>') : "";
+    const meta = "<span>".concat(fileName || "имя файла не указано", "</span><span>").concat(versionText).concat(createdAt).concat(uploadedBy, "</span>").concat(note);
+    const previewKind = filePreviewKind(file.file_name || file.title || "", file.mime_type);
+    const canPreview = Boolean(previewKind);
+    const actionLabel = fileOpenAction(file.file_name || file.title || "", file.mime_type);
+    const previewAttrs = canPreview ? 'data-media-preview="'.concat(previewKind, '" data-media-url="').concat(href, '" data-media-title="').concat(escapeAttr(file.title || file.file_name || "Файл"), '" data-media-mime="').concat(escapeAttr(file.mime_type || ""), '"') : 'target="_blank" rel="noopener noreferrer" download';
+    if (isEstimateImageFile(file)) {
+      return '\n      <div class="estimate-file-card '.concat(isCurrent ? "" : "previous-version", '">\n        <button class="estimate-file-button" type="button" data-estimate-gallery-job="').concat(escapeAttr(jobId), '" data-estimate-gallery-file="').concat(escapeAttr(file.id), '">\n          <strong>').concat(title, "</strong>\n          ").concat(meta, "\n        </button>\n        ").concat(printButton, "\n        ").concat(replaceButton, "\n        ").concat(deleteButton, "\n      </div>");
+    }
+    return '\n    <div class="estimate-file-card '.concat(isCurrent ? "" : "previous-version", '">\n      <a href="').concat(href, '" ').concat(previewAttrs, ">\n        <strong>").concat(title, "</strong>\n        ").concat(meta, "\n        <span>").concat(actionLabel, "</span>\n      </a>\n      ").concat(printButton, "\n      ").concat(replaceButton, "\n      ").concat(deleteButton, "\n    </div>");
+  }
+  function renderEstimateFileGroup(title, files, jobId, canManageFiles, { collapsed = false, emptyText = "" } = {}) {
+    if (!files.length && !emptyText) return "";
+    const body = files.length ? '<div class="estimate-job-files">'.concat(files.map((file) => renderEstimateFileCard(file, jobId, canManageFiles)).join(""), "</div>") : '<p class="muted">'.concat(escapeHtml(emptyText), "</p>");
+    return '\n    <details class="estimate-file-group"'.concat(collapsed ? "" : " open", ">\n      <summary>\n        <strong>").concat(escapeHtml(title), "</strong>\n        <span>").concat(files.length ? "".concat(files.length, " файл(ов)") : "нет файлов", "</span>\n      </summary>\n      ").concat(body, "\n    </details>");
+  }
   function renderEstimateJobFiles(files = [], jobId = "", canManageFiles = false) {
-    if (!Array.isArray(files) || !files.length) return "";
-    return '\n    <div class="estimate-job-files">\n      '.concat(files.map(
-      (file) => {
-        var _a;
-        const title = escapeHtml(file.title || file.file_name || "Файл");
-        const fileName = escapeHtml(file.file_name || "");
-        const href = escapeAttr(estimateFileDownloadUrl(file));
-        const isCurrent = Number((_a = file.is_current) != null ? _a : 1) !== 0;
-        const version = Number(file.version_no || 1);
-        const versionText = "v".concat(version).concat(isCurrent ? "" : " · предыдущая");
-        const note = file.replacement_note ? " · ".concat(escapeHtml(file.replacement_note)) : "";
-        const printButton = '<button class="estimate-file-print" type="button" data-print-estimate-file="'.concat(escapeAttr(file.id), '">Печать</button>');
-        const replaceButton = canManageFiles && isCurrent ? '<button class="estimate-file-print" type="button" data-replace-estimate-file="'.concat(escapeAttr(file.id), '" data-estimate-job-id="').concat(escapeAttr(jobId), '">Заменить</button>') : "";
-        const deleteButton = canManageFiles ? '<button class="estimate-file-print danger-outline" type="button" data-delete-estimate-file="'.concat(escapeAttr(file.id), '">Удалить</button>') : "";
-        const meta = "<span>".concat(fileName, "</span><span>").concat(versionText).concat(note, "</span>");
-        const previewKind = filePreviewKind(file.file_name || file.title || "", file.mime_type);
-        const canPreview = Boolean(previewKind);
-        const actionLabel = fileOpenAction(file.file_name || file.title || "", file.mime_type);
-        const previewAttrs = canPreview ? 'data-media-preview="'.concat(previewKind, '" data-media-url="').concat(href, '" data-media-title="').concat(escapeAttr(file.title || file.file_name || "Файл"), '" data-media-mime="').concat(escapeAttr(file.mime_type || ""), '"') : 'target="_blank" rel="noopener noreferrer" download';
-        if (isEstimateImageFile(file)) {
-          return '\n          <div class="estimate-file-card '.concat(isCurrent ? "" : "previous-version", '">\n            <button class="estimate-file-button" type="button" data-estimate-gallery-job="').concat(escapeAttr(jobId), '" data-estimate-gallery-file="').concat(escapeAttr(file.id), '">\n              <strong>').concat(title, "</strong>\n              ").concat(meta, "\n            </button>\n            ").concat(printButton, "\n            ").concat(replaceButton, "\n            ").concat(deleteButton, "\n          </div>");
-        }
-        return '\n          <div class="estimate-file-card '.concat(isCurrent ? "" : "previous-version", '">\n            <a href="').concat(href, '" ').concat(previewAttrs, ">\n              <strong>").concat(escapeHtml(file.title || file.file_name || "Файл"), "</strong>\n              ").concat(meta, "\n              <span>").concat(actionLabel, "</span>\n            </a>\n            ").concat(printButton, "\n            ").concat(replaceButton, "\n            ").concat(deleteButton, "\n          </div>");
-      }
-    ).join(""), "\n    </div>");
+    const safeFiles = Array.isArray(files) ? files : [];
+    const current = safeFiles.filter((file) => {
+      var _a;
+      return Number((_a = file.is_current) != null ? _a : 1) !== 0;
+    });
+    const previous = safeFiles.filter((file) => {
+      var _a;
+      return Number((_a = file.is_current) != null ? _a : 1) === 0;
+    });
+    if (!safeFiles.length) {
+      return '<div class="estimate-file-empty">К этому заданию ещё не прикреплены исходные файлы.</div>';
+    }
+    return '\n    <div class="estimate-job-file-groups">\n      '.concat(renderEstimateFileGroup("Текущие файлы", current, jobId, canManageFiles, { emptyText: "Текущих файлов нет." }), "\n      ").concat(renderEstimateFileGroup("Предыдущие версии", previous, jobId, canManageFiles, { collapsed: true, emptyText: "Предыдущих версий пока нет." }), "\n    </div>");
   }
   function estimateJobQuickLinks(job, smetterHref = "") {
     const links = [];
@@ -2903,6 +3114,12 @@
   function renderEstimateJobLinks(links) {
     if (!links.length) return "";
     return '\n    <div class="estimate-job-links">\n      <strong>Ссылки из задания</strong>\n      <div class="stack-line">'.concat(links.map(renderEstimateJobLink).join(""), "</div>\n    </div>");
+  }
+  function renderEstimateCompleteness(job) {
+    const groups = estimateCompletenessItems(job);
+    const summary = estimateCompletenessSummary(job);
+    const renderItems = (items) => items.map(([title, ok, hint]) => '\n        <li class="'.concat(ok ? "ok" : "missing", '">\n          <span>').concat(ok ? "✓" : "!", "</span>\n          <strong>").concat(escapeHtml(title), "</strong>\n          <small>").concat(escapeHtml(ok ? "Заполнено" : hint), "</small>\n        </li>")).join("");
+    return '\n    <details class="estimate-completeness" open>\n      <summary>\n        <strong>Комплектность</strong>\n        <span>'.concat(summary.ready, "/").concat(summary.total).concat(summary.missing ? " · не хватает ".concat(summary.missing) : " · комплект заполнен", '</span>\n      </summary>\n      <div class="estimate-completeness-grid">\n        <div>\n          <h4>Обязательные</h4>\n          <ul>').concat(renderItems(groups.required), "</ul>\n        </div>\n        <div>\n          <h4>Желательные</h4>\n          <ul>").concat(renderItems(groups.optional), '</ul>\n        </div>\n      </div>\n      <p class="muted">Чек-лист подсказывает, но не блокирует работу. Шаблоны, похожий объект, фото клиента и история уточнений относятся к будущим этапам.</p>\n    </details>');
   }
   function renderEstimateGallery() {
     const gallery = state.estimateGallery || { files: [], index: 0 };
@@ -2954,14 +3171,19 @@
     const canAnswerQuestion = canEdit && job.status === "estimate_question" && ["owner", "construction_manager", "sales_manager"].includes(currentRoleBase());
     const smetterHref = estimateSmetterHref(job);
     const quickLinks = estimateJobQuickLinks(job, smetterHref);
+    const nextAction = estimateJobNextAction(job);
+    const completeness = estimateCompletenessSummary(job);
     const collapsibleKey = "estimate-job:".concat(job.id);
-    const summaryTitle = job.project_title || job.customer_name || job.title || "Сметное задание";
-    const summarySubTitle = job.project_title && job.title && job.title !== job.project_title ? job.title : "";
-    const currentFilesCount = (job.files || []).filter((file) => {
-      var _a;
-      return Number((_a = file.is_current) != null ? _a : 1) !== 0;
-    }).length;
-    return '\n    <details class="row estimate-job-row estimate-job-collapsible" data-collapsible-key="'.concat(escapeAttr(collapsibleKey), '"').concat(openAttrForKey(collapsibleKey), '>\n      <summary class="estimate-job-summary">\n        <span class="estimate-job-summary-main">\n          <strong>').concat(escapeHtml(summaryTitle), "</strong>\n          ").concat(summarySubTitle ? '<span class="muted">'.concat(escapeHtml(summarySubTitle), "</span>") : "", '\n        </span>\n        <span class="estimate-job-summary-badges">\n          ').concat(pill(label(job.status), statusLevel2), "\n          ").concat(pill(job.due_date || "без срока", job.status === "estimate_done" ? "success" : levelByDate(job.due_date)), "\n          ").concat(currentFilesCount ? pill("Файлы: ".concat(currentFilesCount), "blue") : "", "\n          ").concat(quickLinks.slice(0, 2).map(renderEstimateJobLink).join(""), "\n          ").concat(quickLinks.length > 2 ? pill("ещё ".concat(quickLinks.length - 2), "blue") : "", '\n        </span>\n      </summary>\n      <div class="estimate-job-body">\n        <div class="estimate-job-main">\n          <div class="stack-line">\n            <strong>').concat(escapeHtml(job.title), "</strong>\n            ").concat(pill(label(job.status), statusLevel2), "\n            ").concat(pill(job.due_date || "без срока", job.status === "estimate_done" ? "success" : levelByDate(job.due_date)), '\n          </div>\n          <div class="muted">').concat(escapeHtml(job.customer_name || "Заказчик не указан"), " · ").concat(escapeHtml(job.project_title || "без карточки объекта"), " · ").concat(estimateJobTypeLabel(job.estimate_type), '</div>\n          <div class="muted">получено: ').concat(formatDateRu(job.received_at) || "не указано", " · выдал задание: ").concat(escapeHtml(job.manager_name || "не назначен"), " · сметчик: ").concat(escapeHtml(job.estimator_name || "не назначен"), '</div>\n          <div class="estimate-job-flags">\n            ').concat(pill(estimateSiteCostsLabel(job.site_costs_policy), job.site_costs_policy === "exclude" ? "warning" : job.site_costs_policy === "clarify" ? "blue" : "success"), "\n            ").concat(isPartnerEstimateJob(job) ? pill("Партнерская смета", "blue") : "", "\n          </div>\n          ").concat(job.site_costs_comment ? '<p class="muted">Организация площадки: '.concat(escapeHtml(job.site_costs_comment), "</p>") : "", "\n          ").concat(smetterHref ? '<a class="link-button inline-link" href="'.concat(escapeAttr(smetterHref), '" target="_blank" rel="noopener noreferrer">Открыть Сметтер</a>') : "", "\n          ").concat(renderEstimateJobLinks(quickLinks), "\n          ").concat(job.comment ? "<p>".concat(linkifyText(job.comment), "</p>") : "", "\n          ").concat(job.question_comment ? '<div class="estimate-question-note"><strong>Вопрос сметчика</strong><p>'.concat(linkifyText(job.question_comment), "</p></div>") : "", "\n          ").concat(job.return_comment ? '<p class="muted danger-text">Возврат менеджеру: '.concat(linkifyText(job.return_comment), "</p>") : "", "\n          ").concat(job.result_comment ? '<p class="muted">Итог: '.concat(linkifyText(job.result_comment), "</p>") : "", "\n          ").concat(renderEstimateJobFiles(job.files, job.id, canManageFiles), '\n        </div>\n        <div class="estimate-job-actions">\n          ').concat(canAnswerQuestion ? '<button class="secondary tiny" type="button" data-edit-estimate-job="'.concat(job.id, '">Ответить на уточнение</button>') : canEdit ? '<button class="secondary tiny" type="button" data-edit-estimate-job="'.concat(job.id, '">Редактировать</button>') : "", "\n          ").concat(canStart ? '<button class="secondary tiny" type="button" data-estimate-job-status="estimate_in_work" data-estimate-job-id="'.concat(job.id, '">В работу</button>') : "", "\n          ").concat(canQuestion ? '<button class="secondary tiny" type="button" data-estimate-job-status="estimate_question" data-estimate-job-id="'.concat(job.id, '">Уточнить</button>') : "", "\n          ").concat(canReturn ? '<button class="secondary tiny danger-outline" type="button" data-estimate-job-status="estimate_returned" data-estimate-job-id="'.concat(job.id, '">Вернуть на доработку</button>') : "", "\n          ").concat(canFinish ? '<button class="primary tiny" type="button" data-estimate-job-status="estimate_done" data-estimate-job-id="'.concat(job.id, '">Сдано</button>') : "", "\n          ").concat(canManageFiles ? '<button class="secondary tiny" type="button" data-open-estimate-files="'.concat(job.id, '">Добавить файл</button>') : "", "\n          ").concat(canManageFiles ? '<button class="secondary tiny" type="button" data-open-estimate-files="'.concat(job.id, '" data-estimate-file-mode="link">Изменить ссылку</button>') : "", "\n          ").concat(canManageFiles ? '<button class="secondary tiny" type="button" data-open-estimate-files="'.concat(job.id, '" data-estimate-file-mode="comment">Изменить комментарий</button>') : "", "\n          ").concat(canArchive ? '<button class="secondary tiny" type="button" data-estimate-job-status="archived" data-estimate-job-id="'.concat(job.id, '">В архив</button>') : "", "\n          ").concat(canDelete ? '<button class="danger-button tiny" type="button" data-delete-estimate-job="'.concat(job.id, '">Удалить</button>') : "", "\n        </div>\n      </div>\n    </details>");
+    const summaryTitle = job.title || job.project_title || job.customer_name || "Сметное задание";
+    const summaryMeta = [
+      job.project_title || "без объекта",
+      job.customer_name || "клиент не указан",
+      "менеджер: ".concat(job.manager_name || "не назначен"),
+      "сметчик: ".concat(job.estimator_name || "не назначен")
+    ].join(" · ");
+    const currentFilesCount = currentEstimateFilesCount(job);
+    const previousFilesCount = estimatePreviousFiles(job).length;
+    return '\n    <details class="row estimate-job-row estimate-job-collapsible" data-collapsible-key="'.concat(escapeAttr(collapsibleKey), '"').concat(openAttrForKey(collapsibleKey), '>\n      <summary class="estimate-job-summary">\n        <span class="estimate-job-summary-main">\n          <strong>').concat(escapeHtml(summaryTitle), '</strong>\n          <span class="muted">').concat(escapeHtml(summaryMeta), '</span>\n        </span>\n        <span class="estimate-job-summary-badges">\n          ').concat(pill(label(job.status), statusLevel2), "\n          ").concat(pill(job.due_date || "без срока", job.status === "estimate_done" ? "success" : levelByDate(job.due_date)), "\n          ").concat(pill(nextAction.text, nextAction.level), "\n          ").concat(pill("Комплектность ".concat(completeness.ready, "/").concat(completeness.total), completeness.missing ? "warning" : "success"), "\n          ").concat(currentFilesCount ? pill("Файлы: ".concat(currentFilesCount), "blue") : pill("Без файлов", "warning"), "\n          ").concat(previousFilesCount ? pill("Версии: ".concat(previousFilesCount), "") : "", "\n          ").concat(quickLinks.slice(0, 2).map(renderEstimateJobLink).join(""), "\n          ").concat(quickLinks.length > 2 ? pill("ещё ".concat(quickLinks.length - 2), "blue") : "", '\n        </span>\n      </summary>\n      <div class="estimate-job-body">\n        <div class="estimate-job-main">\n          <div class="stack-line">\n            <strong>').concat(escapeHtml(job.title), "</strong>\n            ").concat(pill(label(job.status), statusLevel2), "\n            ").concat(pill(job.due_date || "без срока", job.status === "estimate_done" ? "success" : levelByDate(job.due_date)), "\n            ").concat(pill(nextAction.text, nextAction.level), '\n          </div>\n          <div class="muted">').concat(escapeHtml(job.customer_name || "Заказчик не указан"), " · ").concat(escapeHtml(job.project_title || "без карточки объекта"), " · ").concat(estimateJobTypeLabel(job.estimate_type), '</div>\n          <div class="muted">получено: ').concat(formatDateRu(job.received_at) || "не указано", " · выдал задание: ").concat(escapeHtml(job.manager_name || "не назначен"), " · сметчик: ").concat(escapeHtml(job.estimator_name || "не назначен"), '</div>\n          <div class="estimate-job-flags">\n            ').concat(pill(estimateSiteCostsLabel(job.site_costs_policy), job.site_costs_policy === "exclude" ? "warning" : job.site_costs_policy === "clarify" ? "blue" : "success"), "\n            ").concat(isPartnerEstimateJob(job) ? pill("Партнерская смета", "blue") : "", "\n          </div>\n          ").concat(job.site_costs_comment ? '<p class="muted">Организация площадки: '.concat(escapeHtml(job.site_costs_comment), "</p>") : "", "\n          ").concat(smetterHref ? '<a class="link-button inline-link" href="'.concat(escapeAttr(smetterHref), '" target="_blank" rel="noopener noreferrer">Открыть Сметтер</a>') : "", "\n          ").concat(renderEstimateJobLinks(quickLinks), "\n          ").concat(job.comment ? "<p>".concat(linkifyText(job.comment), "</p>") : "", "\n          ").concat(job.question_comment ? '<div class="estimate-question-note"><strong>Вопрос сметчика</strong><p>'.concat(linkifyText(job.question_comment), "</p></div>") : "", "\n          ").concat(job.return_comment ? '<p class="muted danger-text">Возврат менеджеру: '.concat(linkifyText(job.return_comment), "</p>") : "", "\n          ").concat(job.result_comment ? '<p class="muted">Итог: '.concat(linkifyText(job.result_comment), "</p>") : "", "\n          ").concat(renderEstimateCompleteness(job), "\n          ").concat(renderEstimateJobFiles(job.files, job.id, canManageFiles), '\n        </div>\n        <div class="estimate-job-actions">\n          ').concat(canAnswerQuestion ? '<button class="secondary tiny" type="button" data-edit-estimate-job="'.concat(job.id, '">Ответить на уточнение</button>') : canEdit ? '<button class="secondary tiny" type="button" data-edit-estimate-job="'.concat(job.id, '">Редактировать</button>') : "", "\n          ").concat(canStart ? '<button class="secondary tiny" type="button" data-estimate-job-status="estimate_in_work" data-estimate-job-id="'.concat(job.id, '">В работу</button>') : "", "\n          ").concat(canQuestion ? '<button class="secondary tiny" type="button" data-estimate-job-status="estimate_question" data-estimate-job-id="'.concat(job.id, '">Уточнить</button>') : "", "\n          ").concat(canReturn ? '<button class="secondary tiny danger-outline" type="button" data-estimate-job-status="estimate_returned" data-estimate-job-id="'.concat(job.id, '">Вернуть на доработку</button>') : "", "\n          ").concat(canFinish ? '<button class="primary tiny" type="button" data-estimate-job-status="estimate_done" data-estimate-job-id="'.concat(job.id, '">Сдано</button>') : "", "\n          ").concat(canManageFiles ? '<button class="secondary tiny" type="button" data-open-estimate-files="'.concat(job.id, '">Добавить файл</button>') : "", "\n          ").concat(canManageFiles ? '<button class="secondary tiny" type="button" data-open-estimate-files="'.concat(job.id, '" data-estimate-file-mode="link">Изменить ссылку</button>') : "", "\n          ").concat(canManageFiles ? '<button class="secondary tiny" type="button" data-open-estimate-files="'.concat(job.id, '" data-estimate-file-mode="comment">Изменить комментарий</button>') : "", "\n          ").concat(canArchive ? '<button class="secondary tiny" type="button" data-estimate-job-status="archived" data-estimate-job-id="'.concat(job.id, '">В архив</button>') : "", "\n          ").concat(canDelete ? '<button class="danger-button tiny" type="button" data-delete-estimate-job="'.concat(job.id, '">Удалить</button>') : "", "\n        </div>\n      </div>\n    </details>");
   }
   function fillEstimateJobForm(job = {}) {
     var _a, _b;
@@ -3539,20 +3761,27 @@
   }
   async function renderEstimateJobs() {
     const statsNode = qs("#estimateJobStats");
+    const filtersNode = qs("#estimateQuickFilters");
+    const actionNode = qs("#estimateActionPanel");
     const scheduleNode = qs("#estimateJobSchedule");
     const rowsNode = qs("#estimateJobRows");
     if (!statsNode || !scheduleNode || !rowsNode) return;
     if (!canView("estimates")) {
       statsNode.innerHTML = "";
+      if (filtersNode) filtersNode.innerHTML = "";
+      if (actionNode) actionNode.innerHTML = "";
       scheduleNode.innerHTML = "";
       rowsNode.innerHTML = "";
       return;
     }
     qsa("[data-estimate-list-mode]").forEach((button) => button.classList.toggle("active", button.dataset.estimateListMode === state.estimateListMode));
-    const jobs = visibleEstimateJobs();
-    statsNode.innerHTML = renderEstimateJobStats(jobs);
+    const baseJobs = visibleEstimateJobs();
+    const jobs = estimateFilteredJobs(baseJobs);
+    statsNode.innerHTML = renderEstimateJobStats(baseJobs);
+    if (filtersNode) filtersNode.innerHTML = renderEstimateQuickFilters(baseJobs);
+    if (actionNode) actionNode.innerHTML = renderEstimateActionPanel(jobs);
     scheduleNode.innerHTML = renderEstimateSchedule(jobs);
-    rowsNode.innerHTML = jobs.length ? jobs.map(renderEstimateJobRow).join("") : '<p class="muted">'.concat(state.estimateListMode === "archive" ? "В архиве сметных заданий пока нет." : "Активных сметных заданий пока нет. Нажмите “Добавить задание”, чтобы зафиксировать входящую смету в работе.", "</p>");
+    rowsNode.innerHTML = jobs.length ? jobs.map(renderEstimateJobRow).join("") : '<div class="empty-state"><strong>'.concat(state.estimateListMode === "archive" ? "В архиве сметных заданий по этому фильтру нет." : "По фильтру «".concat(escapeHtml(estimateQuickFilterLabel()), "» заданий нет."), '</strong><p class="muted">').concat(state.estimateListMode === "archive" ? "Архивные задания появятся здесь после переноса в архив." : "Переключите фильтр или добавьте сметное задание, если нужно передать расчёт сметчику.", "</p></div>");
     syncManagerEstimateNotice();
   }
   function notificationTargetAttrs(row) {
@@ -6341,6 +6570,23 @@
       const editEstimateJobButton = event.target.closest("[data-edit-estimate-job]");
       if (editEstimateJobButton) {
         openEstimateJobDialog(editEstimateJobButton.dataset.editEstimateJob);
+        return;
+      }
+      const estimateQuickFilterButton = event.target.closest("[data-estimate-quick-filter]");
+      if (estimateQuickFilterButton) {
+        state.estimateQuickFilter = estimateQuickFilterButton.dataset.estimateQuickFilter || defaultEstimateQuickFilter();
+        localStorage.setItem("estimateQuickFilter", state.estimateQuickFilter);
+        await renderEstimateJobs();
+        return;
+      }
+      const openEstimateJobRowButton = event.target.closest("[data-open-estimate-job-row]");
+      if (openEstimateJobRowButton) {
+        const id = openEstimateJobRowButton.dataset.openEstimateJobRow;
+        const key = "estimate-job:".concat(id);
+        state.expandedLists[key] = true;
+        await renderEstimateJobs();
+        const row = qsa("[data-collapsible-key]").find((item) => item.dataset.collapsibleKey === key);
+        row == null ? void 0 : row.scrollIntoView({ behavior: "smooth", block: "center" });
         return;
       }
       const estimateGalleryButton = event.target.closest("[data-estimate-gallery-file]");
