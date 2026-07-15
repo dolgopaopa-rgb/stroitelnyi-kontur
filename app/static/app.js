@@ -4,6 +4,7 @@ const routeViewMap = {
   "/today": "today",
   "/assistant": "assistant",
   "/objects": "projects",
+  "/estimates": "estimates",
   "/tasks": "tasks",
   "/materials": "materials",
   "/photo-reports": "photos",
@@ -31,7 +32,7 @@ const state = {
   estimateJobs: [],
   estimateMaterials: [],
   estimatePreviewRows: [],
-  showEstimateMaterials: false,
+  showEstimateMaterials: true,
   selectedProjectId: initialProjectId,
   selectedProjectTab: "overview",
   projectListMode: "active",
@@ -335,6 +336,12 @@ async function api(path, options = {}) {
 
 function money(value) {
   return new Intl.NumberFormat("ru-RU").format(Number(value || 0)) + " ₽";
+}
+
+function quantityLabel(value) {
+  const number = Number(value || 0);
+  if (!Number.isFinite(number)) return "0";
+  return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 3 }).format(number);
 }
 
 function numberValue(value) {
@@ -2080,6 +2087,31 @@ function groupBySection(rows) {
   }, {});
 }
 
+function estimateMaterialRequestStatusKeys(row) {
+  return String(row.request_statuses || "")
+    .split(",")
+    .map((status) => status.trim())
+    .filter(Boolean);
+}
+
+function estimateMaterialRequestSummary(row) {
+  const requestedQuantity = Number(row.requested_quantity || 0);
+  const requestBatches = Number(row.request_batches || 0);
+  if (!requestedQuantity && !requestBatches) return "";
+  const statusPills = estimateMaterialRequestStatusKeys(row)
+    .slice(0, 3)
+    .map((status) => pill(statusLabel(materialPipelineStatus({ status })), statusLevel(materialPipelineStatus({ status }))))
+    .join("");
+  const dateText = row.latest_request_date ? ` · последняя дата: ${formatDateRu(row.latest_request_date) || row.latest_request_date}` : "";
+  return `
+    <div class="estimate-request-summary">
+      ${pill(`В заявках: ${quantityLabel(requestedQuantity)} ${row.unit || ""}`, "blue")}
+      ${requestBatches ? pill(`Заявок: ${requestBatches}`, "") : ""}
+      ${statusPills}
+      <span class="muted">${dateText}</span>
+    </div>`;
+}
+
 function estimateSectionKey(scope, projectId, section) {
   return `${scope}:${projectId || "none"}:${section || "no-section"}`;
 }
@@ -2116,11 +2148,12 @@ async function renderEstimateMaterials() {
               (row) => `
               <div class="row estimate-material-row">
                 <div class="material-main">
-                  <strong>${row.name}</strong>
-                  <div class="muted">${row.section || "Без раздела"}</div>
+                  <strong>${escapeHtml(row.name)}</strong>
+                  <div class="muted">${escapeHtml(row.section || "Без раздела")}</div>
+                  ${estimateMaterialRequestSummary(row)}
                 </div>
                 <div class="stack-line">
-                  ${pill(`${row.estimated_quantity || 0} ${row.unit || ""}`, "blue")}
+                  ${pill(`${quantityLabel(row.estimated_quantity)} ${escapeHtml(row.unit || "")}`, "blue")}
                   ${pill(money(row.total_price), "success")}
                   <span class="muted">Цена: ${money(row.unit_price)}</span>
                 </div>
@@ -2229,17 +2262,26 @@ async function loadMaterialEstimatePicker() {
         <div class="table">
           ${sectionRows
             .map(
-              (row) => `
-              <div class="row estimate-choice-row" data-estimate-id="${row.id}" data-estimated="${row.estimated_quantity || 0}">
+              (row) => {
+                const alreadyRequested = Number(row.requested_quantity || 0);
+                const estimated = Number(row.estimated_quantity || 0);
+                const defaultQuantity = Math.max(estimated - alreadyRequested, 0);
+                return `
+              <div class="row estimate-choice-row ${alreadyRequested ? "estimate-choice-has-request" : ""}" data-estimate-id="${row.id}" data-estimated="${estimated || 0}">
                 <label class="estimate-choice-title">
                   <input type="checkbox" data-material-check />
-                  <span><strong>${row.name}</strong><small>${row.estimated_quantity || 0} ${row.unit || ""} по смете · ${money(row.total_price)}</small></span>
+                  <span>
+                    <strong>${escapeHtml(row.name)}</strong>
+                    <small>${quantityLabel(row.estimated_quantity)} ${escapeHtml(row.unit || "")} по смете · ${money(row.total_price)}</small>
+                    ${estimateMaterialRequestSummary(row)}
+                  </span>
                 </label>
-                <label>Количество к заказу <input data-material-quantity type="number" min="0" step="0.001" value="${row.estimated_quantity || 0}" disabled /></label>
+                <label>Количество к заказу <input data-material-quantity type="number" min="0" step="0.001" value="${defaultQuantity || ""}" placeholder="${alreadyRequested ? "укажите доп. количество" : "0"}" disabled /></label>
                 <div class="estimate-over-reason" data-material-reason hidden>
                   <label>Причина превышения <textarea rows="2" placeholder="Почему заказываем сверх сметы"></textarea></label>
                 </div>
-              </div>`
+              </div>`;
+              }
             )
             .join("")}
         </div>
@@ -2526,6 +2568,35 @@ function collectMaterialActualItems(batch) {
     actual_unit_price: qs(`[data-material-actual-unit="${item.id}"]`)?.value || "",
     actual_total_amount: qs(`[data-material-actual-total="${item.id}"]`)?.value || "",
   }));
+}
+
+function renderMaterialAcceptSelection(items = []) {
+  if (!items.length) return "";
+  return `
+    <div class="material-accept-selection">
+      <div class="muted">Оставьте галочки на позициях, которые снабжение берёт в работу сейчас. Снятые позиции уйдут в отдельную отложенную заявку.</div>
+      <div class="table material-review-items" id="materialAcceptRows">
+        ${items
+          .map(
+            (item) => `
+            <label class="row estimate-material-row material-accept-row">
+              <input type="checkbox" data-accept-material-check="${item.id}" checked />
+              <span class="material-main">
+                <strong>${escapeHtml(item.title)}</strong>
+                <span class="muted">${escapeHtml(item.estimate_section || "без раздела")} · ${quantityLabel(item.requested_quantity || item.estimated_quantity)} ${escapeHtml(item.requested_unit || item.estimate_material_unit || "")}</span>
+              </span>
+              ${pill(materialBasisLabel(item.basis_type), materialBasisLevel(item.basis_type))}
+            </label>`
+          )
+          .join("")}
+      </div>
+    </div>`;
+}
+
+function collectMaterialAcceptItemIds() {
+  const checks = qsa("#materialAcceptRows [data-accept-material-check]");
+  if (!checks.length) return null;
+  return checks.filter((input) => input.checked).map((input) => Number(input.dataset.acceptMaterialCheck || 0)).filter(Boolean);
 }
 
 function canCreateVariationFromBatch(batch) {
@@ -3886,6 +3957,8 @@ function renderEstimateJobRow(job) {
           ${canReturn ? `<button class="secondary tiny danger-outline" type="button" data-estimate-job-status="estimate_returned" data-estimate-job-id="${job.id}">Вернуть на доработку</button>` : ""}
           ${canFinish ? `<button class="primary tiny" type="button" data-estimate-job-status="estimate_done" data-estimate-job-id="${job.id}">Сдано</button>` : ""}
           ${canManageFiles ? `<button class="secondary tiny" type="button" data-open-estimate-files="${job.id}">Добавить файл</button>` : ""}
+          ${canManageFiles ? `<button class="secondary tiny" type="button" data-open-estimate-files="${job.id}" data-estimate-file-mode="link">Изменить ссылку</button>` : ""}
+          ${canManageFiles ? `<button class="secondary tiny" type="button" data-open-estimate-files="${job.id}" data-estimate-file-mode="comment">Изменить комментарий</button>` : ""}
           ${canArchive ? `<button class="secondary tiny" type="button" data-estimate-job-status="archived" data-estimate-job-id="${job.id}">В архив</button>` : ""}
           ${canDelete ? `<button class="danger-button tiny" type="button" data-delete-estimate-job="${job.id}">Удалить</button>` : ""}
         </div>
@@ -3944,19 +4017,27 @@ function updateEstimateFileDialogMode() {
   if (fileInput) fileInput.multiple = mode !== "replace";
 }
 
-function openEstimateJobFileDialog(jobId, replaceFileId = "") {
+function openEstimateJobFileDialog(jobId, replaceFileId = "", modeOverride = "") {
   const job = state.estimateJobs.find((item) => Number(item.id) === Number(jobId));
   const form = qs("#estimateJobFileForm");
   if (!job || !form) return;
   form.reset();
   form.elements.id.value = job.id;
   form.elements.smetter_url.value = job.smetter_url || estimateSmetterHref(job) || "";
-  qs("#estimateJobFileTitle").textContent = `Файлы сметы: ${job.title}`;
+  form.elements.result_comment.value = job.result_comment || "";
+  form.dataset.originalResultComment = job.result_comment || "";
+  qs("#estimateJobFileTitle").textContent = modeOverride === "link"
+    ? `Ссылка на Сметтер: ${job.title}`
+    : modeOverride === "comment"
+      ? `Комментарий сметчика: ${job.title}`
+      : `Файлы сметы: ${job.title}`;
   const currentFiles = (job.files || []).filter((file) => Number(file.is_current ?? 1) !== 0);
   form.elements.replace_file_id.innerHTML = currentFiles
     .map((file) => `<option value="${escapeAttr(file.id)}">${escapeHtml(file.title || file.file_name || "Файл")} · v${Number(file.version_no || 1)}</option>`)
     .join("");
-  if (replaceFileId) {
+  if (modeOverride === "link") {
+    form.elements.mode.value = "add";
+  } else if (replaceFileId) {
     form.elements.mode.value = "replace";
     form.elements.replace_file_id.value = String(replaceFileId);
   } else {
@@ -3970,6 +4051,11 @@ function openEstimateJobFileDialog(jobId, replaceFileId = "") {
   }
   updateEstimateFileDialogMode();
   qs("#estimateJobFileDialog").showModal();
+  if (modeOverride === "link") {
+    setTimeout(() => form.elements.smetter_url?.focus(), 0);
+  } else if (modeOverride === "comment") {
+    setTimeout(() => form.elements.result_comment?.focus(), 0);
+  }
 }
 
 function uniqueMaterialBatches(materialRows = []) {
@@ -6778,7 +6864,8 @@ async function openMaterialBatchDialog(batchKey) {
       canReview
         ? `<section class="workflow-panel">
             <h3>Решение снабжения</h3>
-            <label>Комментарий при возврате <textarea id="materialBatchReturnComment" rows="3" placeholder="Например: не понятно количество, уточните позицию"></textarea></label>
+            ${renderMaterialAcceptSelection(activeItems)}
+            <label>Комментарий <textarea id="materialBatchReturnComment" rows="3" placeholder="Например: лист алюминия отложен, остальное привезём сегодня"></textarea></label>
             ${personalNotifyControl()}
             <div class="form-actions">
               <button class="primary" type="button" data-material-batch-action="accept" data-material-batch-id="${batch.id}">Принять в работу</button>
@@ -8571,8 +8658,14 @@ function bindEvents() {
     const suffix = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
     window.open(`/api/material-requests/export${suffix}`, "_blank", "noopener");
   });
-  qs('#estimateImportForm select[name="project_id"]').addEventListener("change", renderEstimateMaterials);
-  qs("#refreshEstimateButton").addEventListener("click", renderEstimateMaterials);
+  qs('#estimateImportForm select[name="project_id"]').addEventListener("change", async () => {
+    state.showEstimateMaterials = true;
+    await renderEstimateMaterials();
+  });
+  qs("#refreshEstimateButton").addEventListener("click", async () => {
+    state.showEstimateMaterials = true;
+    await renderEstimateMaterials();
+  });
   qs("#previewEstimateButton").addEventListener("click", loadEstimatePreview);
   qs('#workProjectForm select[name="project_id"]').addEventListener("change", async (event) => {
     state.selectedWorkProjectId = Number(event.target.value);
@@ -8880,7 +8973,7 @@ function bindEvents() {
 
     const openEstimateFilesButton = event.target.closest("[data-open-estimate-files]");
     if (openEstimateFilesButton) {
-      openEstimateJobFileDialog(openEstimateFilesButton.dataset.openEstimateFiles);
+      openEstimateJobFileDialog(openEstimateFilesButton.dataset.openEstimateFiles, "", openEstimateFilesButton.dataset.estimateFileMode || "");
       return;
     }
 
@@ -9082,6 +9175,17 @@ function bindEvents() {
       let body = {};
       if (action === "delete" && !confirm("Удалить заявку на материалы? Это можно сделать только до принятия снабжением в работу.")) return;
       if (action === "cancel_delivery" && !confirm("Отменить доставку по этой заявке? Внесенные цены закупки сохранятся в заявке.")) return;
+      if (action === "accept") {
+        const acceptItemIds = collectMaterialAcceptItemIds();
+        if (Array.isArray(acceptItemIds) && !acceptItemIds.length) {
+          showToast("Выберите хотя бы одну позицию, которую нужно взять в работу");
+          return;
+        }
+        body = {
+          accept_item_ids: acceptItemIds,
+          comment: qs("#materialBatchReturnComment")?.value || "",
+        };
+      }
       if (action === "return") {
         body = { comment: qs("#materialBatchReturnComment")?.value || "" };
       }
@@ -9439,6 +9543,8 @@ function bindEvents() {
     const mode = form.elements.mode.value || "add";
     const attachments = Array.from(form.elements.attachments?.files || []);
     const smetterUrl = form.elements.smetter_url?.value.trim() || "";
+    const resultComment = form.elements.result_comment?.value || "";
+    const resultCommentChanged = resultComment !== (form.dataset.originalResultComment || "");
     const submitButton = form.querySelector('button[type="submit"]');
     if (!id) {
       showToast("Не найдено сметное задание");
@@ -9452,8 +9558,8 @@ function bindEvents() {
       showToast("Для замены выберите новую версию файла");
       return;
     }
-    if (!attachments.length && !smetterUrl) {
-      showToast("Прикрепите файл сметы или укажите ссылку на Сметтер");
+    if (!attachments.length && !smetterUrl && !resultCommentChanged) {
+      showToast("Прикрепите файл сметы, укажите ссылку на Сметтер или измените комментарий");
       return;
     }
     if (mode === "replace" && attachments.length && attachments.length !== 1) {
@@ -9467,6 +9573,7 @@ function bindEvents() {
       const payload = {
         replacement_note: form.elements.replacement_note.value || "",
         smetter_url: smetterUrl,
+        result_comment: resultComment,
         attachments: await Promise.all(attachments.map((file) => fileDocumentPayload(file, file.name, "estimate_job_file", "estimate_job"))),
       };
       if (mode === "replace") {
@@ -9485,7 +9592,11 @@ function bindEvents() {
       await loadCoreData();
       await renderEstimateJobs();
       await renderDashboard();
-      showToast(attachments.length ? (mode === "replace" ? "Файл сметы заменен, старая версия сохранена" : "Файлы сметы добавлены") : "Ссылка на Сметтер сохранена");
+      showToast(attachments.length
+        ? (mode === "replace" ? "Файл сметы заменен, старая версия сохранена" : "Файлы сметы добавлены")
+        : resultCommentChanged && !smetterUrl
+          ? "Комментарий сметчика сохранён"
+          : "Изменения по смете сохранены");
     } catch (error) {
       showToast(error.message || "Не удалось сохранить файлы сметы");
     } finally {
@@ -9502,6 +9613,10 @@ function bindEvents() {
       quantity: row.querySelector("[data-material-quantity]").value,
       reason: row.querySelector("[data-material-reason] textarea").value,
     }));
+    if (selectedRows.some((row) => Number(row.querySelector("[data-material-quantity]")?.value || 0) <= 0)) {
+      showToast("Укажите количество для выбранных позиций");
+      return;
+    }
     const extra_items = collectExtraMaterials();
     const incompleteExtra = extra_items.some((item) => !item.material || !item.name || !item.unit || Number(item.quantity || 0) <= 0 || !item.reason);
     if (incompleteExtra) {
@@ -9592,6 +9707,7 @@ function bindEvents() {
       }),
     });
     state.estimatePreviewRows = [];
+    state.showEstimateMaterials = true;
     qs("#estimatePreviewRows").innerHTML = `<p class="muted">Файл загружен. Можно выбрать другой файл.</p>`;
     await loadAll();
     switchView("materials");

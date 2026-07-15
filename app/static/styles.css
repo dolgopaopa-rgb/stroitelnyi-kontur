@@ -1896,6 +1896,18 @@ h2 {
   background: var(--danger-soft);
 }
 
+.estimate-choice-row.estimate-choice-has-request {
+  border-left-color: var(--brand);
+}
+
+.estimate-request-summary {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-top: 3px;
+}
+
 .estimate-choice-title {
   display: flex;
   grid-template-columns: none;
@@ -1968,6 +1980,21 @@ h2 {
 .material-review-items {
   max-height: min(48vh, 520px);
   overflow: auto;
+}
+
+.material-accept-selection {
+  display: grid;
+  gap: 8px;
+}
+
+.material-accept-row {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.material-accept-row > input {
+  width: auto;
+  margin: 0;
 }
 
 .material-batch-edit-panel h4 {
@@ -5426,11 +5453,17 @@ textarea {
 
 .compact-ui-v1 #estimatesView .estimate-job-main > p,
 .compact-ui-v1 #estimatesView .estimate-question-note p {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  display: block;
+  overflow: visible;
+  white-space: normal;
   margin: 0;
+}
+
+#estimatesView .estimate-job-main p,
+#estimatesView .estimate-question-note p,
+#estimatesView .estimate-job-main .muted {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .compact-ui-v1 #estimatesView .estimate-job-files {
@@ -5443,6 +5476,14 @@ textarea {
 .compact-ui-v1 #estimatesView .estimate-file-card {
   max-width: none;
   grid-template-columns: minmax(0, 1fr) auto;
+}
+
+#estimatesView .estimate-job-files strong,
+#estimatesView .estimate-job-files span {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .compact-ui-v1 #estimatesView .estimate-file-card .estimate-file-print {
@@ -6513,6 +6554,28 @@ textarea {
 
   .estimate-job-actions {
     justify-content: flex-start;
+  }
+
+  #estimatesView .estimate-crm-panel {
+    width: 100%;
+    max-width: 100%;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #estimatesView .estimate-crm-panel > *,
+  #estimatesView .panel-head,
+  #estimatesView .estimate-job-tools {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  #estimatesView .estimate-job-tools .segmented-control {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  #estimatesView .estimate-job-tools > button {
+    width: 100%;
   }
 
   #estimatesView .task-stats,

@@ -42,6 +42,83 @@ test("extra work items can be edited before final decision", async ({ page }) =>
   expect(server).toContain("Эту работу уже нельзя менять: по ней принято решение.");
 });
 
+test("material requests show ordered estimate positions and support partial procurement acceptance", async () => {
+  const app = readProjectFile("app/static/app.js");
+  const compat = readProjectFile("app/static/app.compat.js");
+  const server = readProjectFile("app/server.py");
+
+  for (const source of [app, compat]) {
+    expect(source).toContain("estimateMaterialRequestSummary");
+    expect(source).toContain("В заявках:");
+    expect(source).toContain("renderMaterialAcceptSelection");
+    expect(source).toContain("collectMaterialAcceptItemIds");
+    expect(source).toContain("Снятые позиции уйдут в отдельную отложенную заявку");
+    expect(source).toContain("Укажите количество для выбранных позиций");
+  }
+
+  expect(server).toContain("request_summary_rows");
+  expect(server).toContain("accept_item_ids");
+  expect(server).toContain("postponed_batch_id");
+  expect(server).toContain("'postponed', 'approved', 'at_risk'");
+  expect(server).toContain("В работу взято позиций");
+});
+
+test("main estimate materials list is visible for procurement by default", async () => {
+  const html = readProjectFile("app/static/index.html");
+  const app = readProjectFile("app/static/app.js");
+  const compat = readProjectFile("app/static/app.compat.js");
+  const server = readProjectFile("app/server.py");
+
+  expect(html).toContain('id="toggleEstimateMaterialsButton"');
+  expect(html).toContain('id="refreshEstimateButton"');
+  expect(html).toContain('id="estimateMaterialRows"');
+  expect(app).toContain("showEstimateMaterials: true");
+  expect(app).toContain("state.showEstimateMaterials = true;");
+  expect(app).toContain("await renderEstimateMaterials();");
+  expect(server).toContain("SUM(COALESCE(m.requested_quantity, 0)) AS requested_quantity");
+
+  for (const source of [app, compat]) {
+    expect(source).toContain("renderEstimateMaterials");
+    expect(source).toContain("estimateMaterialRows");
+    expect(source).toContain("toggleEstimateMaterialsButton");
+  }
+});
+
+test("completed estimates expose a direct Smetter link edit action", async () => {
+  const app = readProjectFile("app/static/app.js");
+  const compat = readProjectFile("app/static/app.compat.js");
+  const server = readProjectFile("app/server.py");
+
+  for (const source of [app, compat]) {
+    expect(source).toContain('data-estimate-file-mode="link"');
+    expect(source).toContain('modeOverride === "link"');
+    expect(source).toContain("Ссылка на Сметтер");
+  }
+  expect(app).toContain('openEstimateJobFileDialog(openEstimateFilesButton.dataset.openEstimateFiles, "", openEstimateFilesButton.dataset.estimateFileMode || "")');
+  expect(server).toContain('smetter_url = str(data.get("smetter_url") or "").strip()');
+  expect(server).toContain("UPDATE estimate_jobs SET smetter_url = ?");
+});
+
+test("estimate comments stay full length and can be edited after submission", async () => {
+  const html = readProjectFile("app/static/index.html");
+  const app = readProjectFile("app/static/app.js");
+  const compat = readProjectFile("app/static/app.compat.js");
+  const styles = readProjectFile("app/static/styles.css");
+  const server = readProjectFile("app/server.py");
+
+  expect(html).toContain('textarea name="result_comment"');
+  expect(app).toContain('data-estimate-file-mode="comment"');
+  expect(app).toContain("Комментарий сметчика");
+  expect(app).toContain("resultCommentChanged");
+  expect(compat).toContain('data-estimate-file-mode="comment"');
+  expect(compat).toContain("Комментарий сметчика");
+  expect(styles).toContain("#estimatesView .estimate-job-main p");
+  expect(styles).toContain("overflow: visible");
+  expect(styles).toContain("text-overflow: clip");
+  expect(server).toContain('result_comment_present = "result_comment" in data');
+  expect(server).toContain("UPDATE estimate_jobs SET result_comment = ?");
+});
+
 test("feedback delete controls are available only to owner", async ({ page }) => {
   const externalId = `e2e-feedback-delete-${Date.now()}-${Math.random()}`;
   const createResponse = await page.request.post("/api/feedback", {
@@ -186,15 +263,13 @@ test("estimate jobs have archive mode and project card can be collapsed explicit
   expect(app).toContain("Карточка объекта свернута");
 });
 
-test("estimate job files are collapsed under object summary", async ({ page }) => {
-  await openApp(page, "/estimates");
-
+test("estimate job files are collapsed under object summary", async () => {
   const html = readProjectFile("app/static/index.html");
   const app = readProjectFile("app/static/app.js");
   const compat = readProjectFile("app/static/app.compat.js");
   const styles = readProjectFile("app/static/styles.css");
 
-  expect(html).toContain("20260707-manager-estimate-notice");
+  expect(html).toContain("20260711-main-estimate-materials");
   expect(app).toContain("estimate-job-collapsible");
   expect(app).toContain("estimate-job-summary");
   expect(app).toContain("estimate-job-body");
@@ -258,7 +333,7 @@ test("delivered material batches do not stay in delivery risk", async ({ page })
   const compat = readProjectFile("app/static/app.compat.js");
   const server = readProjectFile("app/server.py");
 
-  expect(html).toContain("20260707-manager-estimate-notice");
+  expect(html).toContain("20260711-main-estimate-materials");
   expect(app).toContain("function materialBatchHasOpenProblem");
   expect(app).toContain("function materialBatchIsFinalForAttention");
   expect(app).toContain("if (materialBatchIsFinalForAttention(batch)) return false");
