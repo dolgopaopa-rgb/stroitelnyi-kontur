@@ -583,7 +583,7 @@ const viewAccess = {
   finance_director: ["today", "dashboard", "projects", "tasks", "works", "materials", "variations", "object_remarks", "photos", "locations", "documents", "feedback", "events"],
   accountant: ["today", "dashboard", "projects", "materials", "variations", "locations", "documents", "events"],
   sales_manager: ["today", "dashboard", "projects", "estimates", "documents"],
-  foreman: ["today", "dashboard", "projects", "tasks", "materials", "object_remarks", "photos"],
+  foreman: ["today", "dashboard", "projects", "tasks", "materials", "object_remarks", "photos", "documents"],
   master: ["today", "tasks", "object_remarks", "photos"],
   procurement_manager: ["today", "dashboard", "projects", "materials", "photos", "locations", "documents"],
   estimator: ["today", "estimates", "tasks", "materials", "variations", "photos", "documents"],
@@ -2560,6 +2560,29 @@ function materialBatchDestination(batch) {
     return `Куда внесено: Допработы и отклонения — ${batch.variation_title || `#${batch.variation_id}`} (${label(batch.variation_status)})`;
   }
   return "Куда внести: требуется создать связанную допработу/отклонение";
+}
+
+const MATERIAL_WAREHOUSE_PICKUP_MARKER = "Способ получения: вывоз со склада.";
+
+function materialRequestComment(comment, deliveryMethod = "delivery") {
+  const text = String(comment || "").trim();
+  if (deliveryMethod !== "warehouse_pickup" || materialRequestIsWarehousePickup(text)) return text;
+  return [MATERIAL_WAREHOUSE_PICKUP_MARKER, text].filter(Boolean).join("\n");
+}
+
+function materialRequestIsWarehousePickup(batchOrComment) {
+  const text = typeof batchOrComment === "object" ? batchOrComment?.comment : batchOrComment;
+  return /способ получения:\s*вывоз со склада\.?/i.test(String(text || ""));
+}
+
+function materialRequestVisibleComment(comment) {
+  return String(comment || "")
+    .replace(/способ получения:\s*вывоз со склада\.?\s*/i, "")
+    .trim();
+}
+
+function materialRequestDeliveryLabel(batch) {
+  return materialRequestIsWarehousePickup(batch) ? "Вывоз со склада" : "Доставка на объект";
 }
 
 function collectMaterialActualItems(batch) {
@@ -5267,7 +5290,7 @@ function renderProjectMaterialHistory(project) {
                     <span>Сметная сумма: <strong>${money(batch.total_amount)}</strong></span>
                     ${totalActual ? `<span>Факт закупки: <strong>${money(totalActual)}</strong></span>` : ""}
                   </div>
-                  ${batch.comment ? `<p><strong>Комментарий прораба:</strong> ${escapeHtml(batch.comment)}</p>` : ""}
+                  ${materialRequestVisibleComment(batch.comment) ? `<p><strong>Комментарий прораба:</strong> ${escapeHtml(materialRequestVisibleComment(batch.comment))}</p>` : ""}
                   ${batch.revision_comment ? `<p class="history-warning"><strong>Возврат снабжения:</strong> ${escapeHtml(batch.revision_comment)}</p>` : ""}
                   ${batch.foreman_response ? `<p><strong>Ответ прораба:</strong> ${escapeHtml(batch.foreman_response)}</p>` : ""}
                   ${batch.procurement_comment ? `<p><strong>Комментарий снабжения:</strong> ${escapeHtml(batch.procurement_comment)}</p>` : ""}
@@ -6728,6 +6751,7 @@ async function renderMaterials() {
         </div>
         <div class="stack-line">
           ${pill(urgencyLabel(batch.delivery_urgency), urgencyLevel(batch.delivery_urgency))}
+          ${materialRequestIsWarehousePickup(batch) ? pill("Вывоз со склада", "blue") : ""}
           ${pill(materialStageLabel(batch), materialPipelineLevel(batch))}
           ${pill(materialHealthLabel(batch), materialHealthLevel(batch))}
         </div>
@@ -6813,10 +6837,11 @@ async function openMaterialBatchDialog(batchKey) {
         ${pill(materialHealthLabel(batch), materialHealthLevel(batch))}
       </div>
       <p class="muted">Кто заказал: ${batch.creator_name || "не указано"} · желаемая доставка: ${batch.needed_at || "не указана"} · позиций: ${activeItems.length}${removedItems.length ? ` · удалено при исправлении: ${removedItems.length}` : ""}</p>
+      <p class="muted">Способ получения: ${escapeHtml(materialRequestDeliveryLabel(batch))}</p>
       ${batch.actual_purchase_amount ? `<p class="muted">Фактическая стоимость закупки: ${money(batch.actual_purchase_amount)} · сметная сумма заявки: ${money(batch.total_amount)}</p>` : ""}
       <p class="muted">Основания: ${materialBatchBasisSummary(batch)}</p>
       <p class="muted">${materialBatchDestination(batch)}</p>
-      ${batch.comment ? `<p>${batch.comment}</p>` : ""}
+      ${materialRequestVisibleComment(batch.comment) ? `<p>${escapeHtml(materialRequestVisibleComment(batch.comment))}</p>` : ""}
       ${batch.revision_comment ? `<p class="muted">Комментарий по доработке: ${batch.revision_comment}</p>` : ""}
       ${batch.foreman_response ? `<p class="muted">Ответ прораба: ${batch.foreman_response}</p>` : ""}
       ${batch.scheduled_delivery_date ? `<p class="muted">Назначенная доставка: ${formatDateRu(batch.scheduled_delivery_date)}</p>` : ""}
@@ -9632,7 +9657,7 @@ function bindEvents() {
       body: JSON.stringify({
         project_id: form.elements.project_id.value,
         needed_at: form.elements.needed_at.value,
-        comment: form.elements.comment.value,
+        comment: materialRequestComment(form.elements.comment.value, form.elements.delivery_method.value),
         creator_role: currentRoleBase(),
         creator_id: currentUserId(),
         items,

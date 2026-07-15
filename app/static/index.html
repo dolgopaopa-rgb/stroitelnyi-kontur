@@ -9,10 +9,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Строительный контур</title>
-    <link rel="manifest" href="/static/manifest.webmanifest?v=20260711-main-estimate-materials" />
+    <link rel="manifest" href="/static/manifest.webmanifest?v=20260715-feedback-andrey" />
     <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260711-main-estimate-materials" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260715-feedback-andrey" />
   </head>
   <body>
     <div class="app" data-testid="qa-scroll-root">
@@ -1029,6 +1029,12 @@
           </div>
           <div class="table extra-material-rows" id="extraMaterialRows"></div>
         </section>
+        <label>Способ получения
+          <select name="delivery_method">
+            <option value="delivery">Доставка на объект</option>
+            <option value="warehouse_pickup">Вывоз со склада</option>
+          </select>
+        </label>
         <label>Желаемая дата доставки <input name="needed_at" type="date" required /></label>
         <label>Комментарий к заявке <textarea name="comment" rows="3" placeholder="Например: нужна доставка до 10:00, разгрузка вручную"></textarea></label>
         <div class="form-actions">
@@ -1281,6 +1287,6 @@
       </div>
     </div>
     <div class="toast" id="toast"></div>
-    <script src="/static/app.compat.js?v=20260711-main-estimate-materials"></script>
+    <script src="/static/app.compat.js?v=20260715-feedback-andrey"></script>
   </body>
 </html>
