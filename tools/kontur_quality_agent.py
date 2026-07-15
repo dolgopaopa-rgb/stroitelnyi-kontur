@@ -313,7 +313,7 @@ def check_repository_ui_contracts(checks: list[Check], recommendations: list[Rec
         (
             "Navigation access scenario",
             "Меню ограничивается по ролям менеджера и прораба.",
-            ['sales_manager: ["today", "dashboard", "projects", "estimates", "documents"]', 'foreman: ["today", "dashboard", "tasks", "works", "materials", "variations", "object_remarks", "photos", "locations", "documents"]', "[hidden]", "data-requires-view", "syncNavigationAccess"],
+            ['sales_manager: ["today", "dashboard", "projects", "estimates", "documents"]', 'foreman: ["today", "dashboard", "projects", "tasks", "materials", "object_remarks", "photos", "documents"]', "[hidden]", "data-requires-view", "syncNavigationAccess"],
             "Проверить матрицу ролей: менеджеру и прорабу нельзя показывать лишние разделы.",
         ),
         (
