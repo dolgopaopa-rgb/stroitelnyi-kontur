@@ -2585,6 +2585,14 @@ function materialRequestDeliveryLabel(batch) {
   return materialRequestIsWarehousePickup(batch) ? "Вывоз со склада" : "Доставка на объект";
 }
 
+function materialBatchPriceSummary(batch) {
+  const estimateTotal = Number(batch?.total_amount || 0);
+  const actualTotal = Number(batch?.actual_purchase_amount || 0);
+  const estimateText = `По смете: ${money(estimateTotal)}`;
+  const actualText = actualTotal > 0 ? `закупка: ${money(actualTotal)}` : "закупка: цена ещё не указана";
+  return `${estimateText} · ${actualText}`;
+}
+
 function collectMaterialActualItems(batch) {
   return materialActiveItems(batch).map((item) => ({
     id: item.id,
@@ -6741,8 +6749,7 @@ async function renderMaterials() {
             <span><b>Ответственный:</b> ${escapeHtml(responsible)}</span>
           </div>
           <div class="muted">${escapeHtml(materialBatchTitle(batch, currentRoleBase() === "procurement_manager"))}</div>
-          <div class="muted">Сумма: ${money(batch.total_amount)}</div>
-          ${batch.actual_purchase_amount ? `<div class="muted">Фактическая стоимость закупки: ${money(batch.actual_purchase_amount)}</div>` : ""}
+          <div class="muted material-price-summary">${escapeHtml(materialBatchPriceSummary(batch))}</div>
           <div class="muted">${materialBatchDestination(batch)}</div>
           <div class="muted">Этап: ${escapeHtml(materialStageLabel(batch))} · Состояние: ${escapeHtml(materialHealthLabel(batch))}${batch.health_comment ? ` · ${escapeHtml(batch.health_comment)}` : ""}</div>
           ${materialReceiptActionNote(batch)}
@@ -6838,7 +6845,7 @@ async function openMaterialBatchDialog(batchKey) {
       </div>
       <p class="muted">Кто заказал: ${batch.creator_name || "не указано"} · желаемая доставка: ${batch.needed_at || "не указана"} · позиций: ${activeItems.length}${removedItems.length ? ` · удалено при исправлении: ${removedItems.length}` : ""}</p>
       <p class="muted">Способ получения: ${escapeHtml(materialRequestDeliveryLabel(batch))}</p>
-      ${batch.actual_purchase_amount ? `<p class="muted">Фактическая стоимость закупки: ${money(batch.actual_purchase_amount)} · сметная сумма заявки: ${money(batch.total_amount)}</p>` : ""}
+      <p class="muted material-price-summary">${escapeHtml(materialBatchPriceSummary(batch))}</p>
       <p class="muted">Основания: ${materialBatchBasisSummary(batch)}</p>
       <p class="muted">${materialBatchDestination(batch)}</p>
       ${materialRequestVisibleComment(batch.comment) ? `<p>${escapeHtml(materialRequestVisibleComment(batch.comment))}</p>` : ""}

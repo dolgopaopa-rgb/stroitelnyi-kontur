@@ -17,3 +17,13 @@ test("material request offers warehouse pickup", async ({ page }) => {
   await method.selectOption("warehouse_pickup", { force: true });
   await expect(method).toHaveValue("warehouse_pickup");
 });
+
+test("materials page exposes archive and price information", async ({ page }) => {
+  await openApp(page, "/materials");
+  await expect(page.getByTestId("material-archive-hint")).toHaveText("Старые заявки находятся во вкладке «Архив».");
+  const archiveTab = page.locator('[data-material-list-mode="archive"]');
+  await expect(archiveTab).toHaveCount(1);
+  await archiveTab.click();
+  await expect(page.locator('[data-material-list-mode="archive"]')).toHaveAttribute("class", /active/);
+  await expect(page.locator("#materialRows")).toContainText("В архиве заявок");
+});

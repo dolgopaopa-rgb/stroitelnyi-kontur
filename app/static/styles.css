@@ -1977,6 +1977,15 @@ h2 {
   flex-wrap: wrap;
 }
 
+.material-archive-hint {
+  flex: 1 1 220px;
+  min-width: 180px;
+}
+
+.material-price-summary {
+  color: var(--muted, #667085);
+}
+
 .material-review-items {
   max-height: min(48vh, 520px);
   overflow: auto;
