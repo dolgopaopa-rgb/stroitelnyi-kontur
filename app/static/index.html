@@ -253,6 +253,7 @@
             <section class="panel appeals-toolbar">
               <label>Статус <select id="appealsStatusFilter"><option value="">Все обращения</option></select></label>
               <label class="checkbox-line"><input id="appealsOverdueOnly" type="checkbox" /> Только просроченные шаги</label>
+              <label class="checkbox-line"><input id="appealsArchivedOnly" type="checkbox" /> Архив</label>
               <button class="secondary" id="refreshAppealsButton" type="button">Обновить</button>
             </section>
             <div class="appeals-layout">
@@ -1301,7 +1302,7 @@
         <label>Краткое описание <textarea name="description" rows="3" required placeholder="Что нужно клиенту"></textarea></label>
         <div class="grid-2">
           <label>Менеджер <select name="manager_id" required></select></label>
-          <label>Источник <input name="source" value="other" placeholder="Рекомендация, сайт, MAX и т.д." /></label>
+          <label>Источник <select name="source" required></select></label>
         </div>
         <div class="grid-2">
           <label>Состояние бюджета <select name="budget_state" required></select></label>

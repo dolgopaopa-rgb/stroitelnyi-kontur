@@ -12,11 +12,13 @@ os.environ["APPEALS_TEST_MODE"] = "1"
 from appeals import (  # noqa: E402
     AppealError,
     apply_migrations,
+    archive_appeal,
     create_appeal,
     list_appeals,
     rollback_last_migration,
     seed_synthetic_appeals,
     transition_appeal,
+    restore_appeal,
     api_get,
     appeals_config,
     appeals_enabled,
@@ -94,6 +96,15 @@ class AppealsTestCase(unittest.TestCase):
         item = create_appeal(self.db, self.payload(contact_name="", contact_unknown=True, idempotency_key="unit-appeal-3"), {"role": "owner", "user_id": self.owner})
         self.assertEqual(item["appeal_number"], "2026-000001")
 
+    def test_creation_requires_fixed_source_and_next_step_date(self):
+        with self.assertRaises(AppealError):
+            create_appeal(self.db, self.payload(source="web-site", idempotency_key="unit-appeal-source"), {"role": "owner", "user_id": self.owner})
+        with self.assertRaises(AppealError):
+            create_appeal(self.db, self.payload(next_step_date="", idempotency_key="unit-appeal-date"), {"role": "owner", "user_id": self.owner})
+        item = create_appeal(self.db, self.payload(source="unknown", idempotency_key="unit-appeal-unknown-source"), {"role": "owner", "user_id": self.owner})
+        self.assertEqual(item["source"], "unknown")
+        self.assertEqual(item["source_label"], "Неизвестно")
+
     def test_number_idempotency_and_role_visibility(self):
         first = create_appeal(self.db, self.payload(), {"role": "owner", "user_id": self.owner})
         repeated = create_appeal(self.db, self.payload(), {"role": "owner", "user_id": self.owner})
@@ -102,6 +113,10 @@ class AppealsTestCase(unittest.TestCase):
         own = list_appeals(self.db, {"role": "sales_manager", "user_id": self.manager})
         self.assertEqual([item["id"] for item in own], [first["id"]])
         self.assertNotEqual(first["id"], second["id"])
+        handled, payload, status = api_get(self.db, f"/api/appeals/{second['id']}", {}, {"role": "sales_manager", "user_id": self.manager})
+        self.assertTrue(handled)
+        self.assertEqual(status, 404)
+        self.assertIn("не найдено", payload["error"])
 
     def test_status_transition_requires_next_step_and_owner_for_success(self):
         item = create_appeal(self.db, self.payload(), {"role": "owner", "user_id": self.owner})
@@ -113,17 +128,32 @@ class AppealsTestCase(unittest.TestCase):
     def test_synthetic_fixture_factory(self):
         result = seed_synthetic_appeals(self.db)
         self.assertGreaterEqual(result["appeals"], 2)
+        self.assertEqual(len(appeals_config()["statuses"]), 13)
         self.assertEqual(self.db.execute("SELECT COUNT(*) FROM customers WHERE name = 'Синтетический клиент'").fetchone()[0], 1)
+
+    def test_archive_is_excluded_and_owner_can_restore(self):
+        item = create_appeal(self.db, self.payload(idempotency_key="unit-appeal-archive"), {"role": "owner", "user_id": self.owner})
+        archived = archive_appeal(self.db, item["id"], {"reason": "Проверка архивного сценария"}, {"role": "owner", "user_id": self.owner})
+        self.assertIsNotNone(archived["archived_at"])
+        self.assertEqual(list_appeals(self.db, {"role": "owner", "user_id": self.owner}), [])
+        archived_items = list_appeals(self.db, {"role": "owner", "user_id": self.owner}, archived=True)
+        self.assertEqual([row["id"] for row in archived_items], [item["id"]])
+        with self.assertRaises(AppealError):
+            restore_appeal(self.db, item["id"], {"reason": "Менеджер не восстанавливает"}, {"role": "sales_manager", "user_id": self.manager})
+        restored = restore_appeal(self.db, item["id"], {"reason": "Вернуть в рабочий список"}, {"role": "owner", "user_id": self.owner})
+        self.assertIsNone(restored["archived_at"])
+        self.assertEqual([row["id"] for row in list_appeals(self.db, {"role": "owner", "user_id": self.owner})], [item["id"]])
 
     def test_feature_flag_is_off_without_both_explicit_flags_and_other_role_is_rejected(self):
         with patch.dict(os.environ, {"APPEALS_ENABLED": "", "APPEALS_TEST_MODE": ""}):
             self.assertFalse(appeals_enabled())
             self.assertFalse(appeals_config()["enabled"])
             self.assertEqual(appeals_config()["version"], 2)
-        handled, payload, status = api_get(self.db, "/api/appeals", {}, {"role": "construction_manager", "user_id": self.owner})
-        self.assertTrue(handled)
-        self.assertEqual(status, 403)
-        self.assertIn("недоступен", payload["error"])
+        for role in ("estimator", "construction_manager", "ai_auditor"):
+            handled, payload, status = api_get(self.db, "/api/appeals", {}, {"role": role, "user_id": self.owner})
+            self.assertTrue(handled)
+            self.assertEqual(status, 403)
+            self.assertIn("недоступен", payload["error"])
 
 
 if __name__ == "__main__":

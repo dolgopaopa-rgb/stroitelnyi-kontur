@@ -4073,6 +4073,9 @@ class AppHandler(BaseHTTPRequestHandler):
             "/locations",
         }
         if path in spa_routes:
+            if path == "/appeals" and not appeals_enabled():
+                self.send_error(404, "Раздел обращений выключен")
+                return
             self.serve_static("index.html")
             return
         if path == "/health":

@@ -33,6 +33,7 @@ const state = {
   appealsConfig: null,
   appealsStatusFilter: "",
   appealsOverdueOnly: false,
+  appealsArchivedOnly: false,
   photoReports: [],
   objectRemarks: [],
   estimateJobs: [],
@@ -4778,6 +4779,7 @@ function fillAppealFormOptions() {
     if ([...select.options].some((option) => option.value === current)) select.value = current;
   };
   setOptions("request_type", dictionaries.request_types, "Выберите тип обращения");
+  setOptions("source", dictionaries.sources, "Источник обращения");
   setOptions("budget_state", dictionaries.budget_states, "Состояние бюджета");
   setOptions("next_step_type", dictionaries.next_step_types || { call: "Позвонить", message: "Написать", meeting: "Назначить встречу", collect_data: "Собрать данные", prepare_estimate: "Подготовить расчёт", send_proposal: "Отправить КП", follow_up: "Связаться повторно", other: "Другое" }, "Следующий шаг");
   const managerSelect = form.elements.manager_id;
@@ -4832,6 +4834,7 @@ async function renderAppeals() {
   const query = new URLSearchParams();
   if (state.appealsStatusFilter) query.set("status", state.appealsStatusFilter);
   if (state.appealsOverdueOnly) query.set("filter", "overdue");
+  if (state.appealsArchivedOnly) query.set("archived", "1");
   const [items, totals] = await Promise.all([api(`/api/appeals${query.toString() ? `?${query}` : ""}`), api("/api/appeals/summary")]);
   state.appeals = items;
   const summaryNode = qs("#appealsSummary");
@@ -4846,6 +4849,8 @@ async function renderAppeals() {
   }
   const overdue = qs("#appealsOverdueOnly");
   if (overdue) overdue.checked = state.appealsOverdueOnly;
+  const archived = qs("#appealsArchivedOnly");
+  if (archived) archived.checked = state.appealsArchivedOnly;
 }
 
 async function renderEstimateJobs() {
@@ -9961,6 +9966,10 @@ function bindEvents() {
   });
   qs("#appealsOverdueOnly")?.addEventListener("change", async (event) => {
     state.appealsOverdueOnly = event.target.checked;
+    await renderAppeals();
+  });
+  qs("#appealsArchivedOnly")?.addEventListener("change", async (event) => {
+    state.appealsArchivedOnly = event.target.checked;
     await renderAppeals();
   });
   qs("#refreshAppealsButton")?.addEventListener("click", () => renderAppeals().catch((error) => showToast(error.message)));

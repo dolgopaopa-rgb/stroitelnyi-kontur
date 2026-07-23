@@ -67,6 +67,7 @@
     appealsConfig: null,
     appealsStatusFilter: "",
     appealsOverdueOnly: false,
+    appealsArchivedOnly: false,
     photoReports: [],
     objectRemarks: [],
     estimateJobs: [],
@@ -3814,6 +3815,7 @@
       if ([...select.options].some((option) => option.value === current)) select.value = current;
     };
     setOptions("request_type", dictionaries.request_types, "Выберите тип обращения");
+    setOptions("source", dictionaries.sources, "Источник обращения");
     setOptions("budget_state", dictionaries.budget_states, "Состояние бюджета");
     setOptions("next_step_type", dictionaries.next_step_types || { call: "Позвонить", message: "Написать", meeting: "Назначить встречу", collect_data: "Собрать данные", prepare_estimate: "Подготовить расчёт", send_proposal: "Отправить КП", follow_up: "Связаться повторно", other: "Другое" }, "Следующий шаг");
     const managerSelect = form.elements.manager_id;
@@ -3853,6 +3855,7 @@
     const query = new URLSearchParams();
     if (state.appealsStatusFilter) query.set("status", state.appealsStatusFilter);
     if (state.appealsOverdueOnly) query.set("filter", "overdue");
+    if (state.appealsArchivedOnly) query.set("archived", "1");
     const [items, totals] = await Promise.all([api("/api/appeals".concat(query.toString() ? "?".concat(query) : "")), api("/api/appeals/summary")]);
     state.appeals = items;
     const summaryNode = qs("#appealsSummary");
@@ -3867,6 +3870,8 @@
     }
     const overdue = qs("#appealsOverdueOnly");
     if (overdue) overdue.checked = state.appealsOverdueOnly;
+    const archived = qs("#appealsArchivedOnly");
+    if (archived) archived.checked = state.appealsArchivedOnly;
   }
   async function renderEstimateJobs() {
     const statsNode = qs("#estimateJobStats");
@@ -6160,7 +6165,7 @@
     showToast("Ничего не найдено. Попробуйте другое слово.");
   }
   function bindEvents() {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H, _I, _J, _K, _L, _M, _N, _O, _P, _Q, _R;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H, _I, _J, _K, _L, _M, _N, _O, _P, _Q, _R, _S;
     bindStableDetailsTouchGuard();
     bindWheelPageScroll();
     initPullToRefresh();
@@ -7559,8 +7564,12 @@
       state.appealsOverdueOnly = event.target.checked;
       await renderAppeals();
     });
-    (_Q = qs("#refreshAppealsButton")) == null ? void 0 : _Q.addEventListener("click", () => renderAppeals().catch((error) => showToast(error.message)));
-    (_R = qs("#appealForm")) == null ? void 0 : _R.addEventListener("submit", async (event) => {
+    (_Q = qs("#appealsArchivedOnly")) == null ? void 0 : _Q.addEventListener("change", async (event) => {
+      state.appealsArchivedOnly = event.target.checked;
+      await renderAppeals();
+    });
+    (_R = qs("#refreshAppealsButton")) == null ? void 0 : _R.addEventListener("click", () => renderAppeals().catch((error) => showToast(error.message)));
+    (_S = qs("#appealForm")) == null ? void 0 : _S.addEventListener("submit", async (event) => {
       var _a2, _b2;
       event.preventDefault();
       const form = qs("#appealForm");

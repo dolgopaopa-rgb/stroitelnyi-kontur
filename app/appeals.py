@@ -30,6 +30,20 @@ REQUEST_TYPES = {
     "other": "Другое",
 }
 
+SOURCE_TYPES = {
+    "website": "Сайт",
+    "phone": "Телефон",
+    "telegram": "Telegram",
+    "max": "MAX",
+    "social": "Социальные сети",
+    "youtube": "YouTube",
+    "exhibition": "Выставка",
+    "recommendation": "Рекомендация",
+    "repeat_customer": "Повторный клиент",
+    "partner": "Партнёр",
+    "unknown": "Неизвестно",
+}
+
 BUDGET_STATES = {
     "unknown": "Неизвестно",
     "not_reported": "Клиент не сообщил",
@@ -57,10 +71,20 @@ STATUSES = {
 NEXT_STEP_TYPES = {
     "call": "Позвонить",
     "message": "Написать",
+    "request_documents": "Запросить документы",
+    "consultation": "Провести консультацию",
     "meeting": "Назначить встречу",
+    "site_visit": "Провести выезд",
+    "prepare_estimate_task": "Подготовить сметное задание",
+    "check_estimate": "Проверить статус сметы",
+    "prepare_proposal": "Подготовить КП",
+    "approve_price": "Согласовать цену",
     "collect_data": "Собрать данные",
     "prepare_estimate": "Подготовить расчёт",
     "send_proposal": "Отправить КП",
+    "client_decision": "Получить решение клиента",
+    "prepare_contract": "Подготовить договор",
+    "handoff_project": "Передать объект в следующий процесс",
     "follow_up": "Связаться повторно",
     "other": "Другое",
 }
@@ -209,6 +233,7 @@ def appeals_config() -> dict[str, Any]:
         "feature_flags": {APPEALS_FLAG: _truthy(os.environ.get(APPEALS_FLAG)), APPEALS_TEST_MODE_FLAG: _truthy(os.environ.get(APPEALS_TEST_MODE_FLAG))},
         "reason": "Функция выключена по умолчанию; для локальной проверки нужны APPEALS_ENABLED=1 и APPEALS_TEST_MODE=1." if not enabled else "Включено только в отдельной тестовой среде.",
         "roles": ["owner", "sales_manager"],
+        "sources": SOURCE_TYPES,
         "statuses": STATUSES,
         "request_types": REQUEST_TYPES,
         "next_step_types": NEXT_STEP_TYPES,
@@ -340,6 +365,13 @@ def _validate_type(data: dict[str, Any]) -> None:
         raise AppealError("Для типа «Другое» укажите комментарий.")
 
 
+def _validate_source(data: dict[str, Any]) -> str:
+    source = _clean(data.get("source")) or "unknown"
+    if source not in SOURCE_TYPES:
+        raise AppealError("Выберите источник обращения из утверждённого списка.")
+    return source
+
+
 def _validate_contact(data: dict[str, Any]) -> None:
     name = _clean(data.get("contact_name"))
     unknown = bool(data.get("contact_unknown"))
@@ -370,7 +402,7 @@ def _validate_budget(data: dict[str, Any]) -> tuple[str, float | None, float | N
     return state, minimum, maximum
 
 
-def _validate_next_step(data: dict[str, Any]) -> tuple[str, str, str | None]:
+def _validate_next_step(data: dict[str, Any], *, require_date: bool = True) -> tuple[str, str, str | None]:
     step_type = _clean(data.get("next_step_type"))
     step_comment = _clean(data.get("next_step_comment"))
     step_date = _date_or_none(data.get("next_step_date"))
@@ -378,6 +410,8 @@ def _validate_next_step(data: dict[str, Any]) -> tuple[str, str, str | None]:
         raise AppealError("Укажите следующий шаг.")
     if not step_comment:
         raise AppealError("Опишите следующий шаг коротким комментарием.")
+    if require_date and not step_date:
+        raise AppealError("Для активного обращения укажите дату следующего шага.")
     return step_type, step_comment, step_date
 
 
@@ -453,6 +487,7 @@ def serialize_appeal(db: sqlite3.Connection, row: sqlite3.Row | dict[str, Any], 
     if _role(account) != "owner":
         item["contact_snapshot"] = None
     item["status_label"] = STATUSES.get(item.get("status"), "Неизвестный статус")
+    item["source_label"] = SOURCE_TYPES.get(item.get("source"), "Неизвестно")
     item["request_type_label"] = REQUEST_TYPES.get(item.get("request_type"), "Не разобрано")
     item["budget_state_label"] = BUDGET_STATES.get(item.get("budget_state"), "Неизвестно")
     item["next_step_type_label"] = NEXT_STEP_TYPES.get(item.get("next_step_type"), "Не указан")
@@ -466,7 +501,7 @@ def serialize_appeal(db: sqlite3.Connection, row: sqlite3.Row | dict[str, Any], 
     return item
 
 
-def list_appeals(db: sqlite3.Connection, account: dict | None, *, status: str = "", manager_id: int | None = None, overdue: bool = False) -> list[dict[str, Any]]:
+def list_appeals(db: sqlite3.Connection, account: dict | None, *, status: str = "", manager_id: int | None = None, overdue: bool = False, archived: bool = False) -> list[dict[str, Any]]:
     where = ["1=1"]
     params: list[Any] = []
     if _role(account) == "sales_manager":
@@ -480,6 +515,7 @@ def list_appeals(db: sqlite3.Connection, account: dict | None, *, status: str = 
         params.append(manager_id)
     if overdue:
         where.append("a.next_step_date IS NOT NULL AND date(a.next_step_date) < date('now') AND a.status NOT IN ('lost', 'won')")
+    where.append("a.archived_at IS NOT NULL" if archived else "a.archived_at IS NULL")
     rows = db.execute(
         f"""
         SELECT a.*, creator.name AS creator_name, updater.name AS updater_name,
@@ -504,6 +540,7 @@ def create_appeal(db: sqlite3.Connection, data: dict[str, Any], account: dict | 
     if not can_manage_appeals(account):
         raise AppealError("Раздел обращений недоступен для этой роли.", 403)
     _validate_type(data)
+    source = _validate_source(data)
     _validate_contact(data)
     budget_state, budget_min, budget_max = _validate_budget(data)
     next_step_type, next_step_comment, next_step_date = _validate_next_step(data)
@@ -516,8 +553,12 @@ def create_appeal(db: sqlite3.Connection, data: dict[str, Any], account: dict | 
     status = _clean(data.get("status")) or "new"
     if status not in STATUSES:
         raise AppealError("Недопустимый статус обращения.")
+    if status != "new" and not data.get("_synthetic_fixture"):
+        raise AppealError("Новое обращение создаётся только со статусом «Новое».")
     if status == "lost" and not _clean(data.get("loss_reason")):
         raise AppealError("Для потерянного обращения укажите причину.")
+    if status == "won" and (_role(account) != "owner" or not _clean(data.get("close_result"))):
+        raise AppealError("Успешное закрытие подтверждает владелец с результатом.", 403 if _role(account) != "owner" else 400)
     key = _clean(data.get("idempotency_key"))
     request_hash = _request_hash(data)
     if key:
@@ -548,7 +589,7 @@ def create_appeal(db: sqlite3.Connection, data: dict[str, Any], account: dict | 
             ) VALUES ({placeholders})
             """,
             (
-                number, actor_id, actor_id, _clean(data.get("source")) or "other", customer_id,
+                number, actor_id, actor_id, source, customer_id,
                 _clean(data.get("contact_name")) or None, int(bool(data.get("contact_unknown"))),
                 _clean(data.get("contact_channel")), _clean(data.get("contact_channel_type")),
                 json.dumps({"name": _clean(data.get("contact_name")), "channel": _clean(data.get("contact_channel")), "channel_type": _clean(data.get("contact_channel_type"))}, ensure_ascii=False),
@@ -590,20 +631,23 @@ def update_appeal(db: sqlite3.Connection, appeal_id: int, data: dict[str, Any], 
         "description", "region", "address", "next_step_type", "next_step_comment", "next_step_date",
         "last_contact_at", "budget_state", "budget_min", "budget_max", "budget_comment", "desired_period",
         "object_type", "area", "project_readiness", "project_id", "estimate_job_id", "manager_comment",
-        "recommender", "campaign", "customer_id", "contact_name", "contact_unknown", "contact_channel",
+        "recommender", "campaign", "customer_id", "contact_name", "contact_unknown", "contact_channel", "manager_id",
         "contact_channel_type", "request_comment",
     }
     values = dict(row)
     values.update({key: data[key] for key in mutable if key in data})
     _validate_type(values)
+    values["source"] = row["source"]
     _validate_contact(values)
     budget_state, budget_min, budget_max = _validate_budget(values)
-    step_type, step_comment, step_date = _validate_next_step(values)
-    customer_id, project_id, estimate_job_id, _manager_id = _validate_links(db, values)
+    step_type, step_comment, step_date = _validate_next_step(values, require_date=str(row["status"]) not in ARCHIVED_STATUSES)
+    customer_id, project_id, estimate_job_id, manager_id = _validate_links(db, values)
+    if _role(account) != "owner" and manager_id != _user_id(account):
+        raise AppealError("Менеджер может изменять только свои обращения.", 403)
     actor_id = _user_id(account)
     cursor = db.execute(
         """
-        UPDATE appeals SET description=?, region=?, address=?, customer_id=?, contact_name=?, contact_unknown=?,
+        UPDATE appeals SET description=?, region=?, address=?, customer_id=?, contact_name=?, contact_unknown=?, manager_id=?,
             contact_channel=?, contact_channel_type=?, request_comment=?, next_step_type=?, next_step_comment=?,
             next_step_date=?, last_contact_at=?, budget_state=?, budget_min=?, budget_max=?, budget_comment=?,
             desired_period=?, object_type=?, area=?, project_readiness=?, project_id=?, estimate_job_id=?,
@@ -613,7 +657,7 @@ def update_appeal(db: sqlite3.Connection, appeal_id: int, data: dict[str, Any], 
         (
             _clean(values.get("description")), _clean(values.get("region")) or None, _clean(values.get("address")) or None,
             customer_id, _clean(values.get("contact_name")) or None, int(bool(values.get("contact_unknown"))),
-            _clean(values.get("contact_channel")), _clean(values.get("contact_channel_type")), _clean(values.get("request_comment")) or None,
+            manager_id, _clean(values.get("contact_channel")), _clean(values.get("contact_channel_type")), _clean(values.get("request_comment")) or None,
             step_type, step_comment, step_date, _date_or_none(values.get("last_contact_at")), budget_state, budget_min,
             budget_max, _clean(values.get("budget_comment")) or None, _clean(values.get("desired_period")) or None,
             _clean(values.get("object_type")) or None, _clean(values.get("area")) or None,
@@ -669,7 +713,7 @@ def transition_appeal(db: sqlite3.Connection, appeal_id: int, data: dict[str, An
         raise AppealError("Для успешного закрытия укажите подтверждение и основание.")
     if current == "lost" and next_status == "in_progress" and not _clean(data.get("reopen_reason")):
         raise AppealError("Для повторного открытия укажите причину.")
-    next_step_type, next_step_comment, next_step_date = _validate_next_step({**dict(row), **data})
+    next_step_type, next_step_comment, next_step_date = _validate_next_step({**dict(row), **data}, require_date=next_status not in ARCHIVED_STATUSES)
     cursor = db.execute(
         """
         UPDATE appeals SET status=?, next_step_type=?, next_step_comment=?, next_step_date=?,
@@ -694,13 +738,32 @@ def archive_appeal(db: sqlite3.Connection, appeal_id: int, data: dict[str, Any],
     row = _row(db, appeal_id)
     if not row:
         raise AppealError("Обращение не найдено.", 404)
-    if _role(account) != "owner":
-        raise AppealError("Архивировать обращения может только владелец.", 403)
+    if _role(account) == "sales_manager" and int(row["manager_id"] or 0) != int(_user_id(account) or 0):
+        raise AppealError("Менеджер может архивировать только свои обращения.", 403)
+    if _role(account) not in {"owner", "sales_manager"}:
+        raise AppealError("Архивировать обращения может только владелец или ответственный менеджер.", 403)
+    if _role(account) == "sales_manager" and row["status"] not in ARCHIVED_STATUSES:
+        raise AppealError("Менеджер может архивировать только закрытое обращение.", 403)
     reason = _clean(data.get("reason"))
     if not reason:
         raise AppealError("Укажите причину архивирования.")
     db.execute("UPDATE appeals SET archived_at=CURRENT_TIMESTAMP, archived_by=?, archive_reason=?, updated_by=?, updated_at=CURRENT_TIMESTAMP, version=version+1 WHERE id=?", (_user_id(account), reason, _user_id(account), appeal_id))
     _event(db, appeal_id, _user_id(account), "archived", reason=reason)
+    db.commit()
+    return serialize_appeal(db, _row(db, appeal_id), account, include_events=True)
+
+
+def restore_appeal(db: sqlite3.Connection, appeal_id: int, data: dict[str, Any], account: dict | None) -> dict[str, Any]:
+    row = _row(db, appeal_id)
+    if not row:
+        raise AppealError("Обращение не найдено.", 404)
+    if _role(account) != "owner":
+        raise AppealError("Восстановить обращение может только владелец.", 403)
+    reason = _clean(data.get("reason"))
+    if not reason:
+        raise AppealError("Укажите причину восстановления.")
+    db.execute("UPDATE appeals SET archived_at=NULL, archived_by=NULL, archive_reason=NULL, updated_by=?, updated_at=CURRENT_TIMESTAMP, version=version+1 WHERE id=?", (_user_id(account), appeal_id))
+    _event(db, appeal_id, _user_id(account), "restored", reason=reason)
     db.commit()
     return serialize_appeal(db, _row(db, appeal_id), account, include_events=True)
 
@@ -729,11 +792,11 @@ def api_get(db: sqlite3.Connection, path: str, query: dict[str, list[str]], acco
     if not can_view_appeals(account):
         return True, {"error": "Раздел обращений недоступен для этой роли."}, 403
     if path == "/api/appeals":
-        return True, list_appeals(db, account, status=_clean((query.get("status") or [""])[0]), manager_id=_as_int((query.get("manager_id") or [""])[0]), overdue=_clean((query.get("filter") or [""])[0]) == "overdue"), 200
+        return True, list_appeals(db, account, status=_clean((query.get("status") or [""])[0]), manager_id=_as_int((query.get("manager_id") or [""])[0]), overdue=_clean((query.get("filter") or [""])[0]) == "overdue", archived=_clean((query.get("archived") or [""])[0]) == "1"), 200
     if path == "/api/appeals/summary":
         return True, summary(db, account), 200
     if path == "/api/appeals/dictionaries":
-        return True, {"request_types": REQUEST_TYPES, "statuses": STATUSES, "next_step_types": NEXT_STEP_TYPES, "budget_states": BUDGET_STATES}, 200
+        return True, {"sources": SOURCE_TYPES, "request_types": REQUEST_TYPES, "statuses": STATUSES, "next_step_types": NEXT_STEP_TYPES, "budget_states": BUDGET_STATES}, 200
     if path.startswith("/api/appeals/"):
         suffix = path[len("/api/appeals/"):]
         if suffix.endswith("/events"):
@@ -775,6 +838,8 @@ def api_post(db: sqlite3.Connection, path: str, data: dict[str, Any], account: d
             return True, transition_appeal(db, appeal_id, data, account), 200
         if len(parts) == 2 and parts[1] == "archive":
             return True, archive_appeal(db, appeal_id, data, account), 200
+        if len(parts) == 2 and parts[1] in {"restore", "unarchive"}:
+            return True, restore_appeal(db, appeal_id, data, account), 200
         return True, {"error": "Операция обращения не найдена."}, 404
     except AppealError as exc:
         return True, {"error": str(exc)}, exc.status
@@ -787,6 +852,8 @@ def seed_synthetic_appeals(db: sqlite3.Connection) -> dict[str, Any]:
         "owner": ("Синтетический владелец", "owner"),
         "manager": ("Синтетический менеджер", "sales_manager"),
         "manager2": ("Второй синтетический менеджер", "sales_manager"),
+        "estimator": ("Синтетический сметчик", "estimator"),
+        "construction_manager": ("Синтетический руководитель строительства", "construction_manager"),
     }
     ids: dict[str, int] = {}
     for key, (name, role) in users.items():
@@ -810,13 +877,19 @@ def seed_synthetic_appeals(db: sqlite3.Connection) -> dict[str, Any]:
             "request_type": "construction_house", "description": "Синтетическое обращение для проверки каркаса.",
             "manager_id": ids["manager"], "next_step_type": "call", "next_step_comment": "Связаться и уточнить задачу.",
             "next_step_date": date.today().isoformat(), "budget_state": "unknown", "customer_id": customer_id,
-            "project_id": project_id, "source": "synthetic", "idempotency_key": "synthetic-appeal-1",
+            "project_id": project_id, "source": "unknown", "_synthetic_fixture": True,
         }
-        create_appeal(db, base, {"role": "owner", "user_id": ids["owner"]})
-        lost = dict(base)
-        lost["idempotency_key"] = "synthetic-appeal-2"
-        lost["manager_id"] = ids["manager2"]
-        lost["status"] = "new"
-        create_appeal(db, lost, {"role": "owner", "user_id": ids["owner"]})
+        for index, status in enumerate(STATUSES):
+            item = dict(base)
+            item["idempotency_key"] = f"synthetic-appeal-{index + 1}"
+            item["manager_id"] = ids["manager"] if index % 2 == 0 else ids["manager2"]
+            item["status"] = status
+            if status == "lost":
+                item["loss_reason"] = "Клиент выбрал другой вариант."
+            if status == "won":
+                item["close_result"] = "Синтетический договор подтверждён владельцем."
+            created = create_appeal(db, item, {"role": "owner", "user_id": ids["owner"]})
+            if status == "won":
+                archive_appeal(db, created["id"], {"reason": "Синтетическая архивная запись для проверки."}, {"role": "owner", "user_id": ids["owner"]})
     db.commit()
     return {"users": ids, "customer_id": customer_id, "project_id": project_id, "appeals": int(db.execute("SELECT COUNT(*) FROM appeals").fetchone()[0])}

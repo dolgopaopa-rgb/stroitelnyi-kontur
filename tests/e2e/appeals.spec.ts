@@ -15,14 +15,16 @@ test.describe("Рабочее место обращений", () => {
     await expect(page.getByRole("heading", { name: "Рабочее место обращений" })).toBeVisible();
     await expect(page.getByTestId("appeal-list")).toBeVisible();
     await expect(page.getByTestId("appeal-card").first()).toBeVisible();
-    await expect(page.getByTestId("appeal-card").first()).toContainText("Новое");
-    await expect(page.getByTestId("appeal-card").first()).not.toContainText("in_progress");
-    await expect(page.getByTestId("appeal-card").first()).not.toContainText("construction_house");
+    await expect(page.getByTestId("appeal-card").filter({ hasText: "Новое" }).first()).toBeVisible();
+    await expect(page.getByTestId("appeal-list")).not.toContainText("in_progress");
+    await expect(page.getByTestId("appeal-list")).not.toContainText("construction_house");
   });
 
   test("открывает карточку и безопасную форму создания без отправки", async ({ page }) => {
     await page.goto("/appeals");
-    await page.getByTestId("appeal-card").first().click();
+    const card = page.getByTestId("appeal-card").filter({ hasText: "Новое" }).first();
+    await card.scrollIntoViewIfNeeded();
+    await card.click();
     await expect(page.getByTestId("appeal-detail")).toContainText("Следующий шаг");
     await page.getByRole("button", { name: "Новое обращение" }).click();
     await expect(page.locator("#appealDialog")).toBeVisible();
