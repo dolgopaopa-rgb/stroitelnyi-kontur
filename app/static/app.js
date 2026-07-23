@@ -12,6 +12,7 @@ const routeViewMap = {
   "/documents": "documents",
   "/signals": "dashboard",
   "/feedback": "feedback",
+  "/appeals": "appeals",
   "/settings": "events",
 };
 const pathView = routeViewMap[window.location.pathname] || "";
@@ -27,6 +28,11 @@ const state = {
   archivedProjects: [],
   materialRequests: [],
   blockers: [],
+  appeals: [],
+  appealsEnabled: false,
+  appealsConfig: null,
+  appealsStatusFilter: "",
+  appealsOverdueOnly: false,
   photoReports: [],
   objectRemarks: [],
   estimateJobs: [],
@@ -128,6 +134,7 @@ const viewTitles = {
   locations: "Локации",
   documents: "База знаний",
   feedback: "Обратная связь по программе",
+  appeals: "Обращения",
   events: "Журнал событий",
 };
 
@@ -577,12 +584,12 @@ function canQuestionEstimateJob(job) {
 }
 
 const viewAccess = {
-  owner: ["today", "assistant", "dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "object_remarks", "photos", "locations", "documents", "feedback", "events"],
+  owner: ["today", "assistant", "dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "object_remarks", "photos", "locations", "documents", "feedback", "appeals", "events"],
   construction_manager: ["today", "dashboard", "projects", "tasks", "works", "materials", "object_remarks", "photos", "documents", "feedback", "events"],
   ai_auditor: ["today", "dashboard", "projects", "estimates", "tasks", "works", "materials", "variations", "object_remarks", "photos", "locations", "documents", "feedback", "events"],
   finance_director: ["today", "dashboard", "projects", "tasks", "works", "materials", "variations", "object_remarks", "photos", "locations", "documents", "feedback", "events"],
   accountant: ["today", "dashboard", "projects", "materials", "variations", "locations", "documents", "events"],
-  sales_manager: ["today", "dashboard", "projects", "estimates", "documents"],
+  sales_manager: ["today", "dashboard", "projects", "estimates", "documents", "appeals"],
   foreman: ["today", "dashboard", "projects", "tasks", "materials", "object_remarks", "photos"],
   master: ["today", "tasks", "object_remarks", "photos"],
   procurement_manager: ["today", "dashboard", "projects", "materials", "photos", "locations", "documents"],
@@ -650,6 +657,7 @@ const defaultNavLabels = {
   documents: "База знаний",
   feedback: "Обратная связь по программе",
   events: "Журнал",
+  appeals: "Обращения",
 };
 
 function navLabelForView(view) {
@@ -662,6 +670,7 @@ function allowedViews() {
 }
 
 function canView(view) {
+  if (view === "appeals") return Boolean(state.appealsEnabled) && allowedViews().includes(view);
   return allowedViews().includes(view);
 }
 
@@ -1578,6 +1587,7 @@ function viewPageTestId(view) {
       locations: "locations-page",
       documents: "documents-page",
       feedback: "feedback-page",
+      appeals: "appeals-page",
       events: "events-page",
     }[view] || `${view}-page`
   );
@@ -1772,6 +1782,10 @@ function initSortableZones(scope = document) {
 }
 
 async function loadCoreData() {
+  const requestedView = pathView;
+  const appealsConfig = await api("/api/appeals/config").catch(() => ({ enabled: false }));
+  state.appealsConfig = appealsConfig;
+  state.appealsEnabled = Boolean(appealsConfig?.enabled);
   const [users, projects, archivedProjects, estimateJobs] = await Promise.all([
     api("/api/users"),
     api("/api/projects"),
@@ -1788,6 +1802,10 @@ async function loadCoreData() {
   }
   fillSelects();
   syncNavigationAccess();
+  if (requestedView === "appeals" && canView("appeals")) {
+    state.view = requestedView;
+    switchView(requestedView);
+  }
 }
 
 async function loadAll() {
@@ -1816,6 +1834,7 @@ async function loadAll() {
     renderPhotoReports(),
     renderDocuments(),
     renderFeedback(),
+    renderAppeals(),
     renderEvents(),
   ]);
   initSortableZones();
@@ -4718,6 +4737,115 @@ async function renderToday() {
       )
     : `<p class="muted">По всем активным объектам есть фотоотчёт за сегодня.</p>`;
   syncManagerEstimateNotice();
+}
+
+function appealStatusLabel(value) {
+  return state.appealsConfig?.statuses?.[value] || value || "Неизвестно";
+}
+
+function appealTypeLabel(value) {
+  return state.appealsConfig?.request_types?.[value] || value || "Не разобрано";
+}
+
+function appealEventLabel(value) {
+  return {
+    created: "Создано",
+    updated: "Обновлено",
+    status_changed: "Статус изменён",
+    archived: "Перенесено в архив",
+  }[value] || "Изменение обращения";
+}
+
+function promptAppealStatus() {
+  const entries = Object.entries(state.appealsConfig?.statuses || {});
+  const options = entries.map(([value, label], index) => `${index + 1}. ${label}`).join("\n");
+  const answer = window.prompt(`Выберите новый статус, указав номер:\n${options}`);
+  const index = Number.parseInt(answer || "", 10) - 1;
+  return Number.isInteger(index) && entries[index] ? entries[index][0] : "";
+}
+
+function fillAppealFormOptions() {
+  const form = qs("#appealForm");
+  if (!form) return;
+  const dictionaries = state.appealsConfig || {};
+  const setOptions = (name, values, empty = "") => {
+    const select = form.elements[name];
+    if (!select) return;
+    const current = select.value;
+    select.innerHTML = `${empty ? `<option value="">${escapeHtml(empty)}</option>` : ""}${Object.entries(values || {})
+      .map(([value, label]) => `<option value="${escapeAttr(value)}">${escapeHtml(label)}</option>`)
+      .join("")}`;
+    if ([...select.options].some((option) => option.value === current)) select.value = current;
+  };
+  setOptions("request_type", dictionaries.request_types, "Выберите тип обращения");
+  setOptions("budget_state", dictionaries.budget_states, "Состояние бюджета");
+  setOptions("next_step_type", dictionaries.next_step_types || { call: "Позвонить", message: "Написать", meeting: "Назначить встречу", collect_data: "Собрать данные", prepare_estimate: "Подготовить расчёт", send_proposal: "Отправить КП", follow_up: "Связаться повторно", other: "Другое" }, "Следующий шаг");
+  const managerSelect = form.elements.manager_id;
+  if (managerSelect) {
+    const managers = state.users.filter((user) => user.role === "sales_manager" && user.is_active !== 0);
+    managerSelect.innerHTML = `<option value="">Выберите менеджера</option>${managers.map((user) => `<option value="${user.id}">${escapeHtml(user.name)}</option>`).join("")}`;
+    if (currentRoleBase() === "sales_manager") {
+      managerSelect.value = String(currentUserId() || "");
+      managerSelect.disabled = true;
+    } else {
+      managerSelect.disabled = false;
+    }
+  }
+}
+
+function renderAppealCard(item) {
+  const overdue = item.next_step_date && item.next_step_date < todayIso() && !["lost", "won"].includes(item.status);
+  return `<button class="row clickable appeal-card ${overdue ? "is-overdue" : ""}" type="button" data-open-appeal="${escapeAttr(item.id)}" data-testid="appeal-card">
+    <span class="appeal-card-top"><strong>Обращение №${escapeHtml(item.appeal_number)}</strong><span class="status-badge">${escapeHtml(appealStatusLabel(item.status))}</span></span>
+    <span class="appeal-card-title">${escapeHtml(appealTypeLabel(item.request_type))}${item.request_comment ? ` · ${escapeHtml(item.request_comment)}` : ""}</span>
+    <span class="appeal-card-meta">${escapeHtml(item.contact_name || "Имя пока неизвестно")} · ${escapeHtml(item.contact_channel || "канал скрыт")}</span>
+    <span class="appeal-card-meta">Менеджер: ${escapeHtml(item.manager_name || "не назначен")} · Следующий шаг: ${escapeHtml(item.next_step_type_label || "не указан")}${item.next_step_date ? ` · ${escapeHtml(formatDateRu(item.next_step_date))}` : ""}</span>
+  </button>`;
+}
+
+async function openAppealDetail(appealId) {
+  const detail = qs("#appealDetail");
+  if (!detail) return;
+  detail.innerHTML = `<p class="muted">Загружаем обращение…</p>`;
+  const item = await api(`/api/appeals/${encodeURIComponent(appealId)}`);
+  detail.innerHTML = `<div class="panel-head"><div><span class="eyebrow">Обращение №${escapeHtml(item.appeal_number)}</span><h2>${escapeHtml(appealTypeLabel(item.request_type))}</h2></div><span class="status-badge">${escapeHtml(appealStatusLabel(item.status))}</span></div>
+    <div class="appeal-detail-grid">
+      <div><span class="muted">Контакт</span><strong>${escapeHtml(item.contact_name || "Имя пока неизвестно")}</strong><span>${escapeHtml(item.contact_channel || "")}</span></div>
+      <div><span class="muted">Ответственный</span><strong>${escapeHtml(item.manager_name || "Не назначен")}</strong></div>
+      <div><span class="muted">Следующий шаг</span><strong>${escapeHtml(item.next_step_comment || "Не указан")}</strong><span>${escapeHtml(item.next_step_date ? formatDateRu(item.next_step_date) : "Дата не задана")}</span></div>
+      <div><span class="muted">Бюджет</span><strong>${escapeHtml(item.budget_state_label || "Неизвестно")}</strong>${item.budget_min != null ? `<span>${escapeHtml(money(item.budget_min))} — ${escapeHtml(money(item.budget_max))}</span>` : ""}</div>
+    </div>
+    <p>${escapeHtml(item.description || "Описание не заполнено")}</p>
+    <div class="appeal-detail-actions"><button class="secondary" type="button" data-appeal-action="transition" data-appeal-id="${item.id}">Изменить статус</button><button class="secondary" type="button" data-appeal-action="archive" data-appeal-id="${item.id}">В архив</button></div>
+    <details class="appeal-history"><summary>История изменений (${item.events?.length || 0})</summary><div class="list">${(item.events || []).map((event) => `<div class="row"><strong>${escapeHtml(appealEventLabel(event.event_type))}</strong><span class="muted">${escapeHtml(event.actor_name || "Система")} · ${escapeHtml(formatDateRu(event.created_at))}</span></div>`).join("") || `<p class="muted">История пока пуста.</p>`}</div></details>`;
+}
+
+async function renderAppeals() {
+  const page = qs("#appealsView");
+  if (!page) return;
+  if (!state.appealsEnabled || !canView("appeals")) {
+    page.hidden = true;
+    return;
+  }
+  page.hidden = false;
+  fillAppealFormOptions();
+  const query = new URLSearchParams();
+  if (state.appealsStatusFilter) query.set("status", state.appealsStatusFilter);
+  if (state.appealsOverdueOnly) query.set("filter", "overdue");
+  const [items, totals] = await Promise.all([api(`/api/appeals${query.toString() ? `?${query}` : ""}`), api("/api/appeals/summary")]);
+  state.appeals = items;
+  const summaryNode = qs("#appealsSummary");
+  if (summaryNode) summaryNode.innerHTML = `<span class="metric"><strong>${totals.total}</strong><small>Всего</small></span><span class="metric warning"><strong>${totals.overdue_next_steps}</strong><small>Просрочено</small></span><span class="metric blue"><strong>${totals.requires_action}</strong><small>Требует действия</small></span>`;
+  const rowsNode = qs("#appealRows");
+  if (rowsNode) rowsNode.innerHTML = items.length ? items.map(renderAppealCard).join("") : `<div class="empty-state"><strong>Обращений пока нет</strong><p class="muted">Создайте первое обращение с подтверждённым каналом связи. Данные останутся в тестовом контуре.</p><button class="primary" type="button" data-open-new-appeal>Создать обращение</button></div>`;
+  const select = qs("#appealsStatusFilter");
+  if (select) {
+    const current = state.appealsStatusFilter;
+    select.innerHTML = `<option value="">Все обращения</option>${Object.entries(state.appealsConfig?.statuses || {}).map(([value, label]) => `<option value="${escapeAttr(value)}">${escapeHtml(label)}</option>`).join("")}`;
+    select.value = current;
+  }
+  const overdue = qs("#appealsOverdueOnly");
+  if (overdue) overdue.checked = state.appealsOverdueOnly;
 }
 
 async function renderEstimateJobs() {
@@ -8065,6 +8193,8 @@ async function refreshLiveData() {
     await renderEstimateJobs();
   } else if (state.view === "feedback") {
     await renderFeedback({ silent: true });
+  } else if (state.view === "appeals") {
+    await renderAppeals();
   }
 }
 
@@ -8717,6 +8847,46 @@ function bindEvents() {
   });
 
   document.addEventListener("click", async (event) => {
+    const newAppealButton = event.target.closest("[data-open-new-appeal], #newAppealButton");
+    if (newAppealButton) {
+      const form = qs("#appealForm");
+      form?.reset();
+      fillAppealFormOptions();
+      if (form?.elements.next_step_date) form.elements.next_step_date.value = todayIso();
+      qs("#appealDialog")?.showModal();
+      return;
+    }
+
+    const openAppealButton = event.target.closest("[data-open-appeal]");
+    if (openAppealButton) {
+      await switchView("appeals");
+      await openAppealDetail(openAppealButton.dataset.openAppeal);
+      return;
+    }
+
+    const appealActionButton = event.target.closest("[data-appeal-action]");
+    if (appealActionButton) {
+      const appealId = appealActionButton.dataset.appealId;
+      if (appealActionButton.dataset.appealAction === "archive") {
+        const reason = window.prompt("Почему переносим обращение в архив?");
+        if (!reason?.trim()) return;
+        await api(`/api/appeals/${appealId}/archive`, { method: "POST", body: JSON.stringify({ reason: reason.trim() }) });
+        await renderAppeals();
+        showToast("Обращение перенесено в архив");
+        return;
+      }
+      if (appealActionButton.dataset.appealAction === "transition") {
+        const status = promptAppealStatus();
+        if (!status?.trim()) return;
+        const item = state.appeals.find((row) => String(row.id) === String(appealId));
+        await api(`/api/appeals/${appealId}/transition`, { method: "POST", body: JSON.stringify({ status: status.trim(), version: item?.version || "", next_step_type: item?.next_step_type || "call", next_step_comment: item?.next_step_comment || "Уточнить следующий шаг", next_step_date: item?.next_step_date || todayIso(), loss_reason: status.trim() === "lost" ? window.prompt("Причина потери:") : "" }) });
+        await renderAppeals();
+        await openAppealDetail(appealId);
+        showToast("Статус обращения обновлён");
+        return;
+      }
+    }
+
     const mediaPreviewButton = event.target.closest("[data-media-preview]");
     if (mediaPreviewButton) {
       event.preventDefault();
@@ -9784,6 +9954,31 @@ function bindEvents() {
   qs("#eventForm").addEventListener("submit", (event) => {
     event.preventDefault();
     submitForm("eventDialog", "eventForm", "/api/events", "Событие сохранено");
+  });
+  qs("#appealsStatusFilter")?.addEventListener("change", async (event) => {
+    state.appealsStatusFilter = event.target.value;
+    await renderAppeals();
+  });
+  qs("#appealsOverdueOnly")?.addEventListener("change", async (event) => {
+    state.appealsOverdueOnly = event.target.checked;
+    await renderAppeals();
+  });
+  qs("#refreshAppealsButton")?.addEventListener("click", () => renderAppeals().catch((error) => showToast(error.message)));
+  qs("#appealForm")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = qs("#appealForm");
+    try {
+      const payload = formToJson(form);
+      payload.contact_unknown = Boolean(form.elements.contact_unknown?.checked);
+      payload.idempotency_key = `ui-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      await api("/api/appeals", { method: "POST", body: JSON.stringify(payload) });
+      qs("#appealDialog")?.close();
+      form.reset();
+      await renderAppeals();
+      showToast("Обращение создано");
+    } catch (error) {
+      showToast(error.message || "Не удалось создать обращение");
+    }
   });
 }
 

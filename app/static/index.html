@@ -9,10 +9,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Строительный контур</title>
-    <link rel="manifest" href="/static/manifest.webmanifest?v=20260711-main-estimate-materials" />
+    <link rel="manifest" href="/static/manifest.webmanifest?v=20260723-appeals-12v" />
     <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260711-main-estimate-materials" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260723-appeals-12v" />
   </head>
   <body>
     <div class="app" data-testid="qa-scroll-root">
@@ -38,6 +38,7 @@
           <button class="nav-button" data-view="locations" data-testid="nav-locations"><span class="nav-icon">⌖</span><span>Локации</span></button>
           <button class="nav-button" data-view="documents" data-testid="nav-documents"><span class="nav-icon">◧</span><span>База знаний</span></button>
           <button class="nav-button" data-view="feedback" data-testid="nav-feedback"><span class="nav-icon">✉</span><span>Обратная связь по программе</span></button>
+          <button class="nav-button" data-view="appeals" data-testid="nav-appeals" hidden><span class="nav-icon">◌</span><span>Обращения</span></button>
           <button class="nav-button" data-view="events"><span class="nav-icon">◷</span><span>Журнал</span></button>
         </nav>
       </aside>
@@ -234,6 +235,32 @@
                   <li>не выполняет действия без подтверждения.</li>
                 </ul>
               </section>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="appealsView" data-testid="appeals-page" hidden>
+          <div class="appeals-page">
+            <section class="panel appeals-hero">
+              <div>
+                <span class="eyebrow">Первый коммерческий релиз</span>
+                <h2>Рабочее место обращений</h2>
+                <p class="muted">Здесь менеджер и руководитель видят обращения, следующий шаг и историю решений. Внешние сообщения и автоматические расчёты не подключены.</p>
+              </div>
+              <button class="primary" id="newAppealButton" type="button" data-open-new-appeal>Новое обращение</button>
+            </section>
+            <section class="appeal-summary-strip" id="appealsSummary" data-testid="appeals-summary"></section>
+            <section class="panel appeals-toolbar">
+              <label>Статус <select id="appealsStatusFilter"><option value="">Все обращения</option></select></label>
+              <label class="checkbox-line"><input id="appealsOverdueOnly" type="checkbox" /> Только просроченные шаги</label>
+              <button class="secondary" id="refreshAppealsButton" type="button">Обновить</button>
+            </section>
+            <div class="appeals-layout">
+              <section class="panel">
+                <div class="panel-head"><h2>Список обращений</h2><span class="muted">Сначала действия и просрочки</span></div>
+                <div class="list" id="appealRows" data-testid="appeal-list"></div>
+              </section>
+              <aside class="panel appeal-detail-panel" id="appealDetail" data-testid="appeal-detail"><p class="muted">Выберите обращение из списка.</p></aside>
             </div>
           </div>
         </section>
@@ -1250,6 +1277,50 @@
       </form>
     </dialog>
 
+    <dialog id="appealDialog">
+      <form method="dialog" class="form" id="appealForm">
+        <div class="modal-head">
+          <h2>Новое обращение</h2>
+          <button type="button" class="icon" data-close="appealDialog">×</button>
+        </div>
+        <p class="form-hint">Для создания нужен один подтверждённый канал связи. Имя можно отметить как неизвестное.</p>
+        <div class="grid-2">
+          <label>Имя клиента <input name="contact_name" placeholder="Имя или компания" /></label>
+          <label class="checkbox-line"><input name="contact_unknown" type="checkbox" value="1" /> Имя пока неизвестно</label>
+        </div>
+        <div class="grid-2">
+          <label>Канал связи <input name="contact_channel" required placeholder="Телефон, email или мессенджер" /></label>
+          <label>Тип канала
+            <select name="contact_channel_type" required>
+              <option value="phone">Телефон</option><option value="email">Email</option><option value="telegram">Telegram</option><option value="max">MAX</option><option value="messenger">Другой мессенджер</option><option value="other">Другое</option>
+            </select>
+          </label>
+        </div>
+        <label>Тип обращения <select name="request_type" required></select></label>
+        <label>Комментарий к типу <input name="request_comment" placeholder="Обязательно для типа «Другое»" /></label>
+        <label>Краткое описание <textarea name="description" rows="3" required placeholder="Что нужно клиенту"></textarea></label>
+        <div class="grid-2">
+          <label>Менеджер <select name="manager_id" required></select></label>
+          <label>Источник <input name="source" value="other" placeholder="Рекомендация, сайт, MAX и т.д." /></label>
+        </div>
+        <div class="grid-2">
+          <label>Состояние бюджета <select name="budget_state" required></select></label>
+          <label>Желаемый период <input name="desired_period" placeholder="Например, осень 2026" /></label>
+        </div>
+        <div class="grid-2">
+          <label>Минимальный бюджет <input name="budget_min" inputmode="decimal" /></label>
+          <label>Максимальный бюджет <input name="budget_max" inputmode="decimal" /></label>
+        </div>
+        <label>Следующий шаг <select name="next_step_type" required></select></label>
+        <div class="grid-2">
+          <label>Комментарий следующего шага <input name="next_step_comment" required placeholder="Что конкретно нужно сделать" /></label>
+          <label>Дата следующего шага <input name="next_step_date" type="date" /></label>
+        </div>
+        <input name="customer_id" type="hidden" /><input name="project_id" type="hidden" /><input name="estimate_job_id" type="hidden" />
+        <div class="form-actions"><button type="button" class="secondary" data-close="appealDialog">Отмена</button><button class="primary" type="submit">Создать обращение</button></div>
+      </form>
+    </dialog>
+
     <dialog id="mediaPreviewDialog" class="media-preview-dialog" data-testid="media-preview-dialog">
       <div class="media-preview-shell">
         <div class="modal-head media-preview-head">
@@ -1281,6 +1352,6 @@
       </div>
     </div>
     <div class="toast" id="toast"></div>
-    <script src="/static/app.compat.js?v=20260711-main-estimate-materials"></script>
+    <script src="/static/app.compat.js?v=20260723-appeals-12v"></script>
   </body>
 </html>
