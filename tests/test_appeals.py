@@ -22,11 +22,13 @@ from appeals import (  # noqa: E402
     api_get,
     appeals_config,
     appeals_enabled,
+    can_view_appeals,
 )
 
 
 class AppealsTestCase(unittest.TestCase):
     def setUp(self):
+        self.previous_pilot_manager_ids = os.environ.get("APPEALS_PILOT_MANAGER_IDS")
         self.db = sqlite3.connect(":memory:")
         self.db.row_factory = sqlite3.Row
         self.db.executescript(
@@ -43,10 +45,15 @@ class AppealsTestCase(unittest.TestCase):
         self.other_manager = int(self.db.execute("INSERT INTO users(name, role) VALUES ('Второй менеджер теста', 'sales_manager')").lastrowid)
         self.customer = int(self.db.execute("INSERT INTO customers(name, phone) VALUES ('Синтетический клиент', '+79990000000')").lastrowid)
         self.project = int(self.db.execute("INSERT INTO projects(title, customer_id, customer_name) VALUES ('Синтетический объект', ?, 'Синтетический клиент')", (self.customer,)).lastrowid)
+        os.environ["APPEALS_PILOT_MANAGER_IDS"] = str(self.manager)
         apply_migrations(self.db)
 
     def tearDown(self):
         self.db.close()
+        if self.previous_pilot_manager_ids is None:
+            os.environ.pop("APPEALS_PILOT_MANAGER_IDS", None)
+        else:
+            os.environ["APPEALS_PILOT_MANAGER_IDS"] = self.previous_pilot_manager_ids
 
     def payload(self, **overrides):
         value = {
@@ -155,6 +162,40 @@ class AppealsTestCase(unittest.TestCase):
             self.assertEqual(status, 403)
             self.assertIn("недоступен", payload["error"])
 
+
+    def test_pilot_allowlist_keeps_empty_and_other_manager_out(self):
+        owner = {"role": "owner", "user_id": self.owner}
+        manager = {"role": "sales_manager", "user_id": self.manager}
+        other_manager = {"role": "sales_manager", "user_id": self.other_manager}
+        estimator = {"role": "estimator", "user_id": self.owner}
+        self.assertTrue(can_view_appeals(owner))
+        self.assertTrue(can_view_appeals(manager))
+        self.assertFalse(can_view_appeals(other_manager))
+        self.assertFalse(can_view_appeals(estimator))
+        os.environ["APPEALS_PILOT_MANAGER_IDS"] = ""
+        self.assertTrue(can_view_appeals(owner))
+        self.assertFalse(can_view_appeals(manager))
+        self.assertFalse(can_view_appeals(other_manager))
+
+    def test_config_reports_access_for_current_account(self):
+        owner_config = appeals_config({"role": "owner", "user_id": self.owner})
+        manager_config = appeals_config({"role": "sales_manager", "user_id": self.manager})
+        other_config = appeals_config({"role": "sales_manager", "user_id": self.other_manager})
+        self.assertTrue(owner_config["allowed"])
+        self.assertTrue(manager_config["allowed"])
+        self.assertFalse(other_config["allowed"])
+
+    def test_api_get_does_not_expand_manager_scope(self):
+        own = create_appeal(self.db, self.payload(), {"role": "owner", "user_id": self.owner})
+        other = create_appeal(self.db, self.payload(manager_id=self.other_manager, idempotency_key="unit-appeal-scope"), {"role": "owner", "user_id": self.owner})
+        handled, payload, status = api_get(self.db, "/api/appeals", {}, {"role": "sales_manager", "user_id": self.manager})
+        self.assertTrue(handled)
+        self.assertEqual(status, 200)
+        self.assertEqual([row["id"] for row in payload], [own["id"]])
+        handled, payload, status = api_get(self.db, "/api/appeals", {"manager_id": [str(other["manager_id"])]}, {"role": "sales_manager", "user_id": self.manager})
+        self.assertTrue(handled)
+        self.assertEqual(status, 200)
+        self.assertEqual(payload, [])
 
 if __name__ == "__main__":
     unittest.main()

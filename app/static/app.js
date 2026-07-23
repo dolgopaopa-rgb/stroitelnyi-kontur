@@ -30,6 +30,7 @@ const state = {
   blockers: [],
   appeals: [],
   appealsEnabled: false,
+  appealsAllowed: false,
   appealsConfig: null,
   appealsStatusFilter: "",
   appealsOverdueOnly: false,
@@ -671,7 +672,7 @@ function allowedViews() {
 }
 
 function canView(view) {
-  if (view === "appeals") return Boolean(state.appealsEnabled) && allowedViews().includes(view);
+  if (view === "appeals") return Boolean(state.appealsEnabled) && Boolean(state.appealsAllowed) && allowedViews().includes(view);
   return allowedViews().includes(view);
 }
 
@@ -1787,6 +1788,7 @@ async function loadCoreData() {
   const appealsConfig = await api("/api/appeals/config").catch(() => ({ enabled: false }));
   state.appealsConfig = appealsConfig;
   state.appealsEnabled = Boolean(appealsConfig?.enabled);
+  state.appealsAllowed = Boolean(appealsConfig?.allowed);
   const [users, projects, archivedProjects, estimateJobs] = await Promise.all([
     api("/api/users"),
     api("/api/projects"),

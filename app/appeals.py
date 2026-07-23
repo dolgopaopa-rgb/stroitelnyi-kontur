@@ -18,6 +18,7 @@ from typing import Any
 
 APPEALS_FLAG = "APPEALS_ENABLED"
 APPEALS_TEST_MODE_FLAG = "APPEALS_TEST_MODE"
+APPEALS_PILOT_MANAGER_IDS_FLAG = "APPEALS_PILOT_MANAGER_IDS"
 APPEALS_ROLES = {"owner", "sales_manager"}
 APPEALS_VERSION = 2
 TEST_DATA_MARKER_NAME = ".d2dom-appeals-test"
@@ -268,7 +269,9 @@ def validate_appeals_test_data_dir(*, allow_empty: bool = False, create_marker: 
     if marker.exists():
         if not marker.is_file() or marker.read_text(encoding="utf-8") != TEST_DATA_MARKER_CONTENT:
             raise AppealError("Каталог тестовых данных имеет неподтверждённый маркер.", 500)
-        unexpected = entries - {TEST_DATA_MARKER_NAME, "construction.db"}
+        if "uploads" in entries and not (data_dir / "uploads").is_dir():
+            raise AppealError("Каталог тестовых данных содержит некорректный uploads.", 500)
+        unexpected = entries - {TEST_DATA_MARKER_NAME, "construction.db", "uploads"}
         if unexpected:
             raise AppealError("Каталог тестовых данных содержит неожиданные файлы.", 500)
     elif entries:
@@ -281,10 +284,23 @@ def validate_appeals_test_data_dir(*, allow_empty: bool = False, create_marker: 
     return data_dir, marker_created
 
 
-def appeals_config() -> dict[str, Any]:
+def pilot_manager_ids() -> set[int]:
+    result: set[int] = set()
+    for raw_value in os.environ.get(APPEALS_PILOT_MANAGER_IDS_FLAG, "").split(","):
+        try:
+            value = int(raw_value.strip())
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            result.add(value)
+    return result
+
+
+def appeals_config(account: dict | None = None) -> dict[str, Any]:
     enabled = appeals_enabled()
     return {
         "enabled": enabled,
+        "allowed": can_view_appeals(account),
         "version": APPEALS_VERSION,
         "feature": "Рабочее место обращений",
         "feature_flags": {APPEALS_FLAG: _truthy(os.environ.get(APPEALS_FLAG)), APPEALS_TEST_MODE_FLAG: _truthy(os.environ.get(APPEALS_TEST_MODE_FLAG))},
@@ -374,7 +390,12 @@ def ensure_migrations(db: sqlite3.Connection) -> None:
 
 
 def can_view_appeals(account: dict | None) -> bool:
-    return appeals_enabled() and str((account or {}).get("role") or "") in APPEALS_ROLES
+    if not appeals_enabled():
+        return False
+    role = str((account or {}).get("role") or "")
+    if role == "owner":
+        return True
+    return role == "sales_manager" and _user_id(account) in pilot_manager_ids()
 
 
 def can_manage_appeals(account: dict | None) -> bool:
@@ -842,7 +863,7 @@ def summary(db: sqlite3.Connection, account: dict | None) -> dict[str, Any]:
 
 def api_get(db: sqlite3.Connection, path: str, query: dict[str, list[str]], account: dict | None) -> tuple[bool, object, int]:
     if path == "/api/appeals/config":
-        return True, appeals_config(), 200
+        return True, appeals_config(account), 200
     if not appeals_enabled():
         return True, {"error": "Раздел обращений выключен."}, 404
     ensure_migrations(db)
@@ -873,7 +894,7 @@ def api_get(db: sqlite3.Connection, path: str, query: dict[str, list[str]], acco
 
 def api_post(db: sqlite3.Connection, path: str, data: dict[str, Any], account: dict | None) -> tuple[bool, object, int]:
     if path == "/api/appeals/config":
-        return True, appeals_config(), 200
+        return True, appeals_config(account), 200
     if not path.startswith("/api/appeals"):
         return False, None, 404
     if not appeals_enabled():
