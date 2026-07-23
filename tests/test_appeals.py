@@ -119,6 +119,7 @@ class AppealsTestCase(unittest.TestCase):
         with patch.dict(os.environ, {"APPEALS_ENABLED": "", "APPEALS_TEST_MODE": ""}):
             self.assertFalse(appeals_enabled())
             self.assertFalse(appeals_config()["enabled"])
+            self.assertEqual(appeals_config()["version"], 2)
         handled, payload, status = api_get(self.db, "/api/appeals", {}, {"role": "construction_manager", "user_id": self.owner})
         self.assertTrue(handled)
         self.assertEqual(status, 403)

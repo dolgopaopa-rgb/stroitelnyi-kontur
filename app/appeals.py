@@ -204,7 +204,9 @@ def appeals_config() -> dict[str, Any]:
     enabled = appeals_enabled()
     return {
         "enabled": enabled,
+        "version": APPEALS_VERSION,
         "feature": "Рабочее место обращений",
+        "feature_flags": {APPEALS_FLAG: _truthy(os.environ.get(APPEALS_FLAG)), APPEALS_TEST_MODE_FLAG: _truthy(os.environ.get(APPEALS_TEST_MODE_FLAG))},
         "reason": "Функция выключена по умолчанию; для локальной проверки нужны APPEALS_ENABLED=1 и APPEALS_TEST_MODE=1." if not enabled else "Включено только в отдельной тестовой среде.",
         "roles": ["owner", "sales_manager"],
         "statuses": STATUSES,
