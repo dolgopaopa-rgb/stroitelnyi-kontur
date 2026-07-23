@@ -4824,6 +4824,37 @@ async function openAppealDetail(appealId) {
     <details class="appeal-history"><summary>История изменений (${item.events?.length || 0})</summary><div class="list">${(item.events || []).map((event) => `<div class="row"><strong>${escapeHtml(appealEventLabel(event.event_type))}</strong><span class="muted">${escapeHtml(event.actor_name || "Система")} · ${escapeHtml(formatDateRu(event.created_at))}</span></div>`).join("") || `<p class="muted">История пока пуста.</p>`}</div></details>`;
 }
 
+function addAppealTestHooks() {
+  qsa("[data-testid=appeal-card]").forEach((card) => {
+    card.querySelector(".appeal-card-top strong")?.setAttribute("data-testid", "appeal-card-number");
+    card.querySelector(".appeal-card-top .status-badge")?.setAttribute("data-testid", "appeal-card-status");
+    if (!card.dataset.appealClickBound) {
+      card.dataset.appealClickBound = "1";
+      card.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const appealId = card.dataset.openAppeal;
+        if (!appealId) return;
+        openAppealDetail(appealId).then(addAppealTestHooks).catch((error) => showToast(error.message || "Не удалось открыть обращение"));
+      });
+    }
+  });
+  const detail = qs("#appealDetail");
+  if (!detail || !detail.querySelector(".appeal-detail-grid")) return;
+  detail.querySelector(".panel-head .status-badge")?.setAttribute("data-testid", "appeal-detail-status");
+  detail.querySelector(".appeal-detail-grid > div:nth-child(3) strong")?.setAttribute("data-testid", "appeal-detail-next-step");
+  const actions = detail.querySelector(".appeal-detail-actions");
+  if (actions && !actions.querySelector("[data-close-appeal]")) {
+    const closeButton = document.createElement("button");
+    closeButton.type = "button";
+    closeButton.className = "secondary";
+    closeButton.dataset.testid = "appeal-detail-close";
+    closeButton.dataset.closeAppeal = "";
+    closeButton.textContent = "К списку";
+    actions.prepend(closeButton);
+  }
+}
+
 async function renderAppeals() {
   const page = qs("#appealsView");
   if (!page) return;
@@ -4843,6 +4874,7 @@ async function renderAppeals() {
   if (summaryNode) summaryNode.innerHTML = `<span class="metric"><strong>${totals.total}</strong><small>Всего</small></span><span class="metric warning"><strong>${totals.overdue_next_steps}</strong><small>Просрочено</small></span><span class="metric blue"><strong>${totals.requires_action}</strong><small>Требует действия</small></span>`;
   const rowsNode = qs("#appealRows");
   if (rowsNode) rowsNode.innerHTML = items.length ? items.map(renderAppealCard).join("") : `<div class="empty-state"><strong>Обращений пока нет</strong><p class="muted">Создайте первое обращение с подтверждённым каналом связи. Данные останутся в тестовом контуре.</p><button class="primary" type="button" data-open-new-appeal>Создать обращение</button></div>`;
+  addAppealTestHooks();
   const select = qs("#appealsStatusFilter");
   if (select) {
     const current = state.appealsStatusFilter;
@@ -8866,8 +8898,18 @@ function bindEvents() {
 
     const openAppealButton = event.target.closest("[data-open-appeal]");
     if (openAppealButton) {
-      await switchView("appeals");
-      await openAppealDetail(openAppealButton.dataset.openAppeal);
+      event.preventDefault();
+      const appealId = openAppealButton.dataset.openAppeal;
+      if (state.view !== "appeals") switchView("appeals");
+      await openAppealDetail(appealId);
+      addAppealTestHooks();
+      return;
+    }
+
+    const closeAppealButton = event.target.closest("[data-close-appeal]");
+    if (closeAppealButton) {
+      const detail = qs("#appealDetail");
+      if (detail) detail.innerHTML = `<p class="muted">Р’С‹Р±РµСЂРёС‚Рµ РѕР±СЂР°С‰РµРЅРёРµ РёР· СЃРїРёСЃРєР°.</p>`;
       return;
     }
 
@@ -9999,7 +10041,7 @@ async function boot() {
   bindInstallEvents();
   switchView(state.view);
   await withAppLoading("Загружаем Контур", () => loadAll(), "boot");
-  registerServiceWorker();
+  window.setTimeout(registerServiceWorker, 1000);
 }
 
 function registerServiceWorker() {

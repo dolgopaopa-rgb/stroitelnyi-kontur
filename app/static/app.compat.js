@@ -3844,6 +3844,38 @@
     const item = await api("/api/appeals/".concat(encodeURIComponent(appealId)));
     detail.innerHTML = '<div class="panel-head"><div><span class="eyebrow">Обращение №'.concat(escapeHtml(item.appeal_number), "</span><h2>").concat(escapeHtml(appealTypeLabel(item.request_type)), '</h2></div><span class="status-badge">').concat(escapeHtml(appealStatusLabel(item.status)), '</span></div>\n    <div class="appeal-detail-grid">\n      <div><span class="muted">Контакт</span><strong>').concat(escapeHtml(item.contact_name || "Имя пока неизвестно"), "</strong><span>").concat(escapeHtml(item.contact_channel || ""), '</span></div>\n      <div><span class="muted">Ответственный</span><strong>').concat(escapeHtml(item.manager_name || "Не назначен"), '</strong></div>\n      <div><span class="muted">Следующий шаг</span><strong>').concat(escapeHtml(item.next_step_comment || "Не указан"), "</strong><span>").concat(escapeHtml(item.next_step_date ? formatDateRu(item.next_step_date) : "Дата не задана"), '</span></div>\n      <div><span class="muted">Бюджет</span><strong>').concat(escapeHtml(item.budget_state_label || "Неизвестно"), "</strong>").concat(item.budget_min != null ? "<span>".concat(escapeHtml(money(item.budget_min)), " — ").concat(escapeHtml(money(item.budget_max)), "</span>") : "", "</div>\n    </div>\n    <p>").concat(escapeHtml(item.description || "Описание не заполнено"), '</p>\n    <div class="appeal-detail-actions"><button class="secondary" type="button" data-appeal-action="transition" data-appeal-id="').concat(item.id, '">Изменить статус</button><button class="secondary" type="button" data-appeal-action="archive" data-appeal-id="').concat(item.id, '">В архив</button></div>\n    <details class="appeal-history"><summary>История изменений (').concat(((_a = item.events) == null ? void 0 : _a.length) || 0, ')</summary><div class="list">').concat((item.events || []).map((event) => '<div class="row"><strong>'.concat(escapeHtml(appealEventLabel(event.event_type)), '</strong><span class="muted">').concat(escapeHtml(event.actor_name || "Система"), " · ").concat(escapeHtml(formatDateRu(event.created_at)), "</span></div>")).join("") || '<p class="muted">История пока пуста.</p>', "</div></details>");
   }
+  function addAppealTestHooks() {
+    var _a, _b;
+    qsa("[data-testid=appeal-card]").forEach((card) => {
+      var _a2, _b2;
+      (_a2 = card.querySelector(".appeal-card-top strong")) == null ? void 0 : _a2.setAttribute("data-testid", "appeal-card-number");
+      (_b2 = card.querySelector(".appeal-card-top .status-badge")) == null ? void 0 : _b2.setAttribute("data-testid", "appeal-card-status");
+      if (!card.dataset.appealClickBound) {
+        card.dataset.appealClickBound = "1";
+        card.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const appealId = card.dataset.openAppeal;
+          if (!appealId) return;
+          openAppealDetail(appealId).then(addAppealTestHooks).catch((error) => showToast(error.message || "Не удалось открыть обращение"));
+        });
+      }
+    });
+    const detail = qs("#appealDetail");
+    if (!detail || !detail.querySelector(".appeal-detail-grid")) return;
+    (_a = detail.querySelector(".panel-head .status-badge")) == null ? void 0 : _a.setAttribute("data-testid", "appeal-detail-status");
+    (_b = detail.querySelector(".appeal-detail-grid > div:nth-child(3) strong")) == null ? void 0 : _b.setAttribute("data-testid", "appeal-detail-next-step");
+    const actions = detail.querySelector(".appeal-detail-actions");
+    if (actions && !actions.querySelector("[data-close-appeal]")) {
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.className = "secondary";
+      closeButton.dataset.testid = "appeal-detail-close";
+      closeButton.dataset.closeAppeal = "";
+      closeButton.textContent = "К списку";
+      actions.prepend(closeButton);
+    }
+  }
   async function renderAppeals() {
     var _a;
     const page = qs("#appealsView");
@@ -3864,6 +3896,7 @@
     if (summaryNode) summaryNode.innerHTML = '<span class="metric"><strong>'.concat(totals.total, '</strong><small>Всего</small></span><span class="metric warning"><strong>').concat(totals.overdue_next_steps, '</strong><small>Просрочено</small></span><span class="metric blue"><strong>').concat(totals.requires_action, "</strong><small>Требует действия</small></span>");
     const rowsNode = qs("#appealRows");
     if (rowsNode) rowsNode.innerHTML = items.length ? items.map(renderAppealCard).join("") : '<div class="empty-state"><strong>Обращений пока нет</strong><p class="muted">Создайте первое обращение с подтверждённым каналом связи. Данные останутся в тестовом контуре.</p><button class="primary" type="button" data-open-new-appeal>Создать обращение</button></div>';
+    addAppealTestHooks();
     const select = qs("#appealsStatusFilter");
     if (select) {
       const current = state.appealsStatusFilter;
@@ -6514,8 +6547,17 @@
       }
       const openAppealButton = event.target.closest("[data-open-appeal]");
       if (openAppealButton) {
-        await switchView("appeals");
-        await openAppealDetail(openAppealButton.dataset.openAppeal);
+        event.preventDefault();
+        const appealId = openAppealButton.dataset.openAppeal;
+        if (state.view !== "appeals") switchView("appeals");
+        await openAppealDetail(appealId);
+        addAppealTestHooks();
+        return;
+      }
+      const closeAppealButton = event.target.closest("[data-close-appeal]");
+      if (closeAppealButton) {
+        const detail = qs("#appealDetail");
+        if (detail) detail.innerHTML = '<p class="muted">Р’С‹Р±РµСЂРёС‚Рµ РѕР±СЂР°С‰РµРЅРёРµ РёР· СЃРїРёСЃРєР°.</p>';
         return;
       }
       const appealActionButton = event.target.closest("[data-appeal-action]");
@@ -7595,7 +7637,7 @@
     bindInstallEvents();
     switchView(state.view);
     await withAppLoading("Загружаем Контур", () => loadAll(), "boot");
-    registerServiceWorker();
+    window.setTimeout(registerServiceWorker, 1e3);
   }
   function registerServiceWorker() {
     if (!("serviceWorker" in navigator) || location.protocol === "file:") return;
