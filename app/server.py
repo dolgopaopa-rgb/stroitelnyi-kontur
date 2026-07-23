@@ -25,7 +25,7 @@ from urllib.request import Request, urlopen
 
 from database import DATA_DIR, DB_PATH, connect, init_db, row_to_dict, rows_to_dicts
 from data_integrity import apply_data_integrity_fixes, run_data_integrity_checks
-from appeals import api_get as appeals_api_get, api_post as appeals_api_post, apply_migrations as apply_appeals_migrations, appeals_enabled
+from appeals import api_get as appeals_api_get, api_post as appeals_api_post, apply_migrations as apply_appeals_migrations, appeals_enabled, validate_appeals_test_data_dir
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -4074,7 +4074,7 @@ class AppHandler(BaseHTTPRequestHandler):
         }
         if path in spa_routes:
             if path == "/appeals" and not appeals_enabled():
-                self.send_error(404, "Раздел обращений выключен")
+                self.send_error(404)
                 return
             self.serve_static("index.html")
             return
@@ -9996,6 +9996,8 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
 
 
 def main() -> None:
+    if os.environ.get("APPEALS_TEST_MODE", "") == "1":
+        validate_appeals_test_data_dir()
     init_db()
     if appeals_enabled():
         with connect() as db:

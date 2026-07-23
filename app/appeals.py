@@ -12,6 +12,7 @@ import json
 import os
 import sqlite3
 from datetime import date, datetime
+from pathlib import Path
 from typing import Any
 
 
@@ -19,6 +20,8 @@ APPEALS_FLAG = "APPEALS_ENABLED"
 APPEALS_TEST_MODE_FLAG = "APPEALS_TEST_MODE"
 APPEALS_ROLES = {"owner", "sales_manager"}
 APPEALS_VERSION = 2
+TEST_DATA_MARKER_NAME = ".d2dom-appeals-test"
+TEST_DATA_MARKER_CONTENT = "D2DOM_APPEALS_TEST_DIR_V1\n"
 
 REQUEST_TYPES = {
     "construction_house": "Строительство загородного дома",
@@ -222,6 +225,60 @@ def _truthy(value: object) -> bool:
 
 def appeals_enabled() -> bool:
     return _truthy(os.environ.get(APPEALS_FLAG)) and _truthy(os.environ.get(APPEALS_TEST_MODE_FLAG))
+
+
+def _test_data_paths() -> set[Path]:
+    app_dir = Path(__file__).resolve().parent
+    project_dir = app_dir.parent
+    paths = {
+        app_dir,
+        project_dir,
+        project_dir / "data",
+        project_dir / "production",
+        project_dir / "runtime",
+        project_dir / "var",
+        Path.cwd(),
+        Path.cwd() / "app",
+        Path.cwd() / "data",
+        Path.cwd() / "production",
+    }
+    configured = os.environ.get("APP_PRODUCTION_DATA_DIR", "").strip()
+    if configured:
+        paths.add(Path(configured).expanduser())
+    return {path.resolve() for path in paths}
+
+
+def validate_appeals_test_data_dir(*, allow_empty: bool = False, create_marker: bool = False) -> tuple[Path, bool]:
+    """Fail closed unless the appeals test database is explicitly isolated."""
+    if os.environ.get(APPEALS_TEST_MODE_FLAG, "") != "1":
+        raise AppealError("Для synthetic-фикстур нужен явный APPEALS_TEST_MODE=1.", 500)
+    raw_path = os.environ.get("APP_DATA_DIR", "").strip()
+    if not raw_path:
+        raise AppealError("Для synthetic-фикстур нужен отдельный APP_DATA_DIR.", 500)
+    data_dir = Path(raw_path).expanduser().resolve()
+    standard_db = (Path(__file__).resolve().parent / "construction.db").resolve()
+    if data_dir in _test_data_paths() or (data_dir / "construction.db").resolve() == standard_db:
+        raise AppealError("APP_DATA_DIR указывает на стандартный или рабочий каталог.", 500)
+    if not data_dir.exists() or not data_dir.is_dir():
+        raise AppealError("APP_DATA_DIR должен указывать на заранее созданный каталог.", 500)
+
+    marker = data_dir / TEST_DATA_MARKER_NAME
+    marker_created = False
+    entries = {entry.name for entry in data_dir.iterdir()}
+    if marker.exists():
+        if not marker.is_file() or marker.read_text(encoding="utf-8") != TEST_DATA_MARKER_CONTENT:
+            raise AppealError("Каталог тестовых данных имеет неподтверждённый маркер.", 500)
+        unexpected = entries - {TEST_DATA_MARKER_NAME, "construction.db"}
+        if unexpected:
+            raise AppealError("Каталог тестовых данных содержит неожиданные файлы.", 500)
+    elif entries:
+        raise AppealError("Непустой APP_DATA_DIR требует явного тестового маркера.", 500)
+    elif allow_empty and create_marker:
+        marker.write_text(TEST_DATA_MARKER_CONTENT, encoding="utf-8", newline="")
+        marker_created = True
+    else:
+        raise AppealError("APP_DATA_DIR не подтверждён как тестовый каталог.", 500)
+    return data_dir, marker_created
 
 
 def appeals_config() -> dict[str, Any]:
