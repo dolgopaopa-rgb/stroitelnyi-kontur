@@ -47,3 +47,31 @@ test.describe("Appeals workspace", () => {
     expect(consoleErrors).toEqual([]);
   });
 });
+
+test("hides appeals navigation outside the pilot allowlist", async ({ browser }) => {
+  const login = process.env.APPEALS_DENIED_E2E_LOGIN;
+  const password = process.env.APPEALS_DENIED_E2E_PASSWORD;
+  test.skip(!login || !password, "Runs only with an isolated denied pilot account");
+
+  const context = await browser.newContext();
+  const loginResponse = await context.request.post("/api/login", {
+    data: { login, password, next: "/appeals" },
+  });
+  expect(loginResponse.ok()).toBeTruthy();
+
+  const configResponse = await context.request.get("/api/appeals/config");
+  expect(configResponse.ok()).toBeTruthy();
+  const config = await configResponse.json();
+  expect(config.enabled).toBe(true);
+  expect(config.allowed).toBe(false);
+
+  const listResponse = await context.request.get("/api/appeals");
+  expect(listResponse.status()).toBe(403);
+
+  const page = await context.newPage();
+  await page.goto("/appeals");
+  await expect(page.getByTestId("nav-appeals")).toBeHidden();
+  await expect(page.getByTestId("appeals-page")).toBeHidden();
+  await expect(page.getByTestId("appeal-card")).toHaveCount(0);
+  await context.close();
+});

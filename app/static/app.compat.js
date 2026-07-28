@@ -634,14 +634,14 @@
     return allowedViews().includes(view);
   }
   function syncNavigationAccess() {
-    const allowed = allowedViews();
+    const allowed = allowedViews().filter((view) => canView(view));
     qsa("[data-view]").forEach((button) => {
-      button.hidden = !allowed.includes(button.dataset.view);
+      button.hidden = !canView(button.dataset.view);
       const labelNode = button.querySelector("span:last-child");
       if (labelNode) labelNode.textContent = navLabelForView(button.dataset.view);
     });
     qsa("[data-view-target]").forEach((button) => {
-      button.hidden = !allowed.includes(button.dataset.viewTarget);
+      button.hidden = !canView(button.dataset.viewTarget);
       if (button.closest(".mobile-bottom-nav")) {
         const spans = button.querySelectorAll("span");
         const labelNode = spans.length > 1 ? spans[spans.length - 1] : null;
@@ -649,11 +649,11 @@
       }
     });
     qsa("[data-requires-view]").forEach((node) => {
-      node.hidden = !allowed.includes(node.dataset.requiresView);
+      node.hidden = !canView(node.dataset.requiresView);
     });
     syncTopbarAccess();
     syncMobileQuickActions();
-    if (!allowed.includes(state.view)) {
+    if (!canView(state.view)) {
       switchView(allowed[0] || "dashboard");
     }
   }
