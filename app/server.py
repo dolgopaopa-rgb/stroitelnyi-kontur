@@ -25,6 +25,7 @@ from urllib.request import Request, urlopen
 
 from database import DATA_DIR, DB_PATH, connect, init_db, row_to_dict, rows_to_dicts
 from data_integrity import apply_data_integrity_fixes, run_data_integrity_checks
+from appeals import api_get as appeals_api_get, api_post as appeals_api_post, apply_migrations as apply_appeals_migrations, appeals_enabled, validate_appeals_test_data_dir
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -4064,6 +4065,7 @@ class AppHandler(BaseHTTPRequestHandler):
             "/documents",
             "/signals",
             "/feedback",
+            "/appeals",
             "/settings",
             "/estimates",
             "/works",
@@ -4071,6 +4073,9 @@ class AppHandler(BaseHTTPRequestHandler):
             "/locations",
         }
         if path in spa_routes:
+            if path == "/appeals" and not appeals_enabled():
+                self.send_error(404)
+                return
             self.serve_static("index.html")
             return
         if path == "/health":
@@ -5694,6 +5699,11 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
         with connect() as db:
             account = current_access_account(self) or {}
             archive_completed_material_batches(db)
+            if path == "/api/appeals/config" or path == "/api/appeals" or path.startswith("/api/appeals/"):
+                handled, payload, status = appeals_api_get(db, path, query, account)
+                if handled:
+                    json_response(self, payload, status)
+                    return
             if path == "/api/session":
                 user = None
                 if account.get("user_id"):
@@ -6284,6 +6294,11 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
     def handle_api_post(self, path: str, data: dict) -> None:
         with connect() as db:
             account = current_access_account(self) or {}
+            if path == "/api/appeals" or path.startswith("/api/appeals/"):
+                handled, payload, status = appeals_api_post(db, path, data, account)
+                if handled:
+                    json_response(self, payload, status)
+                    return
             if path == "/api/data-integrity/fix":
                 if account_role(account) not in {"owner", "construction_manager", "finance_director"}:
                     json_response(self, {"error": "Forbidden"}, 403)
@@ -9981,7 +9996,12 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
 
 
 def main() -> None:
+    if os.environ.get("APPEALS_TEST_MODE", "") == "1":
+        validate_appeals_test_data_dir()
     init_db()
+    if appeals_enabled():
+        with connect() as db:
+            apply_appeals_migrations(db)
     backfill_estimate_materials_from_saved_documents()
     host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", "8765"))
