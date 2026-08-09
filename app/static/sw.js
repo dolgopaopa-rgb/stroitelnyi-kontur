@@ -1,8 +1,8 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260728-appeals-menu-fix";
+const CACHE_NAME = "stroitelnyi-kontur-20260809-estimate-mobile-resilience";
 const CORE_ASSETS = [
   "/",
-  "/static/styles.css?v=20260728-appeals-menu-fix",
-  "/static/app.compat.js?v=20260728-appeals-menu-fix",
+  "/static/styles.css?v=20260809-estimate-mobile-resilience",
+  "/static/app.compat.js?v=20260809-estimate-mobile-resilience",
   "/static/manifest.webmanifest?v=20260728-appeals-menu-fix",
   "/static/assets/g2-logo-192.png",
   "/static/assets/g2-logo-512.png"

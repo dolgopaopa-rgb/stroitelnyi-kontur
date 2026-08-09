@@ -3318,6 +3318,73 @@ function normalizeEstimateJobTitle(customerName, estimateTitle) {
   return normalizeCustomerBasedTitle(customerName, estimateTitle);
 }
 
+const ESTIMATE_FILE_BATCH_SIZE = 5;
+
+function normalizeEstimateDuplicateValue(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function estimateJobDuplicateKey(job = {}) {
+  return [
+    job.title,
+    job.customer_name,
+    job.manager_id,
+    job.estimator_id,
+    job.received_at,
+    job.due_date,
+  ].map(normalizeEstimateDuplicateValue).join("|");
+}
+
+function findDuplicateEstimateJob(payload = {}, currentId = "") {
+  if (currentId) return null;
+  const key = estimateJobDuplicateKey(payload);
+  return (state.estimateJobs || []).find((job) => job.status !== "archived" && estimateJobDuplicateKey(job) === key) || null;
+}
+
+function setEstimateJobFormSubmitting(form, isSubmitting, message = "") {
+  if (!form) return;
+  form.dataset.submitting = isSubmitting ? "true" : "false";
+  form.setAttribute("aria-busy", isSubmitting ? "true" : "false");
+  const submitButton = qs("#estimateJobSubmitButton");
+  if (submitButton) {
+    submitButton.disabled = isSubmitting;
+    submitButton.textContent = isSubmitting ? "Сохраняем…" : "Сохранить";
+  }
+  const status = qs("#estimateJobSaveStatus");
+  if (status) {
+    status.textContent = message;
+    status.hidden = !message;
+  }
+}
+
+async function uploadEstimateFilesInBatches(jobId, files = [], onProgress = () => {}) {
+  let uploaded = 0;
+  for (let offset = 0; offset < files.length; offset += ESTIMATE_FILE_BATCH_SIZE) {
+    const batch = files.slice(offset, offset + ESTIMATE_FILE_BATCH_SIZE);
+    const end = Math.min(offset + batch.length, files.length);
+    onProgress(`Загружаем файлы ${offset + 1}–${end} из ${files.length}`);
+    try {
+      const attachments = await Promise.all(
+        batch.map((file) => fileDocumentPayload(file, file.name, "estimate_job_file", "estimate_job"))
+      );
+      const result = await api(`/api/estimate-jobs/${jobId}/files`, {
+        method: "POST",
+        silentLoading: true,
+        body: JSON.stringify({ attachments }),
+      });
+      if (!Array.isArray(result.files) || result.files.length !== batch.length) {
+        throw new Error("Не все файлы сохранились");
+      }
+      uploaded += batch.length;
+    } catch (error) {
+      error.estimateFilesUploaded = uploaded;
+      error.estimateFilesTotal = files.length;
+      throw error;
+    }
+  }
+  return uploaded;
+}
+
 function syncEstimateSiteCostsByType() {
   const form = qs("#estimateJobForm");
   if (!form) return;
@@ -3348,6 +3415,25 @@ function estimateJobStats(jobs) {
 function visibleEstimateJobs(jobs = state.estimateJobs || []) {
   if (state.estimateListMode === "archive") return jobs.filter((job) => job.status === "archived");
   return jobs.filter((job) => job.status !== "archived");
+}
+
+function estimateJobExistingDuplicateKey(job = {}) {
+  const files = (job.files || [])
+    .filter((file) => Number(file.is_current ?? 1) !== 0)
+    .map((file) => normalizeEstimateDuplicateValue(file.file_name || file.title || file.id))
+    .sort()
+    .join(",");
+  return `${estimateJobDuplicateKey(job)}|${normalizeEstimateDuplicateValue(job.status)}|${files}`;
+}
+
+function groupDuplicateEstimateJobs(jobs = []) {
+  const groups = new Map();
+  jobs.forEach((job) => {
+    const key = estimateJobExistingDuplicateKey(job);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(job);
+  });
+  return [...groups.values()];
 }
 
 function estimateCurrentFiles(job = {}) {
@@ -3931,7 +4017,7 @@ function renderEstimateJobRow(job) {
   const currentFilesCount = currentEstimateFilesCount(job);
   const previousFilesCount = estimatePreviousFiles(job).length;
   return `
-    <details class="row estimate-job-row estimate-job-collapsible" data-collapsible-key="${escapeAttr(collapsibleKey)}"${openAttrForKey(collapsibleKey)}>
+    <details class="row estimate-job-row estimate-job-collapsible" data-testid="estimate-job-card" data-collapsible-key="${escapeAttr(collapsibleKey)}"${openAttrForKey(collapsibleKey)}>
       <summary class="estimate-job-summary">
         <span class="estimate-job-summary-main">
           <strong>${escapeHtml(summaryTitle)}</strong>
@@ -4015,8 +4101,26 @@ function fillEstimateJobForm(job = {}) {
 function openEstimateJobDialog(jobId = "") {
   const job = state.estimateJobs.find((item) => Number(item.id) === Number(jobId)) || {};
   fillEstimateJobForm(job);
+  setEstimateJobFormSubmitting(qs("#estimateJobForm"), false);
   qs("#estimateJobDialogTitle").textContent = job.id ? "Редактирование задания на смету" : "Новое задание на смету";
   qs("#estimateJobDialog").showModal();
+}
+
+function renderEstimateJobGroup(group = []) {
+  if (group.length <= 1) return group[0] ? renderEstimateJobRow(group[0]) : "";
+  const [primary, ...duplicates] = group;
+  return `
+    <section class="estimate-duplicate-group" data-testid="estimate-duplicate-group">
+      <div class="estimate-duplicate-notice">
+        ${pill(`Совпадающих записей: ${group.length}`, "warning")}
+        <span>Показываем одну запись. Остальные сохранены и доступны ниже — данные не удалялись.</span>
+      </div>
+      ${renderEstimateJobRow(primary)}
+      <details class="estimate-duplicate-details">
+        <summary>Показать остальные записи: ${duplicates.length}</summary>
+        <div class="estimate-duplicate-rows">${duplicates.map(renderEstimateJobRow).join("")}</div>
+      </details>
+    </section>`;
 }
 
 function openEstimateJobDoneDialog(jobId) {
@@ -4903,14 +5007,17 @@ async function renderEstimateJobs() {
     return;
   }
   qsa("[data-estimate-list-mode]").forEach((button) => button.classList.toggle("active", button.dataset.estimateListMode === state.estimateListMode));
-  const baseJobs = visibleEstimateJobs();
+  const baseGroups = groupDuplicateEstimateJobs(visibleEstimateJobs());
+  const baseJobs = baseGroups.map(([job]) => job).filter(Boolean);
   const jobs = estimateFilteredJobs(baseJobs);
+  const visibleIds = new Set(jobs.map((job) => Number(job.id)));
+  const rowGroups = baseGroups.filter(([job]) => job && visibleIds.has(Number(job.id)));
   statsNode.innerHTML = renderEstimateJobStats(baseJobs);
   if (filtersNode) filtersNode.innerHTML = renderEstimateQuickFilters(baseJobs);
   if (actionNode) actionNode.innerHTML = renderEstimateActionPanel(jobs);
   scheduleNode.innerHTML = renderEstimateSchedule(jobs);
-  rowsNode.innerHTML = jobs.length
-    ? jobs.map(renderEstimateJobRow).join("")
+  rowsNode.innerHTML = rowGroups.length
+    ? rowGroups.map(renderEstimateJobGroup).join("")
     : `<div class="empty-state"><strong>${state.estimateListMode === "archive" ? "В архиве сметных заданий по этому фильтру нет." : `По фильтру «${escapeHtml(estimateQuickFilterLabel())}» заданий нет.`}</strong><p class="muted">${state.estimateListMode === "archive" ? "Архивные задания появятся здесь после переноса в архив." : "Переключите фильтр или добавьте сметное задание, если нужно передать расчёт сметчику."}</p></div>`;
   syncManagerEstimateNotice();
 }
@@ -8174,6 +8281,55 @@ function bindWheelPageScroll() {
   );
 }
 
+function bindEstimateTouchPageScroll() {
+  if (bindEstimateTouchPageScroll.bound) return;
+  bindEstimateTouchPageScroll.bound = true;
+  let gesture = null;
+
+  document.addEventListener(
+    "touchstart",
+    (event) => {
+      const touch = event.touches?.[0];
+      const target = event.target instanceof Element ? event.target : null;
+      if (
+        state.view !== "estimates" ||
+        window.innerWidth > 820 ||
+        hasOpenDialog() ||
+        event.touches.length !== 1 ||
+        !touch ||
+        target?.closest("input, textarea, select, dialog")
+      ) {
+        gesture = null;
+        return;
+      }
+      gesture = { x: touch.clientX, y: touch.clientY };
+    },
+    { passive: true }
+  );
+
+  document.addEventListener(
+    "touchmove",
+    (event) => {
+      if (!gesture || state.view !== "estimates" || hasOpenDialog() || event.touches.length !== 1) return;
+      const touch = event.touches[0];
+      const horizontal = touch.clientX - gesture.x;
+      const vertical = gesture.y - touch.clientY;
+      if (Math.abs(vertical) < 2 || Math.abs(horizontal) > Math.abs(vertical)) return;
+      gesture = { x: touch.clientX, y: touch.clientY };
+      if (!canScrollPageVertically(vertical)) return;
+      if (event.cancelable) event.preventDefault();
+      window.scrollBy({ top: vertical, behavior: "auto" });
+    },
+    { passive: false }
+  );
+
+  const resetGesture = () => {
+    gesture = null;
+  };
+  document.addEventListener("touchend", resetGesture, { passive: true });
+  document.addEventListener("touchcancel", resetGesture, { passive: true });
+}
+
 function bindStableDetailsTouchGuard() {
   document.addEventListener(
     "touchstart",
@@ -8557,6 +8713,7 @@ async function runGlobalSearch(rawQuery) {
 function bindEvents() {
   bindStableDetailsTouchGuard();
   bindWheelPageScroll();
+  bindEstimateTouchPageScroll();
   initPullToRefresh();
   qs("#sidebarToggle")?.addEventListener("click", () => toggleSidebarCollapsed());
   qs("#densitySelect")?.addEventListener("change", (event) => setDensityMode(event.target.value));
@@ -9713,22 +9870,82 @@ function bindEvents() {
   qs("#estimateJobForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = qs("#estimateJobForm");
+    if (form.dataset.submitting === "true") return;
     const payload = formToJson(form);
     const id = payload.id;
     delete payload.id;
     payload.title = normalizeEstimateJobTitle(payload.customer_name, payload.title);
     const attachments = Array.from(form.elements.attachments?.files || []);
-    payload.attachments = await Promise.all(attachments.map((file) => fileDocumentPayload(file, file.name, "estimate_job_file", "estimate_job")));
-    await api(id ? `/api/estimate-jobs/${id}/update` : "/api/estimate-jobs", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-    qs("#estimateJobDialog").close();
-    form.reset();
-    await loadCoreData();
-    await renderEstimateJobs();
-    await renderDashboard();
-    showToast(id ? "Сметное задание обновлено" : "Сметное задание создано");
+    const duplicate = findDuplicateEstimateJob(payload, id);
+    if (duplicate) {
+      state.estimateQuickFilter = "all";
+      state.estimateListMode = "active";
+      state.expandedLists[`estimate-job:${duplicate.id}`] = true;
+      await renderEstimateJobs();
+      qs("#estimateJobDialog").close();
+      qsa("[data-collapsible-key]")
+        .find((item) => item.dataset.collapsibleKey === `estimate-job:${duplicate.id}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      showToast("Такое сметное задание уже существует — открыли его вместо создания копии");
+      return;
+    }
+
+    payload.attachments = [];
+    const loadingKey = "estimate-job-save";
+    let savedJobId = id || "";
+    let primarySaveSucceeded = false;
+    setEstimateJobFormSubmitting(
+      form,
+      true,
+      attachments.length ? `Сохраняем задание и готовим ${attachments.length} файлов` : "Сохраняем сметное задание"
+    );
+    setAppLoading(true, "Сохраняем сметное задание", loadingKey);
+    try {
+      const result = await api(id ? `/api/estimate-jobs/${id}/update` : "/api/estimate-jobs", {
+        method: "POST",
+        silentLoading: true,
+        body: JSON.stringify(payload),
+      });
+      savedJobId = id || result.id;
+      if (!savedJobId) throw new Error("Сметное задание не сохранилось");
+      primarySaveSucceeded = true;
+      if (attachments.length) {
+        await uploadEstimateFilesInBatches(savedJobId, attachments, (message) => {
+          setEstimateJobFormSubmitting(form, true, message);
+          setAppLoading(true, message, loadingKey);
+        });
+      }
+      qs("#estimateJobDialog").close();
+      form.reset();
+      await loadCoreData();
+      await renderEstimateJobs();
+      await renderDashboard();
+      showToast(
+        id
+          ? `Сметное задание обновлено${attachments.length ? `, файлов: ${attachments.length}` : ""}`
+          : `Сметное задание создано${attachments.length ? `, файлов: ${attachments.length}` : ""}`
+      );
+    } catch (error) {
+      if (primarySaveSucceeded) {
+        qs("#estimateJobDialog").close();
+        form.reset();
+        await loadCoreData();
+        await renderEstimateJobs();
+        await renderDashboard();
+        const uploaded = Number(error.estimateFilesUploaded || 0);
+        const total = Number(error.estimateFilesTotal || attachments.length);
+        showToast(
+          total
+            ? `Задание сохранено. Загружено файлов: ${uploaded} из ${total}. Остальные можно добавить в карточке задания.`
+            : "Задание сохранено, но список не обновился. Обновите страницу."
+        );
+      } else {
+        showToast(error.message || "Не удалось сохранить сметное задание");
+      }
+    } finally {
+      setAppLoading(false, "", loadingKey);
+      setEstimateJobFormSubmitting(form, false);
+    }
   });
   qs("#estimateJobDoneForm").addEventListener("submit", async (event) => {
     event.preventDefault();

@@ -26,6 +26,89 @@ test("estimate completion supports multiple files and return to rework", async (
   expect(server).toContain('row["status"] in {"estimate_in_work", "estimate_question", "estimate_returned"}');
 });
 
+test("estimate creation ignores a double submit and uploads a large file set in batches", async ({ page }) => {
+  let createRequests = 0;
+  const uploadedBatchSizes: number[] = [];
+  const syntheticJobId = 987654;
+  const duplicateJobs = [1, 2].map((id) => ({
+    id,
+    title: "Заказчик - Терраса",
+    customer_name: "Заказчик",
+    manager_id: 1,
+    manager_name: "Менеджер QA",
+    estimator_id: 2,
+    estimator_name: "Сметчик QA",
+    received_at: "2026-08-07",
+    due_date: "2026-08-10",
+    status: "estimate_new",
+    estimate_type: "primary",
+    site_costs_policy: "include",
+    files: [{ id: id * 10, file_name: "plan.pdf", is_current: 1 }],
+  }));
+  await page.route("**/api/estimate-jobs", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(duplicateJobs) });
+      return;
+    }
+    if (route.request().method() !== "POST") return route.continue();
+    createRequests += 1;
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ id: syntheticJobId }) });
+  });
+  await page.route(`**/api/estimate-jobs/${syntheticJobId}/files`, async (route) => {
+    const payload = route.request().postDataJSON() as { attachments?: unknown[] };
+    const count = payload.attachments?.length || 0;
+    uploadedBatchSizes.push(count);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ files: Array.from({ length: count }, (_, index) => ({ id: uploadedBatchSizes.length * 100 + index })) }),
+    });
+  });
+
+  await openApp(page, "/estimates");
+  await expect(page.locator('[data-testid="estimates-page"]')).toHaveClass(/active/);
+  await expect(page.locator('[data-testid="estimate-duplicate-group"]')).toHaveCount(1);
+  await expect(page.locator('[data-testid="estimate-duplicate-group"]')).toContainText("Совпадающих записей: 2");
+  await expect(page.locator('[data-testid="estimate-job-card"]:visible')).toHaveCount(1);
+  await expect(page.locator('[data-testid="estimate-job-card"]')).toHaveCount(2);
+
+  await page.locator("#newEstimateJobButton").click();
+  const form = page.locator("#estimateJobForm");
+  await form.locator('[name="title"]').fill(`Проверка двойного нажатия ${Date.now()}`);
+  await form.locator('[name="customer_name"]').fill("Тестовый заказчик QA");
+  await form.locator('[name="due_date"]').fill("2026-08-20");
+  for (const field of ["manager_id", "estimator_id"]) {
+    await form.locator(`[name="${field}"]`).evaluate((select: HTMLSelectElement) => {
+      const option = [...select.options].find((item) => Boolean(item.value) && !item.disabled);
+      if (!option) throw new Error(`No available option for ${select.name}`);
+      select.value = option.value;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  }
+  await form.locator('[name="attachments"]').setInputFiles(
+    Array.from({ length: 12 }, (_, index) => ({
+      name: `estimate-${index + 1}.txt`,
+      mimeType: "text/plain",
+      buffer: Buffer.from(`file-${index + 1}`),
+    }))
+  );
+
+  await form.evaluate((node: HTMLFormElement) => {
+    node.requestSubmit();
+    node.requestSubmit();
+  });
+
+  await expect(page.locator("#estimateJobDialog")).not.toHaveAttribute("open", "");
+  expect(createRequests).toBe(1);
+  expect(uploadedBatchSizes).toEqual([5, 5, 2]);
+
+  const app = readProjectFile("app/static/app.js");
+  expect(app).toContain('form.dataset.submitting === "true"');
+  expect(app).toContain("findDuplicateEstimateJob");
+  expect(app).toContain("uploadEstimateFilesInBatches");
+});
+
 test("extra work items can be edited before final decision", async ({ page }) => {
   await openApp(page, "/works");
 

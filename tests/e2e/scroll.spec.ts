@@ -65,7 +65,8 @@ test.describe("Scroll QA", () => {
       const viewport = page.viewportSize();
       const scrollable = before.some((item) => item.scrollHeight > item.clientHeight + 20);
       const moved = after.some((item, index) => item.scrollTop > (before[index]?.scrollTop || 0));
-      if (scrollable && (viewport?.width || 0) > 820 && view !== "/feedback") expect(moved).toBeTruthy();
+      const movementRequired = ((viewport?.width || 0) > 820 && view !== "/feedback") || view === "/estimates";
+      if (scrollable && movementRequired) expect(moved).toBeTruthy();
       const locked = await page.evaluate(() => getComputedStyle(document.body).overflowY === "hidden" || getComputedStyle(document.documentElement).overflowY === "hidden").catch(() => false);
       expect(locked).toBeFalsy();
     });

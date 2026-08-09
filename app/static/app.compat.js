@@ -2753,6 +2753,68 @@
   function normalizeEstimateJobTitle(customerName, estimateTitle) {
     return normalizeCustomerBasedTitle(customerName, estimateTitle);
   }
+  var ESTIMATE_FILE_BATCH_SIZE = 5;
+  function normalizeEstimateDuplicateValue(value) {
+    return String(value != null ? value : "").trim().toLowerCase();
+  }
+  function estimateJobDuplicateKey(job = {}) {
+    return [
+      job.title,
+      job.customer_name,
+      job.manager_id,
+      job.estimator_id,
+      job.received_at,
+      job.due_date
+    ].map(normalizeEstimateDuplicateValue).join("|");
+  }
+  function findDuplicateEstimateJob(payload = {}, currentId = "") {
+    if (currentId) return null;
+    const key = estimateJobDuplicateKey(payload);
+    return (state.estimateJobs || []).find((job) => job.status !== "archived" && estimateJobDuplicateKey(job) === key) || null;
+  }
+  function setEstimateJobFormSubmitting(form, isSubmitting, message = "") {
+    if (!form) return;
+    form.dataset.submitting = isSubmitting ? "true" : "false";
+    form.setAttribute("aria-busy", isSubmitting ? "true" : "false");
+    const submitButton = qs("#estimateJobSubmitButton");
+    if (submitButton) {
+      submitButton.disabled = isSubmitting;
+      submitButton.textContent = isSubmitting ? "Сохраняем…" : "Сохранить";
+    }
+    const status = qs("#estimateJobSaveStatus");
+    if (status) {
+      status.textContent = message;
+      status.hidden = !message;
+    }
+  }
+  async function uploadEstimateFilesInBatches(jobId, files = [], onProgress = () => {
+  }) {
+    let uploaded = 0;
+    for (let offset = 0; offset < files.length; offset += ESTIMATE_FILE_BATCH_SIZE) {
+      const batch = files.slice(offset, offset + ESTIMATE_FILE_BATCH_SIZE);
+      const end = Math.min(offset + batch.length, files.length);
+      onProgress("Загружаем файлы ".concat(offset + 1, "–").concat(end, " из ").concat(files.length));
+      try {
+        const attachments = await Promise.all(
+          batch.map((file) => fileDocumentPayload(file, file.name, "estimate_job_file", "estimate_job"))
+        );
+        const result = await api("/api/estimate-jobs/".concat(jobId, "/files"), {
+          method: "POST",
+          silentLoading: true,
+          body: JSON.stringify({ attachments })
+        });
+        if (!Array.isArray(result.files) || result.files.length !== batch.length) {
+          throw new Error("Не все файлы сохранились");
+        }
+        uploaded += batch.length;
+      } catch (error) {
+        error.estimateFilesUploaded = uploaded;
+        error.estimateFilesTotal = files.length;
+        throw error;
+      }
+    }
+    return uploaded;
+  }
   function syncEstimateSiteCostsByType() {
     var _a;
     const form = qs("#estimateJobForm");
@@ -2782,6 +2844,22 @@
   function visibleEstimateJobs(jobs = state.estimateJobs || []) {
     if (state.estimateListMode === "archive") return jobs.filter((job) => job.status === "archived");
     return jobs.filter((job) => job.status !== "archived");
+  }
+  function estimateJobExistingDuplicateKey(job = {}) {
+    const files = (job.files || []).filter((file) => {
+      var _a;
+      return Number((_a = file.is_current) != null ? _a : 1) !== 0;
+    }).map((file) => normalizeEstimateDuplicateValue(file.file_name || file.title || file.id)).sort().join(",");
+    return "".concat(estimateJobDuplicateKey(job), "|").concat(normalizeEstimateDuplicateValue(job.status), "|").concat(files);
+  }
+  function groupDuplicateEstimateJobs(jobs = []) {
+    const groups = /* @__PURE__ */ new Map();
+    jobs.forEach((job) => {
+      const key = estimateJobExistingDuplicateKey(job);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(job);
+    });
+    return [...groups.values()];
   }
   function estimateCurrentFiles(job = {}) {
     return (job.files || []).filter((file) => {
@@ -3205,7 +3283,7 @@
     ].join(" · ");
     const currentFilesCount = currentEstimateFilesCount(job);
     const previousFilesCount = estimatePreviousFiles(job).length;
-    return '\n    <details class="row estimate-job-row estimate-job-collapsible" data-collapsible-key="'.concat(escapeAttr(collapsibleKey), '"').concat(openAttrForKey(collapsibleKey), '>\n      <summary class="estimate-job-summary">\n        <span class="estimate-job-summary-main">\n          <strong>').concat(escapeHtml(summaryTitle), '</strong>\n          <span class="muted">').concat(escapeHtml(summaryMeta), '</span>\n        </span>\n        <span class="estimate-job-summary-badges">\n          ').concat(pill(label(job.status), statusLevel2), "\n          ").concat(pill(job.due_date || "без срока", job.status === "estimate_done" ? "success" : levelByDate(job.due_date)), "\n          ").concat(pill(nextAction.text, nextAction.level), "\n          ").concat(pill("Комплектность ".concat(completeness.ready, "/").concat(completeness.total), completeness.missing ? "warning" : "success"), "\n          ").concat(currentFilesCount ? pill("Файлы: ".concat(currentFilesCount), "blue") : pill("Без файлов", "warning"), "\n          ").concat(previousFilesCount ? pill("Версии: ".concat(previousFilesCount), "") : "", "\n          ").concat(quickLinks.slice(0, 2).map(renderEstimateJobLink).join(""), "\n          ").concat(quickLinks.length > 2 ? pill("ещё ".concat(quickLinks.length - 2), "blue") : "", '\n        </span>\n      </summary>\n      <div class="estimate-job-body">\n        <div class="estimate-job-main">\n          <div class="stack-line">\n            <strong>').concat(escapeHtml(job.title), "</strong>\n            ").concat(pill(label(job.status), statusLevel2), "\n            ").concat(pill(job.due_date || "без срока", job.status === "estimate_done" ? "success" : levelByDate(job.due_date)), "\n            ").concat(pill(nextAction.text, nextAction.level), '\n          </div>\n          <div class="muted">').concat(escapeHtml(job.customer_name || "Заказчик не указан"), " · ").concat(escapeHtml(job.project_title || "без карточки объекта"), " · ").concat(estimateJobTypeLabel(job.estimate_type), '</div>\n          <div class="muted">получено: ').concat(formatDateRu(job.received_at) || "не указано", " · выдал задание: ").concat(escapeHtml(job.manager_name || "не назначен"), " · сметчик: ").concat(escapeHtml(job.estimator_name || "не назначен"), '</div>\n          <div class="estimate-job-flags">\n            ').concat(pill(estimateSiteCostsLabel(job.site_costs_policy), job.site_costs_policy === "exclude" ? "warning" : job.site_costs_policy === "clarify" ? "blue" : "success"), "\n            ").concat(isPartnerEstimateJob(job) ? pill("Партнерская смета", "blue") : "", "\n          </div>\n          ").concat(job.site_costs_comment ? '<p class="muted">Организация площадки: '.concat(escapeHtml(job.site_costs_comment), "</p>") : "", "\n          ").concat(smetterHref ? '<a class="link-button inline-link" href="'.concat(escapeAttr(smetterHref), '" target="_blank" rel="noopener noreferrer">Открыть Сметтер</a>') : "", "\n          ").concat(renderEstimateJobLinks(quickLinks), "\n          ").concat(job.comment ? "<p>".concat(linkifyText(job.comment), "</p>") : "", "\n          ").concat(job.question_comment ? '<div class="estimate-question-note"><strong>Вопрос сметчика</strong><p>'.concat(linkifyText(job.question_comment), "</p></div>") : "", "\n          ").concat(job.return_comment ? '<p class="muted danger-text">Возврат менеджеру: '.concat(linkifyText(job.return_comment), "</p>") : "", "\n          ").concat(job.result_comment ? '<p class="muted">Итог: '.concat(linkifyText(job.result_comment), "</p>") : "", "\n          ").concat(renderEstimateCompleteness(job), "\n          ").concat(renderEstimateJobFiles(job.files, job.id, canManageFiles), '\n        </div>\n        <div class="estimate-job-actions">\n          ').concat(canAnswerQuestion ? '<button class="secondary tiny" type="button" data-edit-estimate-job="'.concat(job.id, '">Ответить на уточнение</button>') : canEdit ? '<button class="secondary tiny" type="button" data-edit-estimate-job="'.concat(job.id, '">Редактировать</button>') : "", "\n          ").concat(canStart ? '<button class="secondary tiny" type="button" data-estimate-job-status="estimate_in_work" data-estimate-job-id="'.concat(job.id, '">В работу</button>') : "", "\n          ").concat(canQuestion ? '<button class="secondary tiny" type="button" data-estimate-job-status="estimate_question" data-estimate-job-id="'.concat(job.id, '">Уточнить</button>') : "", "\n          ").concat(canReturn ? '<button class="secondary tiny danger-outline" type="button" data-estimate-job-status="estimate_returned" data-estimate-job-id="'.concat(job.id, '">Вернуть на доработку</button>') : "", "\n          ").concat(canFinish ? '<button class="primary tiny" type="button" data-estimate-job-status="estimate_done" data-estimate-job-id="'.concat(job.id, '">Сдано</button>') : "", "\n          ").concat(canManageFiles ? '<button class="secondary tiny" type="button" data-open-estimate-files="'.concat(job.id, '">Добавить файл</button>') : "", "\n          ").concat(canManageFiles ? '<button class="secondary tiny" type="button" data-open-estimate-files="'.concat(job.id, '" data-estimate-file-mode="link">Изменить ссылку</button>') : "", "\n          ").concat(canManageFiles ? '<button class="secondary tiny" type="button" data-open-estimate-files="'.concat(job.id, '" data-estimate-file-mode="comment">Изменить комментарий</button>') : "", "\n          ").concat(canArchive ? '<button class="secondary tiny" type="button" data-estimate-job-status="archived" data-estimate-job-id="'.concat(job.id, '">В архив</button>') : "", "\n          ").concat(canDelete ? '<button class="danger-button tiny" type="button" data-delete-estimate-job="'.concat(job.id, '">Удалить</button>') : "", "\n        </div>\n      </div>\n    </details>");
+    return '\n    <details class="row estimate-job-row estimate-job-collapsible" data-testid="estimate-job-card" data-collapsible-key="'.concat(escapeAttr(collapsibleKey), '"').concat(openAttrForKey(collapsibleKey), '>\n      <summary class="estimate-job-summary">\n        <span class="estimate-job-summary-main">\n          <strong>').concat(escapeHtml(summaryTitle), '</strong>\n          <span class="muted">').concat(escapeHtml(summaryMeta), '</span>\n        </span>\n        <span class="estimate-job-summary-badges">\n          ').concat(pill(label(job.status), statusLevel2), "\n          ").concat(pill(job.due_date || "без срока", job.status === "estimate_done" ? "success" : levelByDate(job.due_date)), "\n          ").concat(pill(nextAction.text, nextAction.level), "\n          ").concat(pill("Комплектность ".concat(completeness.ready, "/").concat(completeness.total), completeness.missing ? "warning" : "success"), "\n          ").concat(currentFilesCount ? pill("Файлы: ".concat(currentFilesCount), "blue") : pill("Без файлов", "warning"), "\n          ").concat(previousFilesCount ? pill("Версии: ".concat(previousFilesCount), "") : "", "\n          ").concat(quickLinks.slice(0, 2).map(renderEstimateJobLink).join(""), "\n          ").concat(quickLinks.length > 2 ? pill("ещё ".concat(quickLinks.length - 2), "blue") : "", '\n        </span>\n      </summary>\n      <div class="estimate-job-body">\n        <div class="estimate-job-main">\n          <div class="stack-line">\n            <strong>').concat(escapeHtml(job.title), "</strong>\n            ").concat(pill(label(job.status), statusLevel2), "\n            ").concat(pill(job.due_date || "без срока", job.status === "estimate_done" ? "success" : levelByDate(job.due_date)), "\n            ").concat(pill(nextAction.text, nextAction.level), '\n          </div>\n          <div class="muted">').concat(escapeHtml(job.customer_name || "Заказчик не указан"), " · ").concat(escapeHtml(job.project_title || "без карточки объекта"), " · ").concat(estimateJobTypeLabel(job.estimate_type), '</div>\n          <div class="muted">получено: ').concat(formatDateRu(job.received_at) || "не указано", " · выдал задание: ").concat(escapeHtml(job.manager_name || "не назначен"), " · сметчик: ").concat(escapeHtml(job.estimator_name || "не назначен"), '</div>\n          <div class="estimate-job-flags">\n            ').concat(pill(estimateSiteCostsLabel(job.site_costs_policy), job.site_costs_policy === "exclude" ? "warning" : job.site_costs_policy === "clarify" ? "blue" : "success"), "\n            ").concat(isPartnerEstimateJob(job) ? pill("Партнерская смета", "blue") : "", "\n          </div>\n          ").concat(job.site_costs_comment ? '<p class="muted">Организация площадки: '.concat(escapeHtml(job.site_costs_comment), "</p>") : "", "\n          ").concat(smetterHref ? '<a class="link-button inline-link" href="'.concat(escapeAttr(smetterHref), '" target="_blank" rel="noopener noreferrer">Открыть Сметтер</a>') : "", "\n          ").concat(renderEstimateJobLinks(quickLinks), "\n          ").concat(job.comment ? "<p>".concat(linkifyText(job.comment), "</p>") : "", "\n          ").concat(job.question_comment ? '<div class="estimate-question-note"><strong>Вопрос сметчика</strong><p>'.concat(linkifyText(job.question_comment), "</p></div>") : "", "\n          ").concat(job.return_comment ? '<p class="muted danger-text">Возврат менеджеру: '.concat(linkifyText(job.return_comment), "</p>") : "", "\n          ").concat(job.result_comment ? '<p class="muted">Итог: '.concat(linkifyText(job.result_comment), "</p>") : "", "\n          ").concat(renderEstimateCompleteness(job), "\n          ").concat(renderEstimateJobFiles(job.files, job.id, canManageFiles), '\n        </div>\n        <div class="estimate-job-actions">\n          ').concat(canAnswerQuestion ? '<button class="secondary tiny" type="button" data-edit-estimate-job="'.concat(job.id, '">Ответить на уточнение</button>') : canEdit ? '<button class="secondary tiny" type="button" data-edit-estimate-job="'.concat(job.id, '">Редактировать</button>') : "", "\n          ").concat(canStart ? '<button class="secondary tiny" type="button" data-estimate-job-status="estimate_in_work" data-estimate-job-id="'.concat(job.id, '">В работу</button>') : "", "\n          ").concat(canQuestion ? '<button class="secondary tiny" type="button" data-estimate-job-status="estimate_question" data-estimate-job-id="'.concat(job.id, '">Уточнить</button>') : "", "\n          ").concat(canReturn ? '<button class="secondary tiny danger-outline" type="button" data-estimate-job-status="estimate_returned" data-estimate-job-id="'.concat(job.id, '">Вернуть на доработку</button>') : "", "\n          ").concat(canFinish ? '<button class="primary tiny" type="button" data-estimate-job-status="estimate_done" data-estimate-job-id="'.concat(job.id, '">Сдано</button>') : "", "\n          ").concat(canManageFiles ? '<button class="secondary tiny" type="button" data-open-estimate-files="'.concat(job.id, '">Добавить файл</button>') : "", "\n          ").concat(canManageFiles ? '<button class="secondary tiny" type="button" data-open-estimate-files="'.concat(job.id, '" data-estimate-file-mode="link">Изменить ссылку</button>') : "", "\n          ").concat(canManageFiles ? '<button class="secondary tiny" type="button" data-open-estimate-files="'.concat(job.id, '" data-estimate-file-mode="comment">Изменить комментарий</button>') : "", "\n          ").concat(canArchive ? '<button class="secondary tiny" type="button" data-estimate-job-status="archived" data-estimate-job-id="'.concat(job.id, '">В архив</button>') : "", "\n          ").concat(canDelete ? '<button class="danger-button tiny" type="button" data-delete-estimate-job="'.concat(job.id, '">Удалить</button>') : "", "\n        </div>\n      </div>\n    </details>");
   }
   function fillEstimateJobForm(job = {}) {
     var _a, _b;
@@ -3234,8 +3312,14 @@
   function openEstimateJobDialog(jobId = "") {
     const job = state.estimateJobs.find((item) => Number(item.id) === Number(jobId)) || {};
     fillEstimateJobForm(job);
+    setEstimateJobFormSubmitting(qs("#estimateJobForm"), false);
     qs("#estimateJobDialogTitle").textContent = job.id ? "Редактирование задания на смету" : "Новое задание на смету";
     qs("#estimateJobDialog").showModal();
+  }
+  function renderEstimateJobGroup(group = []) {
+    if (group.length <= 1) return group[0] ? renderEstimateJobRow(group[0]) : "";
+    const [primary, ...duplicates] = group;
+    return '\n    <section class="estimate-duplicate-group" data-testid="estimate-duplicate-group">\n      <div class="estimate-duplicate-notice">\n        '.concat(pill("Совпадающих записей: ".concat(group.length), "warning"), "\n        <span>Показываем одну запись. Остальные сохранены и доступны ниже — данные не удалялись.</span>\n      </div>\n      ").concat(renderEstimateJobRow(primary), '\n      <details class="estimate-duplicate-details">\n        <summary>Показать остальные записи: ').concat(duplicates.length, '</summary>\n        <div class="estimate-duplicate-rows">').concat(duplicates.map(renderEstimateJobRow).join(""), "</div>\n      </details>\n    </section>");
   }
   function openEstimateJobDoneDialog(jobId) {
     const job = state.estimateJobs.find((item) => Number(item.id) === Number(jobId));
@@ -3924,13 +4008,16 @@
       return;
     }
     qsa("[data-estimate-list-mode]").forEach((button) => button.classList.toggle("active", button.dataset.estimateListMode === state.estimateListMode));
-    const baseJobs = visibleEstimateJobs();
+    const baseGroups = groupDuplicateEstimateJobs(visibleEstimateJobs());
+    const baseJobs = baseGroups.map(([job]) => job).filter(Boolean);
     const jobs = estimateFilteredJobs(baseJobs);
+    const visibleIds = new Set(jobs.map((job) => Number(job.id)));
+    const rowGroups = baseGroups.filter(([job]) => job && visibleIds.has(Number(job.id)));
     statsNode.innerHTML = renderEstimateJobStats(baseJobs);
     if (filtersNode) filtersNode.innerHTML = renderEstimateQuickFilters(baseJobs);
     if (actionNode) actionNode.innerHTML = renderEstimateActionPanel(jobs);
     scheduleNode.innerHTML = renderEstimateSchedule(jobs);
-    rowsNode.innerHTML = jobs.length ? jobs.map(renderEstimateJobRow).join("") : '<div class="empty-state"><strong>'.concat(state.estimateListMode === "archive" ? "В архиве сметных заданий по этому фильтру нет." : "По фильтру «".concat(escapeHtml(estimateQuickFilterLabel()), "» заданий нет."), '</strong><p class="muted">').concat(state.estimateListMode === "archive" ? "Архивные задания появятся здесь после переноса в архив." : "Переключите фильтр или добавьте сметное задание, если нужно передать расчёт сметчику.", "</p></div>");
+    rowsNode.innerHTML = rowGroups.length ? rowGroups.map(renderEstimateJobGroup).join("") : '<div class="empty-state"><strong>'.concat(state.estimateListMode === "archive" ? "В архиве сметных заданий по этому фильтру нет." : "По фильтру «".concat(escapeHtml(estimateQuickFilterLabel()), "» заданий нет."), '</strong><p class="muted">').concat(state.estimateListMode === "archive" ? "Архивные задания появятся здесь после переноса в архив." : "Переключите фильтр или добавьте сметное задание, если нужно передать расчёт сметчику.", "</p></div>");
     syncManagerEstimateNotice();
   }
   function notificationTargetAttrs(row) {
@@ -5832,6 +5919,45 @@
       { passive: false }
     );
   }
+  function bindEstimateTouchPageScroll() {
+    if (bindEstimateTouchPageScroll.bound) return;
+    bindEstimateTouchPageScroll.bound = true;
+    let gesture = null;
+    document.addEventListener(
+      "touchstart",
+      (event) => {
+        var _a;
+        const touch = (_a = event.touches) == null ? void 0 : _a[0];
+        const target = event.target instanceof Element ? event.target : null;
+        if (state.view !== "estimates" || window.innerWidth > 820 || hasOpenDialog() || event.touches.length !== 1 || !touch || (target == null ? void 0 : target.closest("input, textarea, select, dialog"))) {
+          gesture = null;
+          return;
+        }
+        gesture = { x: touch.clientX, y: touch.clientY };
+      },
+      { passive: true }
+    );
+    document.addEventListener(
+      "touchmove",
+      (event) => {
+        if (!gesture || state.view !== "estimates" || hasOpenDialog() || event.touches.length !== 1) return;
+        const touch = event.touches[0];
+        const horizontal = touch.clientX - gesture.x;
+        const vertical = gesture.y - touch.clientY;
+        if (Math.abs(vertical) < 2 || Math.abs(horizontal) > Math.abs(vertical)) return;
+        gesture = { x: touch.clientX, y: touch.clientY };
+        if (!canScrollPageVertically(vertical)) return;
+        if (event.cancelable) event.preventDefault();
+        window.scrollBy({ top: vertical, behavior: "auto" });
+      },
+      { passive: false }
+    );
+    const resetGesture = () => {
+      gesture = null;
+    };
+    document.addEventListener("touchend", resetGesture, { passive: true });
+    document.addEventListener("touchcancel", resetGesture, { passive: true });
+  }
   function bindStableDetailsTouchGuard() {
     document.addEventListener(
       "touchstart",
@@ -6203,6 +6329,7 @@
     var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H, _I, _J, _K, _L, _M, _N, _O, _P, _Q, _R, _S;
     bindStableDetailsTouchGuard();
     bindWheelPageScroll();
+    bindEstimateTouchPageScroll();
     initPullToRefresh();
     (_a = qs("#sidebarToggle")) == null ? void 0 : _a.addEventListener("click", () => toggleSidebarCollapsed());
     (_b = qs("#densitySelect")) == null ? void 0 : _b.addEventListener("change", (event) => setDensityMode(event.target.value));
@@ -7306,25 +7433,78 @@
     (_L = qs("#photoReportForm")) == null ? void 0 : _L.addEventListener("submit", submitPhotoReportForm);
     (_M = qs("#objectRemarkForm")) == null ? void 0 : _M.addEventListener("submit", submitObjectRemarkForm);
     qs("#estimateJobForm").addEventListener("submit", async (event) => {
-      var _a2;
+      var _a2, _b2;
       event.preventDefault();
       const form = qs("#estimateJobForm");
+      if (form.dataset.submitting === "true") return;
       const payload = formToJson(form);
       const id = payload.id;
       delete payload.id;
       payload.title = normalizeEstimateJobTitle(payload.customer_name, payload.title);
       const attachments = Array.from(((_a2 = form.elements.attachments) == null ? void 0 : _a2.files) || []);
-      payload.attachments = await Promise.all(attachments.map((file) => fileDocumentPayload(file, file.name, "estimate_job_file", "estimate_job")));
-      await api(id ? "/api/estimate-jobs/".concat(id, "/update") : "/api/estimate-jobs", {
-        method: "POST",
-        body: JSON.stringify(payload)
-      });
-      qs("#estimateJobDialog").close();
-      form.reset();
-      await loadCoreData();
-      await renderEstimateJobs();
-      await renderDashboard();
-      showToast(id ? "Сметное задание обновлено" : "Сметное задание создано");
+      const duplicate = findDuplicateEstimateJob(payload, id);
+      if (duplicate) {
+        state.estimateQuickFilter = "all";
+        state.estimateListMode = "active";
+        state.expandedLists["estimate-job:".concat(duplicate.id)] = true;
+        await renderEstimateJobs();
+        qs("#estimateJobDialog").close();
+        (_b2 = qsa("[data-collapsible-key]").find((item) => item.dataset.collapsibleKey === "estimate-job:".concat(duplicate.id))) == null ? void 0 : _b2.scrollIntoView({ behavior: "smooth", block: "center" });
+        showToast("Такое сметное задание уже существует — открыли его вместо создания копии");
+        return;
+      }
+      payload.attachments = [];
+      const loadingKey = "estimate-job-save";
+      let savedJobId = id || "";
+      let primarySaveSucceeded = false;
+      setEstimateJobFormSubmitting(
+        form,
+        true,
+        attachments.length ? "Сохраняем задание и готовим ".concat(attachments.length, " файлов") : "Сохраняем сметное задание"
+      );
+      setAppLoading(true, "Сохраняем сметное задание", loadingKey);
+      try {
+        const result = await api(id ? "/api/estimate-jobs/".concat(id, "/update") : "/api/estimate-jobs", {
+          method: "POST",
+          silentLoading: true,
+          body: JSON.stringify(payload)
+        });
+        savedJobId = id || result.id;
+        if (!savedJobId) throw new Error("Сметное задание не сохранилось");
+        primarySaveSucceeded = true;
+        if (attachments.length) {
+          await uploadEstimateFilesInBatches(savedJobId, attachments, (message) => {
+            setEstimateJobFormSubmitting(form, true, message);
+            setAppLoading(true, message, loadingKey);
+          });
+        }
+        qs("#estimateJobDialog").close();
+        form.reset();
+        await loadCoreData();
+        await renderEstimateJobs();
+        await renderDashboard();
+        showToast(
+          id ? "Сметное задание обновлено".concat(attachments.length ? ", файлов: ".concat(attachments.length) : "") : "Сметное задание создано".concat(attachments.length ? ", файлов: ".concat(attachments.length) : "")
+        );
+      } catch (error) {
+        if (primarySaveSucceeded) {
+          qs("#estimateJobDialog").close();
+          form.reset();
+          await loadCoreData();
+          await renderEstimateJobs();
+          await renderDashboard();
+          const uploaded = Number(error.estimateFilesUploaded || 0);
+          const total = Number(error.estimateFilesTotal || attachments.length);
+          showToast(
+            total ? "Задание сохранено. Загружено файлов: ".concat(uploaded, " из ").concat(total, ". Остальные можно добавить в карточке задания.") : "Задание сохранено, но список не обновился. Обновите страницу."
+          );
+        } else {
+          showToast(error.message || "Не удалось сохранить сметное задание");
+        }
+      } finally {
+        setAppLoading(false, "", loadingKey);
+        setEstimateJobFormSubmitting(form, false);
+      }
     });
     qs("#estimateJobDoneForm").addEventListener("submit", async (event) => {
       var _a2;

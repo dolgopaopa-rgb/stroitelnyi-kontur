@@ -5607,6 +5607,39 @@ textarea {
   gap: 6px;
 }
 
+.estimate-duplicate-group {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #e9cc95;
+  border-radius: var(--radius-md);
+  background: #fffaf0;
+}
+
+.estimate-duplicate-notice {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.estimate-duplicate-details > summary {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  color: var(--brand-strong);
+  font-weight: 600;
+}
+
+.estimate-duplicate-rows {
+  display: grid;
+  gap: 8px;
+  padding-top: 8px;
+}
+
 .compact-ui-v1 #estimatesView .estimate-job-row {
   padding: 8px 10px;
   grid-template-columns: minmax(0, 1fr);
@@ -6350,6 +6383,15 @@ textarea {
 
   .main {
     padding: 10px 10px calc(86px + env(safe-area-inset-bottom));
+    touch-action: pan-y pinch-zoom;
+  }
+
+  #estimatesView,
+  #estimateJobRows,
+  #estimatesView .estimate-job-list {
+    min-height: auto;
+    overflow: visible;
+    touch-action: pan-y;
   }
 
   .today-grid,

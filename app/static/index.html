@@ -12,7 +12,7 @@
     <link rel="manifest" href="/static/manifest.webmanifest?v=20260728-appeals-menu-fix" />
     <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260728-appeals-menu-fix" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260809-estimate-mobile-resilience" />
   </head>
   <body>
     <div class="app" data-testid="qa-scroll-root">
@@ -349,7 +349,7 @@
           </div>
         </section>
 
-        <section class="view" id="estimatesView">
+        <section class="view" id="estimatesView" data-testid="estimates-page">
           <div class="panel estimate-crm-panel">
             <div class="panel-head">
               <h2>Сметные задания</h2>
@@ -930,11 +930,12 @@
         <label>
           Файлы к заданию
           <input name="attachments" type="file" multiple />
-          <span class="field-hint">Можно приложить ТЗ, проекты, фото, PDF, Word, Excel, архивы и любые другие рабочие файлы.</span>
+          <span class="field-hint">Можно приложить ТЗ, проекты, фото, PDF, Word, Excel, архивы и другие рабочие файлы. Большой набор Контур загрузит частями, без повторного создания задания.</span>
         </label>
+        <p class="form-status" id="estimateJobSaveStatus" role="status" aria-live="polite" hidden></p>
         <div class="form-actions">
           <button type="button" class="secondary" data-close="estimateJobDialog">Отмена</button>
-          <button class="primary" type="submit">Сохранить</button>
+          <button class="primary" id="estimateJobSubmitButton" data-testid="estimate-job-submit" type="submit">Сохранить</button>
         </div>
       </form>
     </dialog>
@@ -1353,6 +1354,6 @@
       </div>
     </div>
     <div class="toast" id="toast"></div>
-    <script src="/static/app.compat.js?v=20260728-appeals-menu-fix"></script>
+    <script src="/static/app.compat.js?v=20260809-estimate-mobile-resilience"></script>
   </body>
 </html>

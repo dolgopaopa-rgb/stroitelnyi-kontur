@@ -10,6 +10,7 @@ const pathToViewId: Record<string, string> = {
   "/documents": "documentsView",
   "/signals": "dashboardView",
   "/feedback": "feedbackView",
+  "/estimates": "estimatesView",
   "/settings": "eventsView",
 };
 
@@ -23,6 +24,7 @@ const pathToNavId: Record<string, string> = {
   "/documents": "nav-documents",
   "/signals": "nav-signals",
   "/feedback": "nav-feedback",
+  "/estimates": "nav-estimates",
 };
 
 export async function openApp(page: Page, path = "/today") {
