@@ -1,11 +1,16 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260711-main-estimate-materials";
+const CACHE_NAME = "stroitelnyi-kontur-20260809-openvillage-brand-v1";
 const CORE_ASSETS = [
   "/",
-  "/static/styles.css?v=20260711-main-estimate-materials",
-  "/static/app.compat.js?v=20260711-main-estimate-materials",
-  "/static/manifest.webmanifest?v=20260711-main-estimate-materials",
-  "/static/assets/g2-logo-192.png",
-  "/static/assets/g2-logo-512.png"
+  "/static/styles.css?v=20260809-openvillage-brand-v1",
+  "/static/brand-2026.css?v=20260809-openvillage-brand-v1",
+  "/static/app.compat.js?v=20260809-openvillage-brand-v1",
+  "/static/manifest.webmanifest?v=20260809-openvillage-brand-v1",
+  "/static/assets/brand-2026/d2dom-mark.svg",
+  "/static/assets/brand-2026/Haval-Light.woff2",
+  "/static/assets/brand-2026/Involve-Regular.woff2",
+  "/static/assets/brand-2026/Involve-SemiBold.woff2",
+  "/static/assets/brand-2026/d2dom-mark-192.png",
+  "/static/assets/brand-2026/d2dom-mark-512.png"
 ];
 
 self.addEventListener("install", (event) => {

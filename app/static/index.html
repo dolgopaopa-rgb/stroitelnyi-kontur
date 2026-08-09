@@ -3,24 +3,29 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#132126" />
+    <meta name="theme-color" content="#2d3235" />
     <meta name="application-name" content="Строительный контур" />
     <meta name="apple-mobile-web-app-title" content="Контур" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Строительный контур</title>
-    <link rel="manifest" href="/static/manifest.webmanifest?v=20260711-main-estimate-materials" />
-    <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
-    <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260711-main-estimate-materials" />
+    <link rel="manifest" href="/static/manifest.webmanifest?v=20260809-openvillage-brand-v1" />
+    <link rel="icon" type="image/svg+xml" href="/static/assets/brand-2026/d2dom-mark.svg" />
+    <link rel="apple-touch-icon" href="/static/assets/brand-2026/d2dom-mark-192.png" />
+    <link rel="preload" href="/static/assets/brand-2026/Involve-Regular.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/static/assets/brand-2026/Involve-SemiBold.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/static/assets/brand-2026/Haval-Light.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="/static/styles.css?v=20260809-openvillage-brand-v1" />
+    <link rel="stylesheet" href="/static/brand-2026.css?v=20260809-openvillage-brand-v1" />
   </head>
-  <body>
+  <body class="brand-system-2026">
     <div class="app" data-testid="qa-scroll-root">
       <aside class="sidebar">
-        <a class="brand" href="/today" aria-label="На главную страницу">
-          <img class="brand-mark" src="/static/assets/g2-logo-192.png" alt="" />
-          <div>
-            <strong>Строительный контур</strong>
+        <a class="brand" href="/today" aria-label="На главную страницу Д²Дом">
+          <img class="brand-mark" src="/static/assets/brand-2026/d2dom-mark.svg" alt="" />
+          <div class="brand-copy">
+            <span class="brand-company">Д²Дом</span>
+            <strong>Контур</strong>
           </div>
         </a>
         <nav class="nav">
@@ -1279,6 +1284,6 @@
       </div>
     </div>
     <div class="toast" id="toast"></div>
-    <script src="/static/app.compat.js?v=20260711-main-estimate-materials"></script>
+    <script src="/static/app.compat.js?v=20260809-openvillage-brand-v1"></script>
   </body>
 </html>

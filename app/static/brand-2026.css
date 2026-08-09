@@ -1,0 +1,697 @@
+@font-face {
+  font-family: "Haval";
+  src: url("/static/assets/brand-2026/Haval-Light.woff2") format("woff2");
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Involve";
+  src: url("/static/assets/brand-2026/Involve-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Involve";
+  src: url("/static/assets/brand-2026/Involve-SemiBold.woff2") format("woff2");
+  font-weight: 650;
+  font-style: normal;
+  font-display: swap;
+}
+
+body.brand-system-2026 {
+  --bg: #d9ddd8;
+  --surface: #eceeea;
+  --surface-2: #f7f8f5;
+  --line: #b9bfbb;
+  --text: #282d2f;
+  --muted: #555d5d;
+  --brand: #7b0d18;
+  --brand-strong: #55040d;
+  --danger: #8f2029;
+  --danger-soft: #f4e4e3;
+  --warning: #7e632e;
+  --warning-soft: #f2ead7;
+  --success: #566449;
+  --success-soft: #e3e8dc;
+  --blue: #445d69;
+  --blue-soft: #e2e8e9;
+  --radius-sm: 5px;
+  --radius-md: 7px;
+  --radius-lg: 8px;
+  --shadow-soft: 0 1px 2px rgba(45, 50, 53, 0.08);
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Involve", Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.42;
+  letter-spacing: 0;
+}
+
+body.brand-system-2026 button,
+body.brand-system-2026 input,
+body.brand-system-2026 select,
+body.brand-system-2026 textarea {
+  font-family: "Involve", Arial, sans-serif;
+  letter-spacing: 0;
+}
+
+body.brand-system-2026 a,
+body.brand-system-2026 button,
+body.brand-system-2026 input,
+body.brand-system-2026 select,
+body.brand-system-2026 textarea,
+body.brand-system-2026 summary {
+  transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+
+body.brand-system-2026 h1,
+body.brand-system-2026 .topbar-title h1 {
+  font-family: "Haval", "Involve", Arial, sans-serif;
+  font-size: 28px;
+  font-weight: 300;
+  line-height: 1.05;
+  letter-spacing: 0;
+}
+
+body.brand-system-2026 h2,
+body.brand-system-2026 h3,
+body.brand-system-2026 strong {
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+body.brand-system-2026 h2 {
+  font-size: 17px;
+}
+
+body.brand-system-2026 h3 {
+  font-size: 15px;
+}
+
+body.brand-system-2026 .eyebrow {
+  color: var(--brand);
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+body.brand-system-2026 :focus-visible {
+  outline: 3px solid rgba(123, 13, 24, 0.2);
+  outline-offset: 2px;
+}
+
+body.brand-system-2026 .app {
+  background: var(--bg);
+}
+
+body.brand-system-2026.compact-ui-v1 .app {
+  grid-template-columns: 184px minmax(0, 1fr);
+}
+
+body.brand-system-2026.compact-ui-v1.sidebar-collapsed .app {
+  grid-template-columns: 64px minmax(0, 1fr);
+}
+
+body.brand-system-2026 .sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: #2d3235;
+  border-right: 1px solid rgba(255, 253, 249, 0.12);
+  color: #fffdf9;
+  scrollbar-color: rgba(255, 253, 249, 0.28) transparent;
+}
+
+body.brand-system-2026 .brand {
+  min-height: 48px;
+  gap: 10px;
+  padding: 5px;
+  color: #fffdf9;
+}
+
+body.brand-system-2026 .brand:hover,
+body.brand-system-2026 .brand:focus-visible {
+  background: rgba(255, 253, 249, 0.08);
+}
+
+body.brand-system-2026 .brand-mark {
+  width: 36px;
+  height: 36px;
+  border-radius: 7px;
+  object-fit: cover;
+}
+
+body.brand-system-2026 .brand-copy {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+body.brand-system-2026 .brand-company {
+  color: rgba(255, 253, 249, 0.68);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+body.brand-system-2026 .brand strong {
+  color: #fffdf9;
+  font-family: "Haval", "Involve", Arial, sans-serif;
+  font-size: 19px;
+  font-weight: 300;
+  line-height: 1;
+}
+
+body.brand-system-2026 .nav {
+  width: 100%;
+  gap: 3px;
+}
+
+body.brand-system-2026 .nav-button {
+  width: 100%;
+  min-height: 35px;
+  border-radius: 5px;
+  color: rgba(255, 253, 249, 0.76);
+  font-size: 13px;
+}
+
+body.brand-system-2026 .nav-button > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.brand-system-2026 .nav-icon {
+  color: rgba(255, 253, 249, 0.5);
+}
+
+body.brand-system-2026 .nav-button:hover {
+  background: rgba(255, 253, 249, 0.08);
+  color: #fffdf9;
+}
+
+body.brand-system-2026 .nav-button.active {
+  background: #7b0d18;
+  color: #fffdf9;
+}
+
+body.brand-system-2026 .nav-button.active .nav-icon,
+body.brand-system-2026 .nav-button:hover .nav-icon {
+  color: #fffdf9;
+}
+
+body.brand-system-2026 .main {
+  background: var(--bg);
+}
+
+body.brand-system-2026.compact-ui-v1 .topbar,
+body.brand-system-2026 .topbar {
+  background: rgba(236, 238, 234, 0.96);
+  border-bottom: 1px solid var(--line);
+  box-shadow: 0 1px 0 rgba(45, 50, 53, 0.04);
+  backdrop-filter: blur(12px);
+}
+
+body.brand-system-2026 .topbar-object-switch,
+body.brand-system-2026 .density-switcher,
+body.brand-system-2026 .global-search,
+body.brand-system-2026 .role-switcher,
+body.brand-system-2026 label {
+  color: var(--muted);
+  font-weight: 650;
+}
+
+body.brand-system-2026 input,
+body.brand-system-2026 select,
+body.brand-system-2026 textarea,
+body.brand-system-2026.compact-ui-v1 .topbar-object-switch select,
+body.brand-system-2026.compact-ui-v1 .density-switcher select,
+body.brand-system-2026.compact-ui-v1 .global-search input,
+body.brand-system-2026.compact-ui-v1 .role-switcher select {
+  border-color: var(--line);
+  border-radius: 6px;
+  background: #f7f8f5;
+  color: var(--text);
+  font-weight: 400;
+}
+
+body.brand-system-2026 input::placeholder,
+body.brand-system-2026 textarea::placeholder {
+  color: #737a78;
+}
+
+body.brand-system-2026 input:focus,
+body.brand-system-2026 select:focus,
+body.brand-system-2026 textarea:focus {
+  border-color: var(--brand);
+  outline: 3px solid rgba(123, 13, 24, 0.12);
+}
+
+body.brand-system-2026 .primary,
+body.brand-system-2026 .submit-button {
+  border-color: #7b0d18;
+  border-radius: 6px;
+  background: #7b0d18;
+  color: #fffdf9;
+  font-weight: 650;
+}
+
+body.brand-system-2026 .primary:hover,
+body.brand-system-2026 .submit-button:hover,
+body.brand-system-2026 .primary:focus-visible,
+body.brand-system-2026 .submit-button:focus-visible {
+  border-color: #55040d;
+  background: #55040d;
+}
+
+body.brand-system-2026 .secondary,
+body.brand-system-2026 .icon,
+body.brand-system-2026 .password-tool,
+body.brand-system-2026 .install-button {
+  border-color: var(--line);
+  border-radius: 6px;
+  background: #f7f8f5;
+  color: var(--text);
+}
+
+body.brand-system-2026 .secondary:hover,
+body.brand-system-2026 .icon:hover,
+body.brand-system-2026 .password-tool:hover,
+body.brand-system-2026 .install-button:hover {
+  border-color: #8d9591;
+  background: #eceeea;
+}
+
+body.brand-system-2026 .link-button,
+body.brand-system-2026 .inline-link,
+body.brand-system-2026 a:not(.brand):not(.nav-button) {
+  color: var(--brand);
+}
+
+body.brand-system-2026 .link-button:hover,
+body.brand-system-2026 .inline-link:hover {
+  color: var(--brand-strong);
+}
+
+body.brand-system-2026 .danger-button,
+body.brand-system-2026 .logout-button {
+  border-color: #cfa8aa;
+  border-radius: 6px;
+  background: transparent;
+  color: #7b0d18;
+}
+
+body.brand-system-2026 .danger-button:hover,
+body.brand-system-2026 .logout-button:hover {
+  border-color: #7b0d18;
+  background: #f4e4e3;
+}
+
+body.brand-system-2026 button:disabled,
+body.brand-system-2026 [aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.56;
+}
+
+body.brand-system-2026 .panel,
+body.brand-system-2026 .metric,
+body.brand-system-2026 .appeal-summary-strip .metric,
+body.brand-system-2026 .timeline-item {
+  border-color: var(--line);
+  border-radius: 7px;
+  background: #eceeea;
+  box-shadow: var(--shadow-soft);
+}
+
+body.brand-system-2026 .card,
+body.brand-system-2026 .row,
+body.brand-system-2026 .today-object-card,
+body.brand-system-2026 .today-task-card,
+body.brand-system-2026 .today-material-card,
+body.brand-system-2026 .attention-item,
+body.brand-system-2026 .project-quick-actions,
+body.brand-system-2026 .project-hero-main,
+body.brand-system-2026 .project-attention,
+body.brand-system-2026 .info,
+body.brand-system-2026 .appeal-card,
+body.brand-system-2026 .assistant-answer,
+body.brand-system-2026 .compact-form,
+body.brand-system-2026 .attached-draft-files {
+  border-color: var(--line);
+  border-radius: 7px;
+  background: #f7f8f5;
+  box-shadow: none;
+}
+
+body.brand-system-2026 .panel-head {
+  border-bottom: 1px solid rgba(185, 191, 187, 0.72);
+  padding-bottom: 8px;
+}
+
+body.brand-system-2026 .panel-head:has(> .stack-line:only-child),
+body.brand-system-2026 .compact-collapsible .panel-head {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+body.brand-system-2026 .today-role-panel {
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--brand);
+  border-radius: 7px;
+  background: #eceeea;
+  box-shadow: var(--shadow-soft);
+}
+
+body.brand-system-2026 .assistant-hero {
+  background: #eceeea;
+}
+
+body.brand-system-2026 .assistant-safe-badge {
+  border-color: #b8c2ad;
+  border-radius: 5px;
+  background: #e3e8dc;
+  color: #566449;
+}
+
+body.brand-system-2026 .assistant-warning,
+body.brand-system-2026 .hint-box {
+  border-color: #d7c79f;
+  background: #f2ead7;
+  color: #66512a;
+}
+
+body.brand-system-2026 .metric.is-active,
+body.brand-system-2026 .task-stat.active,
+body.brand-system-2026 .segment.active,
+body.brand-system-2026 .tab.active,
+body.brand-system-2026 .pipeline-filter.active,
+body.brand-system-2026 .quick-filter.active,
+body.brand-system-2026 .feedback-status-button.is-active {
+  border-color: #7b0d18;
+  background: #f4e4e3;
+  color: #55040d;
+}
+
+body.brand-system-2026 .metric.is-critical,
+body.brand-system-2026 .metric.danger,
+body.brand-system-2026 .blocker-row,
+body.brand-system-2026 .appeal-card.is-overdue,
+body.brand-system-2026 .project-hero-stats .info.danger {
+  border-color: #d5aaad;
+  background: #f4e4e3;
+}
+
+body.brand-system-2026 .metric.warning,
+body.brand-system-2026 .project-hero-stats .info.warning,
+body.brand-system-2026 .appeal-summary-strip .metric.warning {
+  border-color: #d7c79f;
+  background: #f2ead7;
+}
+
+body.brand-system-2026 .metric.blue,
+body.brand-system-2026 .appeal-summary-strip .metric.blue {
+  border-color: #bac6c8;
+  background: #e2e8e9;
+}
+
+body.brand-system-2026 .metric.is-zero {
+  background: #e7e9e5;
+  opacity: 0.64;
+}
+
+body.brand-system-2026 .pill,
+body.brand-system-2026 .status-badge,
+body.brand-system-2026 .task-type-badge,
+body.brand-system-2026 .task-status-badge,
+body.brand-system-2026 .task-priority-badge,
+body.brand-system-2026 .attention-count,
+body.brand-system-2026 .pipeline-filter,
+body.brand-system-2026 .quick-filter {
+  border-radius: 5px;
+}
+
+body.brand-system-2026 .segmented-control,
+body.brand-system-2026 .tabs {
+  border-color: var(--line);
+  border-radius: 6px;
+  background: #f7f8f5;
+}
+
+body.brand-system-2026 .segment,
+body.brand-system-2026 .tab {
+  border-color: var(--line);
+  background: #f7f8f5;
+  color: var(--text);
+}
+
+body.brand-system-2026 .segment:hover,
+body.brand-system-2026 .tab:hover,
+body.brand-system-2026 .pipeline-filter:hover,
+body.brand-system-2026 .quick-filter:hover {
+  background: #eceeea;
+}
+
+body.brand-system-2026 .pipeline-filter,
+body.brand-system-2026 .quick-filter {
+  border-color: var(--line);
+  background: #f7f8f5;
+  color: var(--text);
+}
+
+body.brand-system-2026 .project-info-chip,
+body.brand-system-2026 .project-contact-strip,
+body.brand-system-2026 .attention-chip,
+body.brand-system-2026 .document-link,
+body.brand-system-2026 .estimate-file-card {
+  border-color: var(--line);
+  border-radius: 6px;
+  background: #f7f8f5;
+}
+
+body.brand-system-2026 dialog {
+  border: 1px solid #8f9692;
+  border-radius: 8px;
+  background: #eceeea;
+  color: var(--text);
+  box-shadow: 0 24px 70px rgba(23, 27, 30, 0.3);
+}
+
+body.brand-system-2026 dialog::backdrop {
+  background: rgba(23, 27, 30, 0.58);
+}
+
+body.brand-system-2026 .toast {
+  border: 1px solid rgba(255, 253, 249, 0.16);
+  border-radius: 7px;
+  background: #2d3235;
+  color: #fffdf9;
+}
+
+body.brand-system-2026 .media-preview-shell,
+body.brand-system-2026 .media-preview-dialog {
+  background: #202529;
+  color: #fffdf9;
+}
+
+body.brand-system-2026 .media-thumb {
+  border-color: var(--line);
+  border-radius: 6px;
+  background: #f7f8f5;
+}
+
+body.brand-system-2026 .media-thumb:hover {
+  border-color: #7b0d18;
+}
+
+body.brand-system-2026 .mobile-bottom-nav {
+  background: #2d3235;
+  border-top-color: rgba(255, 253, 249, 0.16);
+  box-shadow: 0 -8px 24px rgba(23, 27, 30, 0.18);
+}
+
+body.brand-system-2026 .mobile-bottom-nav button {
+  border-radius: 6px;
+  color: rgba(255, 253, 249, 0.78);
+}
+
+body.brand-system-2026 .mobile-bottom-nav button:hover,
+body.brand-system-2026 .mobile-bottom-nav button:focus-visible,
+body.brand-system-2026 .mobile-bottom-nav button.active {
+  background: rgba(255, 253, 249, 0.08);
+  color: #fffdf9;
+}
+
+body.brand-system-2026 .mobile-bottom-nav .mobile-plus {
+  border: 1px solid #9a3440;
+  border-radius: 8px;
+  background: #7b0d18;
+  box-shadow: 0 8px 20px rgba(85, 4, 13, 0.34);
+}
+
+body.brand-system-2026 .mobile-quick-sheet {
+  background: rgba(23, 27, 30, 0.52);
+}
+
+body.brand-system-2026 .mobile-quick-sheet-panel {
+  border-top: 1px solid var(--line);
+  border-radius: 8px 8px 0 0;
+  background: #eceeea;
+}
+
+body.brand-system-2026.login-page {
+  min-height: 100%;
+  background: #2d3235;
+}
+
+body.brand-system-2026.login-page .login-shell {
+  background: #2d3235;
+}
+
+body.brand-system-2026.login-page .login-card {
+  border-color: #b9bfbb;
+  border-radius: 8px;
+  background: #eceeea;
+  box-shadow: 0 22px 64px rgba(17, 21, 23, 0.32);
+}
+
+body.brand-system-2026.login-page .brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0;
+  color: var(--text);
+}
+
+body.brand-system-2026.login-page .brand:hover,
+body.brand-system-2026.login-page .brand:focus-visible {
+  background: transparent;
+}
+
+body.brand-system-2026.login-page .brand img {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+}
+
+body.brand-system-2026.login-page .brand strong {
+  color: var(--text);
+  font-family: "Haval", "Involve", Arial, sans-serif;
+  font-size: 27px;
+  font-weight: 300;
+}
+
+body.brand-system-2026.login-page .brand span {
+  color: var(--muted);
+}
+
+body.brand-system-2026.login-page .status.error {
+  border: 1px solid #d5aaad;
+  background: #f4e4e3;
+  color: #7b0d18;
+}
+
+@media (max-width: 1180px) and (min-width: 821px) {
+  body.brand-system-2026.compact-ui-v1 .app {
+    grid-template-columns: 168px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 820px) {
+  body.brand-system-2026 {
+    font-size: 14px;
+  }
+
+  body.brand-system-2026 .sidebar {
+    display: none;
+  }
+
+  body.brand-system-2026.compact-ui-v1 .app,
+  body.brand-system-2026.compact-ui-v1.sidebar-collapsed .app {
+    display: block;
+  }
+
+  body.brand-system-2026.compact-ui-v1 .topbar,
+  body.brand-system-2026 .topbar {
+    margin: 0 -12px 10px;
+    padding: 8px 12px;
+    background: rgba(236, 238, 234, 0.98);
+  }
+
+  body.brand-system-2026.compact-ui-v1 .topbar .actions,
+  body.brand-system-2026 .topbar .actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    flex: 0 0 auto;
+    width: 100%;
+    gap: 6px;
+  }
+
+  body.brand-system-2026.compact-ui-v1 .topbar .actions > *,
+  body.brand-system-2026 .topbar .actions > * {
+    min-width: 0;
+    width: 100%;
+  }
+
+  body.brand-system-2026.compact-ui-v1 .topbar .role-switcher,
+  body.brand-system-2026 .topbar .role-switcher {
+    grid-column: 1 / -1;
+  }
+
+  body.brand-system-2026.compact-ui-v1 .topbar .actions.role-tools-hidden > .role-switcher,
+  body.brand-system-2026 .topbar .actions.role-tools-hidden > .role-switcher {
+    display: none;
+  }
+
+  body.brand-system-2026 h1,
+  body.brand-system-2026 .topbar-title h1 {
+    font-size: 25px;
+  }
+
+  body.brand-system-2026 .panel-head {
+    padding-bottom: 7px;
+  }
+
+  body.brand-system-2026 .panel,
+  body.brand-system-2026 .card,
+  body.brand-system-2026 .row,
+  body.brand-system-2026 .today-object-card,
+  body.brand-system-2026 .attention-item {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  body.brand-system-2026 dialog {
+    border: 0;
+    border-radius: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  body.brand-system-2026.login-page .login-shell {
+    align-items: center;
+  }
+
+  body.brand-system-2026.login-page .login-card {
+    margin-top: 0;
+    box-shadow: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.brand-system-2026 *,
+  body.brand-system-2026 *::before,
+  body.brand-system-2026 *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
