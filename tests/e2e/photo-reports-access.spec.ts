@@ -52,8 +52,9 @@ test("photo reports are visible to foreman Andrey and procurement", async ({ pag
     await expect(page.locator('[data-testid="nav-photo-reports"]')).toBeVisible();
     await page.locator('[data-testid="nav-photo-reports"]').click();
     await expect(page.locator("#photosView")).toHaveClass(/active/);
-    await expect(page.locator('[data-testid="photo-report-card"]').first()).toBeVisible();
-    const photoHref = await page.locator('[data-testid="photo-report-card"] .media-thumb').first().getAttribute("href");
+    const visibleReportCard = page.locator('#photoReportRows [data-testid="photo-report-card"]').first();
+    await expect(visibleReportCard).toBeVisible();
+    const photoHref = await visibleReportCard.locator(".media-thumb").first().getAttribute("href");
     expect(photoHref, `${role} must have a downloadable photo link`).toBeTruthy();
     const response = await page.request.get(photoHref || "");
     expect(response.status(), `${role} photo link must open`).toBe(200);

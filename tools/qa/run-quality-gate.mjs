@@ -268,11 +268,22 @@ async function runTypecheck(results) {
 }
 
 async function runUnit(results) {
-  const py = run("python", ["-m", "py_compile", "app/server.py", "app/database.py", "app/appeals.py"]);
-  const db = run("python", ["-c", "import sys; sys.path.insert(0, 'app'); from database import init_db; init_db(); print('db ok')"]);
-  const appeals = run("python", ["-m", "unittest", "discover", "-s", "tests", "-p", "test_appeals.py"]);
-  const failed = py.code !== 0 || db.code !== 0 || appeals.code !== 0;
-  add(results, "QA Orchestrator Agent", "Unit smoke", failed ? "FAIL" : "OK", [py.output, db.output, appeals.output].filter(Boolean).join("\n") || "ok", failed ? "blocker" : "normal");
+  const unitDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "kontur-unit-"));
+  const env = { ...process.env, APP_DATA_DIR: unitDataDir, PYTHONDONTWRITEBYTECODE: "1" };
+  let py;
+  let db;
+  let appeals;
+  let materialRegulations;
+  try {
+    py = run("python", ["-m", "py_compile", "app/server.py", "app/database.py", "app/data_integrity.py", "app/appeals.py", "tools/import_material_regulations.py"], { env });
+    db = run("python", ["-c", "import sys; sys.path.insert(0, 'app'); from database import init_db; init_db(); print('db ok')"], { env });
+    appeals = run("python", ["-m", "unittest", "discover", "-s", "tests", "-p", "test_appeals.py"], { env });
+    materialRegulations = run("python", ["-m", "unittest", "discover", "-s", "tests", "-p", "test_material_regulations.py"], { env });
+  } finally {
+    fs.rmSync(unitDataDir, { recursive: true, force: true });
+  }
+  const failed = py.code !== 0 || db.code !== 0 || appeals.code !== 0 || materialRegulations.code !== 0;
+  add(results, "QA Orchestrator Agent", "Unit smoke", failed ? "FAIL" : "OK", [py.output, db.output, appeals.output, materialRegulations.output].filter(Boolean).join("\n") || "ok", failed ? "blocker" : "normal");
   runFeedbackFixStaticChecks(results);
 }
 

@@ -352,9 +352,61 @@ def _material_violations(db: sqlite3.Connection, violations: list[Violation]) ->
     ).fetchall()
     allowed_stage = {"draft", "needs_approval", "approved", "ordered", "in_transit", "delivered", "closed", "cancelled"}
     allowed_health = {"normal", "at_risk", "problem"}
+    allowed_additional_reasons = {"customer_change", "site_damage", "supplier_defect", "estimate_error"}
     for row in rows:
         stage = str(row["stage"] or "")
         health = str(row["health"] or "")
+        if int(row["workflow_version"] or 0) >= 2:
+            request_kind = str(row["request_kind"] or "")
+            approval_status = str(row["approval_status"] or "")
+            if request_kind not in {"planned", "additional"} or not row["estimate_stage"] or not row["needed_at"]:
+                _add(
+                    violations,
+                    violation_type="material_regulation_required_fields_missing",
+                    entity_type="material_request_batch",
+                    entity_id=row["id"],
+                    object_title=row["project_title"] or "",
+                    reason="Новая заявка не содержит вида, одного этапа сметы или даты поставки.",
+                    severity="critical",
+                    recommendation="Вернуть заявку автору и заполнить обязательные поля по действующему регламенту.",
+                    auto_fix_safe=False,
+                )
+            if request_kind == "additional" and str(row["additional_reason"] or "") not in allowed_additional_reasons:
+                _add(
+                    violations,
+                    violation_type="additional_material_reason_missing",
+                    entity_type="material_request_batch",
+                    entity_id=row["id"],
+                    object_title=row["project_title"] or "",
+                    reason="Дополнительный объём не имеет допустимой причины.",
+                    severity="critical",
+                    recommendation="Классифицировать причину и повторно отправить объём на согласование.",
+                    auto_fix_safe=False,
+                )
+            if request_kind == "additional" and stage in {"approved", "ordered", "in_transit", "delivered", "closed"} and approval_status != "approved":
+                _add(
+                    violations,
+                    violation_type="additional_material_without_approval",
+                    entity_type="material_request_batch",
+                    entity_id=row["id"],
+                    object_title=row["project_title"] or "",
+                    reason="Дополнительный объём перешёл в закупку без решения ген.директора или руководителя строительства.",
+                    severity="critical",
+                    recommendation="Заблокировать закупку и получить зафиксированное решение руководителя.",
+                    auto_fix_safe=False,
+                )
+            if request_kind == "additional" and approval_status == "approved" and (not row["approval_decided_by"] or not row["financial_decision"]):
+                _add(
+                    violations,
+                    violation_type="additional_material_approval_incomplete",
+                    entity_type="material_request_batch",
+                    entity_id=row["id"],
+                    object_title=row["project_title"] or "",
+                    reason="Согласование дополнительного объёма не содержит согласующего или финансового решения.",
+                    severity="critical",
+                    recommendation="Зафиксировать согласующего и финансовое решение.",
+                    auto_fix_safe=False,
+                )
         if stage not in allowed_stage:
             _add(
                 violations,
@@ -504,6 +556,43 @@ def _material_violations(db: sqlite3.Connection, violations: list[Violation]) ->
             recommendation="Восстановить объект или удалить ошибочную позицию.",
             auto_fix_safe=False,
         )
+
+    actual_rows = db.execute(
+        """
+        SELECT m.*, b.stage, b.workflow_version, p.title AS project_title
+        FROM material_requests m
+        JOIN material_request_batches b ON b.id = m.batch_id
+        LEFT JOIN projects p ON p.id = m.project_id
+        WHERE b.workflow_version >= 2
+          AND b.stage IN ('ordered', 'in_transit', 'delivered', 'closed')
+          AND COALESCE(m.change_type, '') != 'removed'
+        """
+    ).fetchall()
+    for row in actual_rows:
+        if float(row["actual_quantity"] or 0) <= 0 or not row["purchase_date"] or float(row["actual_total_amount"] or 0) <= 0:
+            _add(
+                violations,
+                violation_type="ordered_material_without_actuals",
+                entity_type="material_request",
+                entity_id=row["id"],
+                object_title=row["project_title"] or "",
+                reason="Заказанная позиция не содержит фактическое количество, дату или стоимость закупки.",
+                severity="critical",
+                recommendation="Снабжению нужно заполнить факт закупки.",
+                auto_fix_safe=False,
+            )
+        if row["smetter_status"] == "entered" and (not row["smetter_entered_by"] or not row["smetter_entered_at"]):
+            _add(
+                violations,
+                violation_type="smetter_entry_without_audit",
+                entity_type="material_request",
+                entity_id=row["id"],
+                object_title=row["project_title"] or "",
+                reason="Позиция отмечена как внесённая в Smetter, но нет автора или времени подтверждения.",
+                severity="critical",
+                recommendation="Повторно подтвердить внесение снабжением.",
+                auto_fix_safe=False,
+            )
 
 
 def _other_violations(db: sqlite3.Connection, violations: list[Violation]) -> None:

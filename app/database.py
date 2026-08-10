@@ -233,6 +233,11 @@ def init_db() -> None:
                 total_amount REAL NOT NULL DEFAULT 0,
                 actual_unit_price REAL NOT NULL DEFAULT 0,
                 actual_total_amount REAL NOT NULL DEFAULT 0,
+                actual_quantity REAL NOT NULL DEFAULT 0,
+                purchase_date TEXT,
+                smetter_entered_by INTEGER,
+                smetter_entered_at TEXT,
+                smetter_reference TEXT,
                 change_type TEXT,
                 comment TEXT,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -240,7 +245,8 @@ def init_db() -> None:
                 FOREIGN KEY (batch_id) REFERENCES material_request_batches(id),
                 FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
                 FOREIGN KEY (creator_id) REFERENCES users(id),
-                FOREIGN KEY (estimate_material_id) REFERENCES estimate_materials(id)
+                FOREIGN KEY (estimate_material_id) REFERENCES estimate_materials(id),
+                FOREIGN KEY (smetter_entered_by) REFERENCES users(id)
             );
 
             CREATE TABLE IF NOT EXISTS material_request_batches (
@@ -265,6 +271,16 @@ def init_db() -> None:
                 scheduled_delivery_date TEXT,
                 procurement_comment TEXT,
                 actual_purchase_amount REAL NOT NULL DEFAULT 0,
+                request_kind TEXT NOT NULL DEFAULT 'planned',
+                estimate_stage TEXT,
+                additional_reason TEXT,
+                additional_reason_details TEXT,
+                approval_status TEXT NOT NULL DEFAULT 'not_required',
+                approval_decided_by INTEGER,
+                approval_decided_at TEXT,
+                approval_comment TEXT,
+                financial_decision TEXT,
+                workflow_version INTEGER NOT NULL DEFAULT 0,
                 received_at TEXT,
                 receipt_status TEXT,
                 receipt_comment TEXT,
@@ -275,8 +291,37 @@ def init_db() -> None:
                 FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
                 FOREIGN KEY (creator_id) REFERENCES users(id),
                 FOREIGN KEY (procurement_responsible_id) REFERENCES users(id),
+                FOREIGN KEY (approval_decided_by) REFERENCES users(id),
                 FOREIGN KEY (received_by) REFERENCES users(id),
                 FOREIGN KEY (receipt_document_id) REFERENCES documents(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS material_request_decisions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                batch_id INTEGER NOT NULL,
+                decision TEXT NOT NULL,
+                financial_decision TEXT,
+                comment TEXT,
+                decided_by INTEGER NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (batch_id) REFERENCES material_request_batches(id) ON DELETE CASCADE,
+                FOREIGN KEY (decided_by) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS material_stage_closures (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER NOT NULL,
+                estimate_stage TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'requested',
+                requested_by INTEGER NOT NULL,
+                requested_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                verified_by INTEGER,
+                verified_at TEXT,
+                comment TEXT,
+                UNIQUE(project_id, estimate_stage),
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+                FOREIGN KEY (requested_by) REFERENCES users(id),
+                FOREIGN KEY (verified_by) REFERENCES users(id)
             );
 
             CREATE TABLE IF NOT EXISTS material_stage_migration_log (
@@ -572,6 +617,11 @@ def init_db() -> None:
         ensure_column(db, "material_requests", "procurement_comment", "TEXT")
         ensure_column(db, "material_requests", "actual_unit_price", "REAL NOT NULL DEFAULT 0")
         ensure_column(db, "material_requests", "actual_total_amount", "REAL NOT NULL DEFAULT 0")
+        ensure_column(db, "material_requests", "actual_quantity", "REAL NOT NULL DEFAULT 0")
+        ensure_column(db, "material_requests", "purchase_date", "TEXT")
+        ensure_column(db, "material_requests", "smetter_entered_by", "INTEGER")
+        ensure_column(db, "material_requests", "smetter_entered_at", "TEXT")
+        ensure_column(db, "material_requests", "smetter_reference", "TEXT")
         ensure_column(db, "material_requests", "change_type", "TEXT")
         ensure_column(db, "material_requests", "processed_at", "TEXT")
         ensure_column(db, "projects", "estimate_file_name", "TEXT")
@@ -643,6 +693,16 @@ def init_db() -> None:
         ensure_column(db, "material_request_batches", "scheduled_delivery_date", "TEXT")
         ensure_column(db, "material_request_batches", "procurement_comment", "TEXT")
         ensure_column(db, "material_request_batches", "actual_purchase_amount", "REAL NOT NULL DEFAULT 0")
+        ensure_column(db, "material_request_batches", "request_kind", "TEXT NOT NULL DEFAULT 'planned'")
+        ensure_column(db, "material_request_batches", "estimate_stage", "TEXT")
+        ensure_column(db, "material_request_batches", "additional_reason", "TEXT")
+        ensure_column(db, "material_request_batches", "additional_reason_details", "TEXT")
+        ensure_column(db, "material_request_batches", "approval_status", "TEXT NOT NULL DEFAULT 'not_required'")
+        ensure_column(db, "material_request_batches", "approval_decided_by", "INTEGER")
+        ensure_column(db, "material_request_batches", "approval_decided_at", "TEXT")
+        ensure_column(db, "material_request_batches", "approval_comment", "TEXT")
+        ensure_column(db, "material_request_batches", "financial_decision", "TEXT")
+        ensure_column(db, "material_request_batches", "workflow_version", "INTEGER NOT NULL DEFAULT 0")
         ensure_column(db, "material_request_batches", "received_at", "TEXT")
         ensure_column(db, "material_request_batches", "stage", "TEXT NOT NULL DEFAULT 'needs_approval'")
         ensure_column(db, "material_request_batches", "health", "TEXT NOT NULL DEFAULT 'normal'")
@@ -668,6 +728,8 @@ def init_db() -> None:
         ensure_column(db, "audit_tokens", "role", "TEXT NOT NULL DEFAULT 'ai_auditor'")
         db.execute("CREATE INDEX IF NOT EXISTS idx_materials_batch ON material_requests(batch_id)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_material_batches_project ON material_request_batches(project_id)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_material_decisions_batch ON material_request_decisions(batch_id)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_material_stage_closures_project ON material_stage_closures(project_id, estimate_stage)")
         seed(db)
         ensure_core_users(db)
         seed_estimate_materials(db)
@@ -678,6 +740,7 @@ def init_db() -> None:
         backfill_photo_report_files_count(db)
         dedupe_photo_reports(db)
         migrate_material_stage_health(db)
+        migrate_material_request_workflow(db)
         db.execute(
             """
             CREATE UNIQUE INDEX IF NOT EXISTS idx_photo_reports_one_active_task
@@ -793,6 +856,57 @@ def migrate_material_stage_health(db: sqlite3.Connection) -> None:
             int(review_count or 0),
         ),
     )
+
+
+def migrate_material_request_workflow(db: sqlite3.Connection) -> None:
+    """Classify legacy batches without presenting them as newly approved requests."""
+    rows = db.execute(
+        """
+        SELECT b.id, b.status, b.stage,
+               GROUP_CONCAT(DISTINCT NULLIF(TRIM(m.estimate_section), '')) AS sections,
+               SUM(CASE WHEN m.basis_type != 'main_estimate' THEN 1 ELSE 0 END) AS extra_count
+        FROM material_request_batches b
+        LEFT JOIN material_requests m ON m.batch_id = b.id
+        WHERE COALESCE(b.workflow_version, 0) = 0
+        GROUP BY b.id
+        """
+    ).fetchall()
+    approved_stages = {"approved", "ordered", "in_transit", "delivered", "closed"}
+    for row in rows:
+        sections = [value.strip() for value in str(row["sections"] or "").split(",") if value.strip()]
+        estimate_stage = sections[0] if len(sections) == 1 else ("Историческая заявка: несколько этапов" if sections else "Историческая заявка: этап не указан")
+        is_additional = int(row["extra_count"] or 0) > 0
+        if is_additional:
+            request_kind = "additional"
+            approval_status = "legacy_approved" if str(row["stage"] or "") in approved_stages else "legacy_unclassified"
+            additional_reason = "legacy_unclassified"
+            details = "Перенесено из заявки, созданной до введения действующих регламентов. Требуется ручная классификация."
+            requiring_review = 0 if approval_status == "legacy_approved" else 1
+        else:
+            request_kind = "planned"
+            approval_status = "not_required"
+            additional_reason = None
+            details = None
+            requiring_review = 1 if len(sections) != 1 else 0
+        db.execute(
+            """
+            UPDATE material_request_batches
+            SET request_kind = ?, estimate_stage = ?, additional_reason = ?,
+                additional_reason_details = ?, approval_status = ?,
+                requiring_review = CASE WHEN ? = 1 THEN 1 ELSE requiring_review END,
+                workflow_version = 1
+            WHERE id = ?
+            """,
+            (
+                request_kind,
+                estimate_stage,
+                additional_reason,
+                details,
+                approval_status,
+                requiring_review,
+                row["id"],
+            ),
+        )
 
 
 def backfill_task_titles(db: sqlite3.Connection) -> None:

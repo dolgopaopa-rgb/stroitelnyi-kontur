@@ -772,6 +772,11 @@ def create_addendum_material_requests(db, *, project_id: int, actor_id: int | No
         creator_id=actor_id,
         needed_at=None,
         comment=f"Материалы по договору/доп. соглашению: {contract_title}",
+        request_kind="additional",
+        estimate_stage=clean_rows[0].get("section") or "Материалы по доп. соглашению",
+        additional_reason="customer_change",
+        workflow_version=1,
+        additional_reason_details=f"Основание: договор или дополнительное соглашение «{contract_title}». До закупки нужно указать срок и подтвердить решение.",
     )
     request_ids: list[int] = []
     for row in clean_rows:
@@ -904,9 +909,10 @@ def create_material_request(
     total_amount: float,
     comment: str,
     change_type: str = "",
+    procurement_status: str = "new",
 ) -> int:
     urgency = delivery_urgency(needed_at)
-    smetter_status = "not_required" if basis_type == "main_estimate" else "waiting_to_enter"
+    smetter_status = "waiting_to_enter"
     cursor = db.execute(
         """
         INSERT INTO material_requests (
@@ -914,7 +920,7 @@ def create_material_request(
             procurement_status, smetter_status, supplier, total_amount, comment,
             requested_quantity, requested_unit, delivery_urgency, change_type
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             batch_id,
@@ -925,6 +931,7 @@ def create_material_request(
             basis_type,
             estimate_section,
             needed_at or None,
+            procurement_status,
             smetter_status,
             "",
             total_amount,
@@ -945,18 +952,89 @@ def create_material_batch(
     creator_id: int | None,
     needed_at: str | None,
     comment: str,
+    request_kind: str,
+    estimate_stage: str,
+    additional_reason: str | None = None,
+    additional_reason_details: str | None = None,
+    workflow_version: int = 2,
 ) -> int:
     urgency = delivery_urgency(needed_at)
+    is_additional = request_kind == "additional"
+    stage = "needs_approval" if is_additional else "approved"
+    approval_status = "pending" if is_additional else "not_required"
     cursor = db.execute(
         """
         INSERT INTO material_request_batches (
-            project_id, creator_id, needed_at, delivery_urgency, status, stage, health, comment
+            project_id, creator_id, needed_at, delivery_urgency, status, stage, health, comment,
+            request_kind, estimate_stage, additional_reason, additional_reason_details,
+            approval_status, workflow_version
         )
-        VALUES (?, ?, ?, ?, 'new', 'needs_approval', 'normal', ?)
+        VALUES (?, ?, ?, ?, 'new', ?, 'normal', ?, ?, ?, ?, ?, ?, ?)
         """,
-        (project_id, creator_id, needed_at or None, urgency, comment),
+        (
+            project_id,
+            creator_id,
+            needed_at or None,
+            urgency,
+            stage,
+            comment,
+            request_kind,
+            estimate_stage,
+            additional_reason,
+            additional_reason_details,
+            approval_status,
+            workflow_version,
+        ),
     )
     return int(cursor.lastrowid)
+
+
+MATERIAL_REQUEST_KINDS = {"planned", "additional"}
+MATERIAL_ADDITIONAL_REASONS = {
+    "customer_change": "Изменение проекта заказчиком",
+    "site_damage": "Производственный дефект или повреждение на объекте",
+    "supplier_defect": "Брак или недопоставка поставщика",
+    "estimate_error": "Ошибка расчёта или пропуск объёма в смете",
+}
+MATERIAL_REASON_TO_BASIS = {
+    "customer_change": "additional_work",
+    "site_damage": "over_budget_cost",
+    "supplier_defect": "material_replacement",
+    "estimate_error": "main_estimate_overspend",
+}
+MATERIAL_FINANCIAL_DECISIONS = {
+    "bill_customer": "Выставить заказчику",
+    "company_cost": "Отнести на расходы компании",
+    "supplier_claim": "Предъявить поставщику",
+    "responsible_cost": "Отнести на ответственное лицо",
+    "other": "Иное решение",
+}
+
+
+def material_actor(account: dict | None, data: dict) -> tuple[str, int | None]:
+    """Do not let non-owners elevate material permissions through request JSON."""
+    real_role = account_role(account)
+    real_id = account_user_id(account) or None
+    if real_role != "owner":
+        return real_role, real_id
+    requested_role = str(data.get("actor_role") or real_role).strip()
+    requested_id = int(data.get("actor_id") or 0) or real_id
+    return requested_role, requested_id
+
+
+def material_requested_quantity(db, estimate_material_id: int) -> float:
+    row = db.execute(
+        """
+        SELECT COALESCE(SUM(m.requested_quantity), 0) AS quantity
+        FROM material_requests m
+        LEFT JOIN material_request_batches b ON b.id = m.batch_id
+        WHERE m.estimate_material_id = ?
+          AND COALESCE(m.change_type, '') != 'removed'
+          AND COALESCE(b.stage, '') != 'cancelled'
+        """,
+        (estimate_material_id,),
+    ).fetchone()
+    return number_value(row["quantity"] if row else 0)
 
 
 def material_batch_watchers(db, batch) -> set[int]:
@@ -1164,9 +1242,11 @@ def save_material_actual_items(db, batch_id: int, actual_items: list[dict]) -> f
         ).fetchone()
         if not material:
             continue
+        actual_quantity = number_value(item.get("actual_quantity")) or number_value(material["requested_quantity"])
+        purchase_date = str(item.get("purchase_date") or "").strip() or None
         actual_unit_price = number_value(item.get("actual_unit_price"))
         actual_total_amount = number_value(item.get("actual_total_amount"))
-        requested_quantity = number_value(material["requested_quantity"])
+        requested_quantity = actual_quantity
         if actual_total_amount <= 0 and actual_unit_price > 0:
             actual_total_amount = actual_unit_price * requested_quantity
         if actual_unit_price <= 0 and actual_total_amount > 0 and requested_quantity > 0:
@@ -1177,10 +1257,12 @@ def save_material_actual_items(db, batch_id: int, actual_items: list[dict]) -> f
             UPDATE material_requests
             SET actual_unit_price = ?,
                 actual_total_amount = ?,
+                actual_quantity = ?,
+                purchase_date = COALESCE(?, purchase_date),
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND batch_id = ?
             """,
-            (actual_unit_price, actual_total_amount, request_id, batch_id),
+            (actual_unit_price, actual_total_amount, actual_quantity, purchase_date, request_id, batch_id),
         )
     return actual_purchase_amount
 
@@ -6101,6 +6183,16 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                            receipt_doc.title AS batch_receipt_document_title,
                            receipt_doc.mime_type AS batch_receipt_document_mime_type,
                            b.actual_purchase_amount AS batch_actual_purchase_amount,
+                           b.request_kind AS batch_request_kind,
+                           b.estimate_stage AS batch_estimate_stage,
+                           b.additional_reason AS batch_additional_reason,
+                           b.additional_reason_details AS batch_additional_reason_details,
+                           b.approval_status AS batch_approval_status,
+                           b.approval_decided_by AS batch_approval_decided_by,
+                           b.approval_decided_at AS batch_approval_decided_at,
+                           b.approval_comment AS batch_approval_comment,
+                           b.financial_decision AS batch_financial_decision,
+                           approval_user.name AS batch_approval_decided_by_name,
                            source_variation.id AS batch_variation_id,
                            source_variation.title AS batch_variation_title,
                            source_variation.status AS batch_variation_status,
@@ -6110,6 +6202,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     LEFT JOIN material_request_batches b ON b.id = m.batch_id
                     LEFT JOIN estimate_materials em ON em.id = m.estimate_material_id
                     LEFT JOIN users creator ON creator.id = m.creator_id
+                    LEFT JOIN users approval_user ON approval_user.id = b.approval_decided_by
                     LEFT JOIN documents receipt_doc ON receipt_doc.id = b.receipt_document_id
                     LEFT JOIN variations source_variation
                       ON source_variation.source_type = 'material_request_batch'
@@ -6128,6 +6221,30 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     ]
                 material_rows = sanitize_material_rows_for_account(material_rows, account)
                 json_response(self, material_rows)
+                return
+
+            if path == "/api/material-stage-closures":
+                project_id = int((query.get("project_id") or ["0"])[0] or 0)
+                params: list[object] = []
+                where = ""
+                if project_id:
+                    where = "WHERE c.project_id = ?"
+                    params.append(project_id)
+                rows = db.execute(
+                    f"""
+                    SELECT c.*, p.title AS project_title,
+                           requester.name AS requested_by_name,
+                           verifier.name AS verified_by_name
+                    FROM material_stage_closures c
+                    JOIN projects p ON p.id = c.project_id
+                    LEFT JOIN users requester ON requester.id = c.requested_by
+                    LEFT JOIN users verifier ON verifier.id = c.verified_by
+                    {where}
+                    ORDER BY c.requested_at DESC
+                    """,
+                    params,
+                ).fetchall()
+                json_response(self, rows_to_dicts(rows))
                 return
 
             if path == "/api/photo-reports":
@@ -8087,7 +8204,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 json_response(self, {"id": task_id, "comment": comment})
                 return
 
-            material_batch_action = re.match(r"^/api/material-request-batches/(\d+)/(accept|return|resubmit|request_again|schedule|save_actuals|postpone_delivery|cancel_delivery|resolve_issue|receive|update|delete|create_variation)$", path)
+            material_batch_action = re.match(r"^/api/material-request-batches/(\d+)/(approve|reject|accept|order|return|resubmit|request_again|schedule|save_actuals|mark_smetter|postpone_delivery|cancel_delivery|resolve_issue|receive|update|delete|create_variation)$", path)
             if material_batch_action:
                 batch_id = int(material_batch_action.group(1))
                 action = material_batch_action.group(2)
@@ -8106,8 +8223,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 watcher_ids = material_batch_watchers(db, batch)
                 force_max = force_personal_max(data)
                 if action == "create_variation":
-                    actor_role = str(data.get("actor_role") or "").strip()
-                    actor_id = int(data.get("actor_id") or 0) or None
+                    actor_role, actor_id = material_actor(account, data)
                     can_create_variation = actor_role in {"owner", "construction_manager", "finance_director"} or (
                         actor_role == "foreman"
                         and actor_id
@@ -8199,8 +8315,89 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     )
                     json_response(self, {"id": variation_id}, 201)
                     return
-                actor_role = str(data.get("actor_role") or "").strip()
-                actor_id = int(data.get("actor_id") or 0) or None
+                actor_role, actor_id = material_actor(account, data)
+                if action in {"approve", "reject"}:
+                    if actor_role not in {"owner", "construction_manager"}:
+                        raise ValueError("Дополнительный объём согласуют ген.директор или руководитель строительства.")
+                    if str(batch["request_kind"] or "") != "additional":
+                        raise ValueError("Плановая заявка не требует отдельного согласования руководителя.")
+                    if str(batch["approval_status"] or "") not in {"pending", "rejected", "legacy_unclassified"}:
+                        raise ValueError("Решение по этой заявке уже принято.")
+                    comment = str(data.get("comment") or "").strip()
+                    financial_decision = str(data.get("financial_decision") or "").strip()
+                    if action == "approve" and financial_decision not in MATERIAL_FINANCIAL_DECISIONS:
+                        raise ValueError("Укажите финансовое решение по дополнительному объёму.")
+                    if action == "reject" and not comment:
+                        raise ValueError("Укажите причину возврата дополнительного объёма.")
+                    decision = "approved" if action == "approve" else "rejected"
+                    next_status = "new" if action == "approve" else "revision_requested"
+                    next_stage = "approved" if action == "approve" else "needs_approval"
+                    db.execute(
+                        """
+                        UPDATE material_request_batches
+                        SET approval_status = ?, approval_decided_by = ?, approval_decided_at = CURRENT_TIMESTAMP,
+                            approval_comment = ?, financial_decision = ?, status = ?, stage = ?,
+                            health = ?, revision_comment = ?, requiring_review = 0,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (
+                            decision,
+                            actor_id,
+                            comment,
+                            financial_decision if action == "approve" else None,
+                            next_status,
+                            next_stage,
+                            "normal" if action == "approve" else "at_risk",
+                            None if action == "approve" else comment,
+                            batch_id,
+                        ),
+                    )
+                    db.execute(
+                        """
+                        INSERT INTO material_request_decisions (batch_id, decision, financial_decision, comment, decided_by)
+                        VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (batch_id, decision, financial_decision or None, comment, actor_id),
+                    )
+                    db.execute(
+                        """
+                        UPDATE material_requests
+                        SET procurement_status = ?, updated_at = CURRENT_TIMESTAMP
+                        WHERE batch_id = ? AND COALESCE(change_type, '') != 'removed'
+                        """,
+                        ("approved" if action == "approve" else "returned", batch_id),
+                    )
+                    if action == "approve":
+                        title = "Дополнительный объём согласован"
+                        message = (
+                            f"{batch['project_title']}: дополнительный объём по этапу «{batch['estimate_stage']}» согласован. "
+                            f"Решение: {MATERIAL_FINANCIAL_DECISIONS[financial_decision]}. Заявка доступна снабжению."
+                        )
+                        recipients = watcher_ids | {user_id_by_role(db, "procurement_manager")}
+                    else:
+                        title = "Дополнительный объём возвращён"
+                        message = f"{batch['project_title']}: дополнительный объём возвращён на уточнение. Причина: {comment}"
+                        recipients = watcher_ids
+                    notify_users(
+                        db,
+                        {user_id for user_id in recipients if user_id},
+                        batch["project_id"],
+                        title,
+                        message,
+                        "material_request_batch",
+                        batch_id,
+                        force_max=force_max,
+                    )
+                    db.execute(
+                        """
+                        INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
+                        VALUES (?, 'decision', ?, ?, 'internal', 'material_request')
+                        """,
+                        (batch["project_id"], message, actor_id),
+                    )
+                    json_response(self, {"id": batch_id, "approval_status": decision, "stage": next_stage})
+                    return
                 if action in {"update", "delete"} and not can_change_material_batch(actor_role, actor_id, batch):
                     raise ValueError("Заявку уже нельзя изменить или удалить: снабжение взяло ее в работу.")
                 if action == "delete":
@@ -8271,7 +8468,16 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             raise ValueError("Количество в строке заявки должно быть больше нуля.")
                         comment = str(item.get("comment") or "").strip()
                         title = str(item.get("title") or existing["title"] or "").strip()
-                        basis_type = str(item.get("basis_type") or existing["basis_type"] or "main_estimate").strip()
+                        regulated_basis_type = (
+                            "main_estimate"
+                            if str(batch["request_kind"] or "") == "planned"
+                            else MATERIAL_REASON_TO_BASIS.get(str(batch["additional_reason"] or ""), str(existing["basis_type"] or ""))
+                        )
+                        basis_type = (
+                            regulated_basis_type
+                            if int(batch["workflow_version"] or 0) >= 2
+                            else str(item.get("basis_type") or existing["basis_type"] or "main_estimate").strip()
+                        )
                         requested_unit = str(item.get("unit") or existing["requested_unit"] or existing["estimate_material_unit"] or "").strip()
                         unit_price = number_value(existing["unit_price"])
                         total_amount = quantity * unit_price if unit_price else number_value(existing["total_amount"])
@@ -8313,12 +8519,18 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         "over_budget_cost": "Сверхбюджет",
                     }
                     allowed_extra_reasons = set(extra_reason_labels)
+                    if int(batch["workflow_version"] or 0) >= 2 and extra_items and str(batch["request_kind"] or "") != "additional":
+                        raise ValueError("Свободные позиции можно добавить только в заявку «Дополнительный объём».")
                     for item in extra_items:
                         material_name = str(item.get("material") or "").strip()
                         item_name = str(item.get("name") or "").strip()
                         item_unit = str(item.get("unit") or "").strip()
                         quantity = number_value(item.get("quantity"))
-                        reason = str(item.get("reason") or "").strip()
+                        reason = (
+                            MATERIAL_REASON_TO_BASIS.get(str(batch["additional_reason"] or ""), "")
+                            if int(batch["workflow_version"] or 0) >= 2
+                            else str(item.get("reason") or "").strip()
+                        )
                         if not material_name and not item_name and quantity <= 0:
                             continue
                         if not material_name or not item_name or not item_unit or quantity <= 0 or reason not in allowed_extra_reasons:
@@ -8346,10 +8558,15 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         """
                         UPDATE material_request_batches
                         SET status = 'new',
-                            stage = 'needs_approval',
+                            stage = ?,
                             health = 'normal',
                             health_comment = NULL,
                             requiring_review = 0,
+                            approval_status = ?,
+                            approval_decided_by = NULL,
+                            approval_decided_at = NULL,
+                            approval_comment = NULL,
+                            financial_decision = NULL,
                             needed_at = ?,
                             delivery_urgency = ?,
                             foreman_response = ?,
@@ -8357,14 +8574,27 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             updated_at = CURRENT_TIMESTAMP
                         WHERE id = ?
                         """,
-                        (new_needed_at, new_urgency, update_comment, batch_id),
+                        (
+                            "needs_approval" if batch["request_kind"] == "additional" else "approved",
+                            "pending" if batch["request_kind"] == "additional" else "not_required",
+                            new_needed_at,
+                            new_urgency,
+                            update_comment,
+                            batch_id,
+                        ),
                     )
-                    message = f"{batch['project_title']}: заявка на материалы от {format_date_ru(batch['created_at'])} исправлена и повторно отправлена снабжению."
+                    destination = "руководителю на согласование" if batch["request_kind"] == "additional" else "снабжению"
+                    message = f"{batch['project_title']}: заявка на материалы от {format_date_ru(batch['created_at'])} исправлена и повторно отправлена {destination}."
                     if update_comment:
                         message += f" Комментарий: {update_comment}"
+                    recipients = (
+                        {user_id_by_role(db, "owner"), batch["construction_manager_id"] or user_id_by_role(db, "construction_manager")}
+                        if batch["request_kind"] == "additional"
+                        else {user_id_by_role(db, "procurement_manager")}
+                    )
                     notify_users(
                         db,
-                        {user_id for user_id in (watcher_ids | {user_id_by_role(db, "procurement_manager")}) if user_id},
+                        {user_id for user_id in (watcher_ids | recipients) if user_id},
                         batch["project_id"],
                         "Заявка на материалы исправлена",
                         message,
@@ -8388,6 +8618,12 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     json_response(self, {"id": batch_id, "status": "new"})
                     return
                 if action == "accept":
+                    if actor_role not in {"procurement_manager", "owner", "construction_manager"}:
+                        raise ValueError("Принять заявку в работу может только снабжение или руководитель.")
+                    if str(batch["request_kind"] or "") == "additional" and str(batch["approval_status"] or "") not in {"approved", "legacy_approved"}:
+                        raise ValueError("Дополнительный объём нельзя передать в закупку до решения ген.директора или руководителя строительства.")
+                    if str(batch["stage"] or "") != "approved":
+                        raise ValueError("Заявка ещё не готова к закупке.")
                     active_items = db.execute(
                         """
                         SELECT id, title, requested_quantity, requested_unit
@@ -8437,9 +8673,12 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             INSERT INTO material_request_batches (
                                 project_id, creator_id, needed_at, delivery_urgency, status, stage, health,
                                 health_comment, comment, revision_comment, procurement_responsible_id,
-                                supplier_comment, procurement_comment, updated_at
+                                supplier_comment, procurement_comment, request_kind, estimate_stage,
+                                additional_reason, additional_reason_details, approval_status,
+                                approval_decided_by, approval_decided_at, approval_comment,
+                                financial_decision, workflow_version, updated_at
                             )
-                            VALUES (?, ?, ?, ?, 'postponed', 'approved', 'at_risk', ?, ?, NULL, ?, ?, ?, CURRENT_TIMESTAMP)
+                            VALUES (?, ?, ?, ?, 'postponed', 'approved', 'at_risk', ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2, CURRENT_TIMESTAMP)
                             """,
                             (
                                 batch["project_id"],
@@ -8451,6 +8690,15 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                                 actor_user_id,
                                 "Поставщик будет выбран при отдельной обработке отложенных позиций.",
                                 postponed_text,
+                                batch["request_kind"],
+                                batch["estimate_stage"],
+                                batch["additional_reason"],
+                                batch["additional_reason_details"],
+                                batch["approval_status"],
+                                batch["approval_decided_by"],
+                                batch["approval_decided_at"],
+                                batch["approval_comment"],
+                                batch["financial_decision"],
                             ),
                         )
                         postponed_batch_id = int(cursor.lastrowid)
@@ -8472,7 +8720,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         """
                         UPDATE material_request_batches
                         SET status = 'in_work',
-                            stage = 'ordered',
+                            stage = 'approved',
                             health = 'normal',
                             health_comment = NULL,
                             procurement_responsible_id = COALESCE(?, procurement_responsible_id),
@@ -8488,7 +8736,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     db.execute(
                         f"""
                         UPDATE material_requests
-                        SET procurement_status = 'ordered', updated_at = CURRENT_TIMESTAMP
+                        SET procurement_status = 'in_work', updated_at = CURRENT_TIMESTAMP
                         WHERE batch_id = ?
                           AND id IN ({selected_placeholders})
                           AND COALESCE(change_type, '') != 'removed'
@@ -8521,22 +8769,84 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     )
                     json_response(self, {"id": batch_id, "status": "in_work", "postponed_batch_id": postponed_batch_id})
                     return
-                if action == "resubmit":
+                if action == "order":
+                    if actor_role not in {"procurement_manager", "owner", "construction_manager"}:
+                        raise ValueError("Отметить закупку может только снабжение или руководитель.")
+                    if str(batch["status"] or "") != "in_work" or str(batch["stage"] or "") != "approved":
+                        raise ValueError("Сначала примите согласованную заявку в работу.")
+                    supplier = str(data.get("supplier") or "").strip()
+                    if not supplier:
+                        raise ValueError("Укажите поставщика.")
+                    actual_purchase_amount = save_material_actual_items(db, batch_id, data.get("actual_items") or [])
+                    incomplete = db.execute(
+                        """
+                        SELECT title
+                        FROM material_requests
+                        WHERE batch_id = ?
+                          AND COALESCE(change_type, '') != 'removed'
+                          AND (actual_quantity <= 0 OR COALESCE(purchase_date, '') = '' OR actual_total_amount <= 0)
+                        ORDER BY id
+                        LIMIT 1
+                        """,
+                        (batch_id,),
+                    ).fetchone()
+                    if incomplete:
+                        raise ValueError(f"Заполните фактическое количество, дату и стоимость закупки: {incomplete['title']}.")
                     comment = str(data.get("comment") or "").strip()
                     db.execute(
                         """
                         UPDATE material_request_batches
+                        SET status = 'ordered', stage = 'ordered', supplier_comment = ?,
+                            procurement_comment = ?, actual_purchase_amount = ?, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (supplier, comment, actual_purchase_amount, batch_id),
+                    )
+                    db.execute(
+                        """
+                        UPDATE material_requests
+                        SET procurement_status = 'ordered', supplier = ?, updated_at = CURRENT_TIMESTAMP
+                        WHERE batch_id = ? AND COALESCE(change_type, '') != 'removed'
+                        """,
+                        (supplier, batch_id),
+                    )
+                    message = f"{batch['project_title']}: материалы по этапу «{batch['estimate_stage']}» заказаны у поставщика {supplier}."
+                    notify_users(
+                        db,
+                        watcher_ids,
+                        batch["project_id"],
+                        "Материалы заказаны",
+                        message,
+                        "material_request_batch",
+                        batch_id,
+                        force_max=force_max,
+                    )
+                    notify_material_actual_cost_overrun(db, batch_id, batch)
+                    json_response(self, {"id": batch_id, "status": "ordered", "actual_purchase_amount": actual_purchase_amount})
+                    return
+                if action == "resubmit":
+                    comment = str(data.get("comment") or "").strip()
+                    next_stage = "needs_approval" if batch["request_kind"] == "additional" else "approved"
+                    next_approval = "pending" if batch["request_kind"] == "additional" else "not_required"
+                    db.execute(
+                        """
+                        UPDATE material_request_batches
                         SET status = 'new',
-                            stage = 'needs_approval',
+                            stage = ?,
                             health = 'normal',
                             health_comment = NULL,
                             requiring_review = 0,
+                            approval_status = ?,
+                            approval_decided_by = NULL,
+                            approval_decided_at = NULL,
+                            approval_comment = NULL,
+                            financial_decision = NULL,
                             foreman_response = ?,
                             revision_comment = NULL,
                             updated_at = CURRENT_TIMESTAMP
                         WHERE id = ?
                         """,
-                        (comment, batch_id),
+                        (next_stage, next_approval, comment, batch_id),
                     )
                     db.execute(
                         """
@@ -8547,20 +8857,37 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         """,
                         (batch_id,),
                     )
-                    message = f"{batch['project_title']}: заявка на материалы от {format_date_ru(batch['created_at'])} повторно отправлена снабжению."
+                    destination = "руководителю на согласование" if batch["request_kind"] == "additional" else "снабжению"
+                    message = f"{batch['project_title']}: заявка на материалы от {format_date_ru(batch['created_at'])} повторно отправлена {destination}."
                     if comment:
                         message += f" Комментарий прораба: {comment}"
-                    create_notification(
-                        db,
-                        batch["project_id"],
-                        user_id_by_role(db, "procurement_manager"),
-                        "procurement_manager",
-                        "Заявка на материалы повторно отправлена",
-                        message,
-                        "material_request_batch",
-                        batch_id,
-                        force_max=force_max,
-                    )
+                    if batch["request_kind"] == "additional":
+                        notify_users(
+                            db,
+                            {
+                                user_id
+                                for user_id in {user_id_by_role(db, "owner"), batch["construction_manager_id"] or user_id_by_role(db, "construction_manager")}
+                                if user_id
+                            },
+                            batch["project_id"],
+                            "Дополнительный объём повторно отправлен",
+                            message,
+                            "material_request_batch",
+                            batch_id,
+                            force_max=force_max,
+                        )
+                    else:
+                        create_notification(
+                            db,
+                            batch["project_id"],
+                            user_id_by_role(db, "procurement_manager"),
+                            "procurement_manager",
+                            "Заявка на материалы повторно отправлена",
+                            message,
+                            "material_request_batch",
+                            batch_id,
+                            force_max=force_max,
+                        )
                     notify_material_deviation_for_estimators(
                         db,
                         batch_id,
@@ -8595,8 +8922,8 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     db.execute(
                         """
                         UPDATE material_request_batches
-                        SET status = 'new',
-                            stage = 'needs_approval',
+                        SET status = 'ordered',
+                            stage = 'ordered',
                             health = 'normal',
                             health_comment = NULL,
                             revision_comment = NULL,
@@ -8613,7 +8940,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     db.execute(
                         """
                         UPDATE material_requests
-                        SET procurement_status = 'new',
+                        SET procurement_status = 'ordered',
                             needed_at = ?,
                             delivery_urgency = ?,
                             actual_delivery_date = NULL,
@@ -8643,7 +8970,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         """,
                         (batch["project_id"], message, actor_id),
                     )
-                    json_response(self, {"id": batch_id, "status": "new"})
+                    json_response(self, {"id": batch_id, "status": "ordered"})
                     return
                 if action in {"postpone_delivery", "cancel_delivery"}:
                     if actor_role not in {"procurement_manager", "owner", "construction_manager"}:
@@ -8656,7 +8983,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     if action == "postpone_delivery":
                         procurement_comment = f"Доставка отложена. {comment}".strip()
                         status_to = "postponed"
-                        stage_to = "approved"
+                        stage_to = "ordered"
                         health_to = "at_risk"
                         health_comment = comment or "Доставка отложена снабжением. Внесенные цены закупки сохранены."
                         request_status = "ordered"
@@ -8725,9 +9052,9 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     json_response(self, {"id": batch_id, "status": status_to, "actual_purchase_amount": actual_purchase_amount})
                     return
                 if action == "save_actuals":
-                    if str(data.get("actor_role") or "") != "procurement_manager":
+                    if actor_role != "procurement_manager":
                         raise ValueError("Сохранить цены закупки может только снабжение.")
-                    if str(batch["status"] or "") not in {"in_work", "delivery_scheduled", "postponed", "received", "receipt_issue"}:
+                    if str(batch["status"] or "") not in {"in_work", "ordered", "delivery_scheduled", "postponed", "received", "receipt_issue"}:
                         raise ValueError("Цены закупки можно сохранять после принятия заявки снабжением в работу.")
                     comment = str(data.get("comment") or "").strip()
                     actual_purchase_amount = save_material_actual_items(db, batch_id, data.get("actual_items") or [])
@@ -8758,7 +9085,54 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         )
                     json_response(self, {"id": batch_id, "status": batch["status"], "actual_purchase_amount": actual_purchase_amount})
                     return
+                if action == "mark_smetter":
+                    if actor_role != "procurement_manager":
+                        raise ValueError("Внесение закупки в Smetter подтверждает снабжение.")
+                    if str(batch["stage"] or "") not in {"ordered", "in_transit", "delivered", "closed"}:
+                        raise ValueError("Сначала зафиксируйте фактическую закупку.")
+                    incomplete = db.execute(
+                        """
+                        SELECT title
+                        FROM material_requests
+                        WHERE batch_id = ?
+                          AND COALESCE(change_type, '') != 'removed'
+                          AND (actual_quantity <= 0 OR COALESCE(purchase_date, '') = '' OR actual_total_amount <= 0)
+                        ORDER BY id
+                        LIMIT 1
+                        """,
+                        (batch_id,),
+                    ).fetchone()
+                    if incomplete:
+                        raise ValueError(f"До внесения в Smetter заполните факт закупки: {incomplete['title']}.")
+                    reference = str(data.get("smetter_reference") or "").strip()
+                    db.execute(
+                        """
+                        UPDATE material_requests
+                        SET smetter_status = 'entered', smetter_entered_by = ?,
+                            smetter_entered_at = CURRENT_TIMESTAMP, smetter_reference = ?,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE batch_id = ? AND COALESCE(change_type, '') != 'removed'
+                        """,
+                        (actor_id, reference, batch_id),
+                    )
+                    message = f"{batch['project_title']}: фактическая закупка по этапу «{batch['estimate_stage']}» внесена в Smetter."
+                    notify_users(
+                        db,
+                        watcher_ids,
+                        batch["project_id"],
+                        "Закупка внесена в Smetter",
+                        message,
+                        "material_request_batch",
+                        batch_id,
+                        force_max=force_max,
+                    )
+                    json_response(self, {"id": batch_id, "smetter_status": "entered"})
+                    return
                 if action == "schedule":
+                    if actor_role != "procurement_manager":
+                        raise ValueError("Доставку назначает снабжение.")
+                    if str(batch["stage"] or "") not in {"ordered", "in_transit"}:
+                        raise ValueError("Сначала отметьте, что материалы заказаны.")
                     delivery_date = data.get("scheduled_delivery_date") or ""
                     if not delivery_date:
                         raise ValueError("Укажите дату доставки.")
@@ -8969,6 +9343,8 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     )
                     json_response(self, {"id": batch_id, "status": new_status, "document_id": document_id})
                     return
+                if action != "return" or actor_role != "procurement_manager":
+                    raise ValueError("Вернуть заявку на доработку может только снабжение.")
                 comment = str(data.get("comment") or "").strip()
                 if not comment:
                     raise ValueError("Укажите комментарий, почему заявка возвращается на доработку.")
@@ -9022,9 +9398,13 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 request_id = int(material_action.group(1))
                 material = db.execute(
                     """
-                    SELECT m.*, p.title AS project_title, p.foreman_id
+                    SELECT m.*, p.title AS project_title, p.foreman_id,
+                           b.stage AS batch_stage, b.request_kind AS batch_request_kind,
+                           b.approval_status AS batch_approval_status,
+                           b.workflow_version AS batch_workflow_version
                     FROM material_requests m
                     JOIN projects p ON p.id = m.project_id
+                    LEFT JOIN material_request_batches b ON b.id = m.batch_id
                     WHERE m.id = ?
                     """,
                     (request_id,),
@@ -9032,6 +9412,14 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 if not material:
                     json_response(self, {"error": "Material request not found"}, 404)
                     return
+                actor_role, _ = material_actor(account, data)
+                if actor_role not in {"procurement_manager", "owner", "construction_manager"}:
+                    raise ValueError("Подтверждать доставку материалов может только снабжение или руководитель.")
+                if int(material["batch_workflow_version"] or 0) >= 2:
+                    if str(material["batch_request_kind"] or "") == "additional" and str(material["batch_approval_status"] or "") != "approved":
+                        raise ValueError("Дополнительный объём нельзя передать в доставку без решения генерального директора или руководителя строительства.")
+                    if str(material["batch_stage"] or "") not in {"ordered", "in_transit"}:
+                        raise ValueError("Сначала снабжение должно принять заявку и зафиксировать фактическую закупку.")
                 actual_date = data.get("actual_delivery_date") or material["needed_at"]
                 comment = data.get("procurement_comment") or ""
                 db.execute(
@@ -9213,103 +9601,241 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 json_response(self, {"id": cursor.lastrowid}, 201)
                 return
 
+            if path in {"/api/material-stage-closures/request", "/api/material-stage-closures/verify"}:
+                actor_role, actor_id = material_actor(account, data)
+                project_id = int(data.get("project_id") or 0)
+                estimate_stage = str(data.get("estimate_stage") or "").strip()
+                comment = str(data.get("comment") or "").strip()
+                if not project_id or not estimate_stage:
+                    raise ValueError("Укажите объект и этап сметы.")
+                project = db.execute("SELECT id, title FROM projects WHERE id = ?", (project_id,)).fetchone()
+                if not project:
+                    raise ValueError("Объект не найден.")
+                if path.endswith("/request"):
+                    if actor_role not in {"owner", "construction_manager"}:
+                        raise ValueError("Запросить закрытие этапа может руководитель строительства или ген.директор.")
+                    db.execute(
+                        """
+                        INSERT INTO material_stage_closures (
+                            project_id, estimate_stage, status, requested_by, requested_at,
+                            verified_by, verified_at, comment
+                        )
+                        VALUES (?, ?, 'requested', ?, CURRENT_TIMESTAMP, NULL, NULL, ?)
+                        ON CONFLICT(project_id, estimate_stage) DO UPDATE SET
+                            status = 'requested', requested_by = excluded.requested_by,
+                            requested_at = CURRENT_TIMESTAMP, verified_by = NULL,
+                            verified_at = NULL, comment = excluded.comment
+                        """,
+                        (project_id, estimate_stage, actor_id, comment),
+                    )
+                    create_notification(
+                        db,
+                        project_id,
+                        user_id_by_role(db, "procurement_manager"),
+                        "procurement_manager",
+                        "Нужно проверить закрытие этапа",
+                        f"{project['title']}: руководитель запросил закрытие этапа «{estimate_stage}». Проверьте закупки и внесение в Smetter.",
+                        "materials",
+                        project_id,
+                    )
+                    json_response(self, {"project_id": project_id, "estimate_stage": estimate_stage, "status": "requested"})
+                    return
+                if actor_role != "procurement_manager":
+                    raise ValueError("Закрытие этапа по закупкам подтверждает снабжение.")
+                closure = db.execute(
+                    "SELECT id FROM material_stage_closures WHERE project_id = ? AND estimate_stage = ? AND status = 'requested'",
+                    (project_id, estimate_stage),
+                ).fetchone()
+                if not closure:
+                    raise ValueError("Руководитель ещё не запросил закрытие этого этапа.")
+                batch_count = db.execute(
+                    """
+                    SELECT COUNT(*) AS count
+                    FROM material_request_batches
+                    WHERE project_id = ? AND estimate_stage = ? AND stage != 'cancelled'
+                    """,
+                    (project_id, estimate_stage),
+                ).fetchone()["count"]
+                if not batch_count:
+                    raise ValueError("По этому этапу нет заявок на материалы.")
+                incomplete_batch = db.execute(
+                    """
+                    SELECT id, stage, health, status
+                    FROM material_request_batches
+                    WHERE project_id = ? AND estimate_stage = ?
+                      AND (
+                        stage NOT IN ('delivered', 'closed', 'cancelled')
+                        OR (stage = 'delivered' AND (health != 'normal' OR status != 'received'))
+                      )
+                    LIMIT 1
+                    """,
+                    (project_id, estimate_stage),
+                ).fetchone()
+                if incomplete_batch:
+                    raise ValueError(f"Нельзя закрыть этап: заявка #{incomplete_batch['id']} ещё не доставлена или по ней остаётся проблема.")
+                incomplete_smetter = db.execute(
+                    """
+                    SELECT m.title
+                    FROM material_requests m
+                    JOIN material_request_batches b ON b.id = m.batch_id
+                    WHERE b.project_id = ? AND b.estimate_stage = ? AND b.stage != 'cancelled'
+                      AND COALESCE(m.change_type, '') != 'removed'
+                      AND m.smetter_status != 'entered'
+                    LIMIT 1
+                    """,
+                    (project_id, estimate_stage),
+                ).fetchone()
+                if incomplete_smetter:
+                    raise ValueError(f"Нельзя закрыть этап: закупка «{incomplete_smetter['title']}» не внесена в Smetter.")
+                db.execute(
+                    """
+                    UPDATE material_stage_closures
+                    SET status = 'verified', verified_by = ?, verified_at = CURRENT_TIMESTAMP,
+                        comment = CASE WHEN ? != '' THEN ? ELSE comment END
+                    WHERE id = ?
+                    """,
+                    (actor_id, comment, comment, closure["id"]),
+                )
+                db.execute(
+                    """
+                    UPDATE material_request_batches
+                    SET stage = 'closed', status = 'closed', updated_at = CURRENT_TIMESTAMP
+                    WHERE project_id = ? AND estimate_stage = ? AND stage = 'delivered'
+                    """,
+                    (project_id, estimate_stage),
+                )
+                json_response(self, {"project_id": project_id, "estimate_stage": estimate_stage, "status": "verified"})
+                return
+
             if path == "/api/material-requests/bulk":
                 force_max = force_personal_max(data)
                 project_id = int(data["project_id"])
-                needed_at = data.get("needed_at") or None
+                needed_at = str(data.get("needed_at") or "").strip() or None
                 creator_role = data.get("creator_role") or ""
                 creator_id = int(data.get("creator_id") or user_id_by_role(db, "foreman") or 7)
-                base_comment = data.get("comment") or ""
+                base_comment = str(data.get("comment") or "").strip()
+                request_kind = str(data.get("request_kind") or "").strip()
+                estimate_stage = str(data.get("estimate_stage") or "").strip()
+                additional_reason = str(data.get("additional_reason") or "").strip()
+                additional_reason_details = str(data.get("additional_reason_details") or "").strip()
                 items = data.get("items") or []
                 extra_items = data.get("extra_items") or []
+                if request_kind not in MATERIAL_REQUEST_KINDS:
+                    raise ValueError("Выберите вид заявки: плановая или дополнительный объём.")
+                if not estimate_stage:
+                    raise ValueError("Укажите один этап сметы для всей заявки.")
+                if not needed_at:
+                    raise ValueError("Укажите дату, когда материалы должны быть на объекте.")
                 if not items and not extra_items:
                     raise ValueError("Выберите хотя бы один материал.")
-                created: list[int] = []
                 project = db.execute(
                     "SELECT id, title, foreman_id, estimator_id, construction_manager_id FROM projects WHERE id = ?",
                     (project_id,),
                 ).fetchone()
+                if not project:
+                    raise ValueError("Объект не найден.")
                 creator = db.execute("SELECT name, role FROM users WHERE id = ?", (creator_id,)).fetchone()
                 if creator_role == "foreman" and project and int(project["foreman_id"] or 0) != creator_id:
                     raise ValueError("Этот объект не закреплен за выбранным прорабом.")
+                if request_kind == "planned" and extra_items:
+                    raise ValueError("Свободные позиции оформляются как дополнительный объём. В плановой заявке выбирайте только материалы сметы.")
+                if request_kind == "additional":
+                    if additional_reason not in MATERIAL_ADDITIONAL_REASONS:
+                        raise ValueError("Укажите причину дополнительного объёма по действующему регламенту.")
+                    if additional_reason == "estimate_error" and not additional_reason_details:
+                        raise ValueError("Для ошибки сметы подробно опишите, какой объём был пропущен или рассчитан неверно.")
+
+                normalized_items: list[dict] = []
+                for item in items:
+                    estimate_material_id = int(item.get("estimate_material_id") or 0)
+                    quantity = number_value(item.get("quantity"))
+                    if not estimate_material_id or quantity <= 0:
+                        continue
+                    material = db.execute(
+                        "SELECT * FROM estimate_materials WHERE id = ? AND project_id = ?",
+                        (estimate_material_id, project_id),
+                    ).fetchone()
+                    if not material:
+                        raise ValueError("Одна из позиций не найдена в смете выбранного объекта.")
+                    section = str(material["section"] or "").strip()
+                    if section != estimate_stage:
+                        raise ValueError("В одной заявке можно выбрать материалы только из одного этапа сметы.")
+                    estimated_quantity = number_value(material["estimated_quantity"])
+                    already_requested = material_requested_quantity(db, estimate_material_id)
+                    remaining_quantity = max(estimated_quantity - already_requested, 0)
+                    if request_kind == "planned" and quantity > remaining_quantity + 0.000001:
+                        raise ValueError(
+                            f"{material['name']}: по смете осталось {remaining_quantity:g} {material['unit'] or ''}. "
+                            "Превышение оформите отдельной заявкой «Дополнительный объём»."
+                        )
+                    normalized_items.append(
+                        {
+                            "estimate_material_id": estimate_material_id,
+                            "title": material["name"],
+                            "section": section,
+                            "unit": material["unit"] or "",
+                            "quantity": quantity,
+                            "unit_price": number_value(material["unit_price"]),
+                        }
+                    )
+
+                normalized_extras: list[dict] = []
+                for item in extra_items:
+                    material_name = str(item.get("material") or "").strip()
+                    item_name = str(item.get("name") or "").strip()
+                    item_unit = str(item.get("unit") or "").strip()
+                    quantity = number_value(item.get("quantity"))
+                    if not material_name and not item_name and quantity <= 0:
+                        continue
+                    if request_kind != "additional":
+                        raise ValueError("Позиции вне сметы можно добавить только в заявку «Дополнительный объём».")
+                    if not material_name or not item_name or not item_unit or quantity <= 0:
+                        raise ValueError("Заполните материал, точное наименование, единицу измерения и количество.")
+                    normalized_extras.append(
+                        {
+                            "title": f"{material_name}: {item_name}",
+                            "unit": item_unit,
+                            "quantity": quantity,
+                        }
+                    )
+                if not normalized_items and not normalized_extras:
+                    raise ValueError("Не удалось создать заявку: проверьте выбранные позиции и количество.")
+
                 batch_id = create_material_batch(
                     db,
                     project_id=project_id,
                     creator_id=creator_id,
                     needed_at=needed_at,
                     comment=base_comment,
+                    request_kind=request_kind,
+                    estimate_stage=estimate_stage,
+                    additional_reason=additional_reason or None,
+                    additional_reason_details=additional_reason_details or None,
                 )
-                for item in items:
-                    estimate_material_id = int(item.get("estimate_material_id") or 0)
-                    quantity = number_value(item.get("quantity"))
-                    if not estimate_material_id or quantity <= 0:
-                        continue
-                    material = db.execute("SELECT * FROM estimate_materials WHERE id = ? AND project_id = ?", (estimate_material_id, project_id)).fetchone()
-                    if not material:
-                        continue
-                    estimated_quantity = number_value(material["estimated_quantity"])
-                    unit_price = number_value(material["unit_price"])
-                    unit = material["unit"] or ""
-                    section = material["section"] or ""
-                    reason = str(item.get("reason") or "").strip()
-                    main_quantity = min(quantity, estimated_quantity) if estimated_quantity > 0 else quantity
-                    if main_quantity > 0:
-                        created.append(
-                            create_material_request(
-                                db,
-                                batch_id=batch_id,
-                                project_id=project_id,
-                                creator_id=creator_id,
-                                estimate_material_id=estimate_material_id,
-                                title=material["name"],
-                                basis_type="main_estimate",
-                                estimate_section=section,
-                                needed_at=needed_at,
-                                requested_quantity=main_quantity,
-                                requested_unit=unit,
-                                total_amount=main_quantity * unit_price,
-                                comment=f"По смете. Заказано: {main_quantity:g} {unit}. {base_comment}".strip(),
-                            )
+                created: list[int] = []
+                basis_type = "main_estimate" if request_kind == "planned" else MATERIAL_REASON_TO_BASIS[additional_reason]
+                request_status = "approved" if request_kind == "planned" else "new"
+                reason_label = MATERIAL_ADDITIONAL_REASONS.get(additional_reason, "")
+                for item in normalized_items:
+                    created.append(
+                        create_material_request(
+                            db,
+                            batch_id=batch_id,
+                            project_id=project_id,
+                            creator_id=creator_id,
+                            estimate_material_id=item["estimate_material_id"],
+                            title=item["title"],
+                            basis_type=basis_type,
+                            estimate_section=estimate_stage,
+                            needed_at=needed_at,
+                            requested_quantity=item["quantity"],
+                            requested_unit=item["unit"],
+                            total_amount=item["quantity"] * item["unit_price"],
+                            comment=(f"{reason_label}. {base_comment}" if request_kind == "additional" else f"По смете. {base_comment}").strip(),
+                            procurement_status=request_status,
                         )
-                    if estimated_quantity > 0 and quantity > estimated_quantity:
-                        extra_quantity = quantity - estimated_quantity
-                        if not reason:
-                            raise ValueError(f"Укажите причину превышения по материалу: {material['name']}")
-                        created.append(
-                            create_material_request(
-                                db,
-                                batch_id=batch_id,
-                                project_id=project_id,
-                                creator_id=creator_id,
-                                estimate_material_id=estimate_material_id,
-                                title=f"{material['name']} - сверх сметы",
-                                basis_type="main_estimate_overspend",
-                                estimate_section=section,
-                                needed_at=needed_at,
-                                requested_quantity=extra_quantity,
-                                requested_unit=unit,
-                                total_amount=extra_quantity * unit_price,
-                                comment=f"Причина превышения: {reason}. {base_comment}".strip(),
-                            )
-                        )
-                extra_reason_labels = {
-                    "additional_work": "Доп",
-                    "material_replacement": "Замена",
-                    "main_estimate_overspend": "Превышение",
-                    "over_budget_cost": "Сверхбюджет",
-                }
-                allowed_extra_reasons = set(extra_reason_labels)
-                for item in extra_items:
-                    material_name = str(item.get("material") or "").strip()
-                    item_name = str(item.get("name") or "").strip()
-                    item_unit = str(item.get("unit") or "").strip()
-                    quantity = number_value(item.get("quantity"))
-                    reason = str(item.get("reason") or "").strip()
-                    if not material_name and not item_name and quantity <= 0:
-                        continue
-                    if not material_name or not item_name or not item_unit or quantity <= 0 or reason not in allowed_extra_reasons:
-                        raise ValueError("Заполните материал, наименование, ед. измерения, количество и причину для дополнительных материалов.")
-                    title_text = f"{material_name}: {item_name}"
+                    )
+                for item in normalized_extras:
                     created.append(
                         create_material_request(
                             db,
@@ -9317,46 +9843,53 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             project_id=project_id,
                             creator_id=creator_id,
                             estimate_material_id=None,
-                            title=title_text,
-                            basis_type=reason,
-                            estimate_section="Дополнительные материалы",
+                            title=item["title"],
+                            basis_type=basis_type,
+                            estimate_section=estimate_stage,
                             needed_at=needed_at,
-                            requested_quantity=quantity,
-                            requested_unit=item_unit,
+                            requested_quantity=item["quantity"],
+                            requested_unit=item["unit"],
                             total_amount=0,
-                            comment=f"{extra_reason_labels[reason]}. {base_comment}".strip(),
+                            comment=f"{reason_label}. {base_comment}".strip(),
+                            procurement_status=request_status,
                         )
                     )
-                if not created:
-                    raise ValueError("Не удалось создать заявку: проверьте количество и выбранные материалы.")
                 urgency = delivery_urgency(needed_at)
-                title = (
-                    f"Получена срочная заявка на материалы от {format_date_ru()}"
-                    if urgency == "urgent"
-                    else f"Получена заявка на материалы от {format_date_ru()}"
-                )
                 creator_label = f" от {creator['name']}" if creator else ""
-                text = f"{project['title'] if project else 'Объект'}: {len(created)} позиций{creator_label}, желаемая дата доставки: {needed_at or 'не указана'}"
-                create_notification(
-                    db,
-                    project_id,
-                    user_id_by_role(db, "procurement_manager"),
-                    "procurement_manager",
-                    title,
-                    text,
-                    "material_request_batch",
-                    batch_id,
-                    force_max=force_max,
-                )
-                if project and any(
-                    row["basis_type"] != "main_estimate"
-                    for row in db.execute("SELECT basis_type FROM material_requests WHERE batch_id = ?", (batch_id,)).fetchall()
-                ):
+                text = f"{project['title']}: {len(created)} позиций{creator_label}, этап «{estimate_stage}», на объекте {format_date_ru(needed_at)}."
+                if request_kind == "planned":
+                    create_notification(
+                        db,
+                        project_id,
+                        user_id_by_role(db, "procurement_manager"),
+                        "procurement_manager",
+                        "Плановая заявка готова к закупке",
+                        text,
+                        "material_request_batch",
+                        batch_id,
+                        force_max=force_max,
+                    )
+                else:
+                    approval_text = f"{text} Причина: {reason_label}. До решения руководителя закупка заблокирована."
+                    notify_users(
+                        db,
+                        {
+                            user_id
+                            for user_id in {user_id_by_role(db, "owner"), project["construction_manager_id"] or user_id_by_role(db, "construction_manager")}
+                            if user_id
+                        },
+                        project_id,
+                        "Дополнительный объём требует решения",
+                        approval_text,
+                        "material_request_batch",
+                        batch_id,
+                        force_max=force_max,
+                    )
                     notify_material_deviation_for_estimators(
                         db,
                         batch_id,
                         project,
-                        "Заявка создана прорабом или руководителем.",
+                        "Дополнительный объём ожидает решения руководителя.",
                     )
                 db.execute(
                     """
@@ -9365,7 +9898,17 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     """,
                     (project_id, text, creator_id),
                 )
-                json_response(self, {"batch_id": batch_id, "created": created, "urgency": urgency}, 201)
+                json_response(
+                    self,
+                    {
+                        "batch_id": batch_id,
+                        "created": created,
+                        "urgency": urgency,
+                        "request_kind": request_kind,
+                        "approval_status": "pending" if request_kind == "additional" else "not_required",
+                    },
+                    201,
+                )
                 return
 
             if path == "/api/material-requests":
@@ -9381,12 +9924,27 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 total_amount = data.get("total_amount")
                 if (total_amount is None or total_amount == "") and estimate_material:
                     total_amount = estimate_material["total_price"]
+                request_kind = str(data.get("request_kind") or "planned").strip()
+                estimate_stage = str(data.get("estimate_stage") or estimate_section or "").strip()
+                needed_at = str(data.get("needed_at") or "").strip() or None
+                additional_reason = str(data.get("additional_reason") or "").strip()
+                additional_reason_details = str(data.get("additional_reason_details") or "").strip()
+                if request_kind not in MATERIAL_REQUEST_KINDS:
+                    raise ValueError("Выберите вид заявки.")
+                if not estimate_stage or not needed_at:
+                    raise ValueError("Для заявки обязательны этап сметы и дата, когда материал нужен на объекте.")
+                if request_kind == "additional" and additional_reason not in MATERIAL_ADDITIONAL_REASONS:
+                    raise ValueError("Укажите причину дополнительного объёма.")
                 batch_id = create_material_batch(
                     db,
                     project_id=int(data["project_id"]),
                     creator_id=int(data.get("creator_id") or 7),
-                    needed_at=data.get("needed_at") or None,
+                    needed_at=needed_at,
                     comment=data.get("comment") or "",
+                    request_kind=request_kind,
+                    estimate_stage=estimate_stage,
+                    additional_reason=additional_reason or None,
+                    additional_reason_details=additional_reason_details or None,
                 )
                 request_id = create_material_request(
                     db,
@@ -9395,13 +9953,14 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     creator_id=int(data.get("creator_id") or 7),
                     estimate_material_id=int(estimate_material_id) if estimate_material_id else None,
                     title=title,
-                    basis_type=data.get("basis_type") or "main_estimate",
-                    estimate_section=estimate_section,
-                    needed_at=data.get("needed_at") or None,
+                    basis_type=(MATERIAL_REASON_TO_BASIS.get(additional_reason) if request_kind == "additional" else "main_estimate"),
+                    estimate_section=estimate_stage,
+                    needed_at=needed_at,
                     requested_quantity=number_value(data.get("requested_quantity") or (estimate_material["estimated_quantity"] if estimate_material else 0)),
                     requested_unit=(estimate_material["unit"] if estimate_material else ""),
                     total_amount=number_value(total_amount),
                     comment=data.get("comment") or "",
+                    procurement_status="new" if request_kind == "additional" else "approved",
                 )
                 json_response(self, {"id": request_id}, 201)
                 return

@@ -27,6 +27,7 @@ const state = {
   projects: [],
   archivedProjects: [],
   materialRequests: [],
+  materialFormEstimateRows: [],
   blockers: [],
   appeals: [],
   appealsEnabled: false,
@@ -177,7 +178,22 @@ const statusLabelMap = {
   active: "Активен",
   signed: "Подписан",
   waiting_to_enter: "Внести в Сметтер",
+  entered: "Внесено в Smetter",
   not_required: "Не требуется",
+  planned: "Плановая",
+  additional: "Дополнительный объём",
+  pending: "Ждёт решения",
+  legacy_approved: "Ранее согласовано",
+  legacy_unclassified: "Нужно классифицировать",
+  customer_change: "Изменение проекта заказчиком",
+  site_damage: "Дефект или повреждение на объекте",
+  supplier_defect: "Брак или недопоставка поставщика",
+  estimate_error: "Ошибка или пропуск в смете",
+  bill_customer: "Выставить заказчику",
+  supplier_claim: "Предъявить поставщику",
+  responsible_cost: "Отнести на ответственное лицо",
+  requested: "Запрошена проверка",
+  verified: "Этап проверен",
   no_basis_decision: "Нет решения",
   decision_required: "Требует решения",
   in_review: "На согласовании",
@@ -284,8 +300,8 @@ function statusLabel(value) {
 function statusLevel(value, fallback = "") {
   const key = String(value || "");
   if (["overdue", "danger", "problem", "returned", "revision_requested", "rejected", "receipt_issue", "quality_problem", "no_material", "invalid_empty"].includes(key)) return "danger";
-  if (["warning", "review", "completed_pending_acceptance", "waiting_check", "estimate_question", "estimate_returned", "submitted_to_construction", "decision_required", "need_approval", "needs_approval", "at_risk", "requiring_review", "estimate_hold", "new", "feedback_new", "open", "waiting_external", "waiting_client_decision", "waiting_owner_decision", "waiting_project_documentation", "estimate_not_approved", "subcontractor_problem", "no_photo_report", "approval", "check", "postponed"].includes(key)) return "warning";
-  if (["success", "accepted", "approved", "closed", "completed", "received", "on_site", "delivered", "agreed", "done", "feedback_done", "estimate_done", "resolved", "checked"].includes(key)) return "success";
+  if (["warning", "review", "completed_pending_acceptance", "waiting_check", "estimate_question", "estimate_returned", "submitted_to_construction", "decision_required", "need_approval", "needs_approval", "pending", "legacy_unclassified", "at_risk", "requiring_review", "estimate_hold", "new", "feedback_new", "open", "waiting_external", "waiting_client_decision", "waiting_owner_decision", "waiting_project_documentation", "estimate_not_approved", "subcontractor_problem", "no_photo_report", "approval", "check", "postponed"].includes(key)) return "warning";
+  if (["success", "accepted", "approved", "closed", "completed", "received", "on_site", "delivered", "agreed", "done", "feedback_done", "estimate_done", "resolved", "checked", "entered", "verified", "legacy_approved"].includes(key)) return "success";
   if (["blue", "in_progress", "in_progress_task", "ordered", "in_transit", "delivery_scheduled", "delivery_confirmed", "estimate_in_work", "in_review", "active", "in_work", "feedback_in_work", "material"].includes(key)) return "blue";
   if (["draft", "archived", "estimate_new", "not_required", "duplicate", "superseded"].includes(key)) return "";
   return fallback;
@@ -314,10 +330,19 @@ async function api(path, options = {}) {
   }
   let response;
   try {
-    response = await fetch(path, {
-      ...fetchOptions,
-      headers: { "Content-Type": "application/json", ...(fetchOptions.headers || {}) },
-    });
+    const attempts = method === "GET" ? 2 : 1;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      try {
+        response = await fetch(path, {
+          ...fetchOptions,
+          headers: { "Content-Type": "application/json", ...(fetchOptions.headers || {}) },
+        });
+        break;
+      } catch (error) {
+        if (attempt === attempts - 1) throw error;
+        await new Promise((resolve) => window.setTimeout(resolve, 180));
+      }
+    }
   } finally {
     if (loadingTimer) window.clearTimeout(loadingTimer);
     if (loadingStarted) setAppLoading(false, "", loadingKey);
@@ -2212,28 +2237,31 @@ function updateMaterialEstimateRow(row) {
   const estimated = Number(row.dataset.estimated || 0);
   const quantity = Number(quantityInput.value || 0);
   quantityInput.disabled = !checkbox.checked;
-  reason.hidden = !(checkbox.checked && estimated && quantity > estimated);
-  reason.querySelector("textarea").required = checkbox.checked && estimated && quantity > estimated;
+  if (reason) {
+    reason.hidden = !(checkbox.checked && estimated && quantity > estimated);
+    reason.querySelector("textarea").required = checkbox.checked && estimated && quantity > estimated;
+  }
   row.classList.remove("success", "warning", "danger");
   if (checkbox.checked) row.classList.add(materialRowTone(quantity, estimated));
 }
 
 function renderExtraMaterialRow(options = {}) {
   const changeType = options.changeType || "";
+  const showReason = options.showReason !== false;
   return `
     <div class="row extra-material-row${changeType ? ` material-change-${changeType}` : ""}" data-change-type="${escapeAttr(changeType)}">
       <label>Материал <input data-extra-material-field="material" placeholder="Например: плиточный клей" /></label>
       <label>Наименование <input data-extra-material-field="name" placeholder="Марка, размер, артикул" /></label>
       <label>Ед. изм. <input data-extra-material-field="unit" placeholder="шт, м, кг, упак." /></label>
       <label>Количество <input data-extra-material-field="quantity" type="number" min="0" step="0.001" placeholder="0" /></label>
-      <label>
+      ${showReason ? `<label>
         Причина
         <select data-extra-material-field="reason">
           <option value="additional_work">Доп</option>
           <option value="material_replacement">Замена</option>
           <option value="main_estimate_overspend">Превышение</option>
         </select>
-      </label>
+      </label>` : ""}
       ${changeType === "added" ? `<span class="pill success change-badge">Будет добавлено</span>` : ""}
       <button class="icon" type="button" data-remove-extra-material>×</button>
     </div>`;
@@ -2255,7 +2283,7 @@ function collectExtraMaterials(containerSelector = "#extraMaterialRows") {
       name: row.querySelector('[data-extra-material-field="name"]').value.trim(),
       unit: row.querySelector('[data-extra-material-field="unit"]').value.trim(),
       quantity: row.querySelector('[data-extra-material-field="quantity"]').value,
-      reason: row.querySelector('[data-extra-material-field="reason"]').value,
+      reason: row.querySelector('[data-extra-material-field="reason"]')?.value || "",
     }))
     .filter((item) => item.material || item.name || Number(item.quantity || 0) > 0);
 }
@@ -2266,15 +2294,25 @@ async function loadMaterialEstimatePicker() {
   const target = qs("#materialEstimatePicker");
   updateMaterialActorHint();
   if (!projectId) {
+    form.elements.estimate_stage.innerHTML = `<option value="">Сначала выберите объект</option>`;
+    state.materialFormEstimateRows = [];
     target.innerHTML = `<p class="muted">У выбранной роли нет объектов для заявки.</p>`;
     return;
   }
   const rows = await api(`/api/estimate-materials?project_id=${projectId}`);
+  state.materialFormEstimateRows = rows;
   if (!rows.length) {
+    form.elements.estimate_stage.innerHTML = `<option value="">В смете нет этапов</option>`;
     target.innerHTML = `<p class="muted">По этому объекту нет загруженных материалов сметы.</p>`;
     return;
   }
-  const grouped = groupBySection(rows);
+  const stages = [...new Set(rows.map((row) => String(row.section || "Без этапа").trim() || "Без этапа"))];
+  const currentStage = stages.includes(form.elements.estimate_stage.value) ? form.elements.estimate_stage.value : stages[0];
+  form.elements.estimate_stage.innerHTML = stages
+    .map((stage) => `<option value="${escapeAttr(stage)}" ${stage === currentStage ? "selected" : ""}>${escapeHtml(stage)}</option>`)
+    .join("");
+  const requestKind = form.elements.request_kind.value || "planned";
+  const grouped = groupBySection(rows.filter((row) => (String(row.section || "Без этапа").trim() || "Без этапа") === currentStage));
   target.innerHTML = Object.entries(grouped)
     .map(([section, sectionRows]) => {
       const key = estimateSectionKey("material-picker", projectId, section);
@@ -2287,9 +2325,10 @@ async function loadMaterialEstimatePicker() {
               (row) => {
                 const alreadyRequested = Number(row.requested_quantity || 0);
                 const estimated = Number(row.estimated_quantity || 0);
-                const defaultQuantity = Math.max(estimated - alreadyRequested, 0);
+                const remaining = Math.max(estimated - alreadyRequested, 0);
+                const defaultQuantity = requestKind === "planned" ? remaining : 0;
                 return `
-              <div class="row estimate-choice-row ${alreadyRequested ? "estimate-choice-has-request" : ""}" data-estimate-id="${row.id}" data-estimated="${estimated || 0}">
+              <div class="row estimate-choice-row ${alreadyRequested ? "estimate-choice-has-request" : ""}" data-estimate-id="${row.id}" data-estimated="${requestKind === "planned" ? remaining : 0}">
                 <label class="estimate-choice-title">
                   <input type="checkbox" data-material-check />
                   <span>
@@ -2298,10 +2337,7 @@ async function loadMaterialEstimatePicker() {
                     ${estimateMaterialRequestSummary(row)}
                   </span>
                 </label>
-                <label>Количество к заказу <input data-material-quantity type="number" min="0" step="0.001" value="${defaultQuantity || ""}" placeholder="${alreadyRequested ? "укажите доп. количество" : "0"}" disabled /></label>
-                <div class="estimate-over-reason" data-material-reason hidden>
-                  <label>Причина превышения <textarea rows="2" placeholder="Почему заказываем сверх сметы"></textarea></label>
-                </div>
+                <label>${requestKind === "planned" ? "Количество к заказу" : "Дополнительное количество"} <input data-material-quantity type="number" min="0" step="0.001" value="${defaultQuantity || ""}" placeholder="0" disabled /></label>
               </div>`;
               }
             )
@@ -2310,6 +2346,20 @@ async function loadMaterialEstimatePicker() {
       </details>`;
     })
     .join("");
+}
+
+function updateMaterialRequestKindUI({ reloadEstimate = true } = {}) {
+  const form = qs("#materialForm");
+  if (!form) return;
+  const isAdditional = form.elements.request_kind.value === "additional";
+  qs("#materialAdditionalReasonPanel").hidden = !isAdditional;
+  qs("#extraMaterialsPanel").hidden = !isAdditional;
+  form.elements.additional_reason.required = isAdditional;
+  form.elements.additional_reason_details.required = isAdditional && form.elements.additional_reason.value === "estimate_error";
+  if (!isAdditional) resetExtraMaterials();
+  const submitButton = form.querySelector('button[type="submit"]');
+  if (submitButton) submitButton.textContent = isAdditional ? "Отправить на согласование" : "Передать снабжению";
+  if (reloadEstimate && form.elements.project_id.value) loadMaterialEstimatePicker();
 }
 
 function materialBatchKey(item) {
@@ -2356,6 +2406,16 @@ function buildMaterialBatches(items) {
         receipt_document_title: item.batch_receipt_document_title || "",
         receipt_document_mime_type: item.batch_receipt_document_mime_type || "",
         actual_purchase_amount: Number(item.batch_actual_purchase_amount || 0),
+        request_kind: item.batch_request_kind || "planned",
+        estimate_stage: item.batch_estimate_stage || item.estimate_section || "",
+        additional_reason: item.batch_additional_reason || "",
+        additional_reason_details: item.batch_additional_reason_details || "",
+        approval_status: item.batch_approval_status || "not_required",
+        approval_decided_by: item.batch_approval_decided_by || "",
+        approval_decided_by_name: item.batch_approval_decided_by_name || "",
+        approval_decided_at: item.batch_approval_decided_at || "",
+        approval_comment: item.batch_approval_comment || "",
+        financial_decision: item.batch_financial_decision || "",
         variation_id: item.batch_variation_id || "",
         variation_title: item.batch_variation_title || "",
         variation_status: item.batch_variation_status || "",
@@ -2587,9 +2647,29 @@ function materialBatchDestination(batch) {
 function collectMaterialActualItems(batch) {
   return materialActiveItems(batch).map((item) => ({
     id: item.id,
+    actual_quantity: qs(`[data-material-actual-quantity="${item.id}"]`)?.value || "",
+    purchase_date: qs(`[data-material-purchase-date="${item.id}"]`)?.value || "",
     actual_unit_price: qs(`[data-material-actual-unit="${item.id}"]`)?.value || "",
     actual_total_amount: qs(`[data-material-actual-total="${item.id}"]`)?.value || "",
   }));
+}
+
+function renderMaterialActualInputRows(items = []) {
+  return items
+    .map(
+      (item) => `
+      <div class="row estimate-material-row material-actual-row">
+        <div class="material-main">
+          <strong>${escapeHtml(item.title)}</strong>
+          <div class="muted">Заявлено: ${quantityLabel(item.requested_quantity || item.estimated_quantity || 0)} ${escapeHtml(item.requested_unit || item.estimate_material_unit || "")} · смета: ${money(item.total_amount)}</div>
+        </div>
+        <label>Куплено <input type="number" min="0" step="0.001" data-material-actual-quantity="${item.id}" value="${item.actual_quantity || item.requested_quantity || ""}" /></label>
+        <label>Дата закупки <input type="date" data-material-purchase-date="${item.id}" value="${item.purchase_date || todayIso()}" /></label>
+        <label>Цена за ед., ₽ <input type="text" inputmode="decimal" data-material-actual-unit="${item.id}" value="${item.actual_unit_price || ""}" placeholder="0" /></label>
+        <label>Сумма, ₽ <input type="text" inputmode="decimal" data-material-actual-total="${item.id}" value="${item.actual_total_amount || ""}" placeholder="0" /></label>
+      </div>`
+    )
+    .join("");
 }
 
 function renderMaterialAcceptSelection(items = []) {
@@ -6831,6 +6911,59 @@ async function renderLocations() {
     : `<p class="muted">Локации поставщиков пока не добавлены.</p>`;
 }
 
+async function renderMaterialStageClosures() {
+  const form = qs("#materialStageClosureForm");
+  const rowsTarget = qs("#materialStageClosureRows");
+  if (!form || !rowsTarget) return;
+  const projectId = Number(form.elements.project_id.value || state.selectedProjectId || state.projects[0]?.id || 0);
+  if (projectId) form.elements.project_id.value = String(projectId);
+  const batches = buildMaterialBatches(state.materialRequests || []).filter((batch) => Number(batch.project_id) === projectId && batch.estimate_stage);
+  const stages = [...new Set(batches.map((batch) => batch.estimate_stage))];
+  const currentStage = stages.includes(form.elements.estimate_stage.value) ? form.elements.estimate_stage.value : stages[0] || "";
+  form.elements.estimate_stage.innerHTML = stages.length
+    ? stages.map((stage) => `<option value="${escapeAttr(stage)}" ${stage === currentStage ? "selected" : ""}>${escapeHtml(stage)}</option>`).join("")
+    : `<option value="">По объекту пока нет этапов с заявками</option>`;
+  const role = currentRoleBase();
+  qs("#requestMaterialStageClosureButton").hidden = !["owner", "construction_manager"].includes(role);
+  qs("#verifyMaterialStageClosureButton").hidden = role !== "procurement_manager";
+  const closures = projectId ? await api(`/api/material-stage-closures?project_id=${projectId}`) : [];
+  rowsTarget.innerHTML = closures.length
+    ? closures
+        .map(
+          (row) => `<div class="row material-stage-closure-row">
+            <div><strong>${escapeHtml(row.estimate_stage)}</strong><div class="muted">Запросил: ${escapeHtml(row.requested_by_name || "не указано")} · ${formatDateRu(row.requested_at)}${row.verified_by_name ? ` · проверил: ${escapeHtml(row.verified_by_name)}` : ""}</div></div>
+            ${pill(statusLabel(row.status), statusLevel(row.status))}
+          </div>`
+        )
+        .join("")
+    : `<p class="muted">Запросов на закрытие этапов пока нет.</p>`;
+}
+
+async function submitMaterialStageClosure(action) {
+  const form = qs("#materialStageClosureForm");
+  if (!form?.elements.project_id.value || !form.elements.estimate_stage.value) {
+    showToast("Выберите объект и этап сметы");
+    return;
+  }
+  try {
+    await api(`/api/material-stage-closures/${action}`, {
+      method: "POST",
+      body: JSON.stringify({
+        project_id: form.elements.project_id.value,
+        estimate_stage: form.elements.estimate_stage.value,
+        comment: form.elements.comment.value,
+        actor_role: currentRoleBase(),
+        actor_id: currentUserId(),
+      }),
+    });
+    form.elements.comment.value = "";
+    await renderMaterials();
+    showToast(action === "request" ? "Снабжению отправлен запрос на закрытие этапа" : "Этап закрыт после проверки закупок и Smetter");
+  } catch (error) {
+    showToast(error.message || "Не удалось обработать закрытие этапа");
+  }
+}
+
 async function renderMaterials() {
   qsa("[data-material-list-mode]").forEach((button) => {
     button.classList.toggle("active", button.dataset.materialListMode === state.materialListMode);
@@ -6850,6 +6983,7 @@ async function renderMaterials() {
   const items = await api(`/api/material-requests?archive=${state.materialListMode === "archive" ? "1" : "0"}`);
   const visibleItems = roleScopedMaterialRows(items);
   state.materialRequests = visibleItems;
+  await renderMaterialStageClosures();
   const allBatches = buildMaterialBatches(visibleItems);
   qsa("[data-material-pipeline-filter]").forEach((button) => {
     const key = button.dataset.materialPipelineFilter;
@@ -6878,6 +7012,8 @@ async function renderMaterials() {
           <strong>${escapeHtml(firstItem.title || materialBatchTitle(batch, currentRoleBase() === "procurement_manager"))}</strong>
           <div class="material-card-grid">
             <span><b>Объект:</b> ${escapeHtml(batch.project_title || "не указан")}</span>
+            <span><b>Вид:</b> ${escapeHtml(statusLabel(batch.request_kind))}</span>
+            <span><b>Этап сметы:</b> ${escapeHtml(batch.estimate_stage || "не указан")}</span>
             <span><b>Позиций:</b> ${activeCount}${removedCount ? `, удалено: ${removedCount}` : ""}</span>
             <span><b>Основание:</b> ${escapeHtml(materialBatchBasisSummary(batch) || "не указано")}</span>
             <span><b>Кто запросил:</b> ${escapeHtml(batch.creator_name || "не указано")}</span>
@@ -6895,6 +7031,8 @@ async function renderMaterials() {
         </div>
         <div class="stack-line">
           ${pill(urgencyLabel(batch.delivery_urgency), urgencyLevel(batch.delivery_urgency))}
+          ${pill(statusLabel(batch.request_kind), batch.request_kind === "additional" ? "warning" : "success")}
+          ${batch.request_kind === "additional" ? pill(statusLabel(batch.approval_status), statusLevel(batch.approval_status)) : ""}
           ${pill(materialStageLabel(batch), materialPipelineLevel(batch))}
           ${pill(materialHealthLabel(batch), materialHealthLevel(batch))}
         </div>
@@ -6935,6 +7073,7 @@ async function openNewMaterialDialog(projectId = state.selectedProjectId) {
   qs("#materialEstimatePicker").innerHTML = `<p class="muted">Выберите объект и нажмите “Материалы по смете”.</p>`;
   fillMaterialProjectSelect(projectId);
   updateMaterialActorHint();
+  updateMaterialRequestKindUI({ reloadEstimate: false });
   await loadMaterialEstimatePicker();
   qs("#materialDialog").showModal();
 }
@@ -6961,9 +7100,14 @@ async function openMaterialBatchDialog(batchKey) {
     return;
   }
   qs("#materialReviewTitle").textContent = materialBatchTitle(batch, currentRoleBase() === "procurement_manager");
-  const canReview = currentRoleBase() === "procurement_manager" && batch.id && ["new", "revision_requested"].includes(batch.status);
-  const canSchedule = currentRoleBase() === "procurement_manager" && batch.id && ["in_work", "delivery_scheduled", "postponed"].includes(batch.status);
+  const role = currentRoleBase();
+  const canApprove = ["owner", "construction_manager"].includes(role) && batch.id && batch.request_kind === "additional" && ["pending", "rejected", "legacy_unclassified"].includes(batch.approval_status);
+  const approvalReady = batch.request_kind !== "additional" || ["approved", "legacy_approved"].includes(batch.approval_status);
+  const canReview = role === "procurement_manager" && batch.id && batch.stage === "approved" && approvalReady && ["new", "revision_requested"].includes(batch.status);
+  const canOrder = role === "procurement_manager" && batch.id && batch.status === "in_work" && batch.stage === "approved";
+  const canSchedule = role === "procurement_manager" && batch.id && ["ordered", "in_transit"].includes(batch.stage) && ["ordered", "delivery_scheduled"].includes(batch.status);
   const canSaveActualsOnly = currentRoleBase() === "procurement_manager" && batch.id && !canSchedule && ["received", "receipt_issue"].includes(batch.status);
+  const canMarkSmetter = role === "procurement_manager" && batch.id && ["ordered", "in_transit", "delivered", "closed"].includes(batch.stage) && materialActiveItems(batch).some((item) => item.smetter_status !== "entered");
   const canResolveIssue = currentRoleBase() === "procurement_manager" && batch.id && batch.status === "receipt_issue";
   const canEdit = canEditMaterialBatch(batch);
   const canCreateVariation = canCreateVariationFromBatch(batch);
@@ -6978,8 +7122,12 @@ async function openMaterialBatchDialog(batchKey) {
         ${pill(urgencyLabel(batch.delivery_urgency), urgencyLevel(batch.delivery_urgency))}
         ${pill(materialStageLabel(batch), materialPipelineLevel(batch))}
         ${pill(materialHealthLabel(batch), materialHealthLevel(batch))}
+        ${pill(statusLabel(batch.request_kind), batch.request_kind === "additional" ? "warning" : "success")}
+        ${batch.request_kind === "additional" ? pill(statusLabel(batch.approval_status), statusLevel(batch.approval_status)) : ""}
       </div>
-      <p class="muted">Кто заказал: ${batch.creator_name || "не указано"} · желаемая доставка: ${batch.needed_at || "не указана"} · позиций: ${activeItems.length}${removedItems.length ? ` · удалено при исправлении: ${removedItems.length}` : ""}</p>
+      <p class="muted">Этап сметы: ${escapeHtml(batch.estimate_stage || "не указан")} · кто запросил: ${batch.creator_name || "не указано"} · на объекте: ${batch.needed_at ? formatDateRu(batch.needed_at) : "не указано"} · позиций: ${activeItems.length}${removedItems.length ? ` · удалено при исправлении: ${removedItems.length}` : ""}</p>
+      ${batch.request_kind === "additional" ? `<p><strong>Причина:</strong> ${escapeHtml(statusLabel(batch.additional_reason))}${batch.additional_reason_details ? ` · ${escapeHtml(batch.additional_reason_details)}` : ""}</p>` : ""}
+      ${batch.approval_decided_by_name ? `<p class="muted">Решение: ${escapeHtml(statusLabel(batch.approval_status))} · ${escapeHtml(batch.approval_decided_by_name)} · ${formatDateRu(batch.approval_decided_at)}${batch.financial_decision ? ` · ${escapeHtml(statusLabel(batch.financial_decision))}` : ""}${batch.approval_comment ? ` · ${escapeHtml(batch.approval_comment)}` : ""}</p>` : ""}
       ${batch.actual_purchase_amount ? `<p class="muted">Фактическая стоимость закупки: ${money(batch.actual_purchase_amount)} · сметная сумма заявки: ${money(batch.total_amount)}</p>` : ""}
       <p class="muted">Основания: ${materialBatchBasisSummary(batch)}</p>
       <p class="muted">${materialBatchDestination(batch)}</p>
@@ -7010,6 +7158,8 @@ async function openMaterialBatchDialog(batchKey) {
               ${pill(materialBasisLabel(item.basis_type), materialBasisLevel(item.basis_type))}
               ${pill(money(item.total_amount), "success")}
               ${materialActualTotal(item) ? pill(`Закупка: ${money(materialActualTotal(item))}`, materialActualOverrun(item) ? "danger" : "blue") : ""}
+              ${item.actual_quantity ? pill(`Факт: ${quantityLabel(item.actual_quantity)} ${escapeHtml(item.requested_unit || item.estimate_material_unit || "")}`, "blue") : ""}
+              ${pill(statusLabel(item.smetter_status || "waiting_to_enter"), item.smetter_status === "entered" ? "success" : "warning")}
             </div>
           </div>`
         )
@@ -7028,6 +7178,32 @@ async function openMaterialBatchDialog(batchKey) {
         : ""
     }
     ${
+      canApprove
+        ? `<section class="workflow-panel material-approval-panel" data-testid="material-approval-panel">
+            <h3>Решение по дополнительному объёму</h3>
+            <p class="muted">До вашего решения снабжение не может принять эту заявку в работу.</p>
+            <label>Финансовое решение
+              <select id="materialBatchFinancialDecision">
+                <option value="">Выберите решение</option>
+                <option value="bill_customer">Выставить заказчику</option>
+                <option value="company_cost">Отнести на расходы компании</option>
+                <option value="supplier_claim">Предъявить поставщику</option>
+                <option value="responsible_cost">Отнести на ответственное лицо</option>
+                <option value="other">Иное решение</option>
+              </select>
+            </label>
+            <label>Комментарий к решению <textarea id="materialBatchApprovalComment" rows="3" placeholder="Что согласовано или что нужно уточнить"></textarea></label>
+            ${personalNotifyControl()}
+            <div class="form-actions">
+              <button class="primary" type="button" data-material-batch-action="approve" data-material-batch-id="${batch.id}">Согласовать объём</button>
+              <button class="secondary" type="button" data-material-batch-action="reject" data-material-batch-id="${batch.id}">Вернуть на уточнение</button>
+            </div>
+          </section>`
+        : batch.request_kind === "additional" && !approvalReady
+          ? `<section class="hint-box warning"><strong>Закупка заблокирована</strong><p>Ожидается решение ген.директора или руководителя строительства.</p></section>`
+          : ""
+    }
+    ${
       canReview
         ? `<section class="workflow-panel">
             <h3>Решение снабжения</h3>
@@ -7042,24 +7218,28 @@ async function openMaterialBatchDialog(batchKey) {
         : ""
     }
     ${
+      canOrder
+        ? `<section class="workflow-panel material-order-panel" data-testid="material-order-panel">
+            <h3>Зафиксировать закупку</h3>
+            <p class="muted">Укажите фактические данные. После этого заявка перейдёт в статус «Заказано».</p>
+            <label>Поставщик <input id="materialBatchSupplier" value="${escapeAttr(batch.supplier_comment || "")}" placeholder="Название поставщика" /></label>
+            <div class="table material-review-items">${renderMaterialActualInputRows(activeItems)}</div>
+            <label>Комментарий снабжения <textarea id="materialBatchScheduleComment" rows="3" placeholder="Условия оплаты, доставки или замены">${batch.procurement_comment || ""}</textarea></label>
+            ${personalNotifyControl()}
+            <div class="form-actions">
+              <button class="primary" type="button" data-material-batch-action="order" data-material-batch-id="${batch.id}">Отметить «Заказано»</button>
+              <button class="secondary" type="button" data-material-batch-action="save_actuals" data-material-batch-id="${batch.id}">Сохранить черновик факта</button>
+            </div>
+          </section>`
+        : ""
+    }
+    ${
       canSchedule
         ? `<section class="workflow-panel">
             <h3>Доставка</h3>
             <label>Дата доставки <input id="materialBatchDeliveryDate" type="date" value="${batch.scheduled_delivery_date || batch.needed_at || ""}" /></label>
             <div class="table material-review-items">
-              ${activeItems
-                .map(
-                  (item) => `
-                  <div class="row estimate-material-row">
-                    <div class="material-main">
-                      <strong>${item.title}</strong>
-                      <div class="muted">Смета: ${money(item.total_amount)} · ${item.requested_quantity || item.estimated_quantity || 0} ${item.requested_unit || item.estimate_material_unit || ""}</div>
-                    </div>
-                    <label>Цена закупки за ед., ₽ <input type="text" inputmode="decimal" data-material-actual-unit="${item.id}" value="${item.actual_unit_price || ""}" placeholder="0" /></label>
-                    <label>Сумма закупки, ₽ <input type="text" inputmode="decimal" data-material-actual-total="${item.id}" value="${item.actual_total_amount || ""}" placeholder="0" /></label>
-                  </div>`
-                )
-                .join("")}
+              ${renderMaterialActualInputRows(activeItems)}
             </div>
             <label>Комментарий снабжения <textarea id="materialBatchScheduleComment" rows="3" placeholder="Например: нужна доверенность или кран">${batch.procurement_comment || ""}</textarea></label>
             ${personalNotifyControl()}
@@ -7073,24 +7253,24 @@ async function openMaterialBatchDialog(batchKey) {
         : ""
     }
     ${
+      canMarkSmetter
+        ? `<section class="workflow-panel material-smetter-panel" data-testid="material-smetter-panel">
+            <h3>Финансовый учёт в Smetter</h3>
+            <p class="muted">Подтвердите, что фактические объёмы, дата и цена закупки внесены в правильный этап Smetter.</p>
+            <label>Ссылка или номер записи в Smetter <input id="materialBatchSmetterReference" placeholder="Необязательно, но помогает проверке" /></label>
+            <div class="form-actions">
+              <button class="primary" type="button" data-material-batch-action="mark_smetter" data-material-batch-id="${batch.id}">Подтвердить внесение в Smetter</button>
+            </div>
+          </section>`
+        : ""
+    }
+    ${
       canSaveActualsOnly
         ? `<section class="workflow-panel">
             <h3>Фактические цены закупки</h3>
             <p class="muted">Заявка уже в архиве или закрыта, но снабжение может допоставить фактические цены и суммы закупки.</p>
             <div class="table material-review-items">
-              ${activeItems
-                .map(
-                  (item) => `
-                  <div class="row estimate-material-row">
-                    <div class="material-main">
-                      <strong>${item.title}</strong>
-                      <div class="muted">Смета: ${money(item.total_amount)} · ${item.requested_quantity || item.estimated_quantity || 0} ${item.requested_unit || item.estimate_material_unit || ""}</div>
-                    </div>
-                    <label>Цена закупки за ед., ₽ <input type="text" inputmode="decimal" data-material-actual-unit="${item.id}" value="${item.actual_unit_price || ""}" placeholder="0" /></label>
-                    <label>Сумма закупки, ₽ <input type="text" inputmode="decimal" data-material-actual-total="${item.id}" value="${item.actual_total_amount || ""}" placeholder="0" /></label>
-                  </div>`
-                )
-                .join("")}
+              ${renderMaterialActualInputRows(activeItems)}
             </div>
             <label>Комментарий снабжения <textarea id="materialBatchScheduleComment" rows="3" placeholder="Например: цены внесены после закрытия заявки">${batch.procurement_comment || ""}</textarea></label>
             ${personalNotifyControl()}
@@ -8784,8 +8964,14 @@ function bindEvents() {
   );
 
   qs('#materialForm select[name="project_id"]').addEventListener("change", loadMaterialEstimatePicker);
+  qs('#materialForm select[name="request_kind"]').addEventListener("change", () => updateMaterialRequestKindUI());
+  qs('#materialForm select[name="estimate_stage"]').addEventListener("change", loadMaterialEstimatePicker);
+  qs('#materialForm select[name="additional_reason"]').addEventListener("change", () => updateMaterialRequestKindUI({ reloadEstimate: false }));
   qs("#loadMaterialEstimateButton").addEventListener("click", loadMaterialEstimatePicker);
-  qs("#addExtraMaterialButton").addEventListener("click", () => addExtraMaterialRow());
+  qs("#addExtraMaterialButton").addEventListener("click", () => addExtraMaterialRow("#extraMaterialRows", { showReason: false }));
+  qs('#materialStageClosureForm select[name="project_id"]')?.addEventListener("change", renderMaterialStageClosures);
+  qs("#requestMaterialStageClosureButton")?.addEventListener("click", () => submitMaterialStageClosure("request"));
+  qs("#verifyMaterialStageClosureButton")?.addEventListener("click", () => submitMaterialStageClosure("verify"));
   qs("#materialEstimatePicker").addEventListener("input", (event) => {
     const row = event.target.closest(".estimate-choice-row");
     if (row) updateMaterialEstimateRow(row);
@@ -8886,6 +9072,17 @@ function bindEvents() {
   });
 
   document.addEventListener("click", async (event) => {
+    const materialRegulationsButton = event.target.closest("[data-open-material-regulations]");
+    if (materialRegulationsButton) {
+      qs("#materialDialog")?.close();
+      switchView("documents");
+      const folders = await api("/api/document-folders?related_type=knowledge_base");
+      const regulationsFolder = folders.find((folder) => folder.path === "Строительство/Снабжение и материалы/Регламенты");
+      if (regulationsFolder) setKnowledgeCurrentFolderId(regulationsFolder.id);
+      await renderDocuments();
+      showToast("Регламенты находятся в базе знаний: Строительство → Снабжение и материалы → Регламенты");
+      return;
+    }
     const newAppealButton = event.target.closest("[data-open-new-appeal], #newAppealButton");
     if (newAppealButton) {
       const form = qs("#appealForm");
@@ -9394,6 +9591,20 @@ function bindEvents() {
       let body = {};
       if (action === "delete" && !confirm("Удалить заявку на материалы? Это можно сделать только до принятия снабжением в работу.")) return;
       if (action === "cancel_delivery" && !confirm("Отменить доставку по этой заявке? Внесенные цены закупки сохранятся в заявке.")) return;
+      if (action === "approve" || action === "reject") {
+        body = {
+          financial_decision: qs("#materialBatchFinancialDecision")?.value || "",
+          comment: qs("#materialBatchApprovalComment")?.value || "",
+        };
+        if (action === "approve" && !body.financial_decision) {
+          showToast("Укажите финансовое решение по дополнительному объёму");
+          return;
+        }
+        if (action === "reject" && !body.comment.trim()) {
+          showToast("Напишите, что нужно уточнить");
+          return;
+        }
+      }
       if (action === "accept") {
         const acceptItemIds = collectMaterialAcceptItemIds();
         if (Array.isArray(acceptItemIds) && !acceptItemIds.length) {
@@ -9432,11 +9643,21 @@ function bindEvents() {
           comment: qs("#materialBatchScheduleComment")?.value || "",
         };
       }
+      if (action === "order") {
+        body = {
+          supplier: qs("#materialBatchSupplier")?.value || "",
+          actual_items: currentBatch ? collectMaterialActualItems(currentBatch) : [],
+          comment: qs("#materialBatchScheduleComment")?.value || "",
+        };
+      }
       if (action === "save_actuals") {
         body = {
           actual_items: currentBatch ? collectMaterialActualItems(currentBatch) : [],
           comment: qs("#materialBatchScheduleComment")?.value || "",
         };
+      }
+      if (action === "mark_smetter") {
+        body = { smetter_reference: qs("#materialBatchSmetterReference")?.value || "" };
       }
       if (action === "postpone_delivery" || action === "cancel_delivery") {
         body = {
@@ -9488,11 +9709,15 @@ function bindEvents() {
       await loadAll();
       showToast(
         {
+          approve: "Дополнительный объём согласован",
+          reject: "Дополнительный объём возвращён на уточнение",
           accept: "Заявка принята в работу",
+          order: "Закупка отмечена как заказанная",
           return: "Заявка возвращена на доработку",
           resubmit: "Заявка повторно отправлена снабжению",
           schedule: "Прораб уведомлен о доставке",
           save_actuals: "Цены закупки сохранены",
+          mark_smetter: "Внесение закупки в Smetter подтверждено",
           postpone_delivery: "Доставка отложена, цены закупки сохранены",
           cancel_delivery: "Доставка отменена, цены закупки сохранены",
           request_again: "Заявка повторно отправлена снабжению",
@@ -9830,20 +10055,32 @@ function bindEvents() {
     const items = selectedRows.map((row) => ({
       estimate_material_id: row.dataset.estimateId,
       quantity: row.querySelector("[data-material-quantity]").value,
-      reason: row.querySelector("[data-material-reason] textarea").value,
     }));
     if (selectedRows.some((row) => Number(row.querySelector("[data-material-quantity]")?.value || 0) <= 0)) {
       showToast("Укажите количество для выбранных позиций");
       return;
     }
     const extra_items = collectExtraMaterials();
-    const incompleteExtra = extra_items.some((item) => !item.material || !item.name || !item.unit || Number(item.quantity || 0) <= 0 || !item.reason);
+    const incompleteExtra = extra_items.some((item) => !item.material || !item.name || !item.unit || Number(item.quantity || 0) <= 0);
     if (incompleteExtra) {
-      showToast("Заполните материал, наименование, ед. измерения, количество и причину");
+      showToast("Заполните материал, точное наименование, ед. измерения и количество");
       return;
     }
     if (!items.length && !extra_items.length) {
       showToast("Выберите материалы по смете или добавьте дополнительный материал");
+      return;
+    }
+    const requestKind = form.elements.request_kind.value;
+    if (requestKind === "planned" && extra_items.length) {
+      showToast("Позиции вне сметы оформите как дополнительный объём");
+      return;
+    }
+    if (requestKind === "additional" && !form.elements.additional_reason.value) {
+      showToast("Укажите причину дополнительного объёма");
+      return;
+    }
+    if (requestKind === "additional" && form.elements.additional_reason.value === "estimate_error" && !form.elements.additional_reason_details.value.trim()) {
+      showToast("Подробно опишите ошибку или пропущенный объём в смете");
       return;
     }
     api("/api/material-requests/bulk", {
@@ -9852,6 +10089,10 @@ function bindEvents() {
         project_id: form.elements.project_id.value,
         needed_at: form.elements.needed_at.value,
         comment: form.elements.comment.value,
+        request_kind: requestKind,
+        estimate_stage: form.elements.estimate_stage.value,
+        additional_reason: form.elements.additional_reason.value,
+        additional_reason_details: form.elements.additional_reason_details.value,
         creator_role: currentRoleBase(),
         creator_id: currentUserId(),
         items,
@@ -9862,7 +10103,7 @@ function bindEvents() {
         qs("#materialDialog").close();
         form.reset();
         await loadAll();
-        showToast("Заявка на материалы отправлена снабжению");
+        showToast(requestKind === "additional" ? "Дополнительный объём отправлен руководителю на согласование" : "Плановая заявка передана снабжению");
       })
       .catch((error) => showToast(error.message));
   });
@@ -10046,11 +10287,12 @@ async function boot() {
 
 function registerServiceWorker() {
   if (!("serviceWorker" in navigator) || location.protocol === "file:") return;
-  let refreshing = false;
+  const controlledAtRegistration = Boolean(navigator.serviceWorker.controller);
+  let updateAnnounced = false;
   navigator.serviceWorker.addEventListener("controllerchange", () => {
-    if (refreshing) return;
-    refreshing = true;
-    window.location.reload();
+    if (!controlledAtRegistration || updateAnnounced) return;
+    updateAnnounced = true;
+    showToast("Доступна новая версия. Нажмите «Обновить», когда будете готовы.");
   });
   navigator.serviceWorker
     .register("/sw.js", { updateViaCache: "none" })

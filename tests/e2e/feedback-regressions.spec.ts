@@ -269,7 +269,8 @@ test("estimate job files are collapsed under object summary", async () => {
   const compat = readProjectFile("app/static/app.compat.js");
   const styles = readProjectFile("app/static/styles.css");
 
-  expect(html).toContain("20260711-main-estimate-materials");
+  expect(html).toMatch(/\/static\/styles\.css\?v=[^"]+/);
+  expect(html).toMatch(/\/static\/app\.compat\.js\?v=[^"]+/);
   expect(app).toContain("estimate-job-collapsible");
   expect(app).toContain("estimate-job-summary");
   expect(app).toContain("estimate-job-body");
@@ -333,7 +334,8 @@ test("delivered material batches do not stay in delivery risk", async ({ page })
   const compat = readProjectFile("app/static/app.compat.js");
   const server = readProjectFile("app/server.py");
 
-  expect(html).toContain("20260711-main-estimate-materials");
+  expect(html).toMatch(/\/static\/styles\.css\?v=[^"]+/);
+  expect(html).toMatch(/\/static\/app\.compat\.js\?v=[^"]+/);
   expect(app).toContain("function materialBatchHasOpenProblem");
   expect(app).toContain("function materialBatchIsFinalForAttention");
   expect(app).toContain("if (materialBatchIsFinalForAttention(batch)) return false");
