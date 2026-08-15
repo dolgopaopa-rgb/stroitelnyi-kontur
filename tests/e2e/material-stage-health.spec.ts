@@ -16,9 +16,9 @@ test("materials expose independent stage and health, including in transit with p
   const result = await page.evaluate(async (neededAt) => {
     const projectsResponse = await fetch("/api/projects", { cache: "no-store" });
     const projects = projectsResponse.ok ? await projectsResponse.json() : [];
-    const project = projects.find((item: any) => item.status !== "archived") || projects[0];
-    if (!project) return { error: "no_project" };
-    const creatorId = Number(project.foreman_id || 7);
+    const project = projects.find((item: any) => item.status !== "archived" && Number(item.foreman_id || 0) > 0);
+    if (!project) return { error: "no_project_with_foreman" };
+    const creatorId = Number(project.foreman_id);
     const createResponse = await fetch("/api/material-requests/bulk", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

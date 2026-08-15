@@ -10,5 +10,8 @@ test("admin can open read-only data integrity diagnostics", async ({ page }) => 
   await expect(page.locator("#dataIntegrityStats")).toBeVisible();
   await expect(page.locator("[data-integrity-filter]")).toHaveCount(7);
   await page.locator("#refreshIntegrityButton").click();
+  const details = page.locator(".integrity-rows-details");
+  await details.locator("summary").click();
+  await expect(details).toHaveAttribute("open", "");
   await expect(page.locator("#dataIntegrityRows")).toBeVisible();
 });

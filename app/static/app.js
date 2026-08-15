@@ -994,6 +994,44 @@ function phoneHref(value) {
   return digits.length === 11 ? `tel:+${digits}` : "";
 }
 
+async function copyPlainText(value) {
+  const text = String(value || "").trim();
+  if (!text) throw new Error("Нет текста для копирования");
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const field = document.createElement("textarea");
+  field.value = text;
+  field.setAttribute("readonly", "");
+  field.style.position = "fixed";
+  field.style.opacity = "0";
+  document.body.appendChild(field);
+  field.select();
+  const copied = document.execCommand("copy");
+  field.remove();
+  if (!copied) throw new Error("Браузер не разрешил копирование");
+}
+
+function openPhoneCallDialog(value, customerName = "") {
+  const phone = formatRuPhone(value);
+  const href = phoneHref(phone);
+  const dialog = qs("#phoneCallDialog");
+  if (!phone || !href || !dialog) {
+    showToast("Телефон заказчика не указан");
+    return;
+  }
+  const numberNode = qs("#phoneCallNumber");
+  const contextNode = qs("#phoneCallContext");
+  const callLink = qs("#phoneCallLink");
+  const copyButton = qs("#phoneCopyButton");
+  if (numberNode) numberNode.textContent = phone;
+  if (contextNode) contextNode.textContent = customerName ? `Заказчик: ${customerName}` : "Телефон заказчика";
+  if (callLink) callLink.href = href;
+  if (copyButton) copyButton.dataset.phone = phone;
+  if (!dialog.open) dialog.showModal();
+}
+
 function externalRefLink(value, fallbackText, level = "") {
   const text = String(value || "").trim();
   if (!text) return pill(fallbackText, level);
@@ -5765,7 +5803,7 @@ async function renderProjectDetail(projectId) {
         <span>${customerHistory} ${customerHistory === 1 ? "объект/договор" : "объектов/договоров"} в истории</span>
       </div>
       <div class="project-contact-actions">
-        ${phoneLink ? `<a class="contact-action" href="${escapeAttr(phoneLink)}" title="${escapeAttr(customerPhone)}">Позвонить</a>` : `<span class="muted">Телефон не указан</span>`}
+        ${phoneLink ? `<button class="contact-action phone-action" type="button" data-call-phone="${escapeAttr(customerPhone)}" data-customer-name="${escapeAttr(project.customer_name || "")}" data-testid="project-phone-action" title="Открыть действия для номера ${escapeAttr(customerPhone)}"><span>Телефон</span><strong>${escapeHtml(customerPhone)}</strong></button>` : `<span class="muted">Телефон не указан</span>`}
         ${customerEmail ? `<a class="contact-action" href="mailto:${escapeAttr(customerEmail)}" title="${escapeAttr(customerEmail)}">Написать</a>` : `<span class="muted">E-mail не указан</span>`}
         ${mapHref ? `<a class="contact-action map" href="${escapeAttr(mapHref)}" target="_blank" rel="noopener noreferrer">Я.Карты</a>` : `<span class="muted">Локация не указана</span>`}
         ${smetterButton}
@@ -8729,6 +8767,16 @@ function bindEvents() {
   });
 
   qsa("[data-close]").forEach((button) => button.addEventListener("click", () => qs(`#${button.dataset.close}`).close()));
+  qs("#phoneCopyButton")?.addEventListener("click", async (event) => {
+    const phone = event.currentTarget.dataset.phone || qs("#phoneCallNumber")?.textContent || "";
+    try {
+      await copyPlainText(phone);
+      showToast("Номер телефона скопирован");
+    } catch (error) {
+      showToast(error.message || "Не удалось скопировать номер");
+    }
+  });
+  qs("#phoneCallLink")?.addEventListener("click", () => qs("#phoneCallDialog")?.close());
   qs("#mediaPreviewClose")?.addEventListener("click", closeMediaPreview);
   qs("#mediaPreviewCloseBottom")?.addEventListener("click", closeMediaPreview);
   qs("#mediaPreviewPrev")?.addEventListener("click", () => moveMediaPreview(-1));
@@ -9530,6 +9578,12 @@ function bindEvents() {
     const addContractButton = event.target.closest("[data-add-contract]");
     if (addContractButton) {
       openContractDialog(Number(addContractButton.dataset.addContract));
+      return;
+    }
+
+    const phoneButton = event.target.closest("[data-call-phone]");
+    if (phoneButton) {
+      openPhoneCallDialog(phoneButton.dataset.callPhone, phoneButton.dataset.customerName || "");
       return;
     }
 

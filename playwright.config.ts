@@ -19,6 +19,7 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
+    serviceWorkers: "block",
     channel: process.env.PLAYWRIGHT_CHANNEL || "chrome"
   },
   webServer: process.env.KONTUR_BASE_URL

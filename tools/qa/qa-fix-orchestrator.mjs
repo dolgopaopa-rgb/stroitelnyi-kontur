@@ -255,6 +255,23 @@ function buildReport({ status, checked, found, fixed, dangerous, manual, command
 export function createQaFixReport({ reportOnly = false, full = false, fix = false } = {}) {
   const generatedAt = new Date().toISOString();
   const commit = getGitCommit();
+  if (reportOnly) {
+    ensureDir(QA_REPORT_DIR, []);
+    const artifactMd = path.join(QA_ARTIFACT_DIR, "qa-report.md");
+    const artifactJson = path.join(QA_ARTIFACT_DIR, "qa-report.json");
+    const source = readJson(artifactJson);
+    if (!source || !fs.existsSync(artifactMd)) {
+      throw new Error("Полный qa-report отсутствует. Сначала запустите npm run test:qa:report.");
+    }
+    fs.copyFileSync(artifactMd, path.join(QA_REPORT_DIR, "latest-report.md"));
+    fs.copyFileSync(artifactJson, path.join(QA_REPORT_DIR, "latest-report.json"));
+    return {
+      ...source,
+      status: source.overall || "PARTIAL",
+      commitHash: source.qaRunCommitHash || source.commit || commit,
+      dangerous: [],
+    };
+  }
   const fixed = [];
   const found = [];
   const dangerous = [];

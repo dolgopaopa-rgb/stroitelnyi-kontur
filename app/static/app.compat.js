@@ -904,6 +904,43 @@
     const digits = phoneDigits(formatted);
     return digits.length === 11 ? "tel:+".concat(digits) : "";
   }
+  async function copyPlainText(value) {
+    var _a;
+    const text = String(value || "").trim();
+    if (!text) throw new Error("Нет текста для копирования");
+    if ((_a = navigator.clipboard) == null ? void 0 : _a.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+    const field = document.createElement("textarea");
+    field.value = text;
+    field.setAttribute("readonly", "");
+    field.style.position = "fixed";
+    field.style.opacity = "0";
+    document.body.appendChild(field);
+    field.select();
+    const copied = document.execCommand("copy");
+    field.remove();
+    if (!copied) throw new Error("Браузер не разрешил копирование");
+  }
+  function openPhoneCallDialog(value, customerName = "") {
+    const phone = formatRuPhone(value);
+    const href = phoneHref(phone);
+    const dialog = qs("#phoneCallDialog");
+    if (!phone || !href || !dialog) {
+      showToast("Телефон заказчика не указан");
+      return;
+    }
+    const numberNode = qs("#phoneCallNumber");
+    const contextNode = qs("#phoneCallContext");
+    const callLink = qs("#phoneCallLink");
+    const copyButton = qs("#phoneCopyButton");
+    if (numberNode) numberNode.textContent = phone;
+    if (contextNode) contextNode.textContent = customerName ? "Заказчик: ".concat(customerName) : "Телефон заказчика";
+    if (callLink) callLink.href = href;
+    if (copyButton) copyButton.dataset.phone = phone;
+    if (!dialog.open) dialog.showModal();
+  }
   function yandexCoordinatePair(first, second, order = "lonlat") {
     const a = Number(String(first || "").replace(",", "."));
     const b = Number(String(second || "").replace(",", "."));
@@ -4407,7 +4444,7 @@
     const smetterLooksLikeDomain = /^(www\.|[a-z0-9-]+\.[a-z0-9.-]+\/?)/i.test(smetterText) && !/\s/.test(smetterText);
     const smetterHref = smetterIsUrl ? smetterText : smetterLooksLikeDomain ? "https://".concat(smetterText) : "";
     const smetterButton = canViewExternalRefs() && smetterText ? smetterHref ? '<a class="secondary tiny project-smetter-button" href="'.concat(escapeAttr(smetterHref), '" target="_blank" rel="noopener noreferrer">Открыть Сметтер</a>') : '<span class="pill success">Сметтер: '.concat(escapeHtml(smetterText), "</span>") : "";
-    const customerInfoHtml = '\n    <div class="project-contact-strip">\n      <div class="project-contact-main">\n        <strong>'.concat(escapeHtml(project.customer_name || "Клиент не указан"), "</strong>\n        <span>").concat(customerHistory, " ").concat(customerHistory === 1 ? "объект/договор" : "объектов/договоров", ' в истории</span>\n      </div>\n      <div class="project-contact-actions">\n        ').concat(phoneLink ? '<a class="contact-action" href="'.concat(escapeAttr(phoneLink), '" title="').concat(escapeAttr(customerPhone), '">Позвонить</a>') : '<span class="muted">Телефон не указан</span>', "\n        ").concat(customerEmail ? '<a class="contact-action" href="mailto:'.concat(escapeAttr(customerEmail), '" title="').concat(escapeAttr(customerEmail), '">Написать</a>') : '<span class="muted">E-mail не указан</span>', "\n        ").concat(mapHref ? '<a class="contact-action map" href="'.concat(escapeAttr(mapHref), '" target="_blank" rel="noopener noreferrer">Я.Карты</a>') : '<span class="muted">Локация не указана</span>', "\n        ").concat(smetterButton, "\n      </div>\n    </div>");
+    const customerInfoHtml = '\n    <div class="project-contact-strip">\n      <div class="project-contact-main">\n        <strong>'.concat(escapeHtml(project.customer_name || "Клиент не указан"), "</strong>\n        <span>").concat(customerHistory, " ").concat(customerHistory === 1 ? "объект/договор" : "объектов/договоров", ' в истории</span>\n      </div>\n      <div class="project-contact-actions">\n        ').concat(phoneLink ? '<button class="contact-action phone-action" type="button" data-call-phone="'.concat(escapeAttr(customerPhone), '" data-customer-name="').concat(escapeAttr(project.customer_name || ""), '" data-testid="project-phone-action" title="Открыть действия для номера ').concat(escapeAttr(customerPhone), '"><span>Телефон</span><strong>').concat(escapeHtml(customerPhone), "</strong></button>") : '<span class="muted">Телефон не указан</span>', "\n        ").concat(customerEmail ? '<a class="contact-action" href="mailto:'.concat(escapeAttr(customerEmail), '" title="').concat(escapeAttr(customerEmail), '">Написать</a>') : '<span class="muted">E-mail не указан</span>', "\n        ").concat(mapHref ? '<a class="contact-action map" href="'.concat(escapeAttr(mapHref), '" target="_blank" rel="noopener noreferrer">Я.Карты</a>') : '<span class="muted">Локация не указана</span>', "\n        ").concat(smetterButton, "\n      </div>\n    </div>");
     const managerNoteHtml = managerNote ? '<section class="manager-note-panel">\n        <div class="stack-line"><strong>Вводные менеджера при передаче</strong>'.concat(pill(project.sales_manager_name || "Менеджер", "blue"), "</div>\n        <p>").concat(escapeHtml(managerNote), "</p>\n      </section>") : "";
     const projectDocsSpotlightHtml = renderProjectDocumentSpotlight(docs);
     qs("#projectDetail").innerHTML = "\n    ".concat(renderProjectHero(project), "\n    ").concat(renderProjectAttention(project), "\n    ").concat(renderProjectQuickActions(project), "\n    ").concat(customerInfoHtml, "\n    ").concat(managerNoteHtml, "\n    ").concat(projectDocsSpotlightHtml, '\n    <div class="project-detail-blocks sortable-zone" data-sortable-zone="project-detail-v2">\n      ').concat(detailBlocks.filter(([, html]) => String(html || "").trim()).map(([key, html]) => '<div class="project-detail-block" data-sortable-block="'.concat(key, '">').concat(html, "</div>")).join(""), "\n    </div>\n  ");
@@ -6200,7 +6237,7 @@
     showToast("Ничего не найдено. Попробуйте другое слово.");
   }
   function bindEvents() {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H, _I, _J, _K, _L, _M, _N, _O, _P, _Q, _R, _S;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H, _I, _J, _K, _L, _M, _N, _O, _P, _Q, _R, _S, _T, _U;
     bindStableDetailsTouchGuard();
     bindWheelPageScroll();
     initPullToRefresh();
@@ -6375,16 +6412,30 @@
       showToast("Удалено сообщений: ".concat(result.deleted || ids.length));
     });
     qsa("[data-close]").forEach((button) => button.addEventListener("click", () => qs("#".concat(button.dataset.close)).close()));
-    (_u = qs("#mediaPreviewClose")) == null ? void 0 : _u.addEventListener("click", closeMediaPreview);
-    (_v = qs("#mediaPreviewCloseBottom")) == null ? void 0 : _v.addEventListener("click", closeMediaPreview);
-    (_w = qs("#mediaPreviewPrev")) == null ? void 0 : _w.addEventListener("click", () => moveMediaPreview(-1));
-    (_x = qs("#mediaPreviewNext")) == null ? void 0 : _x.addEventListener("click", () => moveMediaPreview(1));
-    (_y = qs("#mediaPreviewDialog")) == null ? void 0 : _y.addEventListener("close", () => {
+    (_u = qs("#phoneCopyButton")) == null ? void 0 : _u.addEventListener("click", async (event) => {
+      var _a2;
+      const phone = event.currentTarget.dataset.phone || ((_a2 = qs("#phoneCallNumber")) == null ? void 0 : _a2.textContent) || "";
+      try {
+        await copyPlainText(phone);
+        showToast("Номер телефона скопирован");
+      } catch (error) {
+        showToast(error.message || "Не удалось скопировать номер");
+      }
+    });
+    (_v = qs("#phoneCallLink")) == null ? void 0 : _v.addEventListener("click", () => {
+      var _a2;
+      return (_a2 = qs("#phoneCallDialog")) == null ? void 0 : _a2.close();
+    });
+    (_w = qs("#mediaPreviewClose")) == null ? void 0 : _w.addEventListener("click", closeMediaPreview);
+    (_x = qs("#mediaPreviewCloseBottom")) == null ? void 0 : _x.addEventListener("click", closeMediaPreview);
+    (_y = qs("#mediaPreviewPrev")) == null ? void 0 : _y.addEventListener("click", () => moveMediaPreview(-1));
+    (_z = qs("#mediaPreviewNext")) == null ? void 0 : _z.addEventListener("click", () => moveMediaPreview(1));
+    (_A = qs("#mediaPreviewDialog")) == null ? void 0 : _A.addEventListener("close", () => {
       const body = qs("#mediaPreviewBody");
       if (body) body.innerHTML = "";
       state.mediaPreview = { items: [], index: 0, touchX: null };
     });
-    (_z = qs("#mediaPreviewBody")) == null ? void 0 : _z.addEventListener(
+    (_B = qs("#mediaPreviewBody")) == null ? void 0 : _B.addEventListener(
       "touchstart",
       (event) => {
         var _a2, _b2, _c2;
@@ -6392,7 +6443,7 @@
       },
       { passive: true }
     );
-    (_A = qs("#mediaPreviewBody")) == null ? void 0 : _A.addEventListener(
+    (_C = qs("#mediaPreviewBody")) == null ? void 0 : _C.addEventListener(
       "touchend",
       (event) => {
         var _a2, _b2, _c2;
@@ -6404,14 +6455,14 @@
       },
       { passive: true }
     );
-    (_B = qs("#mediaPreviewDialog")) == null ? void 0 : _B.addEventListener("keydown", (event) => {
+    (_D = qs("#mediaPreviewDialog")) == null ? void 0 : _D.addEventListener("keydown", (event) => {
       if (event.key === "ArrowLeft") moveMediaPreview(-1);
       if (event.key === "ArrowRight") moveMediaPreview(1);
     });
-    (_C = qs("#estimateImagePrev")) == null ? void 0 : _C.addEventListener("click", () => moveEstimateGallery(-1));
-    (_D = qs("#estimateImageNext")) == null ? void 0 : _D.addEventListener("click", () => moveEstimateGallery(1));
+    (_E = qs("#estimateImagePrev")) == null ? void 0 : _E.addEventListener("click", () => moveEstimateGallery(-1));
+    (_F = qs("#estimateImageNext")) == null ? void 0 : _F.addEventListener("click", () => moveEstimateGallery(1));
     let estimateGalleryTouchX = null;
-    (_E = qs("#estimateImageStage")) == null ? void 0 : _E.addEventListener(
+    (_G = qs("#estimateImageStage")) == null ? void 0 : _G.addEventListener(
       "touchstart",
       (event) => {
         var _a2, _b2, _c2;
@@ -6419,7 +6470,7 @@
       },
       { passive: true }
     );
-    (_F = qs("#estimateImageStage")) == null ? void 0 : _F.addEventListener(
+    (_H = qs("#estimateImageStage")) == null ? void 0 : _H.addEventListener(
       "touchend",
       (event) => {
         var _a2, _b2, _c2;
@@ -6497,11 +6548,11 @@
       resetWorkExtraForm({ keepProject: true });
       await renderWorks();
     });
-    (_G = qs('#workExtraForm select[name="source_work_item_id"]')) == null ? void 0 : _G.addEventListener("change", applyWorkExtraRateSelection);
-    (_H = qs('#workExtraForm input[name="quantity"]')) == null ? void 0 : _H.addEventListener("input", recalcWorkExtraTotal);
-    (_I = qs('#workExtraForm input[name="unit_price"]')) == null ? void 0 : _I.addEventListener("input", recalcWorkExtraTotal);
-    (_J = qs("#cancelWorkExtraEditButton")) == null ? void 0 : _J.addEventListener("click", () => resetWorkExtraForm());
-    (_K = qs("#workExtraRows")) == null ? void 0 : _K.addEventListener("click", (event) => {
+    (_I = qs('#workExtraForm select[name="source_work_item_id"]')) == null ? void 0 : _I.addEventListener("change", applyWorkExtraRateSelection);
+    (_J = qs('#workExtraForm input[name="quantity"]')) == null ? void 0 : _J.addEventListener("input", recalcWorkExtraTotal);
+    (_K = qs('#workExtraForm input[name="unit_price"]')) == null ? void 0 : _K.addEventListener("input", recalcWorkExtraTotal);
+    (_L = qs("#cancelWorkExtraEditButton")) == null ? void 0 : _L.addEventListener("click", () => resetWorkExtraForm());
+    (_M = qs("#workExtraRows")) == null ? void 0 : _M.addEventListener("click", (event) => {
       const editButton = event.target.closest("[data-edit-work-extra]");
       if (!editButton) return;
       const row = state.workExtraItems.find((item) => Number(item.id) === Number(editButton.dataset.editWorkExtra));
@@ -7131,6 +7182,11 @@
         openContractDialog(Number(addContractButton.dataset.addContract));
         return;
       }
+      const phoneButton = event.target.closest("[data-call-phone]");
+      if (phoneButton) {
+        openPhoneCallDialog(phoneButton.dataset.callPhone, phoneButton.dataset.customerName || "");
+        return;
+      }
       if (event.target.closest("a")) return;
       const collapseProjectDetailButton = event.target.closest("[data-collapse-project-detail]");
       if (collapseProjectDetailButton) {
@@ -7303,8 +7359,8 @@
       qs('#taskForm input[name="creator_id"]').value = currentUserId() || "";
       submitForm("taskDialog", "taskForm", "/api/tasks", "Задача создана");
     });
-    (_L = qs("#photoReportForm")) == null ? void 0 : _L.addEventListener("submit", submitPhotoReportForm);
-    (_M = qs("#objectRemarkForm")) == null ? void 0 : _M.addEventListener("submit", submitObjectRemarkForm);
+    (_N = qs("#photoReportForm")) == null ? void 0 : _N.addEventListener("submit", submitPhotoReportForm);
+    (_O = qs("#objectRemarkForm")) == null ? void 0 : _O.addEventListener("submit", submitObjectRemarkForm);
     qs("#estimateJobForm").addEventListener("submit", async (event) => {
       var _a2;
       event.preventDefault();
@@ -7527,7 +7583,7 @@
       switchView("materials");
       showToast("Материалы сметы загружены в объект");
     });
-    (_N = qs("#knowledgeFolderForm")) == null ? void 0 : _N.addEventListener("submit", async (event) => {
+    (_P = qs("#knowledgeFolderForm")) == null ? void 0 : _P.addEventListener("submit", async (event) => {
       event.preventDefault();
       const form = qs("#knowledgeFolderForm");
       try {
@@ -7600,20 +7656,20 @@
       event.preventDefault();
       submitForm("eventDialog", "eventForm", "/api/events", "Событие сохранено");
     });
-    (_O = qs("#appealsStatusFilter")) == null ? void 0 : _O.addEventListener("change", async (event) => {
+    (_Q = qs("#appealsStatusFilter")) == null ? void 0 : _Q.addEventListener("change", async (event) => {
       state.appealsStatusFilter = event.target.value;
       await renderAppeals();
     });
-    (_P = qs("#appealsOverdueOnly")) == null ? void 0 : _P.addEventListener("change", async (event) => {
+    (_R = qs("#appealsOverdueOnly")) == null ? void 0 : _R.addEventListener("change", async (event) => {
       state.appealsOverdueOnly = event.target.checked;
       await renderAppeals();
     });
-    (_Q = qs("#appealsArchivedOnly")) == null ? void 0 : _Q.addEventListener("change", async (event) => {
+    (_S = qs("#appealsArchivedOnly")) == null ? void 0 : _S.addEventListener("change", async (event) => {
       state.appealsArchivedOnly = event.target.checked;
       await renderAppeals();
     });
-    (_R = qs("#refreshAppealsButton")) == null ? void 0 : _R.addEventListener("click", () => renderAppeals().catch((error) => showToast(error.message)));
-    (_S = qs("#appealForm")) == null ? void 0 : _S.addEventListener("submit", async (event) => {
+    (_T = qs("#refreshAppealsButton")) == null ? void 0 : _T.addEventListener("click", () => renderAppeals().catch((error) => showToast(error.message)));
+    (_U = qs("#appealForm")) == null ? void 0 : _U.addEventListener("submit", async (event) => {
       var _a2, _b2;
       event.preventDefault();
       const form = qs("#appealForm");

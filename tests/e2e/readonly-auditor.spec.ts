@@ -1,8 +1,9 @@
 import { expect, test } from "@playwright/test";
 import { spawnSync } from "node:child_process";
 
-test("ai auditor opens app in fresh read-only context and cannot mutate data", async ({ browser }) => {
-  const result = spawnSync("python", ["tools/create_ai_audit_token.py", "--public-url", process.env.KONTUR_BASE_URL || "http://127.0.0.1:8765"], { encoding: "utf8" });
+test("ai auditor opens app in fresh read-only context and cannot mutate data", async ({ browser, baseURL }) => {
+  const publicUrl = baseURL || process.env.KONTUR_BASE_URL || "http://127.0.0.1:8765";
+  const result = spawnSync("python", ["tools/create_ai_audit_token.py", "--public-url", publicUrl], { encoding: "utf8" });
   const loginUrl = result.stdout.match(/login_url=(\S+)/)?.[1];
   expect(loginUrl).toBeTruthy();
   const context = await browser.newContext();

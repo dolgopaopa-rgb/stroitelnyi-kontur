@@ -202,7 +202,7 @@ async function preparePage(playwright, viewport = { width: 1366, height: 900 }) 
     executablePath: executablePath || undefined,
     channel: executablePath ? undefined : process.env.PLAYWRIGHT_CHANNEL || "chrome",
   });
-  const context = await browser.newContext({ viewport, ignoreHTTPSErrors: true });
+  const context = await browser.newContext({ viewport, ignoreHTTPSErrors: true, serviceWorkers: "block" });
   const errors = [];
   const page = await context.newPage();
   page.on("console", (message) => {
@@ -223,14 +223,30 @@ async function preparePage(playwright, viewport = { width: 1366, height: 900 }) 
     errors.push(`requestfailed: ${request.method()} ${url} ${errorText}`.trim());
   });
   await page.goto(`${baseUrl}/`, { waitUntil: "domcontentloaded" });
-  await page.waitForTimeout(700);
+  await waitForAppIdle(page);
   return { browser, context, page, errors };
+}
+
+async function waitForAppIdle(page, timeoutMs = 10_000) {
+  await page
+    .waitForFunction(
+      () => {
+        const overlay = document.querySelector("#appLoadingOverlay");
+        const overlayReleased = !overlay || (overlay.hidden && !overlay.classList.contains("is-active"));
+        return overlayReleased && !document.body.classList.contains("app-is-loading");
+      },
+      undefined,
+      { timeout: timeoutMs },
+    )
+    .catch(() => {});
+  await page.waitForLoadState("networkidle", { timeout: Math.min(timeoutMs, 5000) }).catch(() => {});
+  await page.waitForTimeout(100);
 }
 
 async function route(page, viewOrPath) {
   const pathName = viewOrPath.startsWith("/") ? viewOrPath : `/?view=${encodeURIComponent(viewOrPath)}`;
   await page.goto(`${baseUrl}${pathName}`, { waitUntil: "domcontentloaded" });
-  await page.waitForTimeout(500);
+  await waitForAppIdle(page);
 }
 
 async function visibleTextLength(page) {

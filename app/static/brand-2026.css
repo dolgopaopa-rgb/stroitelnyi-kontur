@@ -292,7 +292,7 @@ body.brand-system-2026 .install-button:hover {
 
 body.brand-system-2026 .link-button,
 body.brand-system-2026 .inline-link,
-body.brand-system-2026 a:not(.brand):not(.nav-button) {
+body.brand-system-2026 a:not(.brand):not(.nav-button):not(.primary) {
   color: var(--brand);
 }
 

@@ -10,6 +10,18 @@ function readProjectFile(relativePath: string) {
   return fs.readFileSync(path.join(root, relativePath), "utf8");
 }
 
+function expectSynchronizedAssetVersion(html: string) {
+  const versions = [...html.matchAll(/\/static\/(?:manifest\.webmanifest|styles\.css|brand-2026\.css|app\.compat\.js)\?v=([^"']+)/g)].map(
+    (match) => match[1],
+  );
+  expect(versions.length).toBeGreaterThanOrEqual(4);
+  expect(new Set(versions).size).toBe(1);
+  const version = versions[0];
+  const serviceWorker = readProjectFile("app/static/sw.js");
+  expect(serviceWorker).toContain(`stroitelnyi-kontur-${version}`);
+  expect(serviceWorker).toContain(`/static/app.compat.js?v=${version}`);
+}
+
 test("estimate completion supports multiple files and return to rework", async ({ page }) => {
   await openApp(page, "/estimates");
 
@@ -269,7 +281,7 @@ test("estimate job files are collapsed under object summary", async () => {
   const compat = readProjectFile("app/static/app.compat.js");
   const styles = readProjectFile("app/static/styles.css");
 
-  expect(html).toContain("20260711-main-estimate-materials");
+  expectSynchronizedAssetVersion(html);
   expect(app).toContain("estimate-job-collapsible");
   expect(app).toContain("estimate-job-summary");
   expect(app).toContain("estimate-job-body");
@@ -333,7 +345,7 @@ test("delivered material batches do not stay in delivery risk", async ({ page })
   const compat = readProjectFile("app/static/app.compat.js");
   const server = readProjectFile("app/server.py");
 
-  expect(html).toContain("20260711-main-estimate-materials");
+  expectSynchronizedAssetVersion(html);
   expect(app).toContain("function materialBatchHasOpenProblem");
   expect(app).toContain("function materialBatchIsFinalForAttention");
   expect(app).toContain("if (materialBatchIsFinalForAttention(batch)) return false");

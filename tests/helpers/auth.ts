@@ -2,6 +2,7 @@ import { expect, Page } from "@playwright/test";
 
 const pathToViewId: Record<string, string> = {
   "/today": "todayView",
+  "/assistant": "assistantView",
   "/objects": "projectsView",
   "/tasks": "tasksView",
   "/materials": "materialsView",
@@ -11,10 +12,15 @@ const pathToViewId: Record<string, string> = {
   "/signals": "dashboardView",
   "/feedback": "feedbackView",
   "/settings": "eventsView",
+  "/estimates": "estimatesView",
+  "/works": "worksView",
+  "/variations": "variationsView",
+  "/locations": "locationsView",
 };
 
 const pathToNavId: Record<string, string> = {
   "/today": "nav-today",
+  "/assistant": "nav-assistant",
   "/objects": "nav-objects",
   "/tasks": "nav-tasks",
   "/materials": "nav-materials",
@@ -23,6 +29,10 @@ const pathToNavId: Record<string, string> = {
   "/documents": "nav-documents",
   "/signals": "nav-signals",
   "/feedback": "nav-feedback",
+  "/estimates": "nav-estimates",
+  "/works": "nav-works",
+  "/variations": "nav-variations",
+  "/locations": "nav-locations",
 };
 
 export async function openApp(page: Page, path = "/today") {
@@ -39,6 +49,18 @@ export async function openApp(page: Page, path = "/today") {
     await page.waitForLoadState("domcontentloaded");
   }
   await expect(page.locator("body")).not.toHaveText("");
+  const loadingOverlay = page.locator("#appLoadingOverlay");
+  if (await loadingOverlay.count()) {
+    await expect
+      .poll(
+        async () =>
+          loadingOverlay.evaluate((node) =>
+            Boolean((node as HTMLElement).hidden && !node.classList.contains("is-active") && !document.body.classList.contains("app-is-loading")),
+          ),
+        { message: "The application loading overlay must be fully released before UI assertions." },
+      )
+      .toBeTruthy();
+  }
   const viewId = pathToViewId[path.split("?")[0]];
   if (viewId) {
     const view = page.locator(`#${viewId}`);
@@ -46,11 +68,18 @@ export async function openApp(page: Page, path = "/today") {
     if (!(await view.evaluate((node) => node.classList.contains("active")).catch(() => false))) {
       const navId = pathToNavId[path.split("?")[0]];
       const nav = navId ? page.locator(`[data-testid="${navId}"]`).first() : null;
-      if (nav && (await nav.count()) && (await nav.isVisible().catch(() => false))) {
-        await nav.click();
+      if (nav && (await nav.count())) {
+        if (await nav.isVisible().catch(() => false)) {
+          await nav.click();
+        } else {
+          await nav.evaluate((node) => (node as HTMLElement).click());
+        }
       }
     }
     await expect(view).toHaveClass(/active/);
+    if (await loadingOverlay.count()) {
+      await expect(loadingOverlay).toBeHidden();
+    }
   }
 }
 
@@ -61,7 +90,7 @@ export async function switchRole(page: Page, role: string) {
       if (!(await select.count())) return false;
       const values = await select.locator("option").evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value));
       if (!values.includes(role)) return false;
-      await select.selectOption(role);
+      await select.selectOption(role, { force: true });
       await page.waitForLoadState("domcontentloaded").catch(() => undefined);
       await page.waitForTimeout(250);
       return true;
