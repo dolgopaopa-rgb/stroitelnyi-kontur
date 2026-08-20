@@ -833,6 +833,8 @@ h2 {
   font-weight: 700;
   text-decoration: none;
   white-space: nowrap;
+  cursor: pointer;
+  font-family: inherit;
 }
 
 .contact-action:hover {
@@ -842,6 +844,66 @@ h2 {
 .contact-action.map {
   border-color: #c7dcc9;
   background: #f2faf3;
+}
+
+.contact-action.phone-action {
+  gap: 6px;
+}
+
+.contact-action.phone-action span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.contact-action.phone-action strong {
+  color: var(--brand-strong);
+  font-size: 12px;
+}
+
+.phone-call-dialog {
+  width: min(480px, calc(100vw - 28px));
+}
+
+.phone-call-shell {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+.phone-call-shell h2,
+.phone-call-shell p {
+  margin: 0;
+}
+
+.phone-call-number {
+  display: block;
+  color: var(--brand-strong);
+  font-size: clamp(24px, 5vw, 34px);
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.phone-call-hint {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.phone-call-actions {
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+
+.phone-call-actions > * {
+  min-height: 44px;
+}
+
+.phone-call-actions .primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
 }
 
 .manager-note-panel {
@@ -3366,6 +3428,32 @@ h2 {
 
 .estimate-question-note strong {
   color: #785105;
+}
+
+.estimate-input-state {
+  display: grid;
+  gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 9px;
+  background: var(--surface-2);
+}
+
+.estimate-input-state strong,
+.estimate-input-state span,
+.estimate-input-state small {
+  overflow-wrap: anywhere;
+}
+
+.estimate-input-state.is-incomplete {
+  border-color: #e7c56f;
+  background: #fff8e7;
+}
+
+.estimate-input-state small {
+  color: #785105;
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 .estimate-question-note p {
@@ -5911,6 +5999,15 @@ textarea {
 }
 
 @media (max-width: 820px) {
+  html,
+  body {
+    min-height: 100%;
+    height: auto;
+    overflow-y: auto;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+  }
+
   body {
     font-size: 14px;
   }
@@ -5918,6 +6015,15 @@ textarea {
   .app {
     display: block;
     min-height: 100dvh;
+    touch-action: pan-y;
+  }
+
+  .main {
+    touch-action: pan-y;
+  }
+
+  #estimatesView .task-stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .sidebar {
@@ -6683,6 +6789,19 @@ textarea {
     border-radius: 0;
   }
 
+  body.brand-system-2026 .phone-call-dialog {
+    width: calc(100vw - 24px);
+    max-width: 480px;
+    height: fit-content;
+    block-size: fit-content;
+    max-height: calc(100dvh - 24px);
+    min-height: 0;
+    margin: auto;
+    border: 1px solid #8f9692;
+    border-radius: 8px;
+    overflow: auto;
+  }
+
   dialog .form {
     min-height: 100dvh;
     padding: 12px;
@@ -6702,6 +6821,16 @@ textarea {
     max-height: 30dvh;
     overflow: auto;
     font-size: 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  #estimatesView .task-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #estimatesView .task-stat {
+    min-width: 0;
   }
 }
 

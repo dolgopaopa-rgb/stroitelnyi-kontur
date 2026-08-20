@@ -9,14 +9,14 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Строительный контур</title>
-    <link rel="manifest" href="/static/manifest.webmanifest?v=20260809-openvillage-brand-v1" />
+    <link rel="manifest" href="/static/manifest.webmanifest?v=20260820-feedback-fixes-v1" />
     <link rel="icon" type="image/svg+xml" href="/static/assets/brand-2026/d2dom-mark.svg" />
     <link rel="apple-touch-icon" href="/static/assets/brand-2026/d2dom-mark-192.png" />
     <link rel="preload" href="/static/assets/brand-2026/Involve-Regular.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="/static/assets/brand-2026/Involve-SemiBold.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="/static/assets/brand-2026/Haval-Light.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="stylesheet" href="/static/styles.css?v=20260809-openvillage-brand-v1" />
-    <link rel="stylesheet" href="/static/brand-2026.css?v=20260809-openvillage-brand-v1" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260820-feedback-fixes-v1" />
+    <link rel="stylesheet" href="/static/brand-2026.css?v=20260820-feedback-fixes-v1" />
   </head>
   <body class="brand-system-2026">
     <div class="app" data-testid="qa-scroll-root">
@@ -907,6 +907,7 @@
           <input name="attachments" type="file" multiple />
           <span class="field-hint">Можно приложить ТЗ, проекты, фото, PDF, Word, Excel, архивы и любые другие рабочие файлы.</span>
         </label>
+        <p class="form-status" id="estimateJobFormStatus" hidden aria-live="polite"></p>
         <div class="form-actions">
           <button type="button" class="secondary" data-close="estimateJobDialog">Отмена</button>
           <button class="primary" type="submit">Сохранить</button>
@@ -1253,6 +1254,26 @@
       </form>
     </dialog>
 
+    <dialog id="phoneCallDialog" class="phone-call-dialog" data-testid="phone-call-dialog" aria-labelledby="phoneCallTitle">
+      <div class="phone-call-shell">
+        <div class="modal-head">
+          <div>
+            <span class="muted">Телефон заказчика</span>
+            <h2 id="phoneCallTitle">Связаться с заказчиком</h2>
+          </div>
+          <button type="button" class="icon" data-close="phoneCallDialog" aria-label="Закрыть окно">×</button>
+        </div>
+        <strong id="phoneCallNumber" class="phone-call-number" data-testid="phone-call-number"></strong>
+        <p id="phoneCallContext" class="muted"></p>
+        <p class="phone-call-hint">На телефоне выберите «Позвонить». На компьютере номер можно скопировать и использовать в удобной программе связи.</p>
+        <div class="form-actions phone-call-actions">
+          <a class="primary" id="phoneCallLink" href="#" data-testid="phone-call-link">Позвонить</a>
+          <button type="button" class="secondary" id="phoneCopyButton" data-testid="phone-copy-button">Скопировать номер</button>
+          <button type="button" class="secondary" data-close="phoneCallDialog">Закрыть</button>
+        </div>
+      </div>
+    </dialog>
+
     <dialog id="mediaPreviewDialog" class="media-preview-dialog" data-testid="media-preview-dialog">
       <div class="media-preview-shell">
         <div class="modal-head media-preview-head">
@@ -1284,6 +1305,6 @@
       </div>
     </div>
     <div class="toast" id="toast"></div>
-    <script src="/static/app.compat.js?v=20260809-openvillage-brand-v1"></script>
+    <script src="/static/app.compat.js?v=20260820-feedback-fixes-v1"></script>
   </body>
 </html>

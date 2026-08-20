@@ -3,6 +3,7 @@ import { expect, Page } from "@playwright/test";
 const pathToViewId: Record<string, string> = {
   "/today": "todayView",
   "/objects": "projectsView",
+  "/estimates": "estimatesView",
   "/tasks": "tasksView",
   "/materials": "materialsView",
   "/photo-reports": "photosView",
@@ -16,6 +17,7 @@ const pathToViewId: Record<string, string> = {
 const pathToNavId: Record<string, string> = {
   "/today": "nav-today",
   "/objects": "nav-objects",
+  "/estimates": "nav-estimates",
   "/tasks": "nav-tasks",
   "/materials": "nav-materials",
   "/photo-reports": "nav-photo-reports",

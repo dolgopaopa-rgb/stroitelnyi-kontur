@@ -4,13 +4,17 @@ const routeViewMap = {
   "/today": "today",
   "/assistant": "assistant",
   "/objects": "projects",
+  "/estimates": "estimates",
   "/tasks": "tasks",
+  "/works": "works",
   "/materials": "materials",
+  "/variations": "variations",
   "/photo-reports": "photos",
   "/object-issues": "object_remarks",
   "/documents": "documents",
   "/signals": "dashboard",
   "/feedback": "feedback",
+  "/locations": "locations",
   "/settings": "events",
 };
 const pathView = routeViewMap[window.location.pathname] || "";
@@ -979,6 +983,44 @@ function phoneHref(value) {
   const formatted = formatRuPhone(value);
   const digits = phoneDigits(formatted);
   return digits.length === 11 ? `tel:+${digits}` : "";
+}
+
+async function copyPlainText(value) {
+  const text = String(value || "").trim();
+  if (!text) throw new Error("Нет текста для копирования");
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const field = document.createElement("textarea");
+  field.value = text;
+  field.setAttribute("readonly", "");
+  field.style.position = "fixed";
+  field.style.opacity = "0";
+  document.body.appendChild(field);
+  field.select();
+  const copied = document.execCommand("copy");
+  field.remove();
+  if (!copied) throw new Error("Браузер не разрешил копирование");
+}
+
+function openPhoneCallDialog(value, customerName = "") {
+  const phone = formatRuPhone(value);
+  const href = phoneHref(phone);
+  const dialog = qs("#phoneCallDialog");
+  if (!phone || !href || !dialog) {
+    showToast("Телефон заказчика не указан");
+    return;
+  }
+  const numberNode = qs("#phoneCallNumber");
+  const contextNode = qs("#phoneCallContext");
+  const callLink = qs("#phoneCallLink");
+  const copyButton = qs("#phoneCopyButton");
+  if (numberNode) numberNode.textContent = phone;
+  if (contextNode) contextNode.textContent = customerName ? `Заказчик: ${customerName}` : "Телефон заказчика";
+  if (callLink) callLink.href = href;
+  if (copyButton) copyButton.dataset.phone = phone;
+  if (!dialog.open) dialog.showModal();
 }
 
 function externalRefLink(value, fallbackText, level = "") {
@@ -3609,6 +3651,11 @@ function renderEstimateJobRow(job) {
   const summaryTitle = job.project_title || job.customer_name || job.title || "Сметное задание";
   const summarySubTitle = job.project_title && job.title && job.title !== job.project_title ? job.title : "";
   const currentFilesCount = (job.files || []).filter((file) => Number(file.is_current ?? 1) !== 0).length;
+  const hasManagerComment = Boolean(String(job.comment || "").trim());
+  const inputSummary = [
+    currentFilesCount ? `${currentFilesCount} ${pluralRu(currentFilesCount, "файл", "файла", "файлов")}` : "файлы не приложены",
+    hasManagerComment ? "комментарий есть" : "комментарий не заполнен",
+  ].join(" · ");
   return `
     <details class="row estimate-job-row estimate-job-collapsible" data-collapsible-key="${escapeAttr(collapsibleKey)}"${openAttrForKey(collapsibleKey)}>
       <summary class="estimate-job-summary">
@@ -3619,7 +3666,7 @@ function renderEstimateJobRow(job) {
         <span class="estimate-job-summary-badges">
           ${pill(label(job.status), statusLevel)}
           ${pill(job.due_date || "без срока", job.status === "estimate_done" ? "success" : levelByDate(job.due_date))}
-          ${currentFilesCount ? pill(`Файлы: ${currentFilesCount}`, "blue") : ""}
+          ${currentFilesCount ? pill(`Файлы: ${currentFilesCount}`, "blue") : pill("Без файлов", "warning")}
           ${quickLinks.slice(0, 2).map(renderEstimateJobLink).join("")}
           ${quickLinks.length > 2 ? pill(`ещё ${quickLinks.length - 2}`, "blue") : ""}
         </span>
@@ -3638,6 +3685,11 @@ function renderEstimateJobRow(job) {
             ${isPartnerEstimateJob(job) ? pill("Партнерская смета", "blue") : ""}
           </div>
           ${job.site_costs_comment ? `<p class="muted">Организация площадки: ${escapeHtml(job.site_costs_comment)}</p>` : ""}
+          <div class="estimate-input-state ${currentFilesCount ? "is-ready" : "is-incomplete"}" data-testid="estimate-input-state">
+            <strong>Вводные к заданию</strong>
+            <span>${escapeHtml(inputSummary)}</span>
+            ${currentFilesCount ? "" : `<small>К заданию не приложены файлы. Используйте «Уточнить», если смету нельзя начать без исходных данных.</small>`}
+          </div>
           ${smetterHref ? `<a class="link-button inline-link" href="${escapeAttr(smetterHref)}" target="_blank" rel="noopener noreferrer">Открыть Сметтер</a>` : ""}
           ${renderEstimateJobLinks(quickLinks)}
           ${job.comment ? `<p>${linkifyText(job.comment)}</p>` : ""}
@@ -5287,7 +5339,7 @@ async function renderProjectDetail(projectId) {
         <span>${customerHistory} ${customerHistory === 1 ? "объект/договор" : "объектов/договоров"} в истории</span>
       </div>
       <div class="project-contact-actions">
-        ${phoneLink ? `<a class="contact-action" href="${escapeAttr(phoneLink)}" title="${escapeAttr(customerPhone)}">Позвонить</a>` : `<span class="muted">Телефон не указан</span>`}
+        ${phoneLink ? `<button class="contact-action phone-action" type="button" data-call-phone="${escapeAttr(customerPhone)}" data-customer-name="${escapeAttr(project.customer_name || "")}" data-testid="project-phone-action" title="Открыть действия для номера ${escapeAttr(customerPhone)}"><span>Телефон</span><strong>${escapeHtml(customerPhone)}</strong></button>` : `<span class="muted">Телефон не указан</span>`}
         ${customerEmail ? `<a class="contact-action" href="mailto:${escapeAttr(customerEmail)}" title="${escapeAttr(customerEmail)}">Написать</a>` : `<span class="muted">E-mail не указан</span>`}
         ${mapHref ? `<a class="contact-action map" href="${escapeAttr(mapHref)}" target="_blank" rel="noopener noreferrer">Я.Карты</a>` : `<span class="muted">Локация не указана</span>`}
         ${smetterButton}
@@ -7696,6 +7748,67 @@ function bindWheelPageScroll() {
   );
 }
 
+function bindMobileTouchScrollFallback() {
+  if (bindMobileTouchScrollFallback.bound) return;
+  bindMobileTouchScrollFallback.bound = true;
+  let gesture = null;
+
+  document.addEventListener(
+    "touchstart",
+    (event) => {
+      if (!isMobileTouchViewport() || hasOpenDialog() || event.touches?.length !== 1) {
+        gesture = null;
+        return;
+      }
+      if (event.target.closest?.("dialog, input, textarea, select")) {
+        gesture = null;
+        return;
+      }
+      if (nearestScrollableElement(event.target)) {
+        gesture = null;
+        return;
+      }
+      const root = document.scrollingElement || document.documentElement;
+      const touch = event.touches[0];
+      gesture = { root, lastY: touch.clientY, pendingDelta: 0, scheduled: false };
+    },
+    { passive: true }
+  );
+
+  document.addEventListener(
+    "touchmove",
+    (event) => {
+      const touch = event.touches?.[0];
+      const currentGesture = gesture;
+      if (!currentGesture || !touch) return;
+      const deltaY = currentGesture.lastY - touch.clientY;
+      currentGesture.lastY = touch.clientY;
+      if (Math.abs(deltaY) < 2) return;
+      currentGesture.pendingDelta += deltaY;
+      if (currentGesture.scheduled) return;
+      currentGesture.scheduled = true;
+      const before = currentGesture.root.scrollTop;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const pendingDelta = currentGesture.pendingDelta;
+          currentGesture.pendingDelta = 0;
+          currentGesture.scheduled = false;
+          if (Math.abs(currentGesture.root.scrollTop - before) > 1) return;
+          const maxScroll = Math.max(0, currentGesture.root.scrollHeight - currentGesture.root.clientHeight);
+          currentGesture.root.scrollTop = Math.max(0, Math.min(maxScroll, before + pendingDelta));
+        });
+      });
+    },
+    { passive: true }
+  );
+
+  const finishGesture = () => {
+    gesture = null;
+  };
+  document.addEventListener("touchend", finishGesture, { passive: true });
+  document.addEventListener("touchcancel", finishGesture, { passive: true });
+}
+
 function bindStableDetailsTouchGuard() {
   document.addEventListener(
     "touchstart",
@@ -8077,6 +8190,7 @@ async function runGlobalSearch(rawQuery) {
 function bindEvents() {
   bindStableDetailsTouchGuard();
   bindWheelPageScroll();
+  bindMobileTouchScrollFallback();
   initPullToRefresh();
   qs("#sidebarToggle")?.addEventListener("click", () => toggleSidebarCollapsed());
   qs("#densitySelect")?.addEventListener("change", (event) => setDensityMode(event.target.value));
@@ -8249,6 +8363,16 @@ function bindEvents() {
   });
 
   qsa("[data-close]").forEach((button) => button.addEventListener("click", () => qs(`#${button.dataset.close}`).close()));
+  qs("#phoneCopyButton")?.addEventListener("click", async (event) => {
+    const phone = event.currentTarget.dataset.phone || qs("#phoneCallNumber")?.textContent || "";
+    try {
+      await copyPlainText(phone);
+      showToast("Номер телефона скопирован");
+    } catch (error) {
+      showToast(error.message || "Не удалось скопировать номер");
+    }
+  });
+  qs("#phoneCallLink")?.addEventListener("click", () => qs("#phoneCallDialog")?.close());
   qs("#mediaPreviewClose")?.addEventListener("click", closeMediaPreview);
   qs("#mediaPreviewCloseBottom")?.addEventListener("click", closeMediaPreview);
   qs("#mediaPreviewPrev")?.addEventListener("click", () => moveMediaPreview(-1));
@@ -8984,6 +9108,12 @@ function bindEvents() {
       return;
     }
 
+    const phoneButton = event.target.closest("[data-call-phone]");
+    if (phoneButton) {
+      openPhoneCallDialog(phoneButton.dataset.callPhone, phoneButton.dataset.customerName || "");
+      return;
+    }
+
     if (event.target.closest("a")) return;
 
     const collapseProjectDetailButton = event.target.closest("[data-collapse-project-detail]");
@@ -9164,22 +9294,52 @@ function bindEvents() {
   qs("#estimateJobForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = qs("#estimateJobForm");
-    const payload = formToJson(form);
-    const id = payload.id;
-    delete payload.id;
-    payload.title = normalizeEstimateJobTitle(payload.customer_name, payload.title);
-    const attachments = Array.from(form.elements.attachments?.files || []);
-    payload.attachments = await Promise.all(attachments.map((file) => fileDocumentPayload(file, file.name, "estimate_job_file", "estimate_job")));
-    await api(id ? `/api/estimate-jobs/${id}/update` : "/api/estimate-jobs", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-    qs("#estimateJobDialog").close();
-    form.reset();
-    await loadCoreData();
-    await renderEstimateJobs();
-    await renderDashboard();
-    showToast(id ? "Сметное задание обновлено" : "Сметное задание создано");
+    if (form.dataset.submitting === "1") return;
+    const submitButton = form.querySelector('button[type="submit"]');
+    const statusNode = qs("#estimateJobFormStatus");
+    form.dataset.submitting = "1";
+    form.setAttribute("aria-busy", "true");
+    if (submitButton) {
+      submitButton.dataset.defaultLabel = submitButton.textContent || "Сохранить";
+      submitButton.textContent = "Сохраняем...";
+      submitButton.disabled = true;
+    }
+    if (statusNode) {
+      statusNode.hidden = false;
+      statusNode.className = "form-status";
+      statusNode.textContent = "Сохраняем задание и файлы. Повторно нажимать не нужно.";
+    }
+    try {
+      const payload = formToJson(form);
+      const id = payload.id;
+      delete payload.id;
+      payload.title = normalizeEstimateJobTitle(payload.customer_name, payload.title);
+      const attachments = Array.from(form.elements.attachments?.files || []);
+      payload.attachments = await Promise.all(attachments.map((file) => fileDocumentPayload(file, file.name, "estimate_job_file", "estimate_job")));
+      await api(id ? `/api/estimate-jobs/${id}/update` : "/api/estimate-jobs", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      qs("#estimateJobDialog").close();
+      form.reset();
+      await loadCoreData();
+      await renderEstimateJobs();
+      await renderDashboard();
+      showToast(id ? "Сметное задание обновлено" : "Сметное задание создано");
+    } catch (error) {
+      if (statusNode) {
+        statusNode.className = "form-status danger-text";
+        statusNode.textContent = error.message || "Не удалось сохранить задание";
+      }
+      showToast(error.message || "Не удалось сохранить задание");
+    } finally {
+      form.dataset.submitting = "0";
+      form.removeAttribute("aria-busy");
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.textContent = submitButton.dataset.defaultLabel || "Сохранить";
+      }
+    }
   });
   qs("#estimateJobDoneForm").addEventListener("submit", async (event) => {
     event.preventDefault();

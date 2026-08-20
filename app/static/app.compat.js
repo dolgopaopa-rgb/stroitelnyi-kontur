@@ -40,13 +40,17 @@
     "/today": "today",
     "/assistant": "assistant",
     "/objects": "projects",
+    "/estimates": "estimates",
     "/tasks": "tasks",
+    "/works": "works",
     "/materials": "materials",
+    "/variations": "variations",
     "/photo-reports": "photos",
     "/object-issues": "object_remarks",
     "/documents": "documents",
     "/signals": "dashboard",
     "/feedback": "feedback",
+    "/locations": "locations",
     "/settings": "events"
   };
   var pathView = routeViewMap[window.location.pathname] || "";
@@ -890,6 +894,43 @@
     const formatted = formatRuPhone(value);
     const digits = phoneDigits(formatted);
     return digits.length === 11 ? "tel:+".concat(digits) : "";
+  }
+  async function copyPlainText(value) {
+    var _a;
+    const text = String(value || "").trim();
+    if (!text) throw new Error("Нет текста для копирования");
+    if ((_a = navigator.clipboard) == null ? void 0 : _a.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+    const field = document.createElement("textarea");
+    field.value = text;
+    field.setAttribute("readonly", "");
+    field.style.position = "fixed";
+    field.style.opacity = "0";
+    document.body.appendChild(field);
+    field.select();
+    const copied = document.execCommand("copy");
+    field.remove();
+    if (!copied) throw new Error("Браузер не разрешил копирование");
+  }
+  function openPhoneCallDialog(value, customerName = "") {
+    const phone = formatRuPhone(value);
+    const href = phoneHref(phone);
+    const dialog = qs("#phoneCallDialog");
+    if (!phone || !href || !dialog) {
+      showToast("Телефон заказчика не указан");
+      return;
+    }
+    const numberNode = qs("#phoneCallNumber");
+    const contextNode = qs("#phoneCallContext");
+    const callLink = qs("#phoneCallLink");
+    const copyButton = qs("#phoneCopyButton");
+    if (numberNode) numberNode.textContent = phone;
+    if (contextNode) contextNode.textContent = customerName ? "Заказчик: ".concat(customerName) : "Телефон заказчика";
+    if (callLink) callLink.href = href;
+    if (copyButton) copyButton.dataset.phone = phone;
+    if (!dialog.open) dialog.showModal();
   }
   function yandexCoordinatePair(first, second, order = "lonlat") {
     const a = Number(String(first || "").replace(",", "."));
@@ -2961,7 +3002,12 @@
       var _a;
       return Number((_a = file.is_current) != null ? _a : 1) !== 0;
     }).length;
-    return '\n    <details class="row estimate-job-row estimate-job-collapsible" data-collapsible-key="'.concat(escapeAttr(collapsibleKey), '"').concat(openAttrForKey(collapsibleKey), '>\n      <summary class="estimate-job-summary">\n        <span class="estimate-job-summary-main">\n          <strong>').concat(escapeHtml(summaryTitle), "</strong>\n          ").concat(summarySubTitle ? '<span class="muted">'.concat(escapeHtml(summarySubTitle), "</span>") : "", '\n        </span>\n        <span class="estimate-job-summary-badges">\n          ').concat(pill(label(job.status), statusLevel2), "\n          ").concat(pill(job.due_date || "без срока", job.status === "estimate_done" ? "success" : levelByDate(job.due_date)), "\n          ").concat(currentFilesCount ? pill("Файлы: ".concat(currentFilesCount), "blue") : "", "\n          ").concat(quickLinks.slice(0, 2).map(renderEstimateJobLink).join(""), "\n          ").concat(quickLinks.length > 2 ? pill("ещё ".concat(quickLinks.length - 2), "blue") : "", '\n        </span>\n      </summary>\n      <div class="estimate-job-body">\n        <div class="estimate-job-main">\n          <div class="stack-line">\n            <strong>').concat(escapeHtml(job.title), "</strong>\n            ").concat(pill(label(job.status), statusLevel2), "\n            ").concat(pill(job.due_date || "без срока", job.status === "estimate_done" ? "success" : levelByDate(job.due_date)), '\n          </div>\n          <div class="muted">').concat(escapeHtml(job.customer_name || "Заказчик не указан"), " · ").concat(escapeHtml(job.project_title || "без карточки объекта"), " · ").concat(estimateJobTypeLabel(job.estimate_type), '</div>\n          <div class="muted">получено: ').concat(formatDateRu(job.received_at) || "не указано", " · выдал задание: ").concat(escapeHtml(job.manager_name || "не назначен"), " · сметчик: ").concat(escapeHtml(job.estimator_name || "не назначен"), '</div>\n          <div class="estimate-job-flags">\n            ').concat(pill(estimateSiteCostsLabel(job.site_costs_policy), job.site_costs_policy === "exclude" ? "warning" : job.site_costs_policy === "clarify" ? "blue" : "success"), "\n            ").concat(isPartnerEstimateJob(job) ? pill("Партнерская смета", "blue") : "", "\n          </div>\n          ").concat(job.site_costs_comment ? '<p class="muted">Организация площадки: '.concat(escapeHtml(job.site_costs_comment), "</p>") : "", "\n          ").concat(smetterHref ? '<a class="link-button inline-link" href="'.concat(escapeAttr(smetterHref), '" target="_blank" rel="noopener noreferrer">Открыть Сметтер</a>') : "", "\n          ").concat(renderEstimateJobLinks(quickLinks), "\n          ").concat(job.comment ? "<p>".concat(linkifyText(job.comment), "</p>") : "", "\n          ").concat(job.question_comment ? '<div class="estimate-question-note"><strong>Вопрос сметчика</strong><p>'.concat(linkifyText(job.question_comment), "</p></div>") : "", "\n          ").concat(job.return_comment ? '<p class="muted danger-text">Возврат менеджеру: '.concat(linkifyText(job.return_comment), "</p>") : "", "\n          ").concat(job.result_comment ? '<p class="muted">Итог: '.concat(linkifyText(job.result_comment), "</p>") : "", "\n          ").concat(renderEstimateJobFiles(job.files, job.id, canManageFiles), '\n        </div>\n        <div class="estimate-job-actions">\n          ').concat(canAnswerQuestion ? '<button class="secondary tiny" type="button" data-edit-estimate-job="'.concat(job.id, '">Ответить на уточнение</button>') : canEdit ? '<button class="secondary tiny" type="button" data-edit-estimate-job="'.concat(job.id, '">Редактировать</button>') : "", "\n          ").concat(canStart ? '<button class="secondary tiny" type="button" data-estimate-job-status="estimate_in_work" data-estimate-job-id="'.concat(job.id, '">В работу</button>') : "", "\n          ").concat(canQuestion ? '<button class="secondary tiny" type="button" data-estimate-job-status="estimate_question" data-estimate-job-id="'.concat(job.id, '">Уточнить</button>') : "", "\n          ").concat(canReturn ? '<button class="secondary tiny danger-outline" type="button" data-estimate-job-status="estimate_returned" data-estimate-job-id="'.concat(job.id, '">Вернуть на доработку</button>') : "", "\n          ").concat(canFinish ? '<button class="primary tiny" type="button" data-estimate-job-status="estimate_done" data-estimate-job-id="'.concat(job.id, '">Сдано</button>') : "", "\n          ").concat(canManageFiles ? '<button class="secondary tiny" type="button" data-open-estimate-files="'.concat(job.id, '">Добавить файл</button>') : "", "\n          ").concat(canManageFiles ? '<button class="secondary tiny" type="button" data-open-estimate-files="'.concat(job.id, '" data-estimate-file-mode="link">Изменить ссылку</button>') : "", "\n          ").concat(canManageFiles ? '<button class="secondary tiny" type="button" data-open-estimate-files="'.concat(job.id, '" data-estimate-file-mode="comment">Изменить комментарий</button>') : "", "\n          ").concat(canArchive ? '<button class="secondary tiny" type="button" data-estimate-job-status="archived" data-estimate-job-id="'.concat(job.id, '">В архив</button>') : "", "\n          ").concat(canDelete ? '<button class="danger-button tiny" type="button" data-delete-estimate-job="'.concat(job.id, '">Удалить</button>') : "", "\n        </div>\n      </div>\n    </details>");
+    const hasManagerComment = Boolean(String(job.comment || "").trim());
+    const inputSummary = [
+      currentFilesCount ? "".concat(currentFilesCount, " ").concat(pluralRu(currentFilesCount, "файл", "файла", "файлов")) : "файлы не приложены",
+      hasManagerComment ? "комментарий есть" : "комментарий не заполнен"
+    ].join(" · ");
+    return '\n    <details class="row estimate-job-row estimate-job-collapsible" data-collapsible-key="'.concat(escapeAttr(collapsibleKey), '"').concat(openAttrForKey(collapsibleKey), '>\n      <summary class="estimate-job-summary">\n        <span class="estimate-job-summary-main">\n          <strong>').concat(escapeHtml(summaryTitle), "</strong>\n          ").concat(summarySubTitle ? '<span class="muted">'.concat(escapeHtml(summarySubTitle), "</span>") : "", '\n        </span>\n        <span class="estimate-job-summary-badges">\n          ').concat(pill(label(job.status), statusLevel2), "\n          ").concat(pill(job.due_date || "без срока", job.status === "estimate_done" ? "success" : levelByDate(job.due_date)), "\n          ").concat(currentFilesCount ? pill("Файлы: ".concat(currentFilesCount), "blue") : pill("Без файлов", "warning"), "\n          ").concat(quickLinks.slice(0, 2).map(renderEstimateJobLink).join(""), "\n          ").concat(quickLinks.length > 2 ? pill("ещё ".concat(quickLinks.length - 2), "blue") : "", '\n        </span>\n      </summary>\n      <div class="estimate-job-body">\n        <div class="estimate-job-main">\n          <div class="stack-line">\n            <strong>').concat(escapeHtml(job.title), "</strong>\n            ").concat(pill(label(job.status), statusLevel2), "\n            ").concat(pill(job.due_date || "без срока", job.status === "estimate_done" ? "success" : levelByDate(job.due_date)), '\n          </div>\n          <div class="muted">').concat(escapeHtml(job.customer_name || "Заказчик не указан"), " · ").concat(escapeHtml(job.project_title || "без карточки объекта"), " · ").concat(estimateJobTypeLabel(job.estimate_type), '</div>\n          <div class="muted">получено: ').concat(formatDateRu(job.received_at) || "не указано", " · выдал задание: ").concat(escapeHtml(job.manager_name || "не назначен"), " · сметчик: ").concat(escapeHtml(job.estimator_name || "не назначен"), '</div>\n          <div class="estimate-job-flags">\n            ').concat(pill(estimateSiteCostsLabel(job.site_costs_policy), job.site_costs_policy === "exclude" ? "warning" : job.site_costs_policy === "clarify" ? "blue" : "success"), "\n            ").concat(isPartnerEstimateJob(job) ? pill("Партнерская смета", "blue") : "", "\n          </div>\n          ").concat(job.site_costs_comment ? '<p class="muted">Организация площадки: '.concat(escapeHtml(job.site_costs_comment), "</p>") : "", '\n          <div class="estimate-input-state ').concat(currentFilesCount ? "is-ready" : "is-incomplete", '" data-testid="estimate-input-state">\n            <strong>Вводные к заданию</strong>\n            <span>').concat(escapeHtml(inputSummary), "</span>\n            ").concat(currentFilesCount ? "" : "<small>К заданию не приложены файлы. Используйте «Уточнить», если смету нельзя начать без исходных данных.</small>", "\n          </div>\n          ").concat(smetterHref ? '<a class="link-button inline-link" href="'.concat(escapeAttr(smetterHref), '" target="_blank" rel="noopener noreferrer">Открыть Сметтер</a>') : "", "\n          ").concat(renderEstimateJobLinks(quickLinks), "\n          ").concat(job.comment ? "<p>".concat(linkifyText(job.comment), "</p>") : "", "\n          ").concat(job.question_comment ? '<div class="estimate-question-note"><strong>Вопрос сметчика</strong><p>'.concat(linkifyText(job.question_comment), "</p></div>") : "", "\n          ").concat(job.return_comment ? '<p class="muted danger-text">Возврат менеджеру: '.concat(linkifyText(job.return_comment), "</p>") : "", "\n          ").concat(job.result_comment ? '<p class="muted">Итог: '.concat(linkifyText(job.result_comment), "</p>") : "", "\n          ").concat(renderEstimateJobFiles(job.files, job.id, canManageFiles), '\n        </div>\n        <div class="estimate-job-actions">\n          ').concat(canAnswerQuestion ? '<button class="secondary tiny" type="button" data-edit-estimate-job="'.concat(job.id, '">Ответить на уточнение</button>') : canEdit ? '<button class="secondary tiny" type="button" data-edit-estimate-job="'.concat(job.id, '">Редактировать</button>') : "", "\n          ").concat(canStart ? '<button class="secondary tiny" type="button" data-estimate-job-status="estimate_in_work" data-estimate-job-id="'.concat(job.id, '">В работу</button>') : "", "\n          ").concat(canQuestion ? '<button class="secondary tiny" type="button" data-estimate-job-status="estimate_question" data-estimate-job-id="'.concat(job.id, '">Уточнить</button>') : "", "\n          ").concat(canReturn ? '<button class="secondary tiny danger-outline" type="button" data-estimate-job-status="estimate_returned" data-estimate-job-id="'.concat(job.id, '">Вернуть на доработку</button>') : "", "\n          ").concat(canFinish ? '<button class="primary tiny" type="button" data-estimate-job-status="estimate_done" data-estimate-job-id="'.concat(job.id, '">Сдано</button>') : "", "\n          ").concat(canManageFiles ? '<button class="secondary tiny" type="button" data-open-estimate-files="'.concat(job.id, '">Добавить файл</button>') : "", "\n          ").concat(canManageFiles ? '<button class="secondary tiny" type="button" data-open-estimate-files="'.concat(job.id, '" data-estimate-file-mode="link">Изменить ссылку</button>') : "", "\n          ").concat(canManageFiles ? '<button class="secondary tiny" type="button" data-open-estimate-files="'.concat(job.id, '" data-estimate-file-mode="comment">Изменить комментарий</button>') : "", "\n          ").concat(canArchive ? '<button class="secondary tiny" type="button" data-estimate-job-status="archived" data-estimate-job-id="'.concat(job.id, '">В архив</button>') : "", "\n          ").concat(canDelete ? '<button class="danger-button tiny" type="button" data-delete-estimate-job="'.concat(job.id, '">Удалить</button>') : "", "\n        </div>\n      </div>\n    </details>");
   }
   function fillEstimateJobForm(job = {}) {
     var _a, _b;
@@ -4029,7 +4075,7 @@
     const smetterLooksLikeDomain = /^(www\.|[a-z0-9-]+\.[a-z0-9.-]+\/?)/i.test(smetterText) && !/\s/.test(smetterText);
     const smetterHref = smetterIsUrl ? smetterText : smetterLooksLikeDomain ? "https://".concat(smetterText) : "";
     const smetterButton = canViewExternalRefs() && smetterText ? smetterHref ? '<a class="secondary tiny project-smetter-button" href="'.concat(escapeAttr(smetterHref), '" target="_blank" rel="noopener noreferrer">Открыть Сметтер</a>') : '<span class="pill success">Сметтер: '.concat(escapeHtml(smetterText), "</span>") : "";
-    const customerInfoHtml = '\n    <div class="project-contact-strip">\n      <div class="project-contact-main">\n        <strong>'.concat(escapeHtml(project.customer_name || "Клиент не указан"), "</strong>\n        <span>").concat(customerHistory, " ").concat(customerHistory === 1 ? "объект/договор" : "объектов/договоров", ' в истории</span>\n      </div>\n      <div class="project-contact-actions">\n        ').concat(phoneLink ? '<a class="contact-action" href="'.concat(escapeAttr(phoneLink), '" title="').concat(escapeAttr(customerPhone), '">Позвонить</a>') : '<span class="muted">Телефон не указан</span>', "\n        ").concat(customerEmail ? '<a class="contact-action" href="mailto:'.concat(escapeAttr(customerEmail), '" title="').concat(escapeAttr(customerEmail), '">Написать</a>') : '<span class="muted">E-mail не указан</span>', "\n        ").concat(mapHref ? '<a class="contact-action map" href="'.concat(escapeAttr(mapHref), '" target="_blank" rel="noopener noreferrer">Я.Карты</a>') : '<span class="muted">Локация не указана</span>', "\n        ").concat(smetterButton, "\n      </div>\n    </div>");
+    const customerInfoHtml = '\n    <div class="project-contact-strip">\n      <div class="project-contact-main">\n        <strong>'.concat(escapeHtml(project.customer_name || "Клиент не указан"), "</strong>\n        <span>").concat(customerHistory, " ").concat(customerHistory === 1 ? "объект/договор" : "объектов/договоров", ' в истории</span>\n      </div>\n      <div class="project-contact-actions">\n        ').concat(phoneLink ? '<button class="contact-action phone-action" type="button" data-call-phone="'.concat(escapeAttr(customerPhone), '" data-customer-name="').concat(escapeAttr(project.customer_name || ""), '" data-testid="project-phone-action" title="Открыть действия для номера ').concat(escapeAttr(customerPhone), '"><span>Телефон</span><strong>').concat(escapeHtml(customerPhone), "</strong></button>") : '<span class="muted">Телефон не указан</span>', "\n        ").concat(customerEmail ? '<a class="contact-action" href="mailto:'.concat(escapeAttr(customerEmail), '" title="').concat(escapeAttr(customerEmail), '">Написать</a>') : '<span class="muted">E-mail не указан</span>', "\n        ").concat(mapHref ? '<a class="contact-action map" href="'.concat(escapeAttr(mapHref), '" target="_blank" rel="noopener noreferrer">Я.Карты</a>') : '<span class="muted">Локация не указана</span>', "\n        ").concat(smetterButton, "\n      </div>\n    </div>");
     const managerNoteHtml = managerNote ? '<section class="manager-note-panel">\n        <div class="stack-line"><strong>Вводные менеджера при передаче</strong>'.concat(pill(project.sales_manager_name || "Менеджер", "blue"), "</div>\n        <p>").concat(escapeHtml(managerNote), "</p>\n      </section>") : "";
     const projectDocsSpotlightHtml = renderProjectDocumentSpotlight(docs);
     qs("#projectDetail").innerHTML = "\n    ".concat(renderProjectHero(project), "\n    ").concat(renderProjectAttention(project), "\n    ").concat(renderProjectQuickActions(project), "\n    ").concat(customerInfoHtml, "\n    ").concat(managerNoteHtml, "\n    ").concat(projectDocsSpotlightHtml, '\n    <div class="project-detail-blocks sortable-zone" data-sortable-zone="project-detail-v2">\n      ').concat(detailBlocks.filter(([, html]) => String(html || "").trim()).map(([key, html]) => '<div class="project-detail-block" data-sortable-block="'.concat(key, '">').concat(html, "</div>")).join(""), "\n    </div>\n  ");
@@ -5454,6 +5500,65 @@
       { passive: false }
     );
   }
+  function bindMobileTouchScrollFallback() {
+    if (bindMobileTouchScrollFallback.bound) return;
+    bindMobileTouchScrollFallback.bound = true;
+    let gesture = null;
+    document.addEventListener(
+      "touchstart",
+      (event) => {
+        var _a, _b, _c;
+        if (!isMobileTouchViewport() || hasOpenDialog() || ((_a = event.touches) == null ? void 0 : _a.length) !== 1) {
+          gesture = null;
+          return;
+        }
+        if ((_c = (_b = event.target).closest) == null ? void 0 : _c.call(_b, "dialog, input, textarea, select")) {
+          gesture = null;
+          return;
+        }
+        if (nearestScrollableElement(event.target)) {
+          gesture = null;
+          return;
+        }
+        const root = document.scrollingElement || document.documentElement;
+        const touch = event.touches[0];
+        gesture = { root, lastY: touch.clientY, pendingDelta: 0, scheduled: false };
+      },
+      { passive: true }
+    );
+    document.addEventListener(
+      "touchmove",
+      (event) => {
+        var _a;
+        const touch = (_a = event.touches) == null ? void 0 : _a[0];
+        const currentGesture = gesture;
+        if (!currentGesture || !touch) return;
+        const deltaY = currentGesture.lastY - touch.clientY;
+        currentGesture.lastY = touch.clientY;
+        if (Math.abs(deltaY) < 2) return;
+        currentGesture.pendingDelta += deltaY;
+        if (currentGesture.scheduled) return;
+        currentGesture.scheduled = true;
+        const before = currentGesture.root.scrollTop;
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            const pendingDelta = currentGesture.pendingDelta;
+            currentGesture.pendingDelta = 0;
+            currentGesture.scheduled = false;
+            if (Math.abs(currentGesture.root.scrollTop - before) > 1) return;
+            const maxScroll = Math.max(0, currentGesture.root.scrollHeight - currentGesture.root.clientHeight);
+            currentGesture.root.scrollTop = Math.max(0, Math.min(maxScroll, before + pendingDelta));
+          });
+        });
+      },
+      { passive: true }
+    );
+    const finishGesture = () => {
+      gesture = null;
+    };
+    document.addEventListener("touchend", finishGesture, { passive: true });
+    document.addEventListener("touchcancel", finishGesture, { passive: true });
+  }
   function bindStableDetailsTouchGuard() {
     document.addEventListener(
       "touchstart",
@@ -5820,9 +5925,10 @@
     showToast("Ничего не найдено. Попробуйте другое слово.");
   }
   function bindEvents() {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H, _I, _J, _K, _L, _M, _N;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H, _I, _J, _K, _L, _M, _N, _O, _P;
     bindStableDetailsTouchGuard();
     bindWheelPageScroll();
+    bindMobileTouchScrollFallback();
     initPullToRefresh();
     (_a = qs("#sidebarToggle")) == null ? void 0 : _a.addEventListener("click", () => toggleSidebarCollapsed());
     (_b = qs("#densitySelect")) == null ? void 0 : _b.addEventListener("change", (event) => setDensityMode(event.target.value));
@@ -5995,16 +6101,30 @@
       showToast("Удалено сообщений: ".concat(result.deleted || ids.length));
     });
     qsa("[data-close]").forEach((button) => button.addEventListener("click", () => qs("#".concat(button.dataset.close)).close()));
-    (_u = qs("#mediaPreviewClose")) == null ? void 0 : _u.addEventListener("click", closeMediaPreview);
-    (_v = qs("#mediaPreviewCloseBottom")) == null ? void 0 : _v.addEventListener("click", closeMediaPreview);
-    (_w = qs("#mediaPreviewPrev")) == null ? void 0 : _w.addEventListener("click", () => moveMediaPreview(-1));
-    (_x = qs("#mediaPreviewNext")) == null ? void 0 : _x.addEventListener("click", () => moveMediaPreview(1));
-    (_y = qs("#mediaPreviewDialog")) == null ? void 0 : _y.addEventListener("close", () => {
+    (_u = qs("#phoneCopyButton")) == null ? void 0 : _u.addEventListener("click", async (event) => {
+      var _a2;
+      const phone = event.currentTarget.dataset.phone || ((_a2 = qs("#phoneCallNumber")) == null ? void 0 : _a2.textContent) || "";
+      try {
+        await copyPlainText(phone);
+        showToast("Номер телефона скопирован");
+      } catch (error) {
+        showToast(error.message || "Не удалось скопировать номер");
+      }
+    });
+    (_v = qs("#phoneCallLink")) == null ? void 0 : _v.addEventListener("click", () => {
+      var _a2;
+      return (_a2 = qs("#phoneCallDialog")) == null ? void 0 : _a2.close();
+    });
+    (_w = qs("#mediaPreviewClose")) == null ? void 0 : _w.addEventListener("click", closeMediaPreview);
+    (_x = qs("#mediaPreviewCloseBottom")) == null ? void 0 : _x.addEventListener("click", closeMediaPreview);
+    (_y = qs("#mediaPreviewPrev")) == null ? void 0 : _y.addEventListener("click", () => moveMediaPreview(-1));
+    (_z = qs("#mediaPreviewNext")) == null ? void 0 : _z.addEventListener("click", () => moveMediaPreview(1));
+    (_A = qs("#mediaPreviewDialog")) == null ? void 0 : _A.addEventListener("close", () => {
       const body = qs("#mediaPreviewBody");
       if (body) body.innerHTML = "";
       state.mediaPreview = { items: [], index: 0, touchX: null };
     });
-    (_z = qs("#mediaPreviewBody")) == null ? void 0 : _z.addEventListener(
+    (_B = qs("#mediaPreviewBody")) == null ? void 0 : _B.addEventListener(
       "touchstart",
       (event) => {
         var _a2, _b2, _c2;
@@ -6012,7 +6132,7 @@
       },
       { passive: true }
     );
-    (_A = qs("#mediaPreviewBody")) == null ? void 0 : _A.addEventListener(
+    (_C = qs("#mediaPreviewBody")) == null ? void 0 : _C.addEventListener(
       "touchend",
       (event) => {
         var _a2, _b2, _c2;
@@ -6024,14 +6144,14 @@
       },
       { passive: true }
     );
-    (_B = qs("#mediaPreviewDialog")) == null ? void 0 : _B.addEventListener("keydown", (event) => {
+    (_D = qs("#mediaPreviewDialog")) == null ? void 0 : _D.addEventListener("keydown", (event) => {
       if (event.key === "ArrowLeft") moveMediaPreview(-1);
       if (event.key === "ArrowRight") moveMediaPreview(1);
     });
-    (_C = qs("#estimateImagePrev")) == null ? void 0 : _C.addEventListener("click", () => moveEstimateGallery(-1));
-    (_D = qs("#estimateImageNext")) == null ? void 0 : _D.addEventListener("click", () => moveEstimateGallery(1));
+    (_E = qs("#estimateImagePrev")) == null ? void 0 : _E.addEventListener("click", () => moveEstimateGallery(-1));
+    (_F = qs("#estimateImageNext")) == null ? void 0 : _F.addEventListener("click", () => moveEstimateGallery(1));
     let estimateGalleryTouchX = null;
-    (_E = qs("#estimateImageStage")) == null ? void 0 : _E.addEventListener(
+    (_G = qs("#estimateImageStage")) == null ? void 0 : _G.addEventListener(
       "touchstart",
       (event) => {
         var _a2, _b2, _c2;
@@ -6039,7 +6159,7 @@
       },
       { passive: true }
     );
-    (_F = qs("#estimateImageStage")) == null ? void 0 : _F.addEventListener(
+    (_H = qs("#estimateImageStage")) == null ? void 0 : _H.addEventListener(
       "touchend",
       (event) => {
         var _a2, _b2, _c2;
@@ -6117,11 +6237,11 @@
       resetWorkExtraForm({ keepProject: true });
       await renderWorks();
     });
-    (_G = qs('#workExtraForm select[name="source_work_item_id"]')) == null ? void 0 : _G.addEventListener("change", applyWorkExtraRateSelection);
-    (_H = qs('#workExtraForm input[name="quantity"]')) == null ? void 0 : _H.addEventListener("input", recalcWorkExtraTotal);
-    (_I = qs('#workExtraForm input[name="unit_price"]')) == null ? void 0 : _I.addEventListener("input", recalcWorkExtraTotal);
-    (_J = qs("#cancelWorkExtraEditButton")) == null ? void 0 : _J.addEventListener("click", () => resetWorkExtraForm());
-    (_K = qs("#workExtraRows")) == null ? void 0 : _K.addEventListener("click", (event) => {
+    (_I = qs('#workExtraForm select[name="source_work_item_id"]')) == null ? void 0 : _I.addEventListener("change", applyWorkExtraRateSelection);
+    (_J = qs('#workExtraForm input[name="quantity"]')) == null ? void 0 : _J.addEventListener("input", recalcWorkExtraTotal);
+    (_K = qs('#workExtraForm input[name="unit_price"]')) == null ? void 0 : _K.addEventListener("input", recalcWorkExtraTotal);
+    (_L = qs("#cancelWorkExtraEditButton")) == null ? void 0 : _L.addEventListener("click", () => resetWorkExtraForm());
+    (_M = qs("#workExtraRows")) == null ? void 0 : _M.addEventListener("click", (event) => {
       const editButton = event.target.closest("[data-edit-work-extra]");
       if (!editButton) return;
       const row = state.workExtraItems.find((item) => Number(item.id) === Number(editButton.dataset.editWorkExtra));
@@ -6688,6 +6808,11 @@
         openContractDialog(Number(addContractButton.dataset.addContract));
         return;
       }
+      const phoneButton = event.target.closest("[data-call-phone]");
+      if (phoneButton) {
+        openPhoneCallDialog(phoneButton.dataset.callPhone, phoneButton.dataset.customerName || "");
+        return;
+      }
       if (event.target.closest("a")) return;
       const collapseProjectDetailButton = event.target.closest("[data-collapse-project-detail]");
       if (collapseProjectDetailButton) {
@@ -6860,28 +6985,58 @@
       qs('#taskForm input[name="creator_id"]').value = currentUserId() || "";
       submitForm("taskDialog", "taskForm", "/api/tasks", "Задача создана");
     });
-    (_L = qs("#photoReportForm")) == null ? void 0 : _L.addEventListener("submit", submitPhotoReportForm);
-    (_M = qs("#objectRemarkForm")) == null ? void 0 : _M.addEventListener("submit", submitObjectRemarkForm);
+    (_N = qs("#photoReportForm")) == null ? void 0 : _N.addEventListener("submit", submitPhotoReportForm);
+    (_O = qs("#objectRemarkForm")) == null ? void 0 : _O.addEventListener("submit", submitObjectRemarkForm);
     qs("#estimateJobForm").addEventListener("submit", async (event) => {
       var _a2;
       event.preventDefault();
       const form = qs("#estimateJobForm");
-      const payload = formToJson(form);
-      const id = payload.id;
-      delete payload.id;
-      payload.title = normalizeEstimateJobTitle(payload.customer_name, payload.title);
-      const attachments = Array.from(((_a2 = form.elements.attachments) == null ? void 0 : _a2.files) || []);
-      payload.attachments = await Promise.all(attachments.map((file) => fileDocumentPayload(file, file.name, "estimate_job_file", "estimate_job")));
-      await api(id ? "/api/estimate-jobs/".concat(id, "/update") : "/api/estimate-jobs", {
-        method: "POST",
-        body: JSON.stringify(payload)
-      });
-      qs("#estimateJobDialog").close();
-      form.reset();
-      await loadCoreData();
-      await renderEstimateJobs();
-      await renderDashboard();
-      showToast(id ? "Сметное задание обновлено" : "Сметное задание создано");
+      if (form.dataset.submitting === "1") return;
+      const submitButton = form.querySelector('button[type="submit"]');
+      const statusNode = qs("#estimateJobFormStatus");
+      form.dataset.submitting = "1";
+      form.setAttribute("aria-busy", "true");
+      if (submitButton) {
+        submitButton.dataset.defaultLabel = submitButton.textContent || "Сохранить";
+        submitButton.textContent = "Сохраняем...";
+        submitButton.disabled = true;
+      }
+      if (statusNode) {
+        statusNode.hidden = false;
+        statusNode.className = "form-status";
+        statusNode.textContent = "Сохраняем задание и файлы. Повторно нажимать не нужно.";
+      }
+      try {
+        const payload = formToJson(form);
+        const id = payload.id;
+        delete payload.id;
+        payload.title = normalizeEstimateJobTitle(payload.customer_name, payload.title);
+        const attachments = Array.from(((_a2 = form.elements.attachments) == null ? void 0 : _a2.files) || []);
+        payload.attachments = await Promise.all(attachments.map((file) => fileDocumentPayload(file, file.name, "estimate_job_file", "estimate_job")));
+        await api(id ? "/api/estimate-jobs/".concat(id, "/update") : "/api/estimate-jobs", {
+          method: "POST",
+          body: JSON.stringify(payload)
+        });
+        qs("#estimateJobDialog").close();
+        form.reset();
+        await loadCoreData();
+        await renderEstimateJobs();
+        await renderDashboard();
+        showToast(id ? "Сметное задание обновлено" : "Сметное задание создано");
+      } catch (error) {
+        if (statusNode) {
+          statusNode.className = "form-status danger-text";
+          statusNode.textContent = error.message || "Не удалось сохранить задание";
+        }
+        showToast(error.message || "Не удалось сохранить задание");
+      } finally {
+        form.dataset.submitting = "0";
+        form.removeAttribute("aria-busy");
+        if (submitButton) {
+          submitButton.disabled = false;
+          submitButton.textContent = submitButton.dataset.defaultLabel || "Сохранить";
+        }
+      }
     });
     qs("#estimateJobDoneForm").addEventListener("submit", async (event) => {
       var _a2;
@@ -7084,7 +7239,7 @@
       switchView("materials");
       showToast("Материалы сметы загружены в объект");
     });
-    (_N = qs("#knowledgeFolderForm")) == null ? void 0 : _N.addEventListener("submit", async (event) => {
+    (_P = qs("#knowledgeFolderForm")) == null ? void 0 : _P.addEventListener("submit", async (event) => {
       event.preventDefault();
       const form = qs("#knowledgeFolderForm");
       try {
