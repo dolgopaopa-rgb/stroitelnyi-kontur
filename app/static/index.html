@@ -9,16 +9,17 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Строительный контур</title>
-    <link rel="manifest" href="/static/manifest.webmanifest?v=20260820-feedback-fixes-v1" />
+    <link rel="manifest" href="/static/manifest.webmanifest?v=20260821-ux-reset-v1" />
     <link rel="icon" type="image/svg+xml" href="/static/assets/brand-2026/d2dom-mark.svg" />
     <link rel="apple-touch-icon" href="/static/assets/brand-2026/d2dom-mark-192.png" />
     <link rel="preload" href="/static/assets/brand-2026/Involve-Regular.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="/static/assets/brand-2026/Involve-SemiBold.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="/static/assets/brand-2026/Haval-Light.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="stylesheet" href="/static/styles.css?v=20260820-feedback-fixes-v1" />
-    <link rel="stylesheet" href="/static/brand-2026.css?v=20260820-feedback-fixes-v1" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260821-ux-reset-v1" />
+    <link rel="stylesheet" href="/static/brand-2026.css?v=20260821-ux-reset-v1" />
+    <link rel="stylesheet" href="/static/ux-reset.css?v=20260821-ux-reset-v1" />
   </head>
-  <body class="brand-system-2026">
+  <body class="brand-system-2026 ux-reset-v1">
     <div class="app" data-testid="qa-scroll-root">
       <aside class="sidebar">
         <a class="brand" href="/today" aria-label="На главную страницу Д²Дом">
@@ -50,7 +51,12 @@
       <main class="main" data-testid="qa-main-content">
         <header class="topbar">
           <button class="icon shell-toggle" id="sidebarToggle" type="button" aria-label="Свернуть меню">☰</button>
+          <a class="topbar-mobile-brand" href="/today" aria-label="На главную страницу Д²Дом">
+            <img src="/static/assets/brand-2026/d2dom-mark.svg" alt="" />
+            <strong>Контур</strong>
+          </a>
           <div class="topbar-title">
+            <span class="topbar-kicker">Рабочее пространство</span>
             <h1 id="pageTitle">Сегодня</h1>
           </div>
           <div class="actions">
@@ -95,11 +101,15 @@
         </header>
 
         <section class="view active" id="todayView" data-testid="today-page">
-          <section class="today-role-panel">
-            <div>
+          <section class="today-role-panel workspace-context">
+            <div class="workspace-context-copy">
               <span class="eyebrow" id="todayRoleLabel">Рабочий день</span>
               <h2 id="todayRoleQuestion">Что требует внимания сегодня?</h2>
               <p class="muted" id="todayRoleHint">Контур покажет задачи, объекты и сигналы по текущей роли.</p>
+            </div>
+            <div class="workspace-context-meta" aria-label="Контекст рабочего дня">
+              <span id="todayDateLabel"></span>
+              <strong id="todayContextSummary">Приоритеты на сегодня</strong>
             </div>
             <div class="today-primary-actions" id="todayPrimaryActions"></div>
           </section>
@@ -114,47 +124,57 @@
             </div>
             <div class="manager-estimate-notice-preview" id="managerEstimateNoticePreview"></div>
           </section>
-          <div class="today-grid">
-            <section class="panel today-focus-panel">
-              <div class="panel-head">
-                <h2 id="todayTasksTitle">Мои задачи на сегодня</h2>
-                <button class="link-button" data-view-target="tasks">Открыть задачи</button>
-              </div>
-              <div class="list" id="todayTasks" data-testid="today-overdue-list"></div>
-            </section>
-            <section class="panel today-focus-panel">
-              <div class="panel-head">
-                <h2 id="todayAttentionTitle">Требует решения</h2>
-              </div>
-              <div class="list" id="todayAttention" data-testid="today-attention-list"></div>
-            </section>
-            <section class="panel">
-              <div class="panel-head">
-                <h2 id="todayMaterialsTitle">Материалы под риском</h2>
-                <button class="link-button" data-view-target="materials">Открыть материалы</button>
-              </div>
-              <div class="list" id="todayMaterials" data-testid="today-materials-risk-list"></div>
-            </section>
-            <section class="panel">
-              <div class="panel-head">
-                <h2>Новые комментарии за 24 часа</h2>
-              </div>
-              <div class="list" id="todayComments"></div>
-            </section>
-            <section class="panel today-wide">
-              <div class="panel-head">
-                <h2>Активные объекты</h2>
-                <button class="link-button" data-view-target="projects">Открыть объекты</button>
-              </div>
-              <div class="today-object-grid" id="todayObjects"></div>
-            </section>
-            <section class="panel today-wide">
-              <div class="panel-head">
-                <h2>Объекты без фотоотчёта сегодня</h2>
-                <button class="link-button" data-view-target="photos">Фотоотчёты</button>
-              </div>
-              <div class="list" id="todayNoPhoto" data-testid="today-no-photo-report-list"></div>
-            </section>
+          <div class="today-workspace-grid">
+            <div class="today-workspace-main">
+              <section class="panel today-focus-panel today-attention-panel">
+                <div class="panel-head">
+                  <div>
+                    <span class="section-kicker">Сначала</span>
+                    <h2 id="todayAttentionTitle">Требует решения</h2>
+                  </div>
+                </div>
+                <div class="list" id="todayAttention" data-testid="today-attention-list"></div>
+              </section>
+              <section class="panel today-focus-panel today-tasks-panel">
+                <div class="panel-head">
+                  <div>
+                    <span class="section-kicker">Дальше</span>
+                    <h2 id="todayTasksTitle">Мои задачи на сегодня</h2>
+                  </div>
+                  <button class="link-button" data-view-target="tasks">Открыть список</button>
+                </div>
+                <div class="list" id="todayTasks" data-testid="today-overdue-list"></div>
+              </section>
+            </div>
+            <aside class="today-workspace-aside">
+              <section class="panel today-objects-panel">
+                <div class="panel-head">
+                  <h2>Объекты в фокусе</h2>
+                  <button class="link-button" data-view-target="projects">Все объекты</button>
+                </div>
+                <div class="today-object-grid" id="todayObjects"></div>
+              </section>
+              <section class="panel today-materials-panel">
+                <div class="panel-head">
+                  <h2 id="todayMaterialsTitle">Материалы под риском</h2>
+                  <button class="link-button" data-view-target="materials">Открыть</button>
+                </div>
+                <div class="list" id="todayMaterials" data-testid="today-materials-risk-list"></div>
+              </section>
+              <section class="panel today-photo-panel">
+                <div class="panel-head">
+                  <h2>Фотоотчёты сегодня</h2>
+                  <button class="link-button" data-view-target="photos">Открыть</button>
+                </div>
+                <div class="list" id="todayNoPhoto" data-testid="today-no-photo-report-list"></div>
+              </section>
+              <section class="panel today-comments-panel">
+                <div class="panel-head">
+                  <h2>Новые комментарии</h2>
+                </div>
+                <div class="list" id="todayComments"></div>
+              </section>
+            </aside>
           </div>
         </section>
 
@@ -636,11 +656,11 @@
     </div>
 
     <nav class="mobile-bottom-nav" aria-label="Мобильное меню" data-testid="mobile-bottom-nav">
-      <button type="button" data-view-target="today"><span>⌂</span>Сегодня</button>
-      <button type="button" data-view-target="projects"><span>▦</span>Объекты</button>
+      <button type="button" data-view-target="today"><span class="mobile-nav-icon">⌂</span><span>Сегодня</span></button>
+      <button type="button" id="mobileRolePrimaryNav" data-view-target="projects"><span class="mobile-nav-icon">▦</span><span>Объекты</span></button>
       <button class="mobile-plus" type="button" id="mobileQuickActionToggle" data-testid="mobile-plus-button"><span>+</span></button>
-      <button type="button" data-view-target="dashboard"><span>◈</span>Уведомления</button>
-      <button type="button" id="mobileMoreButton" data-testid="mobile-more-button"><span>☰</span>Ещё</button>
+      <button type="button" id="mobileRoleSecondaryNav" data-view-target="dashboard"><span class="mobile-nav-icon">◈</span><span>Сигналы</span></button>
+      <button type="button" id="mobileMoreButton" data-testid="mobile-more-button"><span class="mobile-nav-icon">☰</span><span>Ещё</span></button>
     </nav>
     <div class="mobile-quick-sheet" id="mobileQuickSheet" hidden>
       <div class="mobile-quick-sheet-panel">
@@ -1305,6 +1325,6 @@
       </div>
     </div>
     <div class="toast" id="toast"></div>
-    <script src="/static/app.compat.js?v=20260820-feedback-fixes-v1"></script>
+    <script src="/static/app.compat.js?v=20260821-ux-reset-v1"></script>
   </body>
 </html>

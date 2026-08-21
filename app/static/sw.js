@@ -1,10 +1,11 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260820-feedback-fixes-v1";
+const CACHE_NAME = "stroitelnyi-kontur-20260821-ux-reset-v1";
 const CORE_ASSETS = [
   "/",
-  "/static/styles.css?v=20260820-feedback-fixes-v1",
-  "/static/brand-2026.css?v=20260820-feedback-fixes-v1",
-  "/static/app.compat.js?v=20260820-feedback-fixes-v1",
-  "/static/manifest.webmanifest?v=20260820-feedback-fixes-v1",
+  "/static/styles.css?v=20260821-ux-reset-v1",
+  "/static/brand-2026.css?v=20260821-ux-reset-v1",
+  "/static/ux-reset.css?v=20260821-ux-reset-v1",
+  "/static/app.compat.js?v=20260821-ux-reset-v1",
+  "/static/manifest.webmanifest?v=20260821-ux-reset-v1",
   "/static/assets/brand-2026/d2dom-mark.svg",
   "/static/assets/brand-2026/Haval-Light.woff2",
   "/static/assets/brand-2026/Involve-Regular.woff2",

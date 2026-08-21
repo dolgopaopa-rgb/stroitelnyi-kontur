@@ -176,7 +176,9 @@ async function selectRole(page, role) {
   if (!(await select.count().catch(() => 0))) return { ok: false, reason: "role switcher missing" };
   const options = await select.locator("option").evaluateAll((nodes) => nodes.map((node) => node.value)).catch(() => []);
   if (!options.includes(role)) return { ok: false, reason: `role option ${role} missing` };
-  await select.selectOption(role);
+  // The role selector is an owner-only QA control and is intentionally hidden in the mobile UI.
+  // Force only this test setup step; all user-facing controls are still exercised by real clicks.
+  await select.selectOption(role, { force: true });
   await page.waitForTimeout(350);
   return { ok: true, reason: "selected" };
 }
@@ -729,8 +731,9 @@ async function runButtons(results, page) {
   if (await plus.count()) {
     await plus.click();
     await page.waitForTimeout(200);
-    const open = await page.locator('[data-testid="mobile-quick-actions"] [data-mobile-action]').count();
-    const labels = await page.locator('[data-testid="mobile-quick-actions"] [data-mobile-action]').evaluateAll((nodes) => nodes.map((node) => node.textContent?.trim()).filter(Boolean)).catch(() => []);
+    const actionSelector = '[data-testid="mobile-quick-actions"] [data-mobile-action], [data-testid="mobile-quick-actions"] [data-view-target]';
+    const open = await page.locator(actionSelector).count();
+    const labels = await page.locator(actionSelector).evaluateAll((nodes) => nodes.map((node) => node.textContent?.trim()).filter(Boolean)).catch(() => []);
     add(results, "Button QA Agent", "Mobile + opens actions", open > 0 ? "OK" : "FAIL", `actions=${open}; labels=${labels.join(" | ")}`, open > 0 ? "normal" : "blocker", "", { buttonsChecked: 1, mobileQuickActionsChecked: open });
   }
   await route(page, "today");
@@ -1356,7 +1359,8 @@ async function runMobile(results, playwright) {
           const style = getComputedStyle(node);
           return style.display !== "none" && style.visibility !== "hidden" && node.getClientRects().length > 0;
         };
-        const gridChildren = [...document.querySelectorAll(".today-grid > *")]
+        const gridSelector = document.querySelector(".today-workspace-grid") ? ".today-workspace-grid > *" : ".today-grid > *";
+        const gridChildren = [...document.querySelectorAll(gridSelector)]
           .filter(visible)
           .map((node) => Math.round(node.getBoundingClientRect().width));
         const decisionCards = [...document.querySelectorAll(".attention-item.decision-item")]
@@ -1373,7 +1377,7 @@ async function runMobile(results, playwright) {
       const minExpectedWidth = Math.min(300, viewport.width - 40);
       const todayGridOk = todayLayout.minGridChildWidth > minExpectedWidth && todayLayout.minDecisionWidth > minExpectedWidth;
       await page.locator('[data-testid="mobile-plus-button"]').click().catch(() => {});
-      const actions = await page.locator('[data-testid="mobile-quick-actions"] [data-mobile-action]').count().catch(() => 0);
+      const actions = await page.locator('[data-testid="mobile-quick-actions"] [data-mobile-action], [data-testid="mobile-quick-actions"] [data-view-target]').count().catch(() => 0);
       const plusButton = page.locator('[data-testid="mobile-plus-button"].mobile-plus');
       const plusVisible = await plusButton.isVisible().catch(() => false);
       const plusBox = await plusButton.boundingBox().catch(() => null);

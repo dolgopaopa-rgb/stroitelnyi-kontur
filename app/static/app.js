@@ -667,7 +667,30 @@ function canView(view) {
   return allowedViews().includes(view);
 }
 
+function syncMobileRoleNavigation() {
+  const role = currentRoleBase();
+  const roleViews = {
+    owner: [["projects", "▦"], ["dashboard", "◈"]],
+    construction_manager: [["projects", "▦"], ["tasks", "✓"]],
+    foreman: [["projects", "▦"], ["photos", "▣"]],
+    sales_manager: [["estimates", "≈"], ["documents", "▤"]],
+    estimator: [["estimates", "≈"], ["materials", "▥"]],
+    procurement_manager: [["materials", "▥"], ["documents", "▤"]],
+    master: [["tasks", "✓"], ["photos", "▣"]],
+  };
+  const fallbackViews = allowedViews().filter((view) => view !== "today").slice(0, 2).map((view) => [view, "•"]);
+  const views = roleViews[role] || fallbackViews;
+  const nodes = [qs("#mobileRolePrimaryNav"), qs("#mobileRoleSecondaryNav")];
+  nodes.forEach((node, index) => {
+    const [view, icon] = views[index] || fallbackViews[index] || ["today", "•"];
+    node.dataset.viewTarget = view;
+    const iconNode = node.querySelector(".mobile-nav-icon");
+    if (iconNode) iconNode.textContent = icon;
+  });
+}
+
 function syncNavigationAccess() {
+  syncMobileRoleNavigation();
   const allowed = allowedViews();
   qsa("[data-view]").forEach((button) => {
     button.hidden = !allowed.includes(button.dataset.view);
@@ -2931,9 +2954,9 @@ function roleTodayProfile() {
       materialMode: "risk",
       objectMode: "risk-first",
       actions: [
-        ["dashboard", "Посмотреть сигналы"],
-        ["projects", "Проблемные объекты"],
-        ["tasks", "Открыть задачи"],
+        ["projects", "Открыть проблемные объекты"],
+        ["dashboard", "Сигналы"],
+        ["tasks", "Все задачи"],
       ],
     },
     construction_manager: {
@@ -2949,8 +2972,8 @@ function roleTodayProfile() {
       materialMode: "risk",
       objectMode: "risk-first",
       actions: [
-        ["projects", "Открыть объекты"],
-        ["tasks", "Создать задачу"],
+        ["projects", "Открыть мои объекты"],
+        ["tasks", "Задачи"],
         ["photos", "Фотоотчёты"],
       ],
     },
@@ -2969,7 +2992,7 @@ function roleTodayProfile() {
       actions: [
         ["photos", "Добавить фотоотчёт"],
         ["materials", "Запросить материал"],
-        ["tasks", "Мои задачи"],
+        ["tasks", "Все мои задачи"],
       ],
     },
     master: {
@@ -3019,7 +3042,7 @@ function roleTodayProfile() {
       materialMode: "estimator",
       objectMode: "none",
       actions: [
-        ["estimates", "Сметные задания"],
+        ["estimates", "Открыть сметные задания"],
         ["materials", "Проверить материалы"],
         ["variations", "Допработы"],
       ],
@@ -3027,19 +3050,19 @@ function roleTodayProfile() {
     sales_manager: {
       testId: "today-role-manager",
       label: "Менеджер",
-      question: "Какие объекты нужно передать или доработать?",
-      hint: "Показываем черновики, объекты на передаче, замечания руководителя и документы, которые нужно дозагрузить.",
-      tasksTitle: "Черновики и доработки",
-      attentionTitle: "Что мешает передаче объекта",
+      question: "Какие обращения и сметы требуют моего действия?",
+      hint: "Показываем новые задания, вопросы сметчика, возвраты и готовые сметы, которые нужно передать клиенту.",
+      tasksTitle: "Мои сметы и следующие действия",
+      attentionTitle: "Что тормозит ответ клиенту",
       materialsTitle: "Файлы и сметы к проверке",
-      visibleSections: ["attention", "objects", "comments"],
+      visibleSections: ["tasks", "attention", "objects", "comments"],
       taskMode: "manager",
       materialMode: "none",
       objectMode: "manager",
       actions: [
-        ["projects", "Открыть объекты"],
-        ["estimates", "Сметные задания"],
-        ["documents", "База знаний"],
+        ["estimates", "Открыть сметные задания"],
+        ["projects", "Объекты"],
+        ["documents", "Документы"],
       ],
     },
   };
@@ -3412,13 +3435,12 @@ function syncManagerEstimateNotice({ forceDialog = false } = {}) {
   const panel = qs("#managerEstimateNoticePanel");
   const preview = qs("#managerEstimateNoticePreview");
   const list = qs("#managerEstimateNoticeList");
-  if (panel) panel.hidden = !jobs.length;
+  if (panel) panel.hidden = true;
   if (preview) preview.innerHTML = renderManagerEstimateNoticeItems(jobs, { compact: true });
   if (list) list.innerHTML = renderManagerEstimateNoticeItems(jobs);
   if (!jobs.length) return;
   const key = managerEstimateNoticeStorageKey(jobs);
-  const alreadySeen = localStorage.getItem(key) === "1";
-  if (!forceDialog && (alreadySeen || state.managerEstimateNoticeKey === key)) return;
+  if (!forceDialog) return;
   state.managerEstimateNoticeKey = key;
   localStorage.setItem(key, "1");
   const dialog = qs("#managerEstimateNoticeDialog");
@@ -4058,17 +4080,127 @@ function projectBlockerCount(project, tasks = state.lastTasks || [], materialRow
 }
 
 function renderTodayKpis(items = []) {
-  return items
-    .slice(0, 6)
+  const usefulItems = items.filter((item) => Number(item.value || 0) > 0).slice(0, 4);
+  return usefulItems
     .map(
       (item) => `
-      <button class="metric compact-kpi ${item.level || ""} ${Number(item.value || 0) === 0 ? "is-zero" : ""}" type="button" ${item.attrs || 'data-view-target="today"'}>
+      <button class="metric compact-kpi ${item.level || ""}" type="button" ${item.attrs || 'data-view-target="today"'}>
         <span class="kpi-icon">${escapeHtml(item.icon || "•")}</span>
         <strong>${escapeHtml(String(item.value ?? 0))}</strong>
         <span>${escapeHtml(item.label || "")}</span>
       </button>`
     )
     .join("");
+}
+
+function roleEstimateJobs() {
+  const role = currentRoleBase();
+  const jobs = visibleEstimateJobs();
+  if (role === "sales_manager") {
+    const ownJobs = jobs.filter((job) => isOwnEstimateJob(job, "manager_id"));
+    return ownJobs.length ? ownJobs : jobs;
+  }
+  if (role === "estimator") {
+    const ownJobs = jobs.filter((job) => isOwnEstimateJob(job, "estimator_id"));
+    return ownJobs.length ? ownJobs : jobs;
+  }
+  return [];
+}
+
+function estimateJobNeedsAttention(job, role = currentRoleBase()) {
+  const overdue = !["estimate_done", "archived"].includes(job.status) && levelByDate(job.due_date) === "danger";
+  if (role === "sales_manager") return overdue || ["estimate_question", "estimate_returned", "estimate_done"].includes(job.status);
+  if (role === "estimator") return overdue || ["estimate_new", "estimate_returned"].includes(job.status);
+  return false;
+}
+
+function renderTodayEstimateCard(job) {
+  const filesCount = currentEstimateFilesCount(job);
+  const nextAction = job.status === "estimate_done"
+    ? "Передать клиенту"
+    : job.status === "estimate_question"
+      ? "Ответить на вопрос"
+      : job.status === "estimate_returned"
+        ? "Уточнить задание"
+        : job.status === "estimate_new"
+          ? "Взять в работу"
+          : "Открыть задание";
+  return `
+    <button class="row clickable today-estimate-card" type="button" data-view-target="estimates" data-testid="today-estimate-card">
+      <div class="stack-line today-card-badges">
+        ${pill("Смета", "blue")}
+        ${pill(label(job.status), estimateJobStatusLevel(job))}
+        ${pill(job.due_date || "без срока", job.status === "estimate_done" ? "success" : levelByDate(job.due_date))}
+      </div>
+      <strong class="task-card-title">${escapeHtml(job.project_title || job.customer_name || job.title || "Сметное задание")}</strong>
+      <div class="muted">${escapeHtml(job.customer_name || "Заказчик не указан")} · ${escapeHtml(job.estimator_name || "сметчик не назначен")} · ${filesCount ? `${filesCount} ${pluralRu(filesCount, "файл", "файла", "файлов")}` : "без файлов"}</div>
+      <span class="work-item-action">${escapeHtml(nextAction)}</span>
+    </button>`;
+}
+
+function todayEstimateDecisionItems(jobs = []) {
+  return jobs.filter((job) => estimateJobNeedsAttention(job)).map((job) => {
+    const overdue = !["estimate_done", "archived"].includes(job.status) && levelByDate(job.due_date) === "danger";
+    const title = job.status === "estimate_done"
+      ? "Готовую смету нужно передать клиенту"
+      : job.status === "estimate_question"
+        ? "Сметчику нужен ответ"
+        : job.status === "estimate_returned"
+          ? "Задание возвращено на уточнение"
+          : job.status === "estimate_new"
+            ? "Новое сметное задание"
+            : "Срок задания истёк";
+    return {
+      type: overdue ? "Просрочено" : "Смета",
+      level: overdue || job.status === "estimate_returned" ? "danger" : "warning",
+      object: job.project_title || job.customer_name || "Без объекта",
+      title,
+      responsible: job.status === "estimate_question" ? job.manager_name : job.estimator_name || job.manager_name || "не назначен",
+      due: job.due_date || "без срока",
+      criticality: overdue || job.status === "estimate_returned" ? "Высокая" : "Рабочая",
+      action: "Открыть сметное задание",
+      attrs: 'data-view-target="estimates"',
+      sourceKey: `estimate-${job.id}`,
+    };
+  });
+}
+
+function todayKpiItemsForRole({ decisionItems, overdueTasks, waitingTasks, blockers, noPhotoProjects, riskyMaterials, estimateJobs }) {
+  const role = currentRoleBase();
+  const estimateStats = estimateJobStats(estimateJobs || []);
+  const itemsByRole = {
+    owner: [
+      ["Требует решения", decisionItems.length, "!", "danger", 'data-view-target="tasks"'],
+      ["Просрочено", overdueTasks.length, "⌛", "danger", 'data-view-target="tasks"'],
+      ["Блокеры", blockers.length, "◆", "danger", 'data-view-target="dashboard"'],
+      ["Без фотоотчёта", noPhotoProjects.length, "▣", "warning", 'data-view-target="photos"'],
+    ],
+    construction_manager: [
+      ["Объекты с риском", blockers.length + noPhotoProjects.length, "!", "danger", 'data-view-target="projects"'],
+      ["Просрочено", overdueTasks.length, "⌛", "danger", 'data-view-target="tasks"'],
+      ["Ждёт проверки", waitingTasks.length, "✓", "blue", 'data-view-target="tasks"'],
+      ["Материалы под риском", riskyMaterials.length, "▤", "warning", 'data-view-target="materials"'],
+    ],
+    foreman: [
+      ["Мои просрочки", overdueTasks.length, "⌛", "danger", 'data-view-target="tasks"'],
+      ["Нужно фото", noPhotoProjects.length, "▣", "warning", 'data-view-target="photos"'],
+      ["Материалы", riskyMaterials.length, "▤", "warning", 'data-view-target="materials"'],
+      ["Ждёт проверки", waitingTasks.length, "✓", "blue", 'data-view-target="tasks"'],
+    ],
+    sales_manager: [
+      ["Сметы в работе", estimateStats.active, "▤", "blue", 'data-view-target="estimates"'],
+      ["Нужен мой ответ", estimateStats.questions, "?", "warning", 'data-view-target="estimates"'],
+      ["Возвращено", estimateStats.returned, "↶", "danger", 'data-view-target="estimates"'],
+      ["Готово к передаче", estimateStats.done, "✓", "success", 'data-view-target="estimates"'],
+    ],
+    estimator: [
+      ["Сметы в работе", estimateStats.active, "▤", "blue", 'data-view-target="estimates"'],
+      ["Просрочено", estimateStats.overdue, "⌛", "danger", 'data-view-target="estimates"'],
+      ["Возвращено", estimateStats.returned, "↶", "danger", 'data-view-target="estimates"'],
+      ["Материалы к проверке", riskyMaterials.length, "▤", "warning", 'data-view-target="materials"'],
+    ],
+  };
+  return (itemsByRole[role] || itemsByRole.owner).map(([label, value, icon, level, attrs]) => ({ label, value, icon, level, attrs }));
 }
 
 function renderLimitedRows(items, renderer, { limit = 5, empty = "", moreTarget = "" } = {}) {
@@ -4166,6 +4298,7 @@ function todayDecisionItems({ overdueTasks = [], returnedTasks = [], waitingTask
     criticality: level === "danger" ? "Высокая" : level === "warning" ? "Средняя" : "Рабочая",
     action,
     attrs: `data-open-task="${task.id}"`,
+    sourceKey: `task-${task.id}`,
   });
   return [
     ...blockers.map((blocker) => ({
@@ -4233,7 +4366,7 @@ function renderTodayDecisionItem(item) {
 function renderTodayPrimaryActions(profile) {
   return (profile.actions || [])
     .filter(([view]) => canView(view))
-    .map(([view, title]) => `<button class="secondary" type="button" data-view-target="${view}">${escapeHtml(title)}</button>`)
+    .map(([view, title], index) => `<button class="${index === 0 ? "primary" : "secondary"}" type="button" data-view-target="${view}">${escapeHtml(title)}</button>`)
     .join("");
 }
 
@@ -4252,6 +4385,35 @@ function mobileQuickActionsForRole() {
       ["material", "Запросить материал"],
       ["remark", "Создать замечание"],
       ["blocker", "Сообщить проблему"],
+    ];
+  }
+  if (role === "sales_manager") {
+    return [
+      ["estimates", "Открыть сметные задания"],
+      ["projects", "Открыть объекты"],
+      ["documents", "Открыть документы"],
+    ];
+  }
+  if (role === "estimator") {
+    return [
+      ["estimates", "Открыть сметные задания"],
+      ["materials", "Проверить материалы"],
+      ["variations", "Открыть допработы"],
+    ];
+  }
+  if (role === "construction_manager") {
+    return [
+      ["projects", "Открыть мои объекты"],
+      ["tasks", "Открыть задачи"],
+      ["photos", "Проверить фотоотчёты"],
+      ["blocker", "Сообщить проблему"],
+    ];
+  }
+  if (role === "owner") {
+    return [
+      ["projects", "Проблемные объекты"],
+      ["dashboard", "Сигналы"],
+      ["tasks", "Задачи"],
     ];
   }
   if (role === "procurement_manager") {
@@ -4285,13 +4447,19 @@ function syncMobileQuickActions() {
   }
   if (title) title.textContent = "Быстрое действие";
   const actions = mobileQuickActionsForRole().filter(([action]) => {
+    if (["estimates", "projects", "documents", "variations", "dashboard"].includes(action)) return canView(action);
     if (action === "photo") return canView("photos") || canView("today");
     if (action === "task") return canView("tasks");
     if (action === "remark") return canView("object_remarks");
     if (action === "material") return canView("materials") || currentRoleBase() === "foreman";
     return true;
   });
-  list.innerHTML = actions.map(([action, title]) => `<button class="secondary" type="button" data-mobile-action="${action}">${escapeHtml(title)}</button>`).join("");
+  list.innerHTML = actions.map(([action, title], index) => {
+    if (["estimates", "projects", "documents", "variations", "dashboard"].includes(action)) {
+      return `<button class="${index === 0 ? "primary" : "secondary"}" type="button" data-view-target="${action}">${escapeHtml(title)}</button>`;
+    }
+    return `<button class="${index === 0 ? "primary" : "secondary"}" type="button" data-mobile-action="${action}">${escapeHtml(title)}</button>`;
+  }).join("");
   sheet.hidden = !state.mobileQuickOpen;
 }
 
@@ -4408,6 +4576,8 @@ async function renderToday() {
   qs("#todayAttentionTitle").textContent = profile.attentionTitle;
   qs("#todayMaterialsTitle").textContent = profile.materialsTitle;
   qs("#todayPrimaryActions").innerHTML = renderTodayPrimaryActions(profile);
+  const role = currentRoleBase();
+  const estimateJobs = roleEstimateJobs();
   const todayTasks = todayTasksForProfile(roleTasks, profile);
   const overdueTasks = roleTasks.filter(taskCountsAsOverdue);
   const returnedTasks = roleTasks.filter((task) => taskStatusKey(task) === "returned");
@@ -4421,23 +4591,43 @@ async function renderToday() {
     .filter((row) => isLast24Hours(row.created_at))
     .filter((row) => !row.project_id || isLeadershipRole() || roleProjectIds.has(Number(row.project_id || 0)))
     .slice(0, 12);
-  const decisionItems = todayDecisionItems({ overdueTasks, returnedTasks, waitingTasks, riskyMaterials, noPhotoProjects, blockers: roleBlockers, remarks: openRemarks });
-  qs("#todayKpis").innerHTML = renderTodayKpis([
-    ["Требует действия", decisionItems.length, "!", decisionItems.length ? "danger" : "", 'data-view-target="tasks"'],
-    ["Просрочено", overdueTasks.length, "⏱", overdueTasks.length ? "danger" : "", 'data-view-target="tasks"'],
-    ["Ждёт проверки", waitingTasks.length, "✓", waitingTasks.length ? "blue" : "", 'data-view-target="tasks"'],
-    ["Блокеры", roleBlockers.length, "◆", roleBlockers.length ? "danger" : "", 'data-view-target="dashboard"'],
-    ["Без фотоотчёта", noPhotoProjects.length, "▣", noPhotoProjects.length ? "warning" : "", 'data-view-target="photos"'],
-    ["Материалы под риском", riskyMaterials.length, "◫", riskyMaterials.length ? "warning" : "", 'data-view-target="materials"'],
-  ].map(([label, value, icon, level, attrs]) => ({ label, value, icon, level, attrs })));
-  qs("#todayTasks").innerHTML = todayTasks.length
-    ? renderLimitedRows(todayTasks, renderTodayTaskCard, { limit: 5, moreTarget: 'data-view-target="tasks"' })
-    : `<div class="empty-state"><strong>На сегодня задач нет</strong><p class="muted">Проверьте просроченные или откройте объект.</p></div>`;
+  const decisionItems = [
+    ...todayEstimateDecisionItems(estimateJobs),
+    ...todayDecisionItems({ overdueTasks, returnedTasks, waitingTasks, riskyMaterials, noPhotoProjects, blockers: roleBlockers, remarks: openRemarks }),
+  ];
+  const attentionKeys = new Set(decisionItems.map((item) => item.sourceKey).filter(Boolean));
+  const nextTasks = todayTasks.filter((task) => !attentionKeys.has(`task-${task.id}`));
+  const nextEstimateJobs = estimateJobs.filter((job) => !attentionKeys.has(`estimate-${job.id}`));
+  const workItemsCount = decisionItems.length + nextTasks.length + nextEstimateJobs.length;
+  const todayDate = new Intl.DateTimeFormat("ru-RU", { weekday: "long", day: "numeric", month: "long" }).format(new Date());
+  qs("#todayDateLabel").textContent = todayDate.charAt(0).toUpperCase() + todayDate.slice(1);
+  qs("#todayContextSummary").textContent = decisionItems.length
+    ? `${decisionItems.length} ${pluralRu(decisionItems.length, "пункт", "пункта", "пунктов")} требуют внимания`
+    : workItemsCount
+      ? "Срочных проблем нет"
+      : "На сегодня всё спокойно";
+  qs("#todayKpis").innerHTML = renderTodayKpis(todayKpiItemsForRole({
+    decisionItems,
+    overdueTasks,
+    waitingTasks,
+    blockers: roleBlockers,
+    noPhotoProjects,
+    riskyMaterials,
+    estimateJobs,
+  }));
+  const usesEstimateWorkspace = ["sales_manager", "estimator"].includes(role);
+  qs("#todayTasks").innerHTML = usesEstimateWorkspace
+    ? (nextEstimateJobs.length
+        ? renderLimitedRows(nextEstimateJobs, renderTodayEstimateCard, { limit: 3, moreTarget: 'data-view-target="estimates"' })
+        : `<div class="empty-state"><strong>Следующих действий нет</strong><p class="muted">Сначала разберите пункты, которые требуют внимания.</p></div>`)
+    : (nextTasks.length
+        ? renderLimitedRows(nextTasks, renderTodayTaskCard, { limit: 3, moreTarget: 'data-view-target="tasks"' })
+        : `<div class="empty-state"><strong>Следующих задач нет</strong><p class="muted">Сначала разберите пункты, которые требуют внимания.</p></div>`);
   qs("#todayAttention").innerHTML = decisionItems.length
-    ? renderLimitedRows(decisionItems, renderTodayDecisionItem, { limit: 5, moreTarget: 'data-view-target="tasks"' })
+    ? renderLimitedRows(decisionItems, renderTodayDecisionItem, { limit: 4, moreTarget: usesEstimateWorkspace ? 'data-view-target="estimates"' : 'data-view-target="tasks"' })
     : `<div class="attention-empty"><strong>Критичных сигналов нет</strong><span>На сейчас ничего срочного не найдено.</span></div>`;
   qs("#todayMaterials").innerHTML = riskyMaterials.length
-    ? renderLimitedRows(riskyMaterials, renderTodayMaterialCard, { limit: 5, moreTarget: 'data-view-target="materials"' })
+    ? renderLimitedRows(riskyMaterials, renderTodayMaterialCard, { limit: 3, moreTarget: 'data-view-target="materials"' })
     : `<div class="empty-state"><strong>Заявок под риском нет</strong><p class="muted">Заявки появятся здесь, когда прораб или руководитель запросит материалы.</p>${canView("materials") ? `<button class="secondary tiny" type="button" data-view-target="materials">Открыть материалы</button>` : ""}</div>`;
   qs("#todayComments").innerHTML = recentComments.length
     ? renderLimitedRows(
@@ -4448,11 +4638,11 @@ async function renderToday() {
             <div class="muted">${escapeHtml(row.project_title || "без объекта")} · ${formatDateRu(row.created_at)}</div>
             <p>${escapeHtml(row.text || "")}</p>
           </button>`,
-        { limit: 5, moreTarget: 'data-view-target="dashboard"' }
+        { limit: 3, moreTarget: 'data-view-target="dashboard"' }
       )
     : `<p class="muted">Новых комментариев за 24 часа нет.</p>`;
   qs("#todayObjects").innerHTML = activeProjects.length
-    ? renderLimitedRows(activeProjects, (project) => renderTodayObjectCard(project, roleTasks, roleMaterialRows), { limit: 5, moreTarget: 'data-view-target="projects"' })
+    ? renderLimitedRows(activeProjects, (project) => renderTodayObjectCard(project, roleTasks, roleMaterialRows), { limit: 3, moreTarget: 'data-view-target="projects"' })
     : `<p class="muted">Активных объектов пока нет.</p>`;
   qs("#todayNoPhoto").innerHTML = noPhotoProjects.length
     ? renderLimitedRows(
@@ -4462,7 +4652,7 @@ async function renderToday() {
             <strong>${escapeHtml(project.title)}</strong>
             <div class="muted">последний фотоотчёт: ${latestPhotoReportDate(project.id) ? formatDateRu(latestPhotoReportDate(project.id)) : "не найден"}</div>
           </button>`,
-        { limit: 5, moreTarget: 'data-view-target="photos"' }
+        { limit: 3, moreTarget: 'data-view-target="photos"' }
       )
     : `<p class="muted">По всем активным объектам есть фотоотчёт за сегодня.</p>`;
   syncManagerEstimateNotice();
