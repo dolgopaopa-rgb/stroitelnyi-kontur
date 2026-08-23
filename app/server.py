@@ -4031,7 +4031,7 @@ class AppHandler(BaseHTTPRequestHandler):
             logout_response(self)
             return
         if path == "/favicon.ico":
-            self.serve_static("assets/g2-logo-192.png")
+            self.serve_static("assets/brand-2026/d2dom-favicon-32.png")
             return
         if path == "/login":
             if is_authorized(self):

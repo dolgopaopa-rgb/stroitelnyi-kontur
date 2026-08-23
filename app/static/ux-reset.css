@@ -67,11 +67,36 @@ body.ux-reset-v1 .nav {
 
 body.ux-reset-v1 .nav button,
 body.ux-reset-v1 .nav a {
+  width: 100%;
+  min-width: 0;
   min-height: 40px;
+  overflow: hidden;
   border-radius: 6px;
   padding: 8px 10px;
   font-size: 13px;
   font-weight: 600;
+}
+
+body.ux-reset-v1 .nav-button > span:last-child {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.ux-reset-v1 [data-testid="nav-feedback"] {
+  min-height: 48px;
+  align-items: flex-start;
+}
+
+body.ux-reset-v1 [data-testid="nav-feedback"] > span:last-child {
+  overflow: visible;
+  line-height: 1.2;
+  text-align: left;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 body.ux-reset-v1 .main {
@@ -83,24 +108,28 @@ body.ux-reset-v1 .topbar {
   position: sticky;
   z-index: 20;
   top: 0;
-  min-height: 68px;
+  min-height: 50px;
   margin: 0 -20px 16px;
-  padding: 8px 20px;
-  gap: 12px;
+  padding: 6px 20px;
+  gap: 6px;
   background: rgba(243, 245, 244, 0.98);
   border-bottom: 1px solid var(--ux-line);
 }
 
 @media (min-width: 981px) {
   body.ux-reset-v1 .topbar {
+    align-items: center;
     justify-content: flex-start;
+    flex-wrap: nowrap;
   }
 
+  body.ux-reset-v1 .shell-toggle,
   body.ux-reset-v1 .topbar-title {
     display: none;
   }
 
   body.ux-reset-v1 .topbar .actions {
+    flex-basis: auto;
     margin-left: auto;
   }
 }
@@ -132,18 +161,103 @@ body.ux-reset-v1 .topbar-title h1 {
 body.ux-reset-v1 .topbar .actions {
   min-width: 0;
   flex: 1 1 auto;
+  align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  flex-wrap: nowrap;
+  gap: 6px;
 }
 
-body.ux-reset-v1 .topbar .field {
-  min-width: 112px;
+body.ux-reset-v1 .topbar-object-switch,
+body.ux-reset-v1 .global-search,
+body.ux-reset-v1 .density-switcher,
+body.ux-reset-v1 .role-switcher {
+  display: flex;
+  flex: 0 0 auto;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
 }
 
-body.ux-reset-v1 .topbar .field > span {
+body.ux-reset-v1 .topbar .field > span,
+body.ux-reset-v1 .global-search > span {
   color: var(--ux-muted);
   font-size: 10px;
   font-weight: 600;
+}
+
+body.ux-reset-v1 .topbar-object-switch {
+  width: clamp(132px, 15vw, 176px);
+}
+
+body.ux-reset-v1 .global-search {
+  width: clamp(168px, 19vw, 224px);
+}
+
+body.ux-reset-v1 .density-switcher {
+  width: 138px;
+}
+
+body.ux-reset-v1 .role-switcher {
+  width: clamp(124px, 13vw, 154px);
+}
+
+body.ux-reset-v1 .topbar-object-switch select,
+body.ux-reset-v1 .global-search input,
+body.ux-reset-v1 .density-switcher select,
+body.ux-reset-v1 .role-switcher select {
+  min-width: 0;
+  min-height: 32px;
+  padding-inline: 7px;
+}
+
+body.ux-reset-v1 .topbar .actions > button {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding-inline: 9px;
+  white-space: nowrap;
+}
+
+@media (min-width: 981px) and (max-width: 1180px) {
+  body.ux-reset-v1 .topbar-object-switch,
+  body.ux-reset-v1 .density-switcher,
+  body.ux-reset-v1 .role-switcher {
+    font-size: 0;
+  }
+
+  body.ux-reset-v1 .topbar .field > span,
+  body.ux-reset-v1 .global-search > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  body.ux-reset-v1 .topbar-object-switch {
+    width: 108px;
+  }
+
+  body.ux-reset-v1 .global-search {
+    width: 152px;
+  }
+
+  body.ux-reset-v1 .density-switcher {
+    width: 96px;
+  }
+
+  body.ux-reset-v1 .role-switcher {
+    width: 132px;
+  }
+
+  body.ux-reset-v1 .topbar-object-switch select,
+  body.ux-reset-v1 .global-search input,
+  body.ux-reset-v1 .density-switcher select,
+  body.ux-reset-v1 .role-switcher select {
+    width: 100%;
+    font-size: 11px;
+  }
 }
 
 body.ux-reset-v1 .panel,
@@ -471,8 +585,8 @@ body.ux-reset-v1 .today-object-grid {
 
 body.ux-reset-v1 .today-object-card {
   display: grid;
-  gap: 7px;
-  padding: 10px;
+  gap: 5px;
+  padding: 8px;
 }
 
 body.ux-reset-v1 .today-object-head,
@@ -483,6 +597,15 @@ body.ux-reset-v1 .today-object-actions {
 
 body.ux-reset-v1 .today-object-actions {
   justify-content: flex-end;
+}
+
+body.ux-reset-v1 .today-object-actions .tiny {
+  width: auto;
+  min-height: 26px;
+  padding: 3px 7px;
+  border-radius: 5px;
+  font-size: 11px;
+  line-height: 1.15;
 }
 
 body.ux-reset-v1 .empty-state,
@@ -517,12 +640,12 @@ body.ux-reset-v1 textarea {
   }
 
   body.ux-reset-v1 .topbar {
-    align-items: flex-end;
-    flex-wrap: wrap;
+    align-items: center;
+    flex-wrap: nowrap;
   }
 
   body.ux-reset-v1 .topbar .actions {
-    flex-basis: 100%;
+    flex-basis: auto;
   }
 
   body.ux-reset-v1 .workspace-context {

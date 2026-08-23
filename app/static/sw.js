@@ -1,17 +1,19 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260821-ux-reset-v1";
+const CACHE_NAME = "stroitelnyi-kontur-20260823-login-brand-v1";
 const CORE_ASSETS = [
   "/",
   "/static/styles.css?v=20260821-ux-reset-v1",
   "/static/brand-2026.css?v=20260821-ux-reset-v1",
-  "/static/ux-reset.css?v=20260821-ux-reset-v1",
+  "/static/ux-reset.css?v=20260823-dashboard-polish-v1",
   "/static/app.compat.js?v=20260821-ux-reset-v1",
-  "/static/manifest.webmanifest?v=20260821-ux-reset-v1",
-  "/static/assets/brand-2026/d2dom-mark.svg",
+  "/static/manifest.webmanifest?v=20260823-login-brand-v1",
+  "/static/assets/brand-2026/d2dom-favicon-32.png",
+  "/static/assets/brand-2026/d2dom-favicon-192.png",
+  "/static/assets/brand-2026/d2dom-favicon-512.png",
+  "/static/assets/brand-2026/d2dom-apple-touch-180.png",
   "/static/assets/brand-2026/Haval-Light.woff2",
   "/static/assets/brand-2026/Involve-Regular.woff2",
   "/static/assets/brand-2026/Involve-SemiBold.woff2",
-  "/static/assets/brand-2026/d2dom-mark-192.png",
-  "/static/assets/brand-2026/d2dom-mark-512.png"
+  "/static/assets/brand-2026/d2dom-favicon-192.png"
 ];
 
 self.addEventListener("install", (event) => {
