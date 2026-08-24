@@ -304,8 +304,8 @@
   function qs(selector) {
     return document.querySelector(selector);
   }
-  function qsa(selector) {
-    return [...document.querySelectorAll(selector)];
+  function qsa(selector, root = document) {
+    return [...root.querySelectorAll(selector)];
   }
   async function api(path, options = {}) {
     const _a = options, { loadingMessage = "Сохраняем данные", silentLoading = false, showLoading = false } = _a, fetchOptions = __objRest(_a, ["loadingMessage", "silentLoading", "showLoading"]);
@@ -3469,7 +3469,7 @@
     const mime = String(doc.mime_type || "");
     const previewKind = filePreviewKind(rawTitle, mime);
     if (previewKind === "image") {
-      return '<a class="media-thumb" href="'.concat(href, '" data-media-preview="image" data-media-url="').concat(href, '" data-media-title="').concat(title, '" data-media-mime="').concat(escapeHtml(mime), '"><span class="media-thumb-placeholder">Фото</span><span>').concat(title, "</span></a>");
+      return '<a class="media-thumb" href="'.concat(href, '" data-media-preview="image" data-media-url="').concat(href, '" data-media-title="').concat(title, '" data-media-mime="').concat(escapeHtml(mime), '"><span class="media-thumb-visual"><span class="media-thumb-placeholder">Фото</span><img src="').concat(href, '" alt="').concat(title, '" loading="lazy" decoding="async" /></span><span class="media-thumb-title">').concat(title, "</span></a>");
     }
     if (previewKind === "video") {
       return '<a class="media-thumb video" href="'.concat(href, '" data-media-preview="video" data-media-url="').concat(href, '" data-media-title="').concat(title, '" data-media-mime="').concat(escapeHtml(mime), '"><span>Видео</span><small>').concat(title, "</small></a>");
@@ -3548,7 +3548,34 @@
   }
   function renderPhotoReportCard(report) {
     const attachments = (report.attachments || []).filter((doc) => String(doc.mime_type || "").startsWith("image/") || String(doc.mime_type || "").startsWith("video/"));
-    return '\n    <article class="row photo-report-card" data-testid="photo-report-card">\n      <div class="photo-report-main">\n        <div class="stack-line">\n          <strong>'.concat(escapeHtml(report.project_title || "Объект не указан"), "</strong>\n          ").concat(pill(statusLabel(report.status || "review"), statusLevel(report.status || "review")), "\n          ").concat(pill(formatDateRu(report.report_date), "blue"), '\n        </div>\n        <div class="muted">автор: ').concat(escapeHtml(report.author_name || "не указан"), " · этап: ").concat(escapeHtml(report.stage || "не указан"), " · зоны: ").concat(escapeHtml(report.zones || "не указаны"), "</div>\n        ").concat(report.comment ? "<p>".concat(escapeHtml(report.comment), "</p>") : "", '\n      </div>\n      <div class="media-grid">').concat(attachments.length ? attachments.map(mediaPreviewLink).join("") : '<span class="muted">Фото/видео не прикреплены.</span>', "</div>\n    </article>");
+    const hiddenAttachmentCount = Math.max(attachments.length - 4, 0);
+    return `
+    <article class="row photo-report-card" data-testid="photo-report-card">
+      <div class="photo-report-main">
+        <div class="photo-report-heading">
+          <strong>${escapeHtml(report.project_title || "Объект не указан")}</strong>
+          <span class="photo-report-badges">
+            ${pill(statusLabel(report.status || "review"), statusLevel(report.status || "review"))}
+            ${pill(formatDateRu(report.report_date), "blue")}
+          </span>
+        </div>
+        <div class="photo-report-meta">
+          <span><small>Автор</small><strong>${escapeHtml(report.author_name || "не указан")}</strong></span>
+          <span><small>Этап</small><strong>${escapeHtml(report.stage || "не указан")}</strong></span>
+          <span><small>Зоны</small><strong>${escapeHtml(report.zones || "не указаны")}</strong></span>
+        </div>
+        ${report.comment ? `<p>${escapeHtml(report.comment)}</p>` : ""}
+      </div>
+      <div class="media-grid">${
+        attachments.length
+          ? `${attachments.map(mediaPreviewLink).join("")}${
+              hiddenAttachmentCount
+                ? `<button class="media-more-button" type="button" data-open-media-gallery="4">Ещё ${hiddenAttachmentCount} ${pluralRu(hiddenAttachmentCount, "файл", "файла", "файлов")}</button>`
+                : ""
+            }`
+          : `<span class="muted">Фото/видео не прикреплены.</span>`
+      }</div>
+    </article>`;
   }
   function projectsWithoutTodayPhoto() {
     return roleScopedProjects(state.projects).filter((project) => project.status !== "archived").filter((project) => !isTodayDate(latestPhotoReportDate(project.id)));
@@ -3602,6 +3629,9 @@
   }
   async function renderProjects() {
     const projects = state.projectListMode === "archive" ? state.archivedProjects : state.projects;
+    var _a2;
+    const hasSelectedProject = state.selectedProjectId && projects.some((project) => Number(project.id) === Number(state.selectedProjectId));
+    (_a2 = qs("#projectsView .split")) == null ? void 0 : _a2.classList.toggle("project-selection-empty", !hasSelectedProject);
     qs("#projectListTitle").textContent = state.projectListMode === "archive" ? "Архив объектов" : "Список объектов";
     qsa("[data-project-list]").forEach((button) => button.classList.toggle("active", button.dataset.projectList === state.projectListMode));
     const rowsNode = qs("#projectRows");
@@ -3611,9 +3641,8 @@
     }
     qsa("[data-project-display]").forEach((button) => button.classList.toggle("active", button.dataset.projectDisplay === state.projectDisplayMode));
     qs("#projectRows").innerHTML = projects.length ? projects.map(
-      (project) => '\n          <div class="row clickable" data-open-project="'.concat(project.id, '" data-testid="object-card">\n            <div class="row-grid project-list-card">\n              <div class="project-card-main">\n                <strong>').concat(project.title, '</strong>\n                <div class="muted">').concat(project.customer_name || "", '</div>\n              </div>\n              <div class="project-card-badges">\n                ').concat(pill(label(project.status), project.status === "revision_requested" ? "danger" : project.status === "submitted_to_construction" ? "warning" : "blue"), "\n                ").concat(state.projectListMode === "archive" ? pill(project.archive_reason || "архив", "success") : canViewFinancials() ? pill("Смета: ".concat(money(project.main_estimate_amount)), "success") : "", '\n              </div>\n              <div class="project-meta-line">\n                <span>').concat(state.projectListMode === "archive" ? project.archived_at || "без даты" : "Прораб: ".concat(project.foreman_name || "не назначен"), "</span>\n                ").concat(mapLink(project.address, project.navigator_url, "Я.Карты"), "\n              </div>\n            </div>\n          </div>")
+      (project) => '\n          <div class="row clickable '.concat(Number(state.selectedProjectId) === Number(project.id) ? "active" : "", '" data-open-project="').concat(project.id, '" data-testid="object-card">\n            <div class="row-grid project-list-card">\n              <div class="project-card-main">\n                <strong>').concat(project.title, '</strong>\n                <div class="muted">').concat(project.customer_name || "", '</div>\n              </div>\n              <div class="project-card-badges">\n                ').concat(pill(label(project.status), project.status === "revision_requested" ? "danger" : project.status === "submitted_to_construction" ? "warning" : "blue"), "\n                ").concat(state.projectListMode === "archive" ? pill(project.archive_reason || "архив", "success") : canViewFinancials() ? pill("Смета: ".concat(money(project.main_estimate_amount)), "success") : "", '\n              </div>\n              <div class="project-meta-line">\n                <span>').concat(state.projectListMode === "archive" ? project.archived_at || "без даты" : "Прораб: ".concat(project.foreman_name || "не назначен"), "</span>\n                ").concat(mapLink(project.address, project.navigator_url, "Я.Карты"), "\n              </div>\n            </div>\n          </div>")
     ).join("") : '<p class="muted">'.concat(state.projectListMode === "archive" ? "В архиве пока пусто." : "Объектов пока нет.", "</p>");
-    const hasSelectedProject = state.selectedProjectId && projects.some((project) => Number(project.id) === Number(state.selectedProjectId));
     if (hasSelectedProject) await renderProjectDetail(state.selectedProjectId);
     else clearProjectDetail();
   }
@@ -5872,6 +5901,26 @@
     });
     document.addEventListener("click", async (event) => {
       var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k2, _l2, _m2, _n2, _o2, _p2, _q2, _r2, _s2;
+      const mediaMoreButton = event.target.closest("[data-open-media-gallery]");
+      if (mediaMoreButton) {
+        event.preventDefault();
+        const galleryRoot = mediaMoreButton.closest(".media-grid, .remark-media-grid, .photo-report-card, .object-remark-card, .document-list, .knowledge-list");
+        const galleryItems = qsa("[data-media-preview]", galleryRoot || document).map(mediaPreviewItemFromLink).filter((item) => item.href);
+        const requestedIndex = Number(mediaMoreButton.dataset.openMediaGallery || 0);
+        const startIndex = Math.min(Math.max(requestedIndex, 0), Math.max(galleryItems.length - 1, 0));
+        const startItem = galleryItems[startIndex];
+        if (startItem) {
+          openMediaPreview({
+            href: startItem.href,
+            title: startItem.title,
+            mime: startItem.mime,
+            kind: startItem.kind,
+            items: galleryItems,
+            index: startIndex
+          });
+        }
+        return;
+      }
       const mediaPreviewButton = event.target.closest("[data-media-preview]");
       if (mediaPreviewButton) {
         event.preventDefault();
@@ -6383,15 +6432,8 @@
       const projectButton = event.target.closest("[data-open-project]");
       if (projectButton) {
         const projectId = Number(projectButton.dataset.openProject);
-        const sameProjectAlreadyOpen = state.view === "projects" && Number(state.selectedProjectId) === projectId;
         state.selectedProjectTab = "overview";
         switchView("projects");
-        if (sameProjectAlreadyOpen) {
-          state.selectedProjectId = null;
-          await renderProjects();
-          clearProjectDetail();
-          return;
-        }
         state.selectedProjectId = projectId;
         await renderProjects();
         await renderProjectDetail(state.selectedProjectId);

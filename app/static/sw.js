@@ -1,8 +1,8 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260702-header-home-feedback-owner-delete";
+const CACHE_NAME = "stroitelnyi-kontur-20260824-compact-operational-screens";
 const CORE_ASSETS = [
   "/",
-  "/static/styles.css?v=20260702-header-home-feedback-owner-delete",
-  "/static/app.compat.js?v=20260702-header-home-feedback-owner-delete",
+  "/static/styles.css?v=20260824-compact-operational-screens",
+  "/static/app.compat.js?v=20260824-compact-operational-screens",
   "/static/manifest.webmanifest?v=20260702-header-home-feedback-owner-delete",
   "/static/assets/g2-logo-192.png",
   "/static/assets/g2-logo-512.png"

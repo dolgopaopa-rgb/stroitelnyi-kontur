@@ -280,8 +280,8 @@ function qs(selector) {
   return document.querySelector(selector);
 }
 
-function qsa(selector) {
-  return [...document.querySelectorAll(selector)];
+function qsa(selector, root = document) {
+  return [...root.querySelectorAll(selector)];
 }
 
 async function api(path, options = {}) {
@@ -4292,7 +4292,7 @@ function mediaPreviewLink(doc) {
   const mime = String(doc.mime_type || "");
   const previewKind = filePreviewKind(rawTitle, mime);
   if (previewKind === "image") {
-    return `<a class="media-thumb" href="${href}" data-media-preview="image" data-media-url="${href}" data-media-title="${title}" data-media-mime="${escapeHtml(mime)}"><span class="media-thumb-placeholder">Фото</span><span>${title}</span></a>`;
+    return `<a class="media-thumb" href="${href}" data-media-preview="image" data-media-url="${href}" data-media-title="${title}" data-media-mime="${escapeHtml(mime)}"><span class="media-thumb-visual"><span class="media-thumb-placeholder">Фото</span><img src="${href}" alt="${title}" loading="lazy" decoding="async" /></span><span class="media-thumb-title">${title}</span></a>`;
   }
   if (previewKind === "video") {
     return `<a class="media-thumb video" href="${href}" data-media-preview="video" data-media-url="${href}" data-media-title="${title}" data-media-mime="${escapeHtml(mime)}"><span>Видео</span><small>${title}</small></a>`;
@@ -4376,18 +4376,33 @@ function moveMediaPreview(delta) {
 
 function renderPhotoReportCard(report) {
   const attachments = (report.attachments || []).filter((doc) => String(doc.mime_type || "").startsWith("image/") || String(doc.mime_type || "").startsWith("video/"));
+  const hiddenAttachmentCount = Math.max(attachments.length - 4, 0);
   return `
     <article class="row photo-report-card" data-testid="photo-report-card">
       <div class="photo-report-main">
-        <div class="stack-line">
+        <div class="photo-report-heading">
           <strong>${escapeHtml(report.project_title || "Объект не указан")}</strong>
-          ${pill(statusLabel(report.status || "review"), statusLevel(report.status || "review"))}
-          ${pill(formatDateRu(report.report_date), "blue")}
+          <span class="photo-report-badges">
+            ${pill(statusLabel(report.status || "review"), statusLevel(report.status || "review"))}
+            ${pill(formatDateRu(report.report_date), "blue")}
+          </span>
         </div>
-        <div class="muted">автор: ${escapeHtml(report.author_name || "не указан")} · этап: ${escapeHtml(report.stage || "не указан")} · зоны: ${escapeHtml(report.zones || "не указаны")}</div>
+        <div class="photo-report-meta">
+          <span><small>Автор</small><strong>${escapeHtml(report.author_name || "не указан")}</strong></span>
+          <span><small>Этап</small><strong>${escapeHtml(report.stage || "не указан")}</strong></span>
+          <span><small>Зоны</small><strong>${escapeHtml(report.zones || "не указаны")}</strong></span>
+        </div>
         ${report.comment ? `<p>${escapeHtml(report.comment)}</p>` : ""}
       </div>
-      <div class="media-grid">${attachments.length ? attachments.map(mediaPreviewLink).join("") : `<span class="muted">Фото/видео не прикреплены.</span>`}</div>
+      <div class="media-grid">${
+        attachments.length
+          ? `${attachments.map(mediaPreviewLink).join("")}${
+              hiddenAttachmentCount
+                ? `<button class="media-more-button" type="button" data-open-media-gallery="4">Ещё ${hiddenAttachmentCount} ${pluralRu(hiddenAttachmentCount, "файл", "файла", "файлов")}</button>`
+                : ""
+            }`
+          : `<span class="muted">Фото/видео не прикреплены.</span>`
+      }</div>
     </article>`;
 }
 
@@ -4513,6 +4528,8 @@ async function renderObjectRemarks() {
 
 async function renderProjects() {
   const projects = state.projectListMode === "archive" ? state.archivedProjects : state.projects;
+  const hasSelectedProject = state.selectedProjectId && projects.some((project) => Number(project.id) === Number(state.selectedProjectId));
+  qs("#projectsView .split")?.classList.toggle("project-selection-empty", !hasSelectedProject);
   qs("#projectListTitle").textContent = state.projectListMode === "archive" ? "Архив объектов" : "Список объектов";
   qsa("[data-project-list]").forEach((button) => button.classList.toggle("active", button.dataset.projectList === state.projectListMode));
   const rowsNode = qs("#projectRows");
@@ -4525,7 +4542,7 @@ async function renderProjects() {
     ? projects
         .map(
           (project) => `
-          <div class="row clickable" data-open-project="${project.id}" data-testid="object-card">
+          <div class="row clickable ${Number(state.selectedProjectId) === Number(project.id) ? "active" : ""}" data-open-project="${project.id}" data-testid="object-card">
             <div class="row-grid project-list-card">
               <div class="project-card-main">
                 <strong>${project.title}</strong>
@@ -4544,7 +4561,6 @@ async function renderProjects() {
         )
         .join("")
     : `<p class="muted">${state.projectListMode === "archive" ? "В архиве пока пусто." : "Объектов пока нет."}</p>`;
-  const hasSelectedProject = state.selectedProjectId && projects.some((project) => Number(project.id) === Number(state.selectedProjectId));
   if (hasSelectedProject) await renderProjectDetail(state.selectedProjectId);
   else clearProjectDetail();
 }
@@ -7990,6 +8006,18 @@ function bindEvents() {
   });
 
   document.addEventListener("click", async (event) => {
+    const mediaMoreButton = event.target.closest("[data-open-media-gallery]");
+    if (mediaMoreButton) {
+      event.preventDefault();
+      const galleryRoot = mediaMoreButton.closest(".media-grid, .remark-media-grid, .photo-report-card, .object-remark-card, .document-list, .knowledge-list");
+      const galleryItems = qsa("[data-media-preview]", galleryRoot || document).map(mediaPreviewItemFromLink).filter((item) => item.href);
+      const requestedIndex = Number(mediaMoreButton.dataset.openMediaGallery || 0);
+      const startIndex = Math.min(Math.max(requestedIndex, 0), Math.max(galleryItems.length - 1, 0));
+      const startItem = galleryItems[startIndex];
+      if (startItem) openMediaPreview({ ...startItem, items: galleryItems, index: startIndex });
+      return;
+    }
+
     const mediaPreviewButton = event.target.closest("[data-media-preview]");
     if (mediaPreviewButton) {
       event.preventDefault();
@@ -8546,15 +8574,8 @@ function bindEvents() {
     const projectButton = event.target.closest("[data-open-project]");
     if (projectButton) {
       const projectId = Number(projectButton.dataset.openProject);
-      const sameProjectAlreadyOpen = state.view === "projects" && Number(state.selectedProjectId) === projectId;
       state.selectedProjectTab = "overview";
       switchView("projects");
-      if (sameProjectAlreadyOpen) {
-        state.selectedProjectId = null;
-        await renderProjects();
-        clearProjectDetail();
-        return;
-      }
       state.selectedProjectId = projectId;
       await renderProjects();
       await renderProjectDetail(state.selectedProjectId);

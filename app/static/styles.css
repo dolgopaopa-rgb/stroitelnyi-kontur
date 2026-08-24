@@ -6100,3 +6100,596 @@ textarea {
     font-size: 20px;
   }
 }
+
+/* Compact operating screens: dashboard, projects, tasks, photos and events. */
+#dashboardView #summaryCards {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+}
+
+#dashboardView #summaryCards .metric {
+  flex: 1 0 130px;
+  min-height: 46px;
+  padding: 6px 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "metric-title metric-value"
+    "metric-detail metric-detail";
+  gap: 2px 8px;
+  align-items: center;
+}
+
+#dashboardView #summaryCards .metric > span:first-child {
+  grid-area: metric-title;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+#dashboardView #summaryCards .metric > strong {
+  grid-area: metric-value;
+  font-size: 18px;
+}
+
+#dashboardView #summaryCards .metric > span:last-child {
+  grid-area: metric-detail;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  line-height: 1.15;
+}
+
+#dashboardView .attention-panel,
+#dashboardView .task-overview-panel {
+  padding: 10px;
+}
+
+#dashboardView .attention-panel .panel-head,
+#dashboardView .task-overview-panel .panel-head {
+  margin-bottom: 6px;
+}
+
+#dashboardView .attention-panel .panel-head h2,
+#dashboardView .task-overview-panel .panel-head h2 {
+  font-size: 15px;
+}
+
+#dashboardAttention .attention-list {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+}
+
+#dashboardAttention .attention-item,
+#dashboardAttention .attention-item.decision-item {
+  flex: 1 0 188px;
+  height: 54px;
+  min-height: 54px;
+  max-height: 54px;
+  padding: 6px 7px;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 7px;
+  align-items: center;
+}
+
+#dashboardAttention .attention-count,
+#dashboardAttention .attention-item.decision-item .attention-count {
+  width: auto;
+  min-width: 28px;
+  height: 25px;
+  min-height: 25px;
+  padding: 0 7px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+#dashboardAttention .attention-body strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+#dashboardAttention .attention-body small {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 10px;
+  line-height: 1.2;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+
+#dashboardTaskStats .task-stats {
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 5px;
+  margin-bottom: 4px;
+}
+
+#dashboardTaskStats .task-stat {
+  min-height: 42px;
+  padding: 5px 7px;
+}
+
+#dashboardTaskStats .task-stat strong {
+  font-size: 15px;
+}
+
+#dashboardTaskStats .task-stat span {
+  font-size: 10px;
+}
+
+#dashboardTaskStats .dashboard-context-note {
+  margin: 5px 0 0;
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+#projectsView .split {
+  grid-template-columns: minmax(360px, 0.78fr) minmax(0, 1.22fr);
+  gap: 10px;
+  align-items: start;
+}
+
+#projectsView .split.project-selection-empty {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+#projectsView .split.project-selection-empty #projectDetail {
+  display: none;
+}
+
+#projectsView .split.project-selection-empty #projectRows {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 6px;
+  overflow: visible;
+  border: 0;
+}
+
+#projectsView .split.project-selection-empty #projectRows .row {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+#projectsView .split.project-selection-empty #projectRows .project-list-card {
+  grid-template-areas:
+    "main main"
+    "badges meta";
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px 8px;
+  align-items: end;
+}
+
+#projectsView .split.project-selection-empty .project-card-main {
+  grid-area: main;
+}
+
+#projectsView .split.project-selection-empty .project-card-badges {
+  grid-area: badges;
+  min-width: 0;
+}
+
+#projectsView .split.project-selection-empty .project-meta-line {
+  grid-area: meta;
+  justify-content: flex-end;
+  white-space: nowrap;
+}
+
+#projectsView .panel {
+  padding: 10px;
+}
+
+#projectsView .panel-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+#projectsView .panel-head h2 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+#projectsView .project-list-tools {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+}
+
+#projectsView .segmented-control {
+  flex: 0 0 auto;
+}
+
+#projectsView .segment {
+  min-height: 28px;
+  padding: 0 9px;
+  font-size: 11px;
+}
+
+#projectsView #projectRows.project-table-mode .row {
+  padding: 7px 8px;
+}
+
+#projectsView #projectRows .row.active {
+  background: #f4faf8;
+  box-shadow: inset 3px 0 0 var(--brand);
+}
+
+#projectsView #projectRows .project-list-card,
+#projectsView #projectRows.project-table-mode .project-list-card {
+  grid-template-columns: minmax(170px, 1.25fr) auto minmax(132px, 0.75fr);
+  gap: 7px;
+  align-items: center;
+}
+
+#projectsView .project-card-main strong {
+  display: block;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+#projectsView .project-card-main .muted {
+  margin-top: 2px;
+  font-size: 11px;
+}
+
+#projectsView .project-card-badges {
+  justify-content: flex-start;
+  gap: 4px;
+}
+
+#projectsView .project-meta-line {
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+#projectsView #projectDetail {
+  min-height: 0;
+  align-self: start;
+}
+
+#tasksView .task-workspace {
+  align-items: start;
+}
+
+#tasksView .task-object-panel > h3,
+#tasksView .task-detail-panel > h3 {
+  min-height: 22px;
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 22px;
+}
+
+#tasksView .task-project-row {
+  min-height: 58px;
+}
+
+#tasksView .task-summary {
+  height: 96px;
+  min-height: 96px;
+  overflow: hidden;
+  align-items: center;
+}
+
+#tasksView .task-summary-title strong {
+  display: -webkit-box;
+  min-height: 2.5em;
+  overflow: hidden;
+  line-height: 1.25;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+#tasksView .task-summary-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#tasksView .task-workflow-head {
+  min-height: 48px;
+  padding: 6px 8px;
+  align-items: center;
+}
+
+#photosView .photo-reports-layout {
+  grid-template-columns: minmax(0, 1.65fr) minmax(240px, 0.35fr);
+  gap: 10px;
+  align-items: start;
+}
+
+#photosView .panel {
+  padding: 10px;
+}
+
+#photosView .photo-report-card {
+  grid-template-columns: minmax(220px, 0.75fr) minmax(260px, 1.25fr);
+  gap: 10px;
+  align-items: start;
+  padding: 8px;
+}
+
+#photosView .photo-report-main {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+#photosView .photo-report-heading {
+  display: grid;
+  gap: 5px;
+}
+
+#photosView .photo-report-heading > strong {
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+#photosView .photo-report-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+#photosView .photo-report-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+
+#photosView .photo-report-meta > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding-top: 5px;
+  border-top: 1px solid var(--line);
+}
+
+#photosView .photo-report-meta small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+#photosView .photo-report-meta strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+#photosView .media-grid {
+  grid-template-columns: repeat(4, minmax(58px, 1fr));
+  gap: 5px;
+}
+
+#photosView .media-grid .media-thumb:nth-child(n + 5) {
+  display: none;
+}
+
+#photosView .media-thumb {
+  gap: 3px;
+  min-height: 74px;
+  padding: 4px;
+  border-radius: 6px;
+}
+
+#photosView .media-thumb-visual {
+  position: relative;
+  display: grid;
+  min-height: 58px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #e7f1f1;
+}
+
+#photosView .media-thumb-visual > * {
+  grid-area: 1 / 1;
+}
+
+#photosView .media-thumb img,
+#photosView .media-thumb-placeholder {
+  width: 100%;
+  height: 58px;
+  min-height: 58px;
+  border-radius: 4px;
+}
+
+#photosView .media-thumb img {
+  position: relative;
+  z-index: 1;
+}
+
+#photosView .media-thumb-title {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 9px;
+}
+
+#photosView .media-more-button {
+  grid-column: 1 / -1;
+  min-height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--brand-strong);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+#eventsView #dataIntegrityPanel {
+  padding: 10px;
+}
+
+#eventsView #dataIntegrityPanel .panel-head {
+  align-items: center;
+  margin-bottom: 7px;
+}
+
+#eventsView #dataIntegrityPanel .panel-head h2 {
+  margin: 0 0 3px;
+}
+
+#eventsView #dataIntegrityPanel .panel-head p {
+  margin: 0;
+}
+
+#eventsView #dataIntegrityStats {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  margin-bottom: 7px;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+}
+
+#eventsView #dataIntegrityStats .metric {
+  flex: 1 0 102px;
+  min-height: 40px;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+#eventsView #dataIntegrityStats .metric span {
+  font-size: 10px;
+  font-weight: 650;
+}
+
+#eventsView #dataIntegrityStats .metric strong {
+  font-size: 17px;
+}
+
+#eventsView #dataIntegrityFilters {
+  margin-bottom: 7px;
+}
+
+#eventsView #dataIntegrityRows .row {
+  padding: 7px 9px;
+}
+
+#eventsView #dataIntegrityRows .stack-line {
+  margin-bottom: 3px;
+}
+
+#eventsView #dataIntegrityRows .material-main > .muted,
+#eventsView #dataIntegrityRows .material-main > div:not(.stack-line) {
+  margin-top: 3px;
+  line-height: 1.3;
+}
+
+#eventsView .timeline-item {
+  gap: 7px;
+}
+
+#eventsView .timeline-item > .stack-line,
+#eventsView .timeline-item > strong {
+  margin-bottom: 2px;
+}
+
+#eventsView .timeline-item p,
+#eventsView .timeline-item .muted {
+  margin-top: 0;
+  line-height: 1.35;
+}
+
+@media (max-width: 980px) {
+  #projectsView .split,
+  #photosView .photo-reports-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #projectsView #projectRows .project-list-card,
+  #projectsView #projectRows.project-table-mode .project-list-card {
+    grid-template-columns: minmax(170px, 1.2fr) auto minmax(132px, 0.8fr);
+  }
+
+  #photosView .photo-report-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 720px) {
+  #projectsView .panel-head {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #projectsView .project-list-tools {
+    justify-content: flex-start;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  #projectsView #projectRows .project-list-card,
+  #projectsView #projectRows.project-table-mode .project-list-card,
+  #photosView .photo-report-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #projectsView .split.project-selection-empty #projectRows .project-list-card {
+    grid-template-areas:
+      "main"
+      "badges"
+      "meta";
+  }
+
+  #projectsView .split.project-selection-empty .project-meta-line {
+    justify-content: flex-start;
+    white-space: normal;
+  }
+
+  #tasksView .task-summary {
+    height: 98px;
+    min-height: 98px;
+  }
+
+  #photosView .photo-report-meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #photosView .media-grid {
+    grid-template-columns: repeat(2, minmax(112px, 1fr));
+  }
+
+  #photosView .media-thumb-visual,
+  #photosView .media-thumb img,
+  #photosView .media-thumb-placeholder {
+    height: 84px;
+    min-height: 84px;
+  }
+
+  #eventsView #dataIntegrityPanel .panel-head {
+    align-items: stretch;
+  }
+}
