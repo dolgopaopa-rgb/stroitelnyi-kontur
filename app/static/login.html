@@ -110,18 +110,21 @@
 
       .password-tools {
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
         gap: 8px;
       }
 
       .password-tool {
-        min-height: 38px;
+        min-width: 0;
+        min-height: 40px;
         border: 1px solid var(--line);
         border-radius: 7px;
         background: #fff;
         color: var(--brand);
-        padding: 0 8px;
-        white-space: nowrap;
+        padding: 6px 12px;
+        line-height: 1.2;
+        white-space: normal;
+        overflow-wrap: anywhere;
       }
 
       .password-tool:focus {
@@ -190,6 +193,10 @@
 
         .password-tools {
           grid-template-columns: 1fr;
+        }
+
+        .password-tool {
+          min-height: 44px;
         }
       }
     </style>
