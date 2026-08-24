@@ -55,6 +55,18 @@ test("mobile photo reports are readable and images open for foreman and procurem
   const viewport = page.viewportSize();
   test.skip((viewport?.width || 0) > 820, "Mobile photo report layout is checked in the mobile project.");
 
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "canShare", {
+      configurable: true,
+      value: () => true,
+    });
+    Object.defineProperty(navigator, "share", {
+      configurable: true,
+      value: async (data: ShareData) => {
+        (window as any).__qaSharedFileName = data.files?.[0]?.name || "";
+      },
+    });
+  });
   await openApp(page, "/today");
   const fixture = await ensurePhotoReportFixture(page);
 
@@ -109,8 +121,43 @@ test("mobile photo reports are readable and images open for foreman and procurem
     await expect(counter, `${role}: next button must switch to the second slide`).toHaveText(/2 \/ [2-9]\d*/);
     await page.locator('[data-testid="media-preview-prev"]').click();
     await expect(counter, `${role}: previous button must switch back to the first slide`).toHaveText(/1 \/ [2-9]\d*/);
-    await expect(page.locator("#mediaPreviewCloseBottom"), `${role}: preview dialog must have an obvious close/back button`).toBeVisible();
-    await page.locator("#mediaPreviewCloseBottom").click();
-    await expect(previewDialog, `${role}: preview dialog must close without leaving the app`).not.toBeVisible();
+    const shareButton = page.locator('[data-testid="media-preview-share"]');
+    const closeButton = page.locator("#mediaPreviewCloseBottom");
+    await expect(shareButton, `${role}: preview dialog must expose file sharing`).toBeVisible();
+    await expect(closeButton, `${role}: preview dialog must have an obvious close/back button`).toBeVisible();
+
+    const previewLayout = await page.evaluate(() => {
+      const rect = (selector: string) => {
+        const node = document.querySelector(selector);
+        if (!node) return null;
+        const box = node.getBoundingClientRect();
+        return { top: box.top, left: box.left, right: box.right, bottom: box.bottom, width: box.width, height: box.height };
+      };
+      return {
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+        dialog: rect('[data-testid="media-preview-dialog"]'),
+        share: rect('[data-testid="media-preview-share"]'),
+        close: rect("#mediaPreviewCloseBottom"),
+      };
+    });
+    expect(previewLayout.dialog?.left || 0, `${role}: preview must stay inside the left edge`).toBeGreaterThanOrEqual(-1);
+    expect(previewLayout.dialog?.right || 0, `${role}: preview must stay inside the right edge`).toBeLessThanOrEqual(previewLayout.viewport.width + 1);
+    expect(previewLayout.dialog?.bottom || 0, `${role}: preview must stay inside the bottom edge`).toBeLessThanOrEqual(previewLayout.viewport.height + 1);
+    expect(previewLayout.share?.height || 0, `${role}: share touch target`).toBeGreaterThanOrEqual(44);
+    expect(previewLayout.close?.height || 0, `${role}: close touch target`).toBeGreaterThanOrEqual(44);
+
+    await page.evaluate(() => ((window as any).__qaSharedFileName = ""));
+    await shareButton.click();
+    await expect.poll(() => page.evaluate(() => (window as any).__qaSharedFileName || ""), {
+      message: `${role}: share button must pass the opened file to the system share sheet`,
+    }).toContain(fixture.fileName);
+
+    await page.evaluate(() => history.back());
+    await expect(previewDialog, `${role}: browser Back must close the preview without leaving the app`).not.toBeVisible();
+
+    await thumb.click();
+    await expect(previewDialog).toBeVisible();
+    await closeButton.click();
+    await expect(previewDialog, `${role}: explicit close must return to the app`).not.toBeVisible();
   }
 });

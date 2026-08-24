@@ -4107,12 +4107,21 @@
     }
     return '<a class="media-thumb file" href="'.concat(href, '" target="_blank" rel="noopener"><span>').concat(title, "</span></a>");
   }
-  function closeMediaPreview() {
-    const dialog = qs("#mediaPreviewDialog");
+  var MEDIA_PREVIEW_HISTORY_KEY = "konturMediaPreview";
+  function resetMediaPreview() {
     const body = qs("#mediaPreviewBody");
-    if (dialog == null ? void 0 : dialog.open) dialog.close();
     if (body) body.innerHTML = "";
     state.mediaPreview = { items: [], index: 0, touchX: null };
+  }
+  function closeMediaPreview({ fromHistory = false } = {}) {
+    var _a;
+    const dialog = qs("#mediaPreviewDialog");
+    if (!fromHistory && (dialog == null ? void 0 : dialog.open) && ((_a = history.state) == null ? void 0 : _a[MEDIA_PREVIEW_HISTORY_KEY])) {
+      history.back();
+      return;
+    }
+    if (dialog == null ? void 0 : dialog.open) dialog.close();
+    resetMediaPreview();
   }
   function mediaPreviewItemFromLink(link) {
     var _a;
@@ -4153,7 +4162,72 @@
       body.innerHTML = '<img src="'.concat(item.href, '" alt="').concat(escapeHtml(safeTitle), '" />');
     }
   }
+  function mediaPreviewFileName(item, mimeType = "") {
+    const rawName = String((item == null ? void 0 : item.title) || "Файл").split("/").pop() || "Файл";
+    const safeName = rawName.replace(/[<>:"/|?*]/g, "_").trim() || "Файл";
+    const dotIndex = safeName.lastIndexOf(".");
+    const extension = dotIndex > 0 ? safeName.slice(dotIndex + 1) : "";
+    if (/^[a-z0-9]{2,8}$/i.test(extension)) return safeName;
+    const extensionByType = {
+      "image/jpeg": ".jpg",
+      "image/png": ".png",
+      "image/webp": ".webp",
+      "video/mp4": ".mp4",
+      "application/pdf": ".pdf"
+    };
+    return "".concat(safeName).concat(extensionByType[mimeType] || "");
+  }
+  function downloadMediaPreviewItem(item, blob = null) {
+    const link = document.createElement("a");
+    const objectUrl = blob ? URL.createObjectURL(blob) : "";
+    link.href = objectUrl || item.href;
+    link.download = mediaPreviewFileName(item, (blob == null ? void 0 : blob.type) || item.mime || "");
+    link.hidden = true;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    if (objectUrl) setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+    showToast("Файл скачан. Его можно отправить через меню устройства.");
+  }
+  async function shareCurrentMediaPreview() {
+    const items = state.mediaPreview.items || [];
+    const item = items[Number(state.mediaPreview.index || 0)];
+    const button = qs("#mediaPreviewShare");
+    if (!(item == null ? void 0 : item.href) || (button == null ? void 0 : button.disabled)) return;
+    const previousLabel = (button == null ? void 0 : button.textContent) || "Поделиться";
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Подготавливаю...";
+    }
+    try {
+      const response = await fetch(item.href, { credentials: "same-origin", cache: "no-store" });
+      if (!response.ok) throw new Error("Не удалось загрузить файл: ".concat(response.status));
+      const blob = await response.blob();
+      const file = new File([blob], mediaPreviewFileName(item, blob.type || item.mime || ""), {
+        type: blob.type || item.mime || "application/octet-stream"
+      });
+      const shareData = { title: item.title || file.name, files: [file] };
+      if (typeof navigator.share === "function" && typeof navigator.canShare === "function" && navigator.canShare(shareData)) {
+        await navigator.share(shareData);
+        return;
+      }
+      downloadMediaPreviewItem(item, blob);
+    } catch (error) {
+      if ((error == null ? void 0 : error.name) === "AbortError") return;
+      try {
+        downloadMediaPreviewItem(item);
+      } catch (_downloadError) {
+        showToast("Не удалось подготовить файл. Откройте его отдельно и используйте меню устройства.");
+      }
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = previousLabel;
+      }
+    }
+  }
   function openMediaPreview({ href, title, mime, kind, items = [], index = 0 }) {
+    var _a;
     const dialog = qs("#mediaPreviewDialog");
     const body = qs("#mediaPreviewBody");
     if (!href || !dialog || !body) {
@@ -4163,7 +4237,12 @@
     const galleryItems = items.length ? items : [{ href, title, mime, kind }];
     state.mediaPreview = { items: galleryItems, index, touchX: null };
     renderMediaPreview();
-    if (!dialog.open) dialog.showModal();
+    if (!dialog.open) {
+      if (!((_a = history.state) == null ? void 0 : _a[MEDIA_PREVIEW_HISTORY_KEY])) {
+        history.pushState(__spreadProps(__spreadValues({}, history.state || {}), { [MEDIA_PREVIEW_HISTORY_KEY]: true }), "", location.href);
+      }
+      dialog.showModal();
+    }
   }
   function moveMediaPreview(delta) {
     const items = state.mediaPreview.items || [];
@@ -6200,7 +6279,7 @@
     showToast("Ничего не найдено. Попробуйте другое слово.");
   }
   function bindEvents() {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H, _I, _J, _K, _L, _M, _N, _O, _P, _Q, _R, _S;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H, _I, _J, _K, _L, _M, _N, _O, _P, _Q, _R, _S, _T, _U;
     bindStableDetailsTouchGuard();
     bindWheelPageScroll();
     initPullToRefresh();
@@ -6377,14 +6456,19 @@
     qsa("[data-close]").forEach((button) => button.addEventListener("click", () => qs("#".concat(button.dataset.close)).close()));
     (_u = qs("#mediaPreviewClose")) == null ? void 0 : _u.addEventListener("click", closeMediaPreview);
     (_v = qs("#mediaPreviewCloseBottom")) == null ? void 0 : _v.addEventListener("click", closeMediaPreview);
-    (_w = qs("#mediaPreviewPrev")) == null ? void 0 : _w.addEventListener("click", () => moveMediaPreview(-1));
-    (_x = qs("#mediaPreviewNext")) == null ? void 0 : _x.addEventListener("click", () => moveMediaPreview(1));
-    (_y = qs("#mediaPreviewDialog")) == null ? void 0 : _y.addEventListener("close", () => {
-      const body = qs("#mediaPreviewBody");
-      if (body) body.innerHTML = "";
-      state.mediaPreview = { items: [], index: 0, touchX: null };
+    (_w = qs("#mediaPreviewShare")) == null ? void 0 : _w.addEventListener("click", shareCurrentMediaPreview);
+    (_x = qs("#mediaPreviewPrev")) == null ? void 0 : _x.addEventListener("click", () => moveMediaPreview(-1));
+    (_y = qs("#mediaPreviewNext")) == null ? void 0 : _y.addEventListener("click", () => moveMediaPreview(1));
+    (_z = qs("#mediaPreviewDialog")) == null ? void 0 : _z.addEventListener("close", resetMediaPreview);
+    (_A = qs("#mediaPreviewDialog")) == null ? void 0 : _A.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      closeMediaPreview();
     });
-    (_z = qs("#mediaPreviewBody")) == null ? void 0 : _z.addEventListener(
+    window.addEventListener("popstate", () => {
+      var _a2;
+      if ((_a2 = qs("#mediaPreviewDialog")) == null ? void 0 : _a2.open) closeMediaPreview({ fromHistory: true });
+    });
+    (_B = qs("#mediaPreviewBody")) == null ? void 0 : _B.addEventListener(
       "touchstart",
       (event) => {
         var _a2, _b2, _c2;
@@ -6392,7 +6476,7 @@
       },
       { passive: true }
     );
-    (_A = qs("#mediaPreviewBody")) == null ? void 0 : _A.addEventListener(
+    (_C = qs("#mediaPreviewBody")) == null ? void 0 : _C.addEventListener(
       "touchend",
       (event) => {
         var _a2, _b2, _c2;
@@ -6404,14 +6488,14 @@
       },
       { passive: true }
     );
-    (_B = qs("#mediaPreviewDialog")) == null ? void 0 : _B.addEventListener("keydown", (event) => {
+    (_D = qs("#mediaPreviewDialog")) == null ? void 0 : _D.addEventListener("keydown", (event) => {
       if (event.key === "ArrowLeft") moveMediaPreview(-1);
       if (event.key === "ArrowRight") moveMediaPreview(1);
     });
-    (_C = qs("#estimateImagePrev")) == null ? void 0 : _C.addEventListener("click", () => moveEstimateGallery(-1));
-    (_D = qs("#estimateImageNext")) == null ? void 0 : _D.addEventListener("click", () => moveEstimateGallery(1));
+    (_E = qs("#estimateImagePrev")) == null ? void 0 : _E.addEventListener("click", () => moveEstimateGallery(-1));
+    (_F = qs("#estimateImageNext")) == null ? void 0 : _F.addEventListener("click", () => moveEstimateGallery(1));
     let estimateGalleryTouchX = null;
-    (_E = qs("#estimateImageStage")) == null ? void 0 : _E.addEventListener(
+    (_G = qs("#estimateImageStage")) == null ? void 0 : _G.addEventListener(
       "touchstart",
       (event) => {
         var _a2, _b2, _c2;
@@ -6419,7 +6503,7 @@
       },
       { passive: true }
     );
-    (_F = qs("#estimateImageStage")) == null ? void 0 : _F.addEventListener(
+    (_H = qs("#estimateImageStage")) == null ? void 0 : _H.addEventListener(
       "touchend",
       (event) => {
         var _a2, _b2, _c2;
@@ -6497,11 +6581,11 @@
       resetWorkExtraForm({ keepProject: true });
       await renderWorks();
     });
-    (_G = qs('#workExtraForm select[name="source_work_item_id"]')) == null ? void 0 : _G.addEventListener("change", applyWorkExtraRateSelection);
-    (_H = qs('#workExtraForm input[name="quantity"]')) == null ? void 0 : _H.addEventListener("input", recalcWorkExtraTotal);
-    (_I = qs('#workExtraForm input[name="unit_price"]')) == null ? void 0 : _I.addEventListener("input", recalcWorkExtraTotal);
-    (_J = qs("#cancelWorkExtraEditButton")) == null ? void 0 : _J.addEventListener("click", () => resetWorkExtraForm());
-    (_K = qs("#workExtraRows")) == null ? void 0 : _K.addEventListener("click", (event) => {
+    (_I = qs('#workExtraForm select[name="source_work_item_id"]')) == null ? void 0 : _I.addEventListener("change", applyWorkExtraRateSelection);
+    (_J = qs('#workExtraForm input[name="quantity"]')) == null ? void 0 : _J.addEventListener("input", recalcWorkExtraTotal);
+    (_K = qs('#workExtraForm input[name="unit_price"]')) == null ? void 0 : _K.addEventListener("input", recalcWorkExtraTotal);
+    (_L = qs("#cancelWorkExtraEditButton")) == null ? void 0 : _L.addEventListener("click", () => resetWorkExtraForm());
+    (_M = qs("#workExtraRows")) == null ? void 0 : _M.addEventListener("click", (event) => {
       const editButton = event.target.closest("[data-edit-work-extra]");
       if (!editButton) return;
       const row = state.workExtraItems.find((item) => Number(item.id) === Number(editButton.dataset.editWorkExtra));
@@ -7303,8 +7387,8 @@
       qs('#taskForm input[name="creator_id"]').value = currentUserId() || "";
       submitForm("taskDialog", "taskForm", "/api/tasks", "Задача создана");
     });
-    (_L = qs("#photoReportForm")) == null ? void 0 : _L.addEventListener("submit", submitPhotoReportForm);
-    (_M = qs("#objectRemarkForm")) == null ? void 0 : _M.addEventListener("submit", submitObjectRemarkForm);
+    (_N = qs("#photoReportForm")) == null ? void 0 : _N.addEventListener("submit", submitPhotoReportForm);
+    (_O = qs("#objectRemarkForm")) == null ? void 0 : _O.addEventListener("submit", submitObjectRemarkForm);
     qs("#estimateJobForm").addEventListener("submit", async (event) => {
       var _a2;
       event.preventDefault();
@@ -7527,7 +7611,7 @@
       switchView("materials");
       showToast("Материалы сметы загружены в объект");
     });
-    (_N = qs("#knowledgeFolderForm")) == null ? void 0 : _N.addEventListener("submit", async (event) => {
+    (_P = qs("#knowledgeFolderForm")) == null ? void 0 : _P.addEventListener("submit", async (event) => {
       event.preventDefault();
       const form = qs("#knowledgeFolderForm");
       try {
@@ -7600,20 +7684,20 @@
       event.preventDefault();
       submitForm("eventDialog", "eventForm", "/api/events", "Событие сохранено");
     });
-    (_O = qs("#appealsStatusFilter")) == null ? void 0 : _O.addEventListener("change", async (event) => {
+    (_Q = qs("#appealsStatusFilter")) == null ? void 0 : _Q.addEventListener("change", async (event) => {
       state.appealsStatusFilter = event.target.value;
       await renderAppeals();
     });
-    (_P = qs("#appealsOverdueOnly")) == null ? void 0 : _P.addEventListener("change", async (event) => {
+    (_R = qs("#appealsOverdueOnly")) == null ? void 0 : _R.addEventListener("change", async (event) => {
       state.appealsOverdueOnly = event.target.checked;
       await renderAppeals();
     });
-    (_Q = qs("#appealsArchivedOnly")) == null ? void 0 : _Q.addEventListener("change", async (event) => {
+    (_S = qs("#appealsArchivedOnly")) == null ? void 0 : _S.addEventListener("change", async (event) => {
       state.appealsArchivedOnly = event.target.checked;
       await renderAppeals();
     });
-    (_R = qs("#refreshAppealsButton")) == null ? void 0 : _R.addEventListener("click", () => renderAppeals().catch((error) => showToast(error.message)));
-    (_S = qs("#appealForm")) == null ? void 0 : _S.addEventListener("submit", async (event) => {
+    (_T = qs("#refreshAppealsButton")) == null ? void 0 : _T.addEventListener("click", () => renderAppeals().catch((error) => showToast(error.message)));
+    (_U = qs("#appealForm")) == null ? void 0 : _U.addEventListener("submit", async (event) => {
       var _a2, _b2;
       event.preventDefault();
       const form = qs("#appealForm");

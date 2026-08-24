@@ -5134,14 +5134,23 @@ function mediaPreviewLink(doc) {
   return `<a class="media-thumb file" href="${href}" target="_blank" rel="noopener"><span>${title}</span></a>`;
 }
 
-function closeMediaPreview() {
-  const dialog = qs("#mediaPreviewDialog");
+const MEDIA_PREVIEW_HISTORY_KEY = "konturMediaPreview";
+
+function resetMediaPreview() {
   const body = qs("#mediaPreviewBody");
-  if (dialog?.open) dialog.close();
   if (body) body.innerHTML = "";
   state.mediaPreview = { items: [], index: 0, touchX: null };
 }
 
+function closeMediaPreview({ fromHistory = false } = {}) {
+  const dialog = qs("#mediaPreviewDialog");
+  if (!fromHistory && dialog?.open && history.state?.[MEDIA_PREVIEW_HISTORY_KEY]) {
+    history.back();
+    return;
+  }
+  if (dialog?.open) dialog.close();
+  resetMediaPreview();
+}
 function mediaPreviewItemFromLink(link) {
   return {
     href: link.dataset.mediaUrl || link.getAttribute("href") || "",
@@ -5182,6 +5191,72 @@ function renderMediaPreview() {
   }
 }
 
+function mediaPreviewFileName(item, mimeType = "") {
+  const rawName = String(item?.title || "Файл").split("/").pop() || "Файл";
+  const safeName = rawName.replace(/[<>:"/|?*]/g, "_").trim() || "Файл";
+  const dotIndex = safeName.lastIndexOf(".");
+  const extension = dotIndex > 0 ? safeName.slice(dotIndex + 1) : "";
+  if (/^[a-z0-9]{2,8}$/i.test(extension)) return safeName;
+  const extensionByType = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "video/mp4": ".mp4",
+    "application/pdf": ".pdf",
+  };
+  return `${safeName}${extensionByType[mimeType] || ""}`;
+}
+
+function downloadMediaPreviewItem(item, blob = null) {
+  const link = document.createElement("a");
+  const objectUrl = blob ? URL.createObjectURL(blob) : "";
+  link.href = objectUrl || item.href;
+  link.download = mediaPreviewFileName(item, blob?.type || item.mime || "");
+  link.hidden = true;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  if (objectUrl) setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+  showToast("Файл скачан. Его можно отправить через меню устройства.");
+}
+
+async function shareCurrentMediaPreview() {
+  const items = state.mediaPreview.items || [];
+  const item = items[Number(state.mediaPreview.index || 0)];
+  const button = qs("#mediaPreviewShare");
+  if (!item?.href || button?.disabled) return;
+  const previousLabel = button?.textContent || "Поделиться";
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Подготавливаю...";
+  }
+  try {
+    const response = await fetch(item.href, { credentials: "same-origin", cache: "no-store" });
+    if (!response.ok) throw new Error(`Не удалось загрузить файл: ${response.status}`);
+    const blob = await response.blob();
+    const file = new File([blob], mediaPreviewFileName(item, blob.type || item.mime || ""), {
+      type: blob.type || item.mime || "application/octet-stream",
+    });
+    const shareData = { title: item.title || file.name, files: [file] };
+    if (typeof navigator.share === "function" && typeof navigator.canShare === "function" && navigator.canShare(shareData)) {
+      await navigator.share(shareData);
+      return;
+    }
+    downloadMediaPreviewItem(item, blob);
+  } catch (error) {
+    if (error?.name === "AbortError") return;
+    try {
+      downloadMediaPreviewItem(item);
+    } catch (_downloadError) {
+      showToast("Не удалось подготовить файл. Откройте его отдельно и используйте меню устройства.");
+    }
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = previousLabel;
+    }
+  }
+}
 function openMediaPreview({ href, title, mime, kind, items = [], index = 0 }) {
   const dialog = qs("#mediaPreviewDialog");
   const body = qs("#mediaPreviewBody");
@@ -5192,7 +5267,12 @@ function openMediaPreview({ href, title, mime, kind, items = [], index = 0 }) {
   const galleryItems = items.length ? items : [{ href, title, mime, kind }];
   state.mediaPreview = { items: galleryItems, index, touchX: null };
   renderMediaPreview();
-  if (!dialog.open) dialog.showModal();
+  if (!dialog.open) {
+    if (!history.state?.[MEDIA_PREVIEW_HISTORY_KEY]) {
+      history.pushState({ ...(history.state || {}), [MEDIA_PREVIEW_HISTORY_KEY]: true }, "", location.href);
+    }
+    dialog.showModal();
+  }
 }
 
 function moveMediaPreview(delta) {
@@ -8731,12 +8811,16 @@ function bindEvents() {
   qsa("[data-close]").forEach((button) => button.addEventListener("click", () => qs(`#${button.dataset.close}`).close()));
   qs("#mediaPreviewClose")?.addEventListener("click", closeMediaPreview);
   qs("#mediaPreviewCloseBottom")?.addEventListener("click", closeMediaPreview);
+  qs("#mediaPreviewShare")?.addEventListener("click", shareCurrentMediaPreview);
   qs("#mediaPreviewPrev")?.addEventListener("click", () => moveMediaPreview(-1));
   qs("#mediaPreviewNext")?.addEventListener("click", () => moveMediaPreview(1));
-  qs("#mediaPreviewDialog")?.addEventListener("close", () => {
-    const body = qs("#mediaPreviewBody");
-    if (body) body.innerHTML = "";
-    state.mediaPreview = { items: [], index: 0, touchX: null };
+  qs("#mediaPreviewDialog")?.addEventListener("close", resetMediaPreview);
+  qs("#mediaPreviewDialog")?.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeMediaPreview();
+  });
+  window.addEventListener("popstate", () => {
+    if (qs("#mediaPreviewDialog")?.open) closeMediaPreview({ fromHistory: true });
   });
   qs("#mediaPreviewBody")?.addEventListener(
     "touchstart",

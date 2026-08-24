@@ -1341,6 +1341,8 @@ print(json.dumps(report, ensure_ascii=False))
 
 async function runMobile(results, playwright) {
   const viewports = [
+    { width: 320, height: 568 },
+    { width: 360, height: 640 },
     { width: 390, height: 844 },
     { width: 375, height: 812 },
     { width: 430, height: 932 },
@@ -1371,8 +1373,8 @@ async function runMobile(results, playwright) {
           decisionCards: decisionCards.length,
         };
       });
-      const minExpectedWidth = Math.min(300, viewport.width - 40);
-      const todayGridOk = todayLayout.minGridChildWidth > minExpectedWidth && todayLayout.minDecisionWidth > minExpectedWidth;
+      const minExpectedWidth = Math.min(300, viewport.width - 50);
+      const todayGridOk = todayLayout.minGridChildWidth >= minExpectedWidth && todayLayout.minDecisionWidth >= minExpectedWidth;
       await page.locator('[data-testid="mobile-plus-button"]').click().catch(() => {});
       const actions = await page.locator('[data-testid="mobile-quick-actions"] [data-mobile-action]').count().catch(() => 0);
       const plusButton = page.locator('[data-testid="mobile-plus-button"].mobile-plus');
@@ -1450,9 +1452,9 @@ async function runMobile(results, playwright) {
       });
       const photosOk =
         photosLayout.layoutChildren > 0 &&
-        photosLayout.minLayoutWidth > minExpectedWidth &&
+        photosLayout.minLayoutWidth >= minExpectedWidth &&
         photosLayout.cards > 0 &&
-        photosLayout.minCardWidth > minExpectedWidth &&
+        photosLayout.minCardWidth >= minExpectedWidth &&
         photosLayout.thumbs > 0 &&
         photosLayout.minThumbWidth >= 120 &&
         photosLayout.responseStatus === 200 &&
@@ -1468,6 +1470,30 @@ async function runMobile(results, playwright) {
           const dialogVisible = await page.locator('[data-testid="media-preview-dialog"]').isVisible().catch(() => false);
           const imageVisible = await page.locator('[data-testid="media-preview-body"] img, [data-testid="media-preview-body"] video').first().isVisible().catch(() => false);
           const closeVisible = await page.locator("#mediaPreviewCloseBottom").isVisible().catch(() => false);
+          const shareVisible = await page.locator('[data-testid="media-preview-share"]').isVisible().catch(() => false);
+          const previewLayout = await page.evaluate(() => {
+            const rect = (selector) => {
+              const node = document.querySelector(selector);
+              if (!node) return null;
+              const box = node.getBoundingClientRect();
+              return { top: box.top, left: box.left, right: box.right, bottom: box.bottom, height: box.height };
+            };
+            return {
+              viewport: { width: window.innerWidth, height: window.innerHeight },
+              dialog: rect('[data-testid="media-preview-dialog"]'),
+              share: rect('[data-testid="media-preview-share"]'),
+              close: rect("#mediaPreviewCloseBottom"),
+            };
+          });
+          const previewBoundsOk =
+            Boolean(previewLayout.dialog) &&
+            previewLayout.dialog.left >= -1 &&
+            previewLayout.dialog.top >= -1 &&
+            previewLayout.dialog.right <= previewLayout.viewport.width + 1 &&
+            previewLayout.dialog.bottom <= previewLayout.viewport.height + 1;
+          const previewTouchTargetsOk =
+            Number(previewLayout.share?.height || 0) >= 44 &&
+            Number(previewLayout.close?.height || 0) >= 44;
           const counterBefore = await page.locator('[data-testid="media-preview-counter"]').innerText().catch(() => "");
           const nextVisible = await page.locator('[data-testid="media-preview-next"]').isVisible().catch(() => false);
           if (nextVisible) await page.locator('[data-testid="media-preview-next"]').click();
@@ -1480,11 +1506,34 @@ async function runMobile(results, playwright) {
             counterBefore !== counterAfter &&
             Number(afterMatch[2]) >= 2 &&
             Number(beforeMatch[2]) === Number(afterMatch[2]);
-          if (closeVisible) await page.locator("#mediaPreviewCloseBottom").click();
-          await page.waitForTimeout(100);
-          const closed = !(await page.locator('[data-testid="media-preview-dialog"]').isVisible().catch(() => false));
-          photoPreviewOk = dialogVisible && imageVisible && closeVisible && nextVisible && slideshowOk && closed;
-          photoPreviewDetails = `dialog=${dialogVisible}; media=${imageVisible}; close=${closeVisible}; next=${nextVisible}; counterBefore=${counterBefore}; counterAfter=${counterAfter}; slideshow=${slideshowOk}; closed=${closed}`;
+
+          await page.evaluate(() => history.back());
+          await page.locator('[data-testid="media-preview-dialog"]').waitFor({ state: "hidden", timeout: 2500 }).catch(() => {});
+          const backClosed = !(await page.locator('[data-testid="media-preview-dialog"]').isVisible().catch(() => false));
+
+          await page.waitForTimeout(150);
+          await thumb.evaluate((node) => node.click());
+          await page.locator('[data-testid="media-preview-dialog"]').waitFor({ state: "visible", timeout: 2500 }).catch(() => {});
+          const reopened = await page.locator('[data-testid="media-preview-dialog"]').isVisible().catch(() => false);
+          if (reopened) {
+            await page.evaluate(() => document.querySelector("#mediaPreviewCloseBottom")?.click());
+            await page.locator('[data-testid="media-preview-dialog"]').waitFor({ state: "hidden", timeout: 2500 }).catch(() => {});
+          }
+          const explicitClosed = !(await page.locator('[data-testid="media-preview-dialog"]').isVisible().catch(() => false));
+
+          photoPreviewOk =
+            dialogVisible &&
+            imageVisible &&
+            closeVisible &&
+            shareVisible &&
+            nextVisible &&
+            slideshowOk &&
+            previewBoundsOk &&
+            previewTouchTargetsOk &&
+            backClosed &&
+            reopened &&
+            explicitClosed;
+          photoPreviewDetails = `dialog=${dialogVisible}; media=${imageVisible}; close=${closeVisible}; share=${shareVisible}; bounds=${previewBoundsOk}; touchTargets=${previewTouchTargetsOk}; next=${nextVisible}; counterBefore=${counterBefore}; counterAfter=${counterAfter}; slideshow=${slideshowOk}; browserBackClosed=${backClosed}; reopened=${reopened}; explicitClosed=${explicitClosed}`;
         } catch (error) {
           photoPreviewDetails = String(error);
         }
@@ -1535,8 +1584,8 @@ async function runMobile(results, playwright) {
         projectHeroLayout.heroFound &&
         projectHeroLayout.objectCards > 0 &&
         projectHeroLayout.gridColumns === 1 &&
-        projectHeroLayout.mainWidth > minExpectedWidth &&
-        projectHeroLayout.statsWidth > minExpectedWidth &&
+        projectHeroLayout.mainWidth >= minExpectedWidth &&
+        projectHeroLayout.statsWidth >= minExpectedWidth &&
         projectHeroLayout.statCards >= 4 &&
         projectHeroLayout.minStatWidth >= 120 &&
         projectHeroLayout.verticalTextCount === 0;
