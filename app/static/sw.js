@@ -1,9 +1,15 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260824-compact-operational-screens";
+const CACHE_NAME = "stroitelnyi-kontur-20260825-crm-theme-v4";
 const CORE_ASSETS = [
   "/",
   "/static/styles.css?v=20260824-compact-operational-screens",
+  "/static/crm-theme.css?v=20260825-crm-theme-v4",
   "/static/app.compat.js?v=20260824-compact-operational-screens",
-  "/static/manifest.webmanifest?v=20260702-header-home-feedback-owner-delete",
+  "/static/manifest.webmanifest?v=20260825-crm-theme-v3",
+  "/static/assets/d2dom-logo-tile.svg?v=20260825-crm-theme",
+  "/static/assets/d2dom-logo-white.svg",
+  "/static/assets/fonts/Haval-Light.woff2",
+  "/static/assets/fonts/Involve-Regular.woff2",
+  "/static/assets/fonts/Involve-SemiBold.woff2",
   "/static/assets/g2-logo-192.png",
   "/static/assets/g2-logo-512.png"
 ];

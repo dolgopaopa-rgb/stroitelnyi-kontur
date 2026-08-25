@@ -3,11 +3,11 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#132126" />
+    <meta name="theme-color" content="#d9ddd8" />
     <meta name="robots" content="noindex" />
     <title>Вход - Строительный контур</title>
-    <link rel="manifest" href="/static/manifest.webmanifest?v=20260611-android-pwa" />
-    <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
+    <link rel="manifest" href="/static/manifest.webmanifest?v=20260825-crm-theme-v3" />
+    <link rel="icon" type="image/svg+xml" href="/static/assets/d2dom-logo-tile.svg?v=20260825-crm-theme" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
     <style>
       :root {
@@ -200,13 +200,17 @@
         }
       }
     </style>
+    <link rel="stylesheet" href="/static/crm-theme.css?v=20260825-crm-theme-v4" />
   </head>
   <body>
     <main class="login-shell">
       <section class="login-card" aria-labelledby="loginTitle">
         <div class="brand">
-          <strong id="loginTitle">Строительный контур</strong>
-          <span>Вход для сотрудников</span>
+          <img class="brand-logo" src="/static/assets/d2dom-logo-tile.svg" alt="" />
+          <div>
+            <strong id="loginTitle">Контур Д²ДОМ</strong>
+            <span>Рабочая система компании</span>
+          </div>
         </div>
 
         <form id="loginForm" novalidate>

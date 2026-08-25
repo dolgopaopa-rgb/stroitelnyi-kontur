@@ -3,47 +3,67 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#132126" />
+    <meta name="theme-color" content="#d9ddd8" />
     <meta name="application-name" content="Строительный контур" />
     <meta name="apple-mobile-web-app-title" content="Контур" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Строительный контур</title>
-    <link rel="manifest" href="/static/manifest.webmanifest?v=20260627-mobile-project-hero" />
-    <link rel="icon" type="image/png" href="/static/assets/g2-logo-192.png" />
+    <link rel="manifest" href="/static/manifest.webmanifest?v=20260825-crm-theme-v3" />
+    <link rel="icon" type="image/svg+xml" href="/static/assets/d2dom-logo-tile.svg?v=20260825-crm-theme" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
     <link rel="stylesheet" href="/static/styles.css?v=20260824-compact-operational-screens" />
+    <link rel="stylesheet" href="/static/crm-theme.css?v=20260825-crm-theme-v4" />
   </head>
   <body>
+    <svg class="icon-sprite" aria-hidden="true">
+      <symbol id="i-home" viewBox="0 0 24 24"><path d="m4 11 8-7 8 7v9h-6v-6h-4v6H4z"/></symbol>
+      <symbol id="i-signals" viewBox="0 0 24 24"><path d="M5 19V9M12 19V5M19 19v-7"/></symbol>
+      <symbol id="i-building" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h2M14 7h2M8 11h2M14 11h2M8 15h2M14 15h2"/></symbol>
+      <symbol id="i-estimate" viewBox="0 0 24 24"><path d="M6 3h12v18H6zM9 7h6M9 11h6M9 15h3"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+      <symbol id="i-works" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></symbol>
+      <symbol id="i-box" viewBox="0 0 24 24"><path d="m4 7 8-4 8 4v10l-8 4-8-4zM4 7l8 4 8-4M12 11v10"/></symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+      <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4 3 20h18zM12 9v5M12 17h.01"/></symbol>
+      <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 7h4l2-3h4l2 3h4v13H4z"/><circle cx="12" cy="13" r="4"/></symbol>
+      <symbol id="i-location" viewBox="0 0 24 24"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></symbol>
+      <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5a3 3 0 0 1 3-3h5v18H7a3 3 0 0 0-3 2zM20 5a3 3 0 0 0-3-3h-5v18h5a3 3 0 0 1 3 2z"/></symbol>
+      <symbol id="i-message" viewBox="0 0 24 24"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/></symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+      <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+      <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+    </svg>
     <div class="app" data-testid="qa-scroll-root">
       <aside class="sidebar">
         <a class="brand" href="/today" aria-label="На главную страницу">
-          <img class="brand-mark" src="/static/assets/g2-logo-192.png" alt="" />
-          <div>
-            <strong>Строительный контур</strong>
+          <span class="brand-mark-wrap"><img class="brand-mark" src="/static/assets/d2dom-logo-white.svg" alt="" /></span>
+          <div class="brand-copy">
+            <strong>Контур</strong>
+            <span>Д²ДОМ · строительство</span>
           </div>
         </a>
         <nav class="nav">
-          <button class="nav-button active" data-view="today" data-testid="nav-today"><span class="nav-icon">◉</span><span>Сегодня</span></button>
-          <button class="nav-button" data-view="dashboard" data-testid="nav-signals"><span class="nav-icon">⌂</span><span>Сигналы</span></button>
-          <button class="nav-button" data-view="projects" data-testid="nav-objects"><span class="nav-icon">▦</span><span>Объекты</span></button>
-          <button class="nav-button" data-view="estimates" data-testid="nav-estimates"><span class="nav-icon">≋</span><span>Сметы</span></button>
-          <button class="nav-button" data-view="tasks" data-testid="nav-tasks"><span class="nav-icon">✓</span><span>Задачи</span></button>
-          <button class="nav-button" data-view="works" data-testid="nav-works"><span class="nav-icon">▤</span><span>Работы</span></button>
-          <button class="nav-button" data-view="materials" data-testid="nav-materials"><span class="nav-icon">◫</span><span>Материалы</span></button>
-          <button class="nav-button" data-view="variations" data-testid="nav-variations"><span class="nav-icon">＋</span><span>Допработы</span></button>
-          <button class="nav-button" data-view="object_remarks" data-testid="nav-object-issues"><span class="nav-icon">!</span><span>Замечания</span></button>
-          <button class="nav-button" data-view="photos" data-testid="nav-photo-reports"><span class="nav-icon">▣</span><span>Фотоотчёты</span></button>
-          <button class="nav-button" data-view="locations" data-testid="nav-locations"><span class="nav-icon">⌖</span><span>Локации</span></button>
-          <button class="nav-button" data-view="documents" data-testid="nav-documents"><span class="nav-icon">◧</span><span>База знаний</span></button>
-          <button class="nav-button" data-view="feedback" data-testid="nav-feedback"><span class="nav-icon">✉</span><span>Обратная связь по программе</span></button>
-          <button class="nav-button" data-view="events"><span class="nav-icon">◷</span><span>Журнал</span></button>
+          <button class="nav-button active" data-view="today" data-testid="nav-today"><span class="nav-icon"><svg><use href="#i-home"/></svg></span><span>Сегодня</span></button>
+          <button class="nav-button" data-view="dashboard" data-testid="nav-signals"><span class="nav-icon"><svg><use href="#i-signals"/></svg></span><span>Сигналы</span></button>
+          <button class="nav-button" data-view="projects" data-testid="nav-objects"><span class="nav-icon"><svg><use href="#i-building"/></svg></span><span>Объекты</span></button>
+          <button class="nav-button" data-view="estimates" data-testid="nav-estimates"><span class="nav-icon"><svg><use href="#i-estimate"/></svg></span><span>Сметы</span></button>
+          <button class="nav-button" data-view="tasks" data-testid="nav-tasks"><span class="nav-icon"><svg><use href="#i-check"/></svg></span><span>Задачи</span></button>
+          <button class="nav-button" data-view="works" data-testid="nav-works"><span class="nav-icon"><svg><use href="#i-works"/></svg></span><span>Работы</span></button>
+          <button class="nav-button" data-view="materials" data-testid="nav-materials"><span class="nav-icon"><svg><use href="#i-box"/></svg></span><span>Материалы</span></button>
+          <button class="nav-button" data-view="variations" data-testid="nav-variations"><span class="nav-icon"><svg><use href="#i-plus"/></svg></span><span>Допработы</span></button>
+          <button class="nav-button" data-view="object_remarks" data-testid="nav-object-issues"><span class="nav-icon"><svg><use href="#i-alert"/></svg></span><span>Замечания</span></button>
+          <button class="nav-button" data-view="photos" data-testid="nav-photo-reports"><span class="nav-icon"><svg><use href="#i-camera"/></svg></span><span>Фотоотчёты</span></button>
+          <button class="nav-button" data-view="locations" data-testid="nav-locations"><span class="nav-icon"><svg><use href="#i-location"/></svg></span><span>Локации</span></button>
+          <button class="nav-button" data-view="documents" data-testid="nav-documents"><span class="nav-icon"><svg><use href="#i-book"/></svg></span><span>База знаний</span></button>
+          <button class="nav-button" data-view="feedback" data-testid="nav-feedback"><span class="nav-icon"><svg><use href="#i-message"/></svg></span><span>Обратная связь</span></button>
+          <button class="nav-button" data-view="events"><span class="nav-icon"><svg><use href="#i-clock"/></svg></span><span>Журнал</span></button>
         </nav>
       </aside>
 
       <main class="main" data-testid="qa-main-content">
         <header class="topbar">
-          <button class="icon shell-toggle" id="sidebarToggle" type="button" aria-label="Свернуть меню">☰</button>
+          <button class="icon shell-toggle" id="sidebarToggle" type="button" aria-label="Свернуть меню"><svg aria-hidden="true"><use href="#i-menu"/></svg></button>
           <div class="topbar-title">
             <h1 id="pageTitle">Сегодня</h1>
           </div>
@@ -526,11 +546,11 @@
     </div>
 
     <nav class="mobile-bottom-nav" aria-label="Мобильное меню" data-testid="mobile-bottom-nav">
-      <button type="button" data-view-target="today"><span>⌂</span>Сегодня</button>
-      <button type="button" data-view-target="projects"><span>▦</span>Объекты</button>
-      <button class="mobile-plus" type="button" id="mobileQuickActionToggle" data-testid="mobile-plus-button"><span>+</span></button>
-      <button type="button" data-view-target="dashboard"><span>◈</span>Уведомления</button>
-      <button type="button" id="mobileMoreButton" data-testid="mobile-more-button"><span>☰</span>Ещё</button>
+      <button type="button" data-view-target="today"><span><svg><use href="#i-home"/></svg></span>Сегодня</button>
+      <button type="button" data-view-target="projects"><span><svg><use href="#i-building"/></svg></span>Объекты</button>
+      <button class="mobile-plus" type="button" id="mobileQuickActionToggle" data-testid="mobile-plus-button" aria-label="Быстрые действия"><span><svg><use href="#i-plus"/></svg></span></button>
+      <button type="button" data-view-target="dashboard"><span><svg><use href="#i-signals"/></svg></span>Сигналы</button>
+      <button type="button" id="mobileMoreButton" data-testid="mobile-more-button"><span><svg><use href="#i-menu"/></svg></span>Ещё</button>
     </nav>
     <div class="mobile-quick-sheet" id="mobileQuickSheet" hidden>
       <div class="mobile-quick-sheet-panel">

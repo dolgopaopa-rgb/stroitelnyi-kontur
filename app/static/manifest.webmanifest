@@ -9,9 +9,15 @@
   "display": "standalone",
   "display_override": ["standalone", "browser"],
   "orientation": "portrait",
-  "background_color": "#eef3f4",
-  "theme_color": "#132126",
+  "background_color": "#d9ddd8",
+  "theme_color": "#d9ddd8",
   "icons": [
+    {
+      "src": "/static/assets/d2dom-logo-tile.svg?v=20260825-crm-theme",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
     {
       "src": "/static/assets/g2-logo-192.png",
       "sizes": "192x192",
@@ -30,25 +36,25 @@
       "name": "Сегодня",
       "short_name": "Сегодня",
       "url": "/?source=pwa&view=today",
-      "icons": [{ "src": "/static/assets/g2-logo-192.png", "sizes": "192x192" }]
+      "icons": [{ "src": "/static/assets/d2dom-logo-tile.svg?v=20260825-crm-theme", "sizes": "any", "type": "image/svg+xml" }]
     },
     {
       "name": "Объекты",
       "short_name": "Объекты",
       "url": "/?source=pwa&view=projects",
-      "icons": [{ "src": "/static/assets/g2-logo-192.png", "sizes": "192x192" }]
+      "icons": [{ "src": "/static/assets/d2dom-logo-tile.svg?v=20260825-crm-theme", "sizes": "any", "type": "image/svg+xml" }]
     },
     {
       "name": "Задачи",
       "short_name": "Задачи",
       "url": "/?source=pwa&view=tasks",
-      "icons": [{ "src": "/static/assets/g2-logo-192.png", "sizes": "192x192" }]
+      "icons": [{ "src": "/static/assets/d2dom-logo-tile.svg?v=20260825-crm-theme", "sizes": "any", "type": "image/svg+xml" }]
     },
     {
       "name": "Материалы",
       "short_name": "Материалы",
       "url": "/?source=pwa&view=materials",
-      "icons": [{ "src": "/static/assets/g2-logo-192.png", "sizes": "192x192" }]
+      "icons": [{ "src": "/static/assets/d2dom-logo-tile.svg?v=20260825-crm-theme", "sizes": "any", "type": "image/svg+xml" }]
     }
   ],
   "categories": ["business", "productivity"],
