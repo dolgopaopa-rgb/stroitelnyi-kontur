@@ -3197,7 +3197,13 @@ function isEstimateImageFile(file) {
 function renderEstimateJobFiles(files = [], jobId = "", canManageFiles = false) {
   if (!Array.isArray(files) || !files.length) return "";
   return `
-    <div class="estimate-job-files">
+    <details class="estimate-files-group" data-testid="estimate-files-group">
+      <summary>
+        <span>Вложения</span>
+        <strong>${files.length}</strong>
+        <small>Показать файлы</small>
+      </summary>
+      <div class="estimate-job-files">
       ${files
         .map(
           (file) => {
@@ -3221,9 +3227,7 @@ function renderEstimateJobFiles(files = [], jobId = "", canManageFiles = false) 
               <strong>${title}</strong>
               ${meta}
             </button>
-            ${printButton}
-            ${replaceButton}
-            ${deleteButton}
+            <div class="estimate-file-actions">${printButton}${replaceButton}${deleteButton}</div>
           </div>`;
             }
             return `
@@ -3233,14 +3237,13 @@ function renderEstimateJobFiles(files = [], jobId = "", canManageFiles = false) 
               ${meta}
               <span>${actionLabel}</span>
             </a>
-            ${printButton}
-            ${replaceButton}
-            ${deleteButton}
+            <div class="estimate-file-actions">${printButton}${replaceButton}${deleteButton}</div>
           </div>`;
           }
         )
         .join("")}
-    </div>`;
+      </div>
+    </details>`;
 }
 
 function renderEstimateGallery() {
@@ -3575,6 +3578,8 @@ function renderTaskNextAction(task, options = {}) {
 
 async function renderDashboard() {
   const [summary, tasks, materialRows] = await Promise.all([api("/api/summary"), api("/api/tasks"), api("/api/material-requests")]);
+  const dashboardView = qs("#dashboardView");
+  if (dashboardView) dashboardView.dataset.role = currentRoleBase();
   const roleTasks = visibleTasksForRole(tasks);
   const openRoleTasks = roleTasks.filter(isOpenTask);
   state.lastTasks = roleTasks;

@@ -2661,7 +2661,7 @@
   }
   function renderEstimateJobFiles(files = [], jobId = "", canManageFiles = false) {
     if (!Array.isArray(files) || !files.length) return "";
-    return '\n    <div class="estimate-job-files">\n      '.concat(files.map(
+    return '\n    <details class="estimate-files-group" data-testid="estimate-files-group">\n      <summary>\n        <span>Вложения</span>\n        <strong>'.concat(files.length, '</strong>\n        <small>Показать файлы</small>\n      </summary>\n      <div class="estimate-job-files">\n      ').concat(files.map(
       (file) => {
         var _a;
         const title = escapeHtml(file.title || file.file_name || "Файл");
@@ -2678,11 +2678,11 @@
         const canPreview = canPreviewInlineFile(file.file_name || file.title || "", file.mime_type);
         const actionLabel = fileOpenAction(file.file_name || file.title || "", file.mime_type);
         if (isEstimateImageFile(file)) {
-          return '\n          <div class="estimate-file-card '.concat(isCurrent ? "" : "previous-version", '">\n            <button class="estimate-file-button" type="button" data-estimate-gallery-job="').concat(escapeAttr(jobId), '" data-estimate-gallery-file="').concat(escapeAttr(file.id), '">\n              <strong>').concat(title, "</strong>\n              ").concat(meta, "\n            </button>\n            ").concat(printButton, "\n            ").concat(replaceButton, "\n            ").concat(deleteButton, "\n          </div>");
+          return '\n          <div class="estimate-file-card '.concat(isCurrent ? "" : "previous-version", '">\n            <button class="estimate-file-button" type="button" data-estimate-gallery-job="').concat(escapeAttr(jobId), '" data-estimate-gallery-file="').concat(escapeAttr(file.id), '">\n              <strong>').concat(title, "</strong>\n              ").concat(meta, '\n            </button>\n            <div class="estimate-file-actions">').concat(printButton).concat(replaceButton).concat(deleteButton, "</div>\n          </div>");
         }
-        return '\n          <div class="estimate-file-card '.concat(isCurrent ? "" : "previous-version", '">\n            <a href="').concat(href, '" target="_blank" rel="noopener noreferrer" ').concat(canPreview ? "" : "download", ">\n              <strong>").concat(escapeHtml(file.title || file.file_name || "Файл"), "</strong>\n              ").concat(meta, "\n              <span>").concat(actionLabel, "</span>\n            </a>\n            ").concat(printButton, "\n            ").concat(replaceButton, "\n            ").concat(deleteButton, "\n          </div>");
+        return '\n          <div class="estimate-file-card '.concat(isCurrent ? "" : "previous-version", '">\n            <a href="').concat(href, '" target="_blank" rel="noopener noreferrer" ').concat(canPreview ? "" : "download", ">\n              <strong>").concat(escapeHtml(file.title || file.file_name || "Файл"), "</strong>\n              ").concat(meta, "\n              <span>").concat(actionLabel, '</span>\n            </a>\n            <div class="estimate-file-actions">').concat(printButton).concat(replaceButton).concat(deleteButton, "</div>\n          </div>");
       }
-    ).join(""), "\n    </div>");
+    ).join(""), "\n      </div>\n    </details>");
   }
   function renderEstimateGallery() {
     const gallery = state.estimateGallery || { files: [], index: 0 };
@@ -2936,6 +2936,8 @@
   }
   async function renderDashboard() {
     const [summary, tasks, materialRows] = await Promise.all([api("/api/summary"), api("/api/tasks"), api("/api/material-requests")]);
+    const dashboardView = qs("#dashboardView");
+    if (dashboardView) dashboardView.dataset.role = currentRoleBase();
     const roleTasks = visibleTasksForRole(tasks);
     const openRoleTasks = roleTasks.filter(isOpenTask);
     state.lastTasks = roleTasks;
@@ -3549,33 +3551,7 @@
   function renderPhotoReportCard(report) {
     const attachments = (report.attachments || []).filter((doc) => String(doc.mime_type || "").startsWith("image/") || String(doc.mime_type || "").startsWith("video/"));
     const hiddenAttachmentCount = Math.max(attachments.length - 4, 0);
-    return `
-    <article class="row photo-report-card" data-testid="photo-report-card">
-      <div class="photo-report-main">
-        <div class="photo-report-heading">
-          <strong>${escapeHtml(report.project_title || "Объект не указан")}</strong>
-          <span class="photo-report-badges">
-            ${pill(statusLabel(report.status || "review"), statusLevel(report.status || "review"))}
-            ${pill(formatDateRu(report.report_date), "blue")}
-          </span>
-        </div>
-        <div class="photo-report-meta">
-          <span><small>Автор</small><strong>${escapeHtml(report.author_name || "не указан")}</strong></span>
-          <span><small>Этап</small><strong>${escapeHtml(report.stage || "не указан")}</strong></span>
-          <span><small>Зоны</small><strong>${escapeHtml(report.zones || "не указаны")}</strong></span>
-        </div>
-        ${report.comment ? `<p>${escapeHtml(report.comment)}</p>` : ""}
-      </div>
-      <div class="media-grid">${
-        attachments.length
-          ? `${attachments.map(mediaPreviewLink).join("")}${
-              hiddenAttachmentCount
-                ? `<button class="media-more-button" type="button" data-open-media-gallery="4">Ещё ${hiddenAttachmentCount} ${pluralRu(hiddenAttachmentCount, "файл", "файла", "файлов")}</button>`
-                : ""
-            }`
-          : `<span class="muted">Фото/видео не прикреплены.</span>`
-      }</div>
-    </article>`;
+    return '\n    <article class="row photo-report-card" data-testid="photo-report-card">\n      <div class="photo-report-main">\n        <div class="photo-report-heading">\n          <strong>'.concat(escapeHtml(report.project_title || "Объект не указан"), '</strong>\n          <span class="photo-report-badges">\n            ').concat(pill(statusLabel(report.status || "review"), statusLevel(report.status || "review")), "\n            ").concat(pill(formatDateRu(report.report_date), "blue"), '\n          </span>\n        </div>\n        <div class="photo-report-meta">\n          <span><small>Автор</small><strong>').concat(escapeHtml(report.author_name || "не указан"), "</strong></span>\n          <span><small>Этап</small><strong>").concat(escapeHtml(report.stage || "не указан"), "</strong></span>\n          <span><small>Зоны</small><strong>").concat(escapeHtml(report.zones || "не указаны"), "</strong></span>\n        </div>\n        ").concat(report.comment ? "<p>".concat(escapeHtml(report.comment), "</p>") : "", '\n      </div>\n      <div class="media-grid">').concat(attachments.length ? "".concat(attachments.map(mediaPreviewLink).join("")).concat(hiddenAttachmentCount ? '<button class="media-more-button" type="button" data-open-media-gallery="4">Ещё '.concat(hiddenAttachmentCount, " ").concat(pluralRu(hiddenAttachmentCount, "файл", "файла", "файлов"), "</button>") : "") : '<span class="muted">Фото/видео не прикреплены.</span>', "</div>\n    </article>");
   }
   function projectsWithoutTodayPhoto() {
     return roleScopedProjects(state.projects).filter((project) => project.status !== "archived").filter((project) => !isTodayDate(latestPhotoReportDate(project.id)));
@@ -3628,10 +3604,10 @@
     rowsNode.innerHTML = filtered.length ? filtered.map(renderObjectRemarkCard).join("") : renderRemarkEmptyState();
   }
   async function renderProjects() {
+    var _a;
     const projects = state.projectListMode === "archive" ? state.archivedProjects : state.projects;
-    var _a2;
     const hasSelectedProject = state.selectedProjectId && projects.some((project) => Number(project.id) === Number(state.selectedProjectId));
-    (_a2 = qs("#projectsView .split")) == null ? void 0 : _a2.classList.toggle("project-selection-empty", !hasSelectedProject);
+    (_a = qs("#projectsView .split")) == null ? void 0 : _a.classList.toggle("project-selection-empty", !hasSelectedProject);
     qs("#projectListTitle").textContent = state.projectListMode === "archive" ? "Архив объектов" : "Список объектов";
     qsa("[data-project-list]").forEach((button) => button.classList.toggle("active", button.dataset.projectList === state.projectListMode));
     const rowsNode = qs("#projectRows");
@@ -5909,16 +5885,7 @@
         const requestedIndex = Number(mediaMoreButton.dataset.openMediaGallery || 0);
         const startIndex = Math.min(Math.max(requestedIndex, 0), Math.max(galleryItems.length - 1, 0));
         const startItem = galleryItems[startIndex];
-        if (startItem) {
-          openMediaPreview({
-            href: startItem.href,
-            title: startItem.title,
-            mime: startItem.mime,
-            kind: startItem.kind,
-            items: galleryItems,
-            index: startIndex
-          });
-        }
+        if (startItem) openMediaPreview(__spreadProps(__spreadValues({}, startItem), { items: galleryItems, index: startIndex }));
         return;
       }
       const mediaPreviewButton = event.target.closest("[data-media-preview]");
