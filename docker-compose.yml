@@ -26,7 +26,7 @@ services:
       YANDEX_DISK_TOKEN: ${YANDEX_DISK_TOKEN:-}
       YANDEX_DISK_ROOT: ${YANDEX_DISK_ROOT:-/Stroitelnyi kontur}
       APP_PUBLIC_URL: ${APP_PUBLIC_URL:-}
-      MAX_API_URL: ${MAX_API_URL:-https://platform-api.max.ru}
+      MAX_API_URL: ${MAX_API_URL:-https://platform-api2.max.ru}
       MAX_TOKEN: ${MAX_TOKEN:-}
       MAX_FEEDBACK_INGEST_TOKEN: ${MAX_FEEDBACK_INGEST_TOKEN:-}
       MAX_FEEDBACK_ALLOW_BOT_TOKEN: ${MAX_FEEDBACK_ALLOW_BOT_TOKEN:-1}

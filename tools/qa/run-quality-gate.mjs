@@ -271,8 +271,9 @@ async function runUnit(results) {
   const py = run("python", ["-m", "py_compile", "app/server.py", "app/database.py", "app/appeals.py"]);
   const db = run("python", ["-c", "import sys; sys.path.insert(0, 'app'); from database import init_db; init_db(); print('db ok')"]);
   const appeals = run("python", ["-m", "unittest", "discover", "-s", "tests", "-p", "test_appeals.py"]);
-  const failed = py.code !== 0 || db.code !== 0 || appeals.code !== 0;
-  add(results, "QA Orchestrator Agent", "Unit smoke", failed ? "FAIL" : "OK", [py.output, db.output, appeals.output].filter(Boolean).join("\n") || "ok", failed ? "blocker" : "normal");
+  const maxNotifications = run("python", ["-m", "unittest", "discover", "-s", "tests", "-p", "test_max_notifications.py"]);
+  const failed = py.code !== 0 || db.code !== 0 || appeals.code !== 0 || maxNotifications.code !== 0;
+  add(results, "QA Orchestrator Agent", "Unit smoke", failed ? "FAIL" : "OK", [py.output, db.output, appeals.output, maxNotifications.output].filter(Boolean).join("\n") || "ok", failed ? "blocker" : "normal");
   runFeedbackFixStaticChecks(results);
 }
 

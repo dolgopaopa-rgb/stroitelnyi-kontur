@@ -34,7 +34,14 @@ UPLOAD_DIR = DATA_DIR / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 DATA_INTEGRITY_BACKUP_DIR = APP_DIR.parent / "backups" / "data-integrity"
 YANDEX_DISK_FILE_PREFIX = "yadisk:"
-MAX_API_URL = os.environ.get("MAX_API_URL", "https://platform-api.max.ru").rstrip("/")
+def normalized_max_api_url(value: str | None) -> str:
+    url = str(value or "https://platform-api2.max.ru").strip().rstrip("/")
+    if url == "https://platform-api.max.ru":
+        return "https://platform-api2.max.ru"
+    return url
+
+
+MAX_API_URL = normalized_max_api_url(os.environ.get("MAX_API_URL"))
 APP_PUBLIC_URL = os.environ.get("APP_PUBLIC_URL", "").rstrip("/")
 SESSION_COOKIE_NAME = "kontur_session"
 SESSION_TTL_SECONDS = int(os.environ.get("APP_SESSION_TTL_SECONDS", str(90 * 24 * 60 * 60)) or 0)
@@ -1464,17 +1471,20 @@ def max_message_payload(text: str) -> bytes:
     return payload.encode("ascii")
 
 
-def send_max_message(chat_id: str, text: str) -> tuple[bool, str]:
+def send_max_message(recipient_id: str, text: str, *, recipient_type: str = "chat") -> tuple[bool, str]:
     token = os.environ.get("MAX_TOKEN", "").strip()
     if not token:
         return False, "MAX_TOKEN is not configured"
-    if not chat_id:
-        return False, "MAX chat is not bound"
+    if not recipient_id:
+        return False, "MAX recipient is not bound"
+    if recipient_type not in {"chat", "user"}:
+        return False, "Unknown MAX recipient type"
     text = normalize_max_message_text(text)
     if max_message_text_is_corrupted(text):
         return False, "MAX message text looks corrupted; refused to send"
     payload = max_message_payload(text)
-    url = f"{MAX_API_URL}/messages?{urlencode({'chat_id': chat_id})}"
+    recipient_key = "user_id" if recipient_type == "user" else "chat_id"
+    url = f"{MAX_API_URL}/messages?{urlencode({recipient_key: recipient_id})}"
     request = Request(
         url,
         data=payload,
@@ -1498,15 +1508,15 @@ def send_max_message(chat_id: str, text: str) -> tuple[bool, str]:
 def enqueue_max_notification(
     *,
     notification_id: int,
-    chat_id: str,
+    recipient_id: str,
     project_id: int | None,
     title: str,
     text: str,
     related_type: str | None,
     related_id: int | None,
 ) -> None:
-    clean_chat_id = str(chat_id or "").strip()
-    if not clean_chat_id:
+    clean_user_id = str(recipient_id or "").strip()
+    if not clean_user_id:
         return
 
     url = notification_url(project_id, related_type, related_id)
@@ -1517,7 +1527,7 @@ def enqueue_max_notification(
 
     def worker() -> None:
         time.sleep(0.4)
-        ok, error = send_max_message(clean_chat_id, message)
+        ok, error = send_max_message(clean_user_id, message, recipient_type="user")
         update_notification_max_status(notification_id, "sent" if ok else "error", error)
 
     threading.Thread(target=worker, daemon=True).start()
@@ -1553,7 +1563,7 @@ def create_notification(
     )
     enqueue_max_notification(
         notification_id=int(cursor.lastrowid),
-        chat_id=max_chat_id,
+        recipient_id=max_chat_id,
         project_id=project_id,
         title=title,
         text=text,
