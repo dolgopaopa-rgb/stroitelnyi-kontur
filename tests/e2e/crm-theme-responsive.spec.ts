@@ -1,11 +1,22 @@
 import { expect, test } from "@playwright/test";
 import { openApp } from "../helpers/auth";
 
-const widths = [320, 360, 390, 430, 768, 1024, 1280, 1440];
-const routes = ["/today", "/signals", "/objects", "/tasks", "/photo-reports"];
+const widths = [320, 360, 375, 390, 430, 720, 768, 820, 821, 832, 852, 979, 980, 981, 1024, 1099, 1100, 1101, 1280, 1440, 1920];
+const routes = ["/today", "/signals", "/objects", "/tasks", "/photo-reports", "/settings"];
 
-test("CRM theme stays usable from 320 to 1440 px", async ({ page }, testInfo) => {
+test("CRM theme stays usable from 320 to 1920 px", async ({ page }, testInfo) => {
+  test.setTimeout(180_000);
+  await page.addInitScript(() => Reflect.deleteProperty(Navigator.prototype, "serviceWorker"));
   const artifactDir = testInfo.outputPath("crm-theme");
+  const externalRequests = new Set<string>();
+  const consoleErrors: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (!["127.0.0.1", "localhost"].includes(url.hostname)) externalRequests.add(url.origin);
+  });
+  page.on("console", (message) => {
+    if (message.type() === "error" && !message.text().includes("ERR_NO_BUFFER_SPACE")) consoleErrors.push(message.text());
+  });
 
   for (const width of widths) {
     await page.setViewportSize({ width, height: width <= 430 ? 844 : 900 });
@@ -42,6 +53,10 @@ test("CRM theme stays usable from 320 to 1440 px", async ({ page }, testInfo) =>
         const sidebar = document.querySelector<HTMLElement>(".sidebar");
         const mobileNav = document.querySelector<HTMLElement>(".mobile-bottom-nav");
         const pageTitle = document.querySelector<HTMLElement>("#pageTitle");
+        const main = document.querySelector<HTMLElement>(".main");
+        const activeView = document.querySelector<HTMLElement>(".view.active");
+        const mainRect = main?.getBoundingClientRect();
+        const activeViewRect = activeView?.getBoundingClientRect();
         const overflowingElements = [...document.querySelectorAll<HTMLElement>("body *")]
           .filter(visible)
           .map((node) => {
@@ -65,6 +80,8 @@ test("CRM theme stays usable from 320 to 1440 px", async ({ page }, testInfo) =>
           smallTouchTargets,
           sidebarVisible: Boolean(sidebar && visible(sidebar)),
           mobileNavVisible: Boolean(mobileNav && visible(mobileNav)),
+          mainVisible: !mainRect || (mainRect.top < window.innerHeight && mainRect.bottom > 0),
+          activeViewVisible: !activeViewRect || (activeViewRect.top < window.innerHeight && activeViewRect.bottom > 0),
           themeLoaded: [...document.styleSheets].some((sheet) => String(sheet.href || "").includes("crm-theme.css")),
           titleFits: !pageTitle || pageTitle.scrollWidth <= pageTitle.clientWidth + 1,
           titleMetrics: pageTitle ? {
@@ -85,9 +102,11 @@ test("CRM theme stays usable from 320 to 1440 px", async ({ page }, testInfo) =>
         `${route} at ${width}px has horizontal overflow: ${JSON.stringify(geometry.overflowingElements)}`,
       ).toBeLessThanOrEqual(1);
       expect(geometry.clippedCommands, `${route} at ${width}px has clipped button text`).toEqual([]);
-      expect(geometry.sidebarVisible, `${route} at ${width}px desktop sidebar state`).toBe(width > 820);
-      expect(geometry.mobileNavVisible, `${route} at ${width}px mobile navigation state`).toBe(width <= 820);
-      if (width <= 820) {
+      expect(geometry.sidebarVisible, `${route} at ${width}px desktop sidebar state`).toBe(width > 1100);
+      expect(geometry.mobileNavVisible, `${route} at ${width}px mobile navigation state`).toBe(width <= 1100);
+      expect(geometry.mainVisible, `${route} at ${width}px main content starts outside the viewport`).toBeTruthy();
+      expect(geometry.activeViewVisible, `${route} at ${width}px active view starts outside the viewport`).toBeTruthy();
+      if (width <= 1100) {
         expect(geometry.smallTouchTargets, `${route} at ${width}px has touch targets below 44px`).toEqual([]);
       }
     }
@@ -95,6 +114,8 @@ test("CRM theme stays usable from 320 to 1440 px", async ({ page }, testInfo) =>
     await openApp(page, "/today");
     await page.screenshot({ path: `${artifactDir}-${width}.png`, fullPage: true });
   }
+  expect([...externalRequests], "UI must not call external origins during the responsive matrix").toEqual([]);
+  expect(consoleErrors, "UI must not emit browser console errors during the responsive matrix").toEqual([]);
 });
 
 test("login uses the same CRM theme and keeps password controls inside", async ({ page }) => {
@@ -116,7 +137,7 @@ test("login uses the same CRM theme and keeps password controls inside", async (
   }
 });
 
-test("manager workspace passes the continuous 320-1440 px sweep", async ({ page }, testInfo) => {
+test("manager workspace passes the continuous 320-1920 px sweep", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop-chrome", "Continuous sweep runs once in the desktop project.");
   test.setTimeout(120_000);
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -127,7 +148,10 @@ test("manager workspace passes the continuous 320-1440 px sweep", async ({ page 
     await page.waitForTimeout(300);
   }
 
-  for (let width = 320; width <= 1440; width += 16) {
+  const sweepWidths = [];
+  for (let width = 320; width <= 1920; width += 16) sweepWidths.push(width);
+  sweepWidths.push(2560, 3440, 3840);
+  for (const width of sweepWidths) {
     await page.setViewportSize({ width, height: width <= 430 ? 844 : 900 });
     await page.waitForTimeout(20);
     const result = await page.evaluate(() => {
@@ -138,11 +162,13 @@ test("manager workspace passes the continuous 320-1440 px sweep", async ({ page 
         overflow: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - window.innerWidth,
         titleFits: !title || title.scrollWidth <= title.clientWidth + 1,
         mainInsideViewport: !mainRect || (mainRect.left >= -1 && mainRect.right <= window.innerWidth + 1),
+        mainStartsInViewport: !mainRect || (mainRect.top < window.innerHeight && mainRect.bottom > 0),
       };
     });
     expect(result.overflow, `manager Today at ${width}px has horizontal overflow`).toBeLessThanOrEqual(1);
     expect(result.titleFits, `manager Today title is clipped at ${width}px`).toBeTruthy();
     expect(result.mainInsideViewport, `manager Today main leaves viewport at ${width}px`).toBeTruthy();
+    expect(result.mainStartsInViewport, `manager Today main starts below viewport at ${width}px`).toBeTruthy();
   }
 });
 
@@ -274,13 +300,10 @@ test("estimate attachments stay collapsed and open as compact tiles", async ({ p
   expect(tileSizes.every((tile) => tile.width <= 220 && tile.height <= 150)).toBeTruthy();
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: testInfo.outputPath("estimates-compact-files-1440.png"), fullPage: true });
+  await group.locator("summary").click();
+  await expect(group).not.toHaveAttribute("open", "");
 
   await page.setViewportSize({ width: 390, height: 844 });
-  const mobileRole = page.locator("#currentRoleSelect");
-  if (await mobileRole.locator('option[value="sales_manager"]').count()) {
-    await mobileRole.selectOption("sales_manager");
-    await page.waitForTimeout(300);
-  }
   const mobileGroup = page.getByTestId("estimate-files-group");
   await expect(mobileGroup).toHaveCount(1);
   await expect(mobileGroup).not.toHaveAttribute("open", "");

@@ -3,15 +3,20 @@ const initialProjectId = Number(initialRoute.get("project") || 0) || null;
 const routeViewMap = {
   "/today": "today",
   "/objects": "projects",
+  "/estimates": "estimates",
   "/tasks": "tasks",
+  "/works": "works",
   "/materials": "materials",
+  "/variations": "variations",
   "/photo-reports": "photos",
   "/object-issues": "object_remarks",
+  "/locations": "locations",
   "/documents": "documents",
   "/signals": "dashboard",
   "/feedback": "feedback",
   "/settings": "events",
 };
+const viewRouteMap = Object.fromEntries(Object.entries(routeViewMap).map(([route, view]) => [view, route]));
 const pathView = routeViewMap[window.location.pathname] || "";
 const TASK_DESCRIPTION_COLLAPSED_IN_LIST = true;
 
@@ -1500,6 +1505,13 @@ function switchView(view) {
   if (!canView(view)) view = allowedViews()[0] || "dashboard";
   state.view = view;
   localStorage.setItem("currentView", view);
+  const viewRoute = viewRouteMap[view];
+  if (viewRoute && window.location.pathname !== viewRoute) {
+    const nextUrl = new URL(window.location.href);
+    nextUrl.pathname = viewRoute;
+    nextUrl.searchParams.delete("view");
+    window.history.replaceState({ view }, "", `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
+  }
   qsa(".nav-button").forEach((button) => {
     button.hidden = !canView(button.dataset.view);
     button.classList.toggle("active", button.dataset.view === view);
@@ -3207,7 +3219,9 @@ function renderEstimateJobFiles(files = [], jobId = "", canManageFiles = false) 
       ${files
         .map(
           (file) => {
-            const title = escapeHtml(file.title || file.file_name || "Файл");
+            const rawTitle = file.title || file.file_name || "Файл";
+            const title = escapeHtml(rawTitle);
+            const titleAttr = escapeAttr(rawTitle);
             const fileName = escapeHtml(file.file_name || "");
             const href = escapeAttr(estimateFileDownloadUrl(file));
             const isCurrent = Number(file.is_current ?? 1) !== 0;
@@ -3223,7 +3237,7 @@ function renderEstimateJobFiles(files = [], jobId = "", canManageFiles = false) 
             if (isEstimateImageFile(file)) {
               return `
           <div class="estimate-file-card ${isCurrent ? "" : "previous-version"}">
-            <button class="estimate-file-button" type="button" data-estimate-gallery-job="${escapeAttr(jobId)}" data-estimate-gallery-file="${escapeAttr(file.id)}">
+            <button class="estimate-file-button" type="button" title="${titleAttr}" aria-label="Открыть ${titleAttr}" data-estimate-gallery-job="${escapeAttr(jobId)}" data-estimate-gallery-file="${escapeAttr(file.id)}">
               <strong>${title}</strong>
               ${meta}
             </button>
@@ -3232,8 +3246,8 @@ function renderEstimateJobFiles(files = [], jobId = "", canManageFiles = false) 
             }
             return `
           <div class="estimate-file-card ${isCurrent ? "" : "previous-version"}">
-            <a href="${href}" target="_blank" rel="noopener noreferrer" ${canPreview ? "" : "download"}>
-              <strong>${escapeHtml(file.title || file.file_name || "Файл")}</strong>
+            <a href="${href}" title="${titleAttr}" aria-label="${escapeAttr(actionLabel)}: ${titleAttr}" target="_blank" rel="noopener noreferrer" ${canPreview ? "" : "download"}>
+              <strong>${title}</strong>
               ${meta}
               <span>${actionLabel}</span>
             </a>
@@ -3883,9 +3897,15 @@ function syncMobileQuickActions() {
   if (state.mobileSheetMode === "menu") {
     const views = mobileMenuViewsForRole();
     if (title) title.textContent = "Разделы";
-    list.innerHTML = views
+    const viewButtons = views
       .map((view) => `<button class="secondary mobile-menu-item" type="button" data-view-target="${view}" data-mobile-menu-item="${view}">${escapeHtml(navLabelForView(view))}</button>`)
       .join("");
+    list.innerHTML = `${viewButtons}
+      <div class="mobile-menu-system-actions">
+        ${canEditProject() ? `<button class="primary" type="button" data-mobile-system-action="new-project">Новый объект</button>` : ""}
+        <button class="secondary" type="button" data-mobile-system-action="refresh">Обновить данные</button>
+        <button class="secondary danger-outline" type="button" data-mobile-system-action="logout">Выйти</button>
+      </div>`;
     sheet.hidden = !state.mobileQuickOpen;
     return;
   }
@@ -4294,10 +4314,11 @@ function mediaPreviewLink(doc) {
   const href = `/api/documents/${doc.id}/download`;
   const rawTitle = doc.file_name || doc.title || "Файл";
   const title = escapeHtml(rawTitle);
+  const titleAttr = escapeAttr(rawTitle);
   const mime = String(doc.mime_type || "");
   const previewKind = filePreviewKind(rawTitle, mime);
   if (previewKind === "image") {
-    return `<a class="media-thumb" href="${href}" data-media-preview="image" data-media-url="${href}" data-media-title="${title}" data-media-mime="${escapeHtml(mime)}"><span class="media-thumb-visual"><span class="media-thumb-placeholder">Фото</span><img src="${href}" alt="${title}" loading="lazy" decoding="async" /></span><span class="media-thumb-title">${title}</span></a>`;
+    return `<a class="media-thumb" href="${href}" title="${titleAttr}" data-media-preview="image" data-media-url="${href}" data-media-title="${titleAttr}" data-media-mime="${escapeAttr(mime)}"><span class="media-thumb-visual"><span class="media-thumb-placeholder">Фото</span><img src="${href}" alt="${titleAttr}" data-media-image loading="lazy" decoding="async" /></span><span class="media-thumb-title">${title}</span></a>`;
   }
   if (previewKind === "video") {
     return `<a class="media-thumb video" href="${href}" data-media-preview="video" data-media-url="${href}" data-media-title="${title}" data-media-mime="${escapeHtml(mime)}"><span>Видео</span><small>${title}</small></a>`;
@@ -4309,6 +4330,25 @@ function mediaPreviewLink(doc) {
     return `<a class="media-thumb file" href="${href}" data-media-preview="text" data-media-url="${href}" data-media-title="${title}" data-media-mime="${escapeHtml(mime)}"><span>Файл</span><small>${title}</small></a>`;
   }
   return `<a class="media-thumb file" href="${href}" target="_blank" rel="noopener"><span>${title}</span></a>`;
+}
+
+function markUnavailableMediaImage(image) {
+  const link = image.closest(".media-thumb");
+  if (!link || link.classList.contains("is-unavailable")) return;
+  link.classList.add("is-unavailable");
+  link.removeAttribute("data-media-preview");
+  link.setAttribute("data-media-unavailable", "1");
+  link.setAttribute("aria-label", "Файл временно недоступен");
+  image.hidden = true;
+  const placeholder = link.querySelector(".media-thumb-placeholder");
+  if (placeholder) placeholder.textContent = "Файл недоступен";
+}
+
+function syncMediaImageStates(root = document) {
+  qsa("[data-media-image]", root).forEach((image) => {
+    image.addEventListener("error", () => markUnavailableMediaImage(image), { once: true });
+    if (image.complete && !image.naturalWidth) markUnavailableMediaImage(image);
+  });
 }
 
 function closeMediaPreview() {
@@ -4469,6 +4509,7 @@ async function renderPhotoReports() {
   rowsNode.innerHTML = reports.length
     ? reports.map(renderPhotoReportCard).join("")
     : renderPhotoEmptyState();
+  syncMediaImageStates(rowsNode);
 }
 
 function remarkPhotoBlock(title, doc) {
@@ -4529,6 +4570,7 @@ async function renderObjectRemarks() {
   rowsNode.innerHTML = filtered.length
     ? filtered.map(renderObjectRemarkCard).join("")
     : renderRemarkEmptyState();
+  syncMediaImageStates(rowsNode);
 }
 
 async function renderProjects() {
@@ -7111,6 +7153,63 @@ function integrityEntityGroup(entityType) {
   return entityType || "other";
 }
 
+const integrityViolationTitles = {
+  accepted_task_in_overdue: "Принятая задача отмечена просроченной",
+  waiting_check_without_submitted_at: "Не указана дата отправки на проверку",
+  accepted_without_accepted_at: "Не указана дата приёмки задачи",
+  invalid_task_status: "Неизвестный статус задачи",
+  task_without_required_assignee: "У задачи нет ответственного",
+  task_missing_project: "Задача не привязана к объекту",
+  active_photo_report_without_files: "В фотоотчёте нет файлов",
+  photo_report_files_count_mismatch: "Количество файлов фотоотчёта не совпадает",
+  photo_report_task_other_project: "Фотоотчёт и задача относятся к разным объектам",
+  multiple_active_photo_reports_for_task: "У задачи несколько активных фотоотчётов",
+  task_has_multiple_active_source_task_id: "Найдены повторяющиеся связи с задачей",
+  manual_photo_report_duplicate: "Найден повторяющийся ручной фотоотчёт",
+  missing_photo_signal_with_existing_report: "Сигнал о фотоотчёте устарел",
+  invalid_material_stage: "Неизвестный этап заявки на материалы",
+  invalid_material_health: "Неизвестное состояние заявки на материалы",
+  delivered_without_received_at: "Не указана дата получения материалов",
+  delivered_without_received_by: "Не указан получатель материалов",
+  ordered_without_procurement_responsible: "Не назначен ответственный за закупку",
+  in_transit_without_planned_delivery: "Не указана плановая дата доставки",
+  material_without_project: "Заявка на материалы не привязана к объекту",
+  material_problem_without_comment: "Для проблемы с материалом нет комментария",
+  material_batch_without_active_items: "В заявке нет активных позиций",
+  closed_material_with_open_blocker: "Закрытая заявка связана с открытым блокером",
+  material_item_without_project: "Позиция материала не привязана к объекту",
+  notification_missing_entity: "Уведомление связано с отсутствующей записью",
+  duplicate_signal: "Найден повторяющийся сигнал",
+  document_without_classification: "Документ не классифицирован",
+};
+
+const integrityEntityTitles = {
+  task: "Задача",
+  photo_report: "Фотоотчёт",
+  material_request: "Заявка на материалы",
+  material_request_batch: "Заявка на материалы",
+  notification: "Уведомление",
+  document: "Документ",
+  blocker: "Блокер",
+  signal: "Сигнал",
+};
+
+function integrityUserText(value) {
+  const replacements = {
+    submitted_at: "дата отправки на проверку",
+    accepted_at: "дата приёмки",
+    received_at: "дата получения",
+    received_by: "получатель",
+    planned_delivery_date: "плановая дата доставки",
+    source_task_id: "связь с задачей",
+    task_events: "история задачи",
+  };
+  return Object.entries(replacements).reduce(
+    (text, [technical, readable]) => text.split(technical).join(readable),
+    String(value || "")
+  );
+}
+
 function integritySeverityLevel(severity) {
   return severity === "critical" ? "danger" : severity === "warning" ? "warning" : "blue";
 }
@@ -7150,18 +7249,22 @@ async function renderDataIntegrity(force = false) {
           <div class="row dense-row">
             <div class="material-main">
               <div class="stack-line">
-                <strong>${escapeHtml(item.violation_type || "Нарушение")}</strong>
+                <strong>${escapeHtml(integrityViolationTitles[item.violation_type] || "Нарушение целостности данных")}</strong>
                 ${pill(item.severity === "critical" ? "Критично" : item.severity === "warning" ? "Предупреждение" : "Инфо", integritySeverityLevel(item.severity))}
               </div>
-              <div class="muted">${escapeHtml(item.entity_type || "entity")} #${escapeHtml(String(item.entity_id || ""))}${item.object ? ` · ${escapeHtml(item.object)}` : ""}</div>
-              <div>${escapeHtml(item.reason || "")}</div>
-              <div class="muted">Рекомендация: ${escapeHtml(item.recommendation || "Проверить вручную.")}</div>
+              <div class="muted">${escapeHtml(integrityEntityTitles[item.entity_type] || "Запись")} №${escapeHtml(String(item.entity_id || ""))}${item.object ? ` · ${escapeHtml(item.object)}` : ""}</div>
+              <div>${escapeHtml(integrityUserText(item.reason))}</div>
+              <div class="muted">Рекомендация: ${escapeHtml(integrityUserText(item.recommendation || "Проверить вручную."))}</div>
+              <details class="integrity-technical-details">
+                <summary>Технические данные</summary>
+                <code>${escapeHtml(item.violation_type || "unknown")} · ${escapeHtml(item.entity_type || "entity")} #${escapeHtml(String(item.entity_id || ""))}</code>
+              </details>
             </div>
             ${pill(item.auto_fix_safe ? "можно авто после команды" : "ручная проверка", item.auto_fix_safe ? "blue" : "warning")}
           </div>`
         )
         .join("")
-    : `<div class="empty-state"><strong>Нарушений по фильтру нет</strong><p class="muted">Data Integrity Agent не нашёл проблем в выбранной группе.</p></div>`;
+    : `<div class="empty-state"><strong>Нарушений по фильтру нет</strong><p class="muted">Проверка целостности не нашла проблем в выбранной группе.</p></div>`;
 }
 
 function eventType(type) {
@@ -8011,6 +8114,13 @@ function bindEvents() {
   });
 
   document.addEventListener("click", async (event) => {
+    const unavailableMedia = event.target.closest("[data-media-unavailable]");
+    if (unavailableMedia) {
+      event.preventDefault();
+      showToast("Файл временно недоступен. Сообщите ответственному за хранение документов.");
+      return;
+    }
+
     const mediaMoreButton = event.target.closest("[data-open-media-gallery]");
     if (mediaMoreButton) {
       event.preventDefault();
@@ -8045,6 +8155,21 @@ function bindEvents() {
     if (viewTargetButton) {
       switchView(viewTargetButton.dataset.viewTarget);
       if (viewTargetButton.closest("#mobileQuickSheet")) toggleMobileQuickActions(false);
+      return;
+    }
+
+    const mobileSystemAction = event.target.closest("[data-mobile-system-action]");
+    if (mobileSystemAction) {
+      toggleMobileQuickActions(false);
+      if (mobileSystemAction.dataset.mobileSystemAction === "refresh") {
+        await refreshAppFromUser("Обновляем данные").catch((error) => showToast(error.message));
+      } else if (mobileSystemAction.dataset.mobileSystemAction === "new-project") {
+        resetProjectDialog();
+        qs("#projectDialog").showModal();
+      } else if (mobileSystemAction.dataset.mobileSystemAction === "logout") {
+        localStorage.removeItem("currentRole");
+        window.location.href = "/logout";
+      }
       return;
     }
 

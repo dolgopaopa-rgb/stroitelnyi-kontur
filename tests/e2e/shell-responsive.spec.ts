@@ -5,17 +5,40 @@ test.use({ serviceWorkers: "block" });
 
 const viewports = [
   { width: 390, height: 844 },
+  { width: 430, height: 932 },
+  { width: 720, height: 840 },
   { width: 720, height: 900 },
   { width: 721, height: 900 },
   { width: 768, height: 900 },
+  { width: 768, height: 1024 },
+  { width: 832, height: 750 },
+  { width: 820, height: 900 },
+  { width: 821, height: 900 },
+  { width: 852, height: 900 },
+  { width: 979, height: 900 },
+  { width: 980, height: 900 },
+  { width: 981, height: 900 },
   { width: 1024, height: 900 },
+  { width: 1024, height: 768 },
+  { width: 1024, height: 600 },
   { width: 1080, height: 900 },
   { width: 1081, height: 900 },
+  { width: 1099, height: 900 },
+  { width: 1100, height: 900 },
+  { width: 1101, height: 900 },
+  { width: 1180, height: 900 },
+  { width: 1181, height: 900 },
   { width: 1220, height: 900 },
   { width: 1221, height: 900 },
   { width: 1234, height: 900 },
   { width: 1280, height: 900 },
+  { width: 1280, height: 720 },
+  { width: 1280, height: 600 },
+  { width: 1380, height: 900 },
+  { width: 1381, height: 900 },
   { width: 1440, height: 900 },
+  { width: 1920, height: 1080 },
+  { width: 3840, height: 2160 },
 ];
 
 type Rect = { left: number; top: number; right: number; bottom: number };
@@ -36,7 +59,7 @@ test("desktop shell keeps the sidebar text contained and the topbar aligned", as
     const horizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(horizontalOverflow, viewport.width + "px: page overflow").toBeLessThanOrEqual(1);
 
-    if (viewport.width > 980) {
+    if (viewport.width > 1100) {
       const feedbackBounds = await page.locator('[data-testid="nav-feedback"]').evaluate((button) => {
         const buttonRect = button.getBoundingClientRect();
         const sidebarRect = button.closest(".sidebar")?.getBoundingClientRect();

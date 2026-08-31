@@ -39,15 +39,20 @@
   var routeViewMap = {
     "/today": "today",
     "/objects": "projects",
+    "/estimates": "estimates",
     "/tasks": "tasks",
+    "/works": "works",
     "/materials": "materials",
+    "/variations": "variations",
     "/photo-reports": "photos",
     "/object-issues": "object_remarks",
+    "/locations": "locations",
     "/documents": "documents",
     "/signals": "dashboard",
     "/feedback": "feedback",
     "/settings": "events"
   };
+  var viewRouteMap = Object.fromEntries(Object.entries(routeViewMap).map(([route, view]) => [view, route]));
   var pathView = routeViewMap[window.location.pathname] || "";
   var state = {
     view: initialRoute.get("view") || pathView || localStorage.getItem("currentView") || "today",
@@ -1268,6 +1273,13 @@
     if (!canView(view)) view = allowedViews()[0] || "dashboard";
     state.view = view;
     localStorage.setItem("currentView", view);
+    const viewRoute = viewRouteMap[view];
+    if (viewRoute && window.location.pathname !== viewRoute) {
+      const nextUrl = new URL(window.location.href);
+      nextUrl.pathname = viewRoute;
+      nextUrl.searchParams.delete("view");
+      window.history.replaceState({ view }, "", "".concat(nextUrl.pathname).concat(nextUrl.search).concat(nextUrl.hash));
+    }
     qsa(".nav-button").forEach((button) => {
       button.hidden = !canView(button.dataset.view);
       button.classList.toggle("active", button.dataset.view === view);
@@ -2664,7 +2676,9 @@
     return '\n    <details class="estimate-files-group" data-testid="estimate-files-group">\n      <summary>\n        <span>Вложения</span>\n        <strong>'.concat(files.length, '</strong>\n        <small>Показать файлы</small>\n      </summary>\n      <div class="estimate-job-files">\n      ').concat(files.map(
       (file) => {
         var _a;
-        const title = escapeHtml(file.title || file.file_name || "Файл");
+        const rawTitle = file.title || file.file_name || "Файл";
+        const title = escapeHtml(rawTitle);
+        const titleAttr = escapeAttr(rawTitle);
         const fileName = escapeHtml(file.file_name || "");
         const href = escapeAttr(estimateFileDownloadUrl(file));
         const isCurrent = Number((_a = file.is_current) != null ? _a : 1) !== 0;
@@ -2678,9 +2692,9 @@
         const canPreview = canPreviewInlineFile(file.file_name || file.title || "", file.mime_type);
         const actionLabel = fileOpenAction(file.file_name || file.title || "", file.mime_type);
         if (isEstimateImageFile(file)) {
-          return '\n          <div class="estimate-file-card '.concat(isCurrent ? "" : "previous-version", '">\n            <button class="estimate-file-button" type="button" data-estimate-gallery-job="').concat(escapeAttr(jobId), '" data-estimate-gallery-file="').concat(escapeAttr(file.id), '">\n              <strong>').concat(title, "</strong>\n              ").concat(meta, '\n            </button>\n            <div class="estimate-file-actions">').concat(printButton).concat(replaceButton).concat(deleteButton, "</div>\n          </div>");
+          return '\n          <div class="estimate-file-card '.concat(isCurrent ? "" : "previous-version", '">\n            <button class="estimate-file-button" type="button" title="').concat(titleAttr, '" aria-label="Открыть ').concat(titleAttr, '" data-estimate-gallery-job="').concat(escapeAttr(jobId), '" data-estimate-gallery-file="').concat(escapeAttr(file.id), '">\n              <strong>').concat(title, "</strong>\n              ").concat(meta, '\n            </button>\n            <div class="estimate-file-actions">').concat(printButton).concat(replaceButton).concat(deleteButton, "</div>\n          </div>");
         }
-        return '\n          <div class="estimate-file-card '.concat(isCurrent ? "" : "previous-version", '">\n            <a href="').concat(href, '" target="_blank" rel="noopener noreferrer" ').concat(canPreview ? "" : "download", ">\n              <strong>").concat(escapeHtml(file.title || file.file_name || "Файл"), "</strong>\n              ").concat(meta, "\n              <span>").concat(actionLabel, '</span>\n            </a>\n            <div class="estimate-file-actions">').concat(printButton).concat(replaceButton).concat(deleteButton, "</div>\n          </div>");
+        return '\n          <div class="estimate-file-card '.concat(isCurrent ? "" : "previous-version", '">\n            <a href="').concat(href, '" title="').concat(titleAttr, '" aria-label="').concat(escapeAttr(actionLabel), ": ").concat(titleAttr, '" target="_blank" rel="noopener noreferrer" ').concat(canPreview ? "" : "download", ">\n              <strong>").concat(title, "</strong>\n              ").concat(meta, "\n              <span>").concat(actionLabel, '</span>\n            </a>\n            <div class="estimate-file-actions">').concat(printButton).concat(replaceButton).concat(deleteButton, "</div>\n          </div>");
       }
     ).join(""), "\n      </div>\n    </details>");
   }
@@ -3136,7 +3150,8 @@
     if (state.mobileSheetMode === "menu") {
       const views = mobileMenuViewsForRole();
       if (title) title.textContent = "Разделы";
-      list.innerHTML = views.map((view) => '<button class="secondary mobile-menu-item" type="button" data-view-target="'.concat(view, '" data-mobile-menu-item="').concat(view, '">').concat(escapeHtml(navLabelForView(view)), "</button>")).join("");
+      const viewButtons = views.map((view) => '<button class="secondary mobile-menu-item" type="button" data-view-target="'.concat(view, '" data-mobile-menu-item="').concat(view, '">').concat(escapeHtml(navLabelForView(view)), "</button>")).join("");
+      list.innerHTML = "".concat(viewButtons, '\n      <div class="mobile-menu-system-actions">\n        ').concat(canEditProject() ? '<button class="primary" type="button" data-mobile-system-action="new-project">Новый объект</button>' : "", '\n        <button class="secondary" type="button" data-mobile-system-action="refresh">Обновить данные</button>\n        <button class="secondary danger-outline" type="button" data-mobile-system-action="logout">Выйти</button>\n      </div>');
       sheet.hidden = !state.mobileQuickOpen;
       return;
     }
@@ -3468,10 +3483,11 @@
     const href = "/api/documents/".concat(doc.id, "/download");
     const rawTitle = doc.file_name || doc.title || "Файл";
     const title = escapeHtml(rawTitle);
+    const titleAttr = escapeAttr(rawTitle);
     const mime = String(doc.mime_type || "");
     const previewKind = filePreviewKind(rawTitle, mime);
     if (previewKind === "image") {
-      return '<a class="media-thumb" href="'.concat(href, '" data-media-preview="image" data-media-url="').concat(href, '" data-media-title="').concat(title, '" data-media-mime="').concat(escapeHtml(mime), '"><span class="media-thumb-visual"><span class="media-thumb-placeholder">Фото</span><img src="').concat(href, '" alt="').concat(title, '" loading="lazy" decoding="async" /></span><span class="media-thumb-title">').concat(title, "</span></a>");
+      return '<a class="media-thumb" href="'.concat(href, '" title="').concat(titleAttr, '" data-media-preview="image" data-media-url="').concat(href, '" data-media-title="').concat(titleAttr, '" data-media-mime="').concat(escapeAttr(mime), '"><span class="media-thumb-visual"><span class="media-thumb-placeholder">Фото</span><img src="').concat(href, '" alt="').concat(titleAttr, '" data-media-image loading="lazy" decoding="async" /></span><span class="media-thumb-title">').concat(title, "</span></a>");
     }
     if (previewKind === "video") {
       return '<a class="media-thumb video" href="'.concat(href, '" data-media-preview="video" data-media-url="').concat(href, '" data-media-title="').concat(title, '" data-media-mime="').concat(escapeHtml(mime), '"><span>Видео</span><small>').concat(title, "</small></a>");
@@ -3483,6 +3499,23 @@
       return '<a class="media-thumb file" href="'.concat(href, '" data-media-preview="text" data-media-url="').concat(href, '" data-media-title="').concat(title, '" data-media-mime="').concat(escapeHtml(mime), '"><span>Файл</span><small>').concat(title, "</small></a>");
     }
     return '<a class="media-thumb file" href="'.concat(href, '" target="_blank" rel="noopener"><span>').concat(title, "</span></a>");
+  }
+  function markUnavailableMediaImage(image) {
+    const link = image.closest(".media-thumb");
+    if (!link || link.classList.contains("is-unavailable")) return;
+    link.classList.add("is-unavailable");
+    link.removeAttribute("data-media-preview");
+    link.setAttribute("data-media-unavailable", "1");
+    link.setAttribute("aria-label", "Файл временно недоступен");
+    image.hidden = true;
+    const placeholder = link.querySelector(".media-thumb-placeholder");
+    if (placeholder) placeholder.textContent = "Файл недоступен";
+  }
+  function syncMediaImageStates(root = document) {
+    qsa("[data-media-image]", root).forEach((image) => {
+      image.addEventListener("error", () => markUnavailableMediaImage(image), { once: true });
+      if (image.complete && !image.naturalWidth) markUnavailableMediaImage(image);
+    });
   }
   function closeMediaPreview() {
     const dialog = qs("#mediaPreviewDialog");
@@ -3572,6 +3605,7 @@
     }
     const reports = state.photoReports || [];
     rowsNode.innerHTML = reports.length ? reports.map(renderPhotoReportCard).join("") : renderPhotoEmptyState();
+    syncMediaImageStates(rowsNode);
   }
   function remarkPhotoBlock(title, doc) {
     if (!(doc == null ? void 0 : doc.id)) return "";
@@ -3602,6 +3636,7 @@
     ).join("");
     const filtered = state.remarkFilter && state.remarkFilter !== "all" ? remarks.filter((item) => item.status === state.remarkFilter) : remarks;
     rowsNode.innerHTML = filtered.length ? filtered.map(renderObjectRemarkCard).join("") : renderRemarkEmptyState();
+    syncMediaImageStates(rowsNode);
   }
   async function renderProjects() {
     var _a;
@@ -5012,6 +5047,60 @@
     if (["material_request_batch", "material_request"].includes(entityType)) return "material";
     return entityType || "other";
   }
+  var integrityViolationTitles = {
+    accepted_task_in_overdue: "Принятая задача отмечена просроченной",
+    waiting_check_without_submitted_at: "Не указана дата отправки на проверку",
+    accepted_without_accepted_at: "Не указана дата приёмки задачи",
+    invalid_task_status: "Неизвестный статус задачи",
+    task_without_required_assignee: "У задачи нет ответственного",
+    task_missing_project: "Задача не привязана к объекту",
+    active_photo_report_without_files: "В фотоотчёте нет файлов",
+    photo_report_files_count_mismatch: "Количество файлов фотоотчёта не совпадает",
+    photo_report_task_other_project: "Фотоотчёт и задача относятся к разным объектам",
+    multiple_active_photo_reports_for_task: "У задачи несколько активных фотоотчётов",
+    task_has_multiple_active_source_task_id: "Найдены повторяющиеся связи с задачей",
+    manual_photo_report_duplicate: "Найден повторяющийся ручной фотоотчёт",
+    missing_photo_signal_with_existing_report: "Сигнал о фотоотчёте устарел",
+    invalid_material_stage: "Неизвестный этап заявки на материалы",
+    invalid_material_health: "Неизвестное состояние заявки на материалы",
+    delivered_without_received_at: "Не указана дата получения материалов",
+    delivered_without_received_by: "Не указан получатель материалов",
+    ordered_without_procurement_responsible: "Не назначен ответственный за закупку",
+    in_transit_without_planned_delivery: "Не указана плановая дата доставки",
+    material_without_project: "Заявка на материалы не привязана к объекту",
+    material_problem_without_comment: "Для проблемы с материалом нет комментария",
+    material_batch_without_active_items: "В заявке нет активных позиций",
+    closed_material_with_open_blocker: "Закрытая заявка связана с открытым блокером",
+    material_item_without_project: "Позиция материала не привязана к объекту",
+    notification_missing_entity: "Уведомление связано с отсутствующей записью",
+    duplicate_signal: "Найден повторяющийся сигнал",
+    document_without_classification: "Документ не классифицирован"
+  };
+  var integrityEntityTitles = {
+    task: "Задача",
+    photo_report: "Фотоотчёт",
+    material_request: "Заявка на материалы",
+    material_request_batch: "Заявка на материалы",
+    notification: "Уведомление",
+    document: "Документ",
+    blocker: "Блокер",
+    signal: "Сигнал"
+  };
+  function integrityUserText(value) {
+    const replacements = {
+      submitted_at: "дата отправки на проверку",
+      accepted_at: "дата приёмки",
+      received_at: "дата получения",
+      received_by: "получатель",
+      planned_delivery_date: "плановая дата доставки",
+      source_task_id: "связь с задачей",
+      task_events: "история задачи"
+    };
+    return Object.entries(replacements).reduce(
+      (text, [technical, readable]) => text.split(technical).join(readable),
+      String(value || "")
+    );
+  }
   function integritySeverityLevel(severity) {
     return severity === "critical" ? "danger" : severity === "warning" ? "warning" : "blue";
   }
@@ -5042,8 +5131,8 @@
       return integrityEntityGroup(item.entity_type) === state.dataIntegrityFilter;
     });
     qs("#dataIntegrityRows").innerHTML = violations.length ? violations.map(
-      (item) => '\n          <div class="row dense-row">\n            <div class="material-main">\n              <div class="stack-line">\n                <strong>'.concat(escapeHtml(item.violation_type || "Нарушение"), "</strong>\n                ").concat(pill(item.severity === "critical" ? "Критично" : item.severity === "warning" ? "Предупреждение" : "Инфо", integritySeverityLevel(item.severity)), '\n              </div>\n              <div class="muted">').concat(escapeHtml(item.entity_type || "entity"), " #").concat(escapeHtml(String(item.entity_id || ""))).concat(item.object ? " · ".concat(escapeHtml(item.object)) : "", "</div>\n              <div>").concat(escapeHtml(item.reason || ""), '</div>\n              <div class="muted">Рекомендация: ').concat(escapeHtml(item.recommendation || "Проверить вручную."), "</div>\n            </div>\n            ").concat(pill(item.auto_fix_safe ? "можно авто после команды" : "ручная проверка", item.auto_fix_safe ? "blue" : "warning"), "\n          </div>")
-    ).join("") : '<div class="empty-state"><strong>Нарушений по фильтру нет</strong><p class="muted">Data Integrity Agent не нашёл проблем в выбранной группе.</p></div>';
+      (item) => '\n          <div class="row dense-row">\n            <div class="material-main">\n              <div class="stack-line">\n                <strong>'.concat(escapeHtml(integrityViolationTitles[item.violation_type] || "Нарушение целостности данных"), "</strong>\n                ").concat(pill(item.severity === "critical" ? "Критично" : item.severity === "warning" ? "Предупреждение" : "Инфо", integritySeverityLevel(item.severity)), '\n              </div>\n              <div class="muted">').concat(escapeHtml(integrityEntityTitles[item.entity_type] || "Запись"), " №").concat(escapeHtml(String(item.entity_id || ""))).concat(item.object ? " · ".concat(escapeHtml(item.object)) : "", "</div>\n              <div>").concat(escapeHtml(integrityUserText(item.reason)), '</div>\n              <div class="muted">Рекомендация: ').concat(escapeHtml(integrityUserText(item.recommendation || "Проверить вручную.")), '</div>\n              <details class="integrity-technical-details">\n                <summary>Технические данные</summary>\n                <code>').concat(escapeHtml(item.violation_type || "unknown"), " · ").concat(escapeHtml(item.entity_type || "entity"), " #").concat(escapeHtml(String(item.entity_id || "")), "</code>\n              </details>\n            </div>\n            ").concat(pill(item.auto_fix_safe ? "можно авто после команды" : "ручная проверка", item.auto_fix_safe ? "blue" : "warning"), "\n          </div>")
+    ).join("") : '<div class="empty-state"><strong>Нарушений по фильтру нет</strong><p class="muted">Проверка целостности не нашла проблем в выбранной группе.</p></div>';
   }
   function eventType(type) {
     return {
@@ -5877,6 +5966,12 @@
     });
     document.addEventListener("click", async (event) => {
       var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k2, _l2, _m2, _n2, _o2, _p2, _q2, _r2, _s2;
+      const unavailableMedia = event.target.closest("[data-media-unavailable]");
+      if (unavailableMedia) {
+        event.preventDefault();
+        showToast("Файл временно недоступен. Сообщите ответственному за хранение документов.");
+        return;
+      }
       const mediaMoreButton = event.target.closest("[data-open-media-gallery]");
       if (mediaMoreButton) {
         event.preventDefault();
@@ -5909,6 +6004,20 @@
       if (viewTargetButton) {
         switchView(viewTargetButton.dataset.viewTarget);
         if (viewTargetButton.closest("#mobileQuickSheet")) toggleMobileQuickActions(false);
+        return;
+      }
+      const mobileSystemAction = event.target.closest("[data-mobile-system-action]");
+      if (mobileSystemAction) {
+        toggleMobileQuickActions(false);
+        if (mobileSystemAction.dataset.mobileSystemAction === "refresh") {
+          await refreshAppFromUser("Обновляем данные").catch((error) => showToast(error.message));
+        } else if (mobileSystemAction.dataset.mobileSystemAction === "new-project") {
+          resetProjectDialog();
+          qs("#projectDialog").showModal();
+        } else if (mobileSystemAction.dataset.mobileSystemAction === "logout") {
+          localStorage.removeItem("currentRole");
+          window.location.href = "/logout";
+        }
         return;
       }
       const taskFilterButton = event.target.closest("[data-task-filter]");

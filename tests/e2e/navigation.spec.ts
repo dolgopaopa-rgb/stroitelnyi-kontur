@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { openApp } from "../helpers/auth";
 
-const routes = ["/today", "/objects", "/tasks", "/materials", "/photo-reports", "/object-issues", "/documents", "/signals", "/feedback", "/settings"];
+const routes = ["/today", "/objects", "/estimates", "/tasks", "/works", "/materials", "/variations", "/photo-reports", "/object-issues", "/locations", "/documents", "/signals", "/feedback", "/settings"];
 
 test.describe("Navigation QA", () => {
   for (const route of routes) {
