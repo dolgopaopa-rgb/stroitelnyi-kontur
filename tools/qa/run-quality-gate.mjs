@@ -4,10 +4,11 @@ import os from "node:os";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import { formatMaxReport, validateMaxReport } from "../../src/notifications/max/formatMaxReport.mjs";
 
 const require = createRequire(import.meta.url);
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1")), "../..");
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const ARTIFACT_DIR = path.join(ROOT, "qa-artifacts", "latest");
 const SCREENSHOT_DIR = path.join(ARTIFACT_DIR, "screenshots");
 const TRACE_DIR = path.join(ARTIFACT_DIR, "traces");
@@ -268,11 +269,12 @@ async function runTypecheck(results) {
 }
 
 async function runUnit(results) {
-  const py = run("python", ["-m", "py_compile", "app/server.py", "app/database.py", "app/appeals.py"]);
+  const py = run("python", ["-m", "py_compile", "app/server.py", "app/database.py", "app/appeals.py", "app/smetter.py"]);
   const db = run("python", ["-c", "import sys; sys.path.insert(0, 'app'); from database import init_db; init_db(); print('db ok')"]);
   const appeals = run("python", ["-m", "unittest", "discover", "-s", "tests", "-p", "test_appeals.py"]);
-  const failed = py.code !== 0 || db.code !== 0 || appeals.code !== 0;
-  add(results, "QA Orchestrator Agent", "Unit smoke", failed ? "FAIL" : "OK", [py.output, db.output, appeals.output].filter(Boolean).join("\n") || "ok", failed ? "blocker" : "normal");
+  const smetter = run("python", ["-m", "unittest", "discover", "-s", "tests", "-p", "test_smetter_integration.py"]);
+  const failed = py.code !== 0 || db.code !== 0 || appeals.code !== 0 || smetter.code !== 0;
+  add(results, "QA Orchestrator Agent", "Unit smoke", failed ? "FAIL" : "OK", [py.output, db.output, appeals.output, smetter.output].filter(Boolean).join("\n") || "ok", failed ? "blocker" : "normal");
   runFeedbackFixStaticChecks(results);
 }
 

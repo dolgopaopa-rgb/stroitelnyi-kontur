@@ -4386,6 +4386,24 @@ textarea {
   color: #40515a;
 }
 
+.form-optional-files {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #f7fafb;
+}
+
+.form-optional-files summary {
+  cursor: pointer;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.form-optional-files[open] {
+  display: grid;
+  gap: 10px;
+}
+
 .attached-draft-files {
   border: 1px solid #cbd9dd;
   background: #f7fafb;

@@ -9,14 +9,14 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Строительный контур</title>
-    <link rel="manifest" href="/static/manifest.webmanifest?v=20260809-openvillage-brand-v1" />
+    <link rel="manifest" href="/static/manifest.webmanifest?v=20260831-smetter-auto-v1" />
     <link rel="icon" type="image/svg+xml" href="/static/assets/brand-2026/d2dom-mark.svg" />
     <link rel="apple-touch-icon" href="/static/assets/brand-2026/d2dom-mark-192.png" />
     <link rel="preload" href="/static/assets/brand-2026/Involve-Regular.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="/static/assets/brand-2026/Involve-SemiBold.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="/static/assets/brand-2026/Haval-Light.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="stylesheet" href="/static/styles.css?v=20260809-openvillage-brand-v1" />
-    <link rel="stylesheet" href="/static/brand-2026.css?v=20260809-openvillage-brand-v1" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260831-smetter-auto-v1" />
+    <link rel="stylesheet" href="/static/brand-2026.css?v=20260831-smetter-auto-v1" />
   </head>
   <body class="brand-system-2026">
     <div class="app" data-testid="qa-scroll-root">
@@ -709,7 +709,11 @@
           <textarea name="manager_note" rows="3" placeholder="Например: особенности клиента, договоренности, важные вводные для строительства"></textarea>
           <span class="field-hint">Эту заметку увидят все участники, у которых есть доступ к карточке объекта.</span>
         </label>
-        <label>Сметтер <input name="smetter_ref" required placeholder="Ссылка на смету или номер" /></label>
+        <label>
+          Ссылка на смету в Сметтере
+          <input name="smetter_ref" required placeholder="https://app.smetter.ru/..." />
+          <span class="field-hint">После сохранения Контур сам загрузит задание на работы и перечень материалов через API.</span>
+        </label>
         <section class="hint-box neutral">
           <strong>Передача в строительство</strong>
           <p>Менеджер заполняет все данные и прикладывает документацию. Ответственных назначает руководитель строительства после проверки карточки.</p>
@@ -719,11 +723,15 @@
           <label>Смета, ₽ <input name="main_estimate_amount" inputmode="decimal" required placeholder="Можно вставить 1 482 584,60 ₽" /></label>
         </div>
         <section class="hint-box">
-          <strong>Первичный список материалов</strong>
-          <p>На старте это делает Алексей: выгружает материалы из сметы в Excel и прикладывает при создании карточки. Файл сохраняется в документах объекта, а позиции автоматически появляются во вкладке “Материалы”.</p>
+          <strong>Автоматическая передача из Сметтера</strong>
+          <p>Контур создаст два документа: задание на работы для строительства и перечень материалов для снабжения. Цены из Сметтера в эти документы не переносятся.</p>
         </section>
-        <label>Файл материалов из Сметтера / Excel <input name="estimate_file_name" type="file" accept=".xlsx,.csv" required /></label>
-        <label>Задание на работы из Сметтера / Excel <input name="work_task_file" type="file" accept=".xlsx,.csv" required /></label>
+        <details class="form-optional-files">
+          <summary>Резервная ручная загрузка файлов</summary>
+          <p class="field-hint">Используйте только если API Сметтера временно недоступен.</p>
+          <label>Файл материалов из Сметтера / Excel <input name="estimate_file_name" type="file" accept=".xlsx,.csv" /></label>
+          <label>Задание на работы из Сметтера / Excel <input name="work_task_file" type="file" accept=".xlsx,.csv" /></label>
+        </details>
         <div class="grid-2">
           <label>Первичный договор <input name="contract_file" type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" required /></label>
           <label>Смета <input name="estimate_doc_file" type="file" accept=".pdf,.xlsx,.xls,.doc,.docx" required /></label>
@@ -1358,6 +1366,6 @@
       </div>
     </div>
     <div class="toast" id="toast"></div>
-    <script src="/static/app.compat.js?v=20260809-openvillage-brand-v1"></script>
+    <script src="/static/app.compat.js?v=20260831-smetter-auto-v1"></script>
   </body>
 </html>

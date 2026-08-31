@@ -26,6 +26,7 @@ from urllib.request import Request, urlopen
 from database import DATA_DIR, DB_PATH, connect, init_db, row_to_dict, rows_to_dicts
 from data_integrity import apply_data_integrity_fixes, run_data_integrity_checks
 from appeals import api_get as appeals_api_get, api_post as appeals_api_post, apply_migrations as apply_appeals_migrations, appeals_enabled, validate_appeals_test_data_dir
+from smetter import SmetterClient, SmetterError
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -449,7 +450,7 @@ def xlsx_column_name(index: int) -> str:
     return name
 
 
-def make_xlsx(rows: list[list[object]]) -> bytes:
+def make_xlsx(rows: list[list[object]], sheet_name: str = "Материалы") -> bytes:
     def cell_xml(row_index: int, column_index: int, value: object) -> str:
         cell_ref = f"{xlsx_column_name(column_index)}{row_index}"
         if isinstance(value, (int, float)) and not isinstance(value, bool):
@@ -465,9 +466,10 @@ def make_xlsx(rows: list[list[object]]) -> bytes:
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
   <sheetData>{"".join(sheet_rows)}</sheetData>
 </worksheet>'''
-    workbook = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    safe_sheet_name = escape_xml(str(sheet_name or "Данные")[:31])
+    workbook = f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-  <sheets><sheet name="Материалы" sheetId="1" r:id="rId1"/></sheets>
+  <sheets><sheet name="{safe_sheet_name}" sheetId="1" r:id="rId1"/></sheets>
 </workbook>'''
     content_types = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -2531,7 +2533,7 @@ def project_visible_for_account(project: dict, account: dict | None) -> bool:
 
 
 DOCUMENT_TYPES_BY_ROLE = {
-    "foreman": {"project_documentation", "variation_attachment", "extra_work_attachment", "photo_report", "object_remark_photo", "detail_node", "regulation", "standard", "instruction"},
+    "foreman": {"smetter_materials", "smetter_work_task", "project_documentation", "variation_attachment", "extra_work_attachment", "photo_report", "object_remark_photo", "detail_node", "regulation", "standard", "instruction"},
     "master": {"project_documentation", "variation_attachment", "extra_work_attachment", "photo_report", "object_remark_photo", "detail_node", "regulation", "standard", "instruction"},
     "procurement_manager": {"smetter_materials", "project_documentation", "variation_attachment", "extra_work_attachment", "photo_report", "object_remark_photo", "photo_video", "detail_node", "regulation", "standard", "instruction", "other"},
     "technical_supervisor": {"smetter_materials", "smetter_work_task", "project_documentation", "variation_attachment", "extra_work_attachment", "photo_report", "object_remark_photo", "detail_node", "regulation", "standard", "instruction", "other"},
@@ -3067,13 +3069,14 @@ def save_document_file(
             project_id, folder_id, title, type, version, status, owner_id, due_date, related_type,
             related_section, contract_id, process_type, file_name, file_path, mime_type, file_size
         )
-        VALUES (?, ?, ?, ?, '', 'active', ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, 'active', ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             project_id,
             folder_id,
             title,
             doc_type,
+            file_data.get("version") or "",
             owner_id or user_id_by_role(db, "sales_manager") or 3,
             related_type,
             file_data.get("related_section") or "",
@@ -3791,6 +3794,214 @@ def save_initial_documents(db, project_id: int, files: list[dict]) -> None:
             item.get("type") or "other",
             item.get("related_type") or "handover",
         )
+
+
+def load_smetter_snapshot(smetter_ref: str) -> dict:
+    return SmetterClient().load_estimate(smetter_ref)
+
+
+def smetter_xlsx_rows(items: list[dict], marker: str) -> list[list[object]]:
+    rows: list[list[object]] = [["Тип", "Наименование", "Ед. изм.", "Количество"]]
+    current_section = ""
+    section_number = 0
+    for item in items:
+        section = str(item.get("section") or "Без раздела").strip() or "Без раздела"
+        if section != current_section:
+            section_number += 1
+            current_section = section
+            rows.append([f"{section_number}. {section}"] if marker == "Мат" else ["", section])
+        rows.append(
+            [
+                marker,
+                item.get("title") or item.get("name") or "Без названия",
+                item.get("unit") or "",
+                number_value(item.get("estimated_quantity")),
+                "",
+                "",
+            ]
+        )
+    return rows
+
+
+def apply_smetter_snapshot(db, project_id: int, snapshot: dict, actor_id: int | None) -> dict:
+    works = list(snapshot.get("works") or [])
+    materials = list(snapshot.get("materials") or [])
+    if not works and not materials:
+        raise SmetterError("В выбранной смете не найдены работы и материалы с ненулевым объёмом.")
+
+    source_prefix = (
+        f"smetter_api:{snapshot['company_id']}:{snapshot['project_id']}:"
+        f"{snapshot['estimate_id']}:{snapshot['digest']}"
+    )
+    active_documents = db.execute(
+        """
+        SELECT type, process_type
+        FROM documents
+        WHERE project_id = ?
+          AND type IN ('smetter_materials', 'smetter_work_task')
+          AND COALESCE(status, 'active') = 'active'
+          AND process_type IN (?, ?)
+        """,
+        (project_id, f"{source_prefix}:materials", f"{source_prefix}:works"),
+    ).fetchall()
+    active_types = {row["type"] for row in active_documents}
+    if active_types == {"smetter_materials", "smetter_work_task"}:
+        return {
+            "status": "ok",
+            "changed": False,
+            "estimate_id": snapshot["estimate_id"],
+            "materials_count": len(materials),
+            "works_count": len(works),
+            "message": "Данные Сметтера уже актуальны.",
+        }
+
+    version = f"api-{str(snapshot['digest'])[:12]}"
+    material_file_name = f"smetter-{snapshot['estimate_id']}-materials.xlsx"
+    work_file_name = f"smetter-{snapshot['estimate_id']}-works.xlsx"
+    generated_documents = [
+        {
+            "title": "Перечень материалов из Сметтера",
+            "type": "smetter_materials",
+            "file_name": material_file_name,
+            "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "file_base64": base64.b64encode(make_xlsx(smetter_xlsx_rows(materials, "Мат"), "Материалы")).decode("ascii"),
+            "process_type": f"{source_prefix}:materials",
+            "version": version,
+        },
+        {
+            "title": "Задание на работы из Сметтера",
+            "type": "smetter_work_task",
+            "file_name": work_file_name,
+            "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "file_base64": base64.b64encode(make_xlsx(smetter_xlsx_rows(works, "Раб"), "Работы")).decode("ascii"),
+            "process_type": f"{source_prefix}:works",
+            "version": version,
+        },
+    ]
+    for document in generated_documents:
+        archive_replaced_project_documents(db, project_id, document["type"])
+        save_document_file(
+            db,
+            project_id,
+            document,
+            document["title"],
+            document["type"],
+            "handover",
+            owner_id=actor_id,
+        )
+
+    material_rows = [
+        {
+            "section": item.get("section") or "Без раздела",
+            "name": item.get("title") or "Без названия",
+            "unit": item.get("unit") or "",
+            "estimated_quantity": item.get("estimated_quantity") or 0,
+            "unit_price": 0,
+            "total_price": 0,
+        }
+        for item in materials
+    ]
+    imported_materials = import_estimate_material_rows(
+        db,
+        project_id,
+        material_rows,
+        "smetter_api",
+        replace=True,
+    )
+    db.execute("DELETE FROM work_items WHERE project_id = ?", (project_id,))
+    for item in works:
+        db.execute(
+            """
+            INSERT INTO work_items (
+                project_id, section, title, unit, estimated_quantity, unit_price, total_price, source
+            )
+            VALUES (?, ?, ?, ?, ?, 0, 0, 'smetter_api')
+            """,
+            (
+                project_id,
+                item.get("section") or "Без раздела",
+                item.get("title") or "Работа без названия",
+                item.get("unit") or "",
+                number_value(item.get("estimated_quantity")),
+            ),
+        )
+    db.execute(
+        """
+        UPDATE projects
+        SET estimate_file_name = ?, work_task_file_name = ?, estimate_version = ?,
+            estimate_uploaded_by = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (material_file_name, work_file_name, version, actor_id, project_id),
+    )
+    result = {
+        "status": "ok",
+        "changed": True,
+        "estimate_id": snapshot["estimate_id"],
+        "materials_count": imported_materials,
+        "works_count": len(works),
+        "message": f"Из Сметтера загружено: работы — {len(works)}, материалы — {imported_materials}.",
+    }
+    db.execute(
+        """
+        INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
+        VALUES (?, 'document', ?, ?, 'internal', 'handover')
+        """,
+        (project_id, result["message"], actor_id),
+    )
+    return result
+
+
+def sync_project_from_smetter(
+    db,
+    project_id: int,
+    smetter_ref: str,
+    actor_id: int | None,
+    manual_fallback_ready: bool = False,
+) -> dict:
+    if not str(smetter_ref or "").strip():
+        return {"status": "skipped", "message": "Ссылка на смету пока не указана."}
+    try:
+        return apply_smetter_snapshot(db, project_id, load_smetter_snapshot(smetter_ref), actor_id)
+    except SmetterError as error:
+        message = str(error)
+        if manual_fallback_ready:
+            db.execute(
+                """
+                UPDATE projects
+                SET estimate_version = CASE
+                        WHEN COALESCE(estimate_version, '') = '' THEN 'manual-fallback'
+                        ELSE estimate_version
+                    END,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (project_id,),
+            )
+            fallback_message = (
+                f"API Сметтера недоступен: {message} "
+                "Использованы два файла резервной ручной загрузки."
+            )
+            db.execute(
+                """
+                INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
+                VALUES (?, 'document', ?, ?, 'internal', 'handover')
+                """,
+                (project_id, fallback_message, actor_id),
+            )
+            return {"status": "fallback", "message": fallback_message}
+        db.execute(
+            "UPDATE projects SET estimate_version = 'smetter_sync_error', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (project_id,),
+        )
+        db.execute(
+            """
+            INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
+            VALUES (?, 'document', ?, ?, 'internal', 'handover')
+            """,
+            (project_id, f"Автоматическая загрузка из Сметтера не выполнена: {message}", actor_id),
+        )
+        return {"status": "error", "message": message}
 
 
 def get_project_detail(project_id: int, account: dict | None = None) -> dict | None:
@@ -7037,6 +7248,16 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     save_initial_documents(db, project_id, initial_documents)
                     imported_materials = import_smetter_materials_from_documents(db, project_id, initial_documents)
                     imported_works = import_smetter_works_from_documents(db, project_id, initial_documents)
+                    smetter_sync = sync_project_from_smetter(
+                        db,
+                        project_id,
+                        data.get("smetter_ref") or "",
+                        account_user_id(account) or 3,
+                        bool(imported_materials and imported_works),
+                    )
+                    if smetter_sync.get("status") == "ok":
+                        imported_materials = int(smetter_sync.get("materials_count") or 0)
+                        imported_works = int(smetter_sync.get("works_count") or 0)
                     db.execute(
                         """
                         INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
@@ -7048,6 +7269,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     detail = get_project_detail(project_id, account)
                     detail["imported_materials_count"] = imported_materials
                     detail["imported_works_count"] = imported_works
+                    detail["smetter_sync"] = smetter_sync
                     json_response(self, detail, 201)
                     return
                 require_fields(
@@ -7062,8 +7284,6 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         ("smetter_ref", "Сметтер"),
                         ("planned_end_date", "Плановый срок окончания работ по договору"),
                         ("main_estimate_amount", "Смета"),
-                        ("estimate_file_name", "Файл материалов из Сметтера"),
-                        ("work_task_file_name", "Задание на работы из Сметтера"),
                     ],
                 )
                 customer_id = ensure_customer(db, data.get("customer_name"), data.get("customer_phone"), data.get("customer_email"))
@@ -7101,6 +7321,16 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 save_initial_documents(db, project_id, initial_documents)
                 imported_materials = import_smetter_materials_from_documents(db, project_id, initial_documents)
                 imported_works = import_smetter_works_from_documents(db, project_id, initial_documents)
+                smetter_sync = sync_project_from_smetter(
+                    db,
+                    project_id,
+                    data.get("smetter_ref") or "",
+                    account_user_id(account) or 3,
+                    bool(imported_materials and imported_works),
+                )
+                if smetter_sync.get("status") == "ok":
+                    imported_materials = int(smetter_sync.get("materials_count") or 0)
+                    imported_works = int(smetter_sync.get("works_count") or 0)
                 db.execute(
                     """
                     INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
@@ -7118,6 +7348,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 detail = get_project_detail(project_id, account)
                 detail["imported_materials_count"] = imported_materials
                 detail["imported_works_count"] = imported_works
+                detail["smetter_sync"] = smetter_sync
                 json_response(self, detail, 201)
                 return
 
@@ -7182,6 +7413,16 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     save_initial_documents(db, project_id, initial_documents)
                     imported_materials = import_smetter_materials_from_documents(db, project_id, initial_documents)
                     imported_works = import_smetter_works_from_documents(db, project_id, initial_documents)
+                    smetter_sync = sync_project_from_smetter(
+                        db,
+                        project_id,
+                        data.get("smetter_ref") or "",
+                        account_user_id(account) or 3,
+                        bool(imported_materials and imported_works),
+                    )
+                    if smetter_sync.get("status") == "ok":
+                        imported_materials = int(smetter_sync.get("materials_count") or 0)
+                        imported_works = int(smetter_sync.get("works_count") or 0)
                     db.execute(
                         """
                         INSERT INTO events (project_id, type, text, author_id, visibility, related_type)
@@ -7193,6 +7434,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     detail = get_project_detail(project_id, account)
                     detail["imported_materials_count"] = imported_materials
                     detail["imported_works_count"] = imported_works
+                    detail["smetter_sync"] = smetter_sync
                     json_response(self, detail)
                     return
 
@@ -7209,8 +7451,6 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             ("smetter_ref", "Сметтер"),
                             ("planned_end_date", "Плановый срок окончания работ по договору"),
                             ("main_estimate_amount", "Смета"),
-                            ("estimate_file_name", "Файл материалов из Сметтера"),
-                        ("work_task_file_name", "Задание на работы из Сметтера"),
                         ],
                     )
                     customer_id = ensure_customer(db, data.get("customer_name"), data.get("customer_phone"), data.get("customer_email"))
@@ -7259,6 +7499,16 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     save_initial_documents(db, project_id, initial_documents)
                     imported_materials = import_smetter_materials_from_documents(db, project_id, initial_documents)
                     imported_works = import_smetter_works_from_documents(db, project_id, initial_documents)
+                    smetter_sync = sync_project_from_smetter(
+                        db,
+                        project_id,
+                        data.get("smetter_ref") or "",
+                        account_user_id(account) or 3,
+                        bool(imported_materials and imported_works),
+                    )
+                    if smetter_sync.get("status") == "ok":
+                        imported_materials = int(smetter_sync.get("materials_count") or 0)
+                        imported_works = int(smetter_sync.get("works_count") or 0)
                     if imported_materials:
                         db.execute(
                             """
@@ -7279,6 +7529,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     detail = get_project_detail(project_id, account)
                     detail["imported_materials_count"] = imported_materials
                     detail["imported_works_count"] = imported_works
+                    detail["smetter_sync"] = smetter_sync
                     json_response(self, detail)
                     return
 
@@ -7296,6 +7547,8 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     missing = [label for key, label in required if not str(project[key] or "").strip()]
                     if not number_value(project["main_estimate_amount"]):
                         missing.append("Смета")
+                    if project["estimate_version"] == "smetter_sync_error":
+                        missing.append("Актуальная автоматическая загрузка из Сметтера")
                     if missing:
                         raise ValueError("Перед передачей заполните: " + ", ".join(missing))
                     db.execute(

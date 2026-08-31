@@ -112,8 +112,6 @@ const PROJECT_REQUIRED_FIELDS = [
   ["smetter_ref", "Сметтер"],
   ["planned_end_date", "Плановый срок окончания работ по договору"],
   ["main_estimate_amount", "Смета"],
-  ["estimate_file_name", "Файл материалов из Сметтера"],
-  ["work_task_file", "Задание на работы из Сметтера"],
   ["contract_file", "Первичный договор"],
   ["estimate_doc_file", "Смета"],
   ["project_docs_file", "Проектная документация"],
@@ -772,7 +770,7 @@ const documentAccess = {
   ai_auditor: new Set(["smetter_materials", "smetter_work_task", "project_documentation", "detail_node", "regulation", "standard", "instruction", "other"]),
   accountant: new Set(["main_estimate", "smetter_materials", "smetter_work_task", "contract", "variation_estimate", "act", "ks_2", "ks_3", "other"]),
   estimator: new Set(["main_estimate", "smetter_materials", "smetter_work_task", "project_documentation", "variation_estimate", "act", "ks_2", "ks_3", "photo_report", "object_remark_photo", "photo_video", "other"]),
-  foreman: new Set(["project_documentation", "variation_attachment", "extra_work_attachment", "photo_report", "object_remark_photo", "detail_node", "regulation", "standard", "instruction"]),
+  foreman: new Set(["smetter_materials", "smetter_work_task", "project_documentation", "variation_attachment", "extra_work_attachment", "photo_report", "object_remark_photo", "detail_node", "regulation", "standard", "instruction"]),
   master: new Set(["project_documentation", "variation_attachment", "extra_work_attachment", "photo_report", "object_remark_photo", "detail_node", "regulation", "standard", "instruction"]),
   procurement_manager: new Set(["smetter_materials", "project_documentation", "variation_attachment", "extra_work_attachment", "photo_report", "object_remark_photo", "photo_video", "detail_node", "regulation", "standard", "instruction", "other"]),
   technical_supervisor: new Set(["smetter_materials", "smetter_work_task", "project_documentation", "variation_attachment", "extra_work_attachment", "photo_report", "object_remark_photo", "detail_node", "regulation", "standard", "instruction", "other"]),
@@ -9671,6 +9669,7 @@ function bindEvents() {
       setProjectFileStatus("");
       await loadAll();
       const savedProjectId = Number(isEdit ? projectId : savedProject.id);
+      const smetterSync = savedProject.smetter_sync || null;
       if (isEdit) {
         state.selectedProjectId = savedProjectId;
         await renderProjectDetail(state.selectedProjectId);
@@ -9680,7 +9679,39 @@ function bindEvents() {
         switchView("projects");
         await renderProjects();
         await renderProjectDetail(savedProjectId);
-        showToast(uploadedInitialCount ? `Черновик сохранен, файлов прикреплено: ${uploadedInitialCount}` : "Черновик сохранен");
+        if (smetterSync?.status === "error") {
+          showToast(`Черновик сохранён. Сметтер: ${smetterSync.message}`);
+        } else if (smetterSync?.status === "fallback") {
+          showToast(smetterSync.message);
+        } else if (smetterSync?.status === "ok") {
+          showToast(smetterSync.message || "Данные Сметтера загружены");
+        } else {
+          showToast(uploadedInitialCount ? `Черновик сохранен, файлов прикреплено: ${uploadedInitialCount}` : "Черновик сохранен");
+        }
+        return;
+      }
+      if (smetterSync?.status === "error") {
+        state.selectedProjectId = savedProjectId;
+        switchView("projects");
+        await renderProjects();
+        await renderProjectDetail(savedProjectId);
+        showToast(`Карточка сохранена. Сметтер: ${smetterSync.message}`);
+        return;
+      }
+      if (smetterSync?.status === "fallback") {
+        state.selectedProjectId = savedProjectId;
+        switchView("projects");
+        await renderProjects();
+        await renderProjectDetail(savedProjectId);
+        showToast(smetterSync.message);
+        return;
+      }
+      if (smetterSync?.status === "ok") {
+        state.selectedProjectId = savedProjectId;
+        switchView("projects");
+        await renderProjects();
+        await renderProjectDetail(savedProjectId);
+        showToast(smetterSync.message || "Задание на работы и материалы загружены из Сметтера");
         return;
       }
       if (hasWorkTaskUpload) {
