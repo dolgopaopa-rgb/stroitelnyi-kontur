@@ -1360,11 +1360,13 @@ dialog::backdrop {
 
 #todayView .today-grid {
   gap: 10px;
-  align-items: start;
+  align-items: stretch;
 }
 
 #todayView .panel,
 .compact-ui-v1.density-compact #todayView .panel {
+  height: 100%;
+  min-width: 0;
   padding: 12px;
   border-radius: 14px;
 }
@@ -1374,6 +1376,69 @@ dialog::backdrop {
   min-height: 32px;
   margin-bottom: 8px;
   padding-bottom: 7px;
+}
+
+#todayView .today-materials-panel,
+#todayView .today-objects-panel {
+  grid-column: span 7;
+}
+
+#todayView .today-comments-panel,
+#todayView .today-no-photo-panel {
+  grid-column: span 5;
+}
+
+#todayView #todayComments {
+  display: grid;
+  min-height: 96px;
+  align-content: center;
+}
+
+#todayView .today-object-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "head actions"
+    "metrics actions";
+  min-height: 76px;
+  column-gap: 12px;
+  row-gap: 4px;
+  align-items: center;
+}
+
+#todayView .today-object-card.is-expanded {
+  grid-template-areas:
+    "head actions"
+    "metrics actions"
+    "details details";
+}
+
+#todayView .today-object-head {
+  grid-area: head;
+  min-width: 0;
+}
+
+#todayView .today-object-head strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+#todayView .today-object-metrics {
+  grid-area: metrics;
+}
+
+#todayView .today-object-actions {
+  grid-area: actions;
+  flex-wrap: nowrap;
+  align-self: center;
+}
+
+#todayView .today-object-details {
+  grid-area: details;
+}
+
+#todayView #todayNoPhoto .row {
+  min-height: 76px;
+  align-content: center;
 }
 
 #todayView[data-role="sales_manager"] .today-grid > .panel:nth-of-type(2),
@@ -1741,6 +1806,11 @@ dialog::backdrop {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  #todayView .today-objects-panel,
+  #todayView .today-no-photo-panel {
+    grid-column: 1 / -1;
+  }
+
   #estimatesView .task-stats {
     display: flex;
     width: 100%;
@@ -1796,6 +1866,32 @@ dialog::backdrop {
 
   #todayView[data-role="sales_manager"] .today-object-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  #todayView .today-materials-panel,
+  #todayView .today-comments-panel,
+  #todayView .today-objects-panel,
+  #todayView .today-no-photo-panel {
+    grid-column: 1 / -1;
+  }
+
+  #todayView .today-object-card,
+  #todayView .today-object-card.is-expanded {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "head"
+      "metrics"
+      "actions"
+      "details";
+    min-height: 0;
+  }
+
+  #todayView .today-object-actions {
+    justify-content: flex-start;
+  }
+
+  #todayView #todayNoPhoto .row {
+    min-height: 64px;
   }
 
   #todayView[data-role="sales_manager"] .today-object-actions .tiny,

@@ -1,9 +1,9 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260831-responsive-v2";
+const CACHE_NAME = "stroitelnyi-kontur-20260831-dashboard-grid-v3";
 const CORE_ASSETS = [
   "/",
   "/static/styles.css?v=20260824-compact-operational-screens",
-  "/static/crm-theme.css?v=20260831-responsive-v2",
-  "/static/app.compat.js?v=20260831-responsive-v2",
+  "/static/crm-theme.css?v=20260831-dashboard-grid-v3",
+  "/static/app.compat.js?v=20260831-dashboard-grid-v3",
   "/static/manifest.webmanifest?v=20260825-crm-theme-v3",
   "/static/assets/d2dom-logo-tile.svg?v=20260825-crm-theme",
   "/static/assets/d2dom-logo-white.svg",

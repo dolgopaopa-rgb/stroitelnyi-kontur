@@ -13,7 +13,7 @@
     <link rel="icon" type="image/svg+xml" href="/static/assets/d2dom-logo-tile.svg?v=20260825-crm-theme" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
     <link rel="stylesheet" href="/static/styles.css?v=20260824-compact-operational-screens" />
-    <link rel="stylesheet" href="/static/crm-theme.css?v=20260831-responsive-v2" />
+    <link rel="stylesheet" href="/static/crm-theme.css?v=20260831-dashboard-grid-v3" />
   </head>
   <body>
     <svg class="icon-sprite" aria-hidden="true">
@@ -132,27 +132,27 @@
               </div>
               <div class="list" id="todayAttention" data-testid="today-attention-list"></div>
             </section>
-            <section class="panel">
+            <section class="panel today-materials-panel">
               <div class="panel-head">
                 <h2 id="todayMaterialsTitle">Материалы под риском</h2>
                 <button class="link-button" data-view-target="materials">Открыть материалы</button>
               </div>
               <div class="list" id="todayMaterials" data-testid="today-materials-risk-list"></div>
             </section>
-            <section class="panel">
+            <section class="panel today-comments-panel">
               <div class="panel-head">
                 <h2>Новые комментарии за 24 часа</h2>
               </div>
               <div class="list" id="todayComments"></div>
             </section>
-            <section class="panel today-wide">
+            <section class="panel today-wide today-objects-panel">
               <div class="panel-head">
                 <h2>Активные объекты</h2>
                 <button class="link-button" data-view-target="projects">Открыть объекты</button>
               </div>
               <div class="today-object-grid" id="todayObjects"></div>
             </section>
-            <section class="panel today-wide">
+            <section class="panel today-wide today-no-photo-panel">
               <div class="panel-head">
                 <h2>Объекты без фотоотчёта сегодня</h2>
                 <button class="link-button" data-view-target="photos">Фотоотчёты</button>
@@ -1173,6 +1173,6 @@
       </div>
     </div>
     <div class="toast" id="toast"></div>
-    <script src="/static/app.compat.js?v=20260831-responsive-v2"></script>
+    <script src="/static/app.compat.js?v=20260831-dashboard-grid-v3"></script>
   </body>
 </html>

@@ -172,6 +172,45 @@ test("manager workspace passes the continuous 320-1920 px sweep", async ({ page 
   }
 });
 
+test("director Today dashboard keeps paired panels and repeated cards aligned", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop-chrome", "Desktop dashboard rhythm is checked once.");
+  await page.addInitScript(() => Reflect.deleteProperty(Navigator.prototype, "serviceWorker"));
+  await page.setViewportSize({ width: 1231, height: 769 });
+  await openApp(page, "/today");
+
+  const geometry = await page.evaluate(() => {
+    const rect = (selector: string) => document.querySelector<HTMLElement>(selector)!.getBoundingClientRect();
+    const cardHeights = [...document.querySelectorAll<HTMLElement>("#todayObjects .today-object-card:not(.is-expanded)")]
+      .map((node) => node.getBoundingClientRect().height);
+    const noPhotoHeights = [...document.querySelectorAll<HTMLElement>("#todayNoPhoto .row")]
+      .map((node) => node.getBoundingClientRect().height);
+    const materials = rect("#todayView .today-materials-panel");
+    const comments = rect("#todayView .today-comments-panel");
+    const objects = rect("#todayView .today-objects-panel");
+    const noPhoto = rect("#todayView .today-no-photo-panel");
+    return {
+      firstPairTopDelta: Math.abs(materials.top - comments.top),
+      firstPairHeightDelta: Math.abs(materials.height - comments.height),
+      secondPairTopDelta: Math.abs(objects.top - noPhoto.top),
+      secondPairHeightDelta: Math.abs(objects.height - noPhoto.height),
+      objectPanelWider: objects.width > noPhoto.width,
+      objectCardHeightDelta: cardHeights.length ? Math.max(...cardHeights) - Math.min(...cardHeights) : 999,
+      noPhotoHeightDelta: noPhotoHeights.length ? Math.max(...noPhotoHeights) - Math.min(...noPhotoHeights) : 999,
+      overflow: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - window.innerWidth,
+    };
+  });
+
+  expect(geometry.firstPairTopDelta).toBeLessThanOrEqual(1);
+  expect(geometry.firstPairHeightDelta).toBeLessThanOrEqual(1);
+  expect(geometry.secondPairTopDelta).toBeLessThanOrEqual(1);
+  expect(geometry.secondPairHeightDelta).toBeLessThanOrEqual(1);
+  expect(geometry.objectPanelWider).toBeTruthy();
+  expect(geometry.objectCardHeightDelta).toBeLessThanOrEqual(1);
+  expect(geometry.noPhotoHeightDelta).toBeLessThanOrEqual(1);
+  expect(geometry.overflow).toBeLessThanOrEqual(1);
+  await page.screenshot({ path: testInfo.outputPath("director-today-dashboard-1231.png"), fullPage: true });
+});
+
 test("manager shell and compact workspaces keep a shared alignment", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop-chrome", "Desktop geometry is checked once.");
   await page.addInitScript(() => Reflect.deleteProperty(Navigator.prototype, "serviceWorker"));
