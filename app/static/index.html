@@ -267,8 +267,8 @@
               </div>
               <div class="material-list-toolbar">
                 <div class="segmented-control" role="tablist" aria-label="Режим списка заявок">
-                  <button class="segment active" type="button" data-material-list-mode="active">Активные</button>
-                  <button class="segment" type="button" data-material-list-mode="archive">Архив</button>
+                  <button class="segment active" type="button" role="tab" aria-selected="true" aria-controls="materialRows" data-material-list-mode="active">Активные</button>
+                  <button class="segment" type="button" role="tab" aria-selected="false" aria-controls="materialRows" data-material-list-mode="archive">Архив</button>
                 </div>
                 <button class="secondary" id="exportCompletedMaterialsButton" type="button">Выгрузить выполненные</button>
               </div>
@@ -293,7 +293,7 @@
                 <button class="quick-filter" type="button" data-material-quick-filter="extra">Допработы</button>
                 <button class="quick-filter" type="button" data-material-quick-filter="out_of_estimate">Вне основной сметы</button>
               </div>
-              <div class="table" id="materialRows"></div>
+              <div class="table" id="materialRows" role="tabpanel"></div>
             </section>
             <section class="panel materials-estimate-panel">
               <div class="panel-head">
@@ -1173,6 +1173,6 @@
       </div>
     </div>
     <div class="toast" id="toast"></div>
-    <script src="/static/app.compat.js?v=20260831-dashboard-grid-v3"></script>
+    <script src="/static/app.compat.js?v=20260903-material-archive-v1"></script>
   </body>
 </html>

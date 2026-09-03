@@ -74,6 +74,7 @@
     selectedProjectTab: "overview",
     projectListMode: "active",
     materialListMode: "active",
+    materialRenderRequestId: 0,
     materialPipelineFilter: "all",
     materialQuickFilter: "all",
     taskFilter: "all",
@@ -4404,8 +4405,12 @@
     ).join("") : '<p class="muted">Локации поставщиков пока не добавлены.</p>';
   }
   async function renderMaterials() {
+    const requestedMode = state.materialListMode;
+    const requestId = ++state.materialRenderRequestId;
     qsa("[data-material-list-mode]").forEach((button) => {
-      button.classList.toggle("active", button.dataset.materialListMode === state.materialListMode);
+      const isActive = button.dataset.materialListMode === requestedMode;
+      button.classList.toggle("active", isActive);
+      button.setAttribute("aria-selected", String(isActive));
     });
     qsa("[data-material-pipeline-filter]").forEach((button) => {
       const key = button.dataset.materialPipelineFilter;
@@ -4419,7 +4424,8 @@
     });
     const exportButton = qs("#exportCompletedMaterialsButton");
     if (exportButton) exportButton.hidden = !["owner", "construction_manager", "finance_director", "accountant", "procurement_manager"].includes(currentRoleBase());
-    const items = await api("/api/material-requests?archive=".concat(state.materialListMode === "archive" ? "1" : "0"));
+    const items = await api("/api/material-requests?archive=".concat(requestedMode === "archive" ? "1" : "0"));
+    if (requestId !== state.materialRenderRequestId || requestedMode !== state.materialListMode) return;
     const visibleItems = roleScopedMaterialRows(items);
     state.materialRequests = visibleItems;
     const allBatches = buildMaterialBatches(visibleItems);
@@ -5890,7 +5896,11 @@
     });
     qsa("[data-material-list-mode]").forEach(
       (button) => button.addEventListener("click", async () => {
-        state.materialListMode = button.dataset.materialListMode;
+        const nextMode = button.dataset.materialListMode || "active";
+        if (nextMode === state.materialListMode) return;
+        state.materialListMode = nextMode;
+        state.materialPipelineFilter = "all";
+        state.materialQuickFilter = "all";
         await renderMaterials();
       })
     );
