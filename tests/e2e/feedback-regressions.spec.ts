@@ -119,6 +119,83 @@ test("estimate comments stay full length and can be edited after submission", as
   expect(server).toContain("UPDATE estimate_jobs SET result_comment = ?");
 });
 
+test("Smetter link dialog has one unambiguous estimate comment field", async () => {
+  const html = readProjectFile("app/static/index.html");
+  const app = readProjectFile("app/static/app.js");
+  const styles = readProjectFile("app/static/styles.css");
+
+  expect(html).toContain('id="estimateReplacementNoteWrap"');
+  expect(html).toContain('id="estimateResultCommentLabel"');
+  expect(html).toContain('id="estimateFileInputWrap"');
+  expect(html).toContain("20260903-estimate-comment-v2");
+  expect(app).toContain('form.dataset.modeOverride = modeOverride');
+  expect(app).toContain('replacementNoteWrap.hidden = isFocusedMode || mode !== "replace"');
+  expect(app).toContain('fileInputWrap.hidden = isFocusedMode');
+  expect(app).toContain('"Комментарий к ссылке и смете"');
+  expect(app).toContain('"Сохранить ссылку и комментарий"');
+  expect(app).toContain('class="estimate-result-note"><strong>Комментарий к смете</strong>');
+  expect(styles).toContain(".estimate-result-note");
+});
+
+test("Smetter link comment is saved and shown in the estimate card", async ({ page }) => {
+  const usersResponse = await page.request.get("/api/users");
+  expect(usersResponse.ok()).toBeTruthy();
+  const users = await usersResponse.json();
+  const manager = users.find((user: { role: string }) => user.role === "sales_manager");
+  const estimator = users.find((user: { role: string }) => user.role === "estimator");
+  expect(manager).toBeTruthy();
+  expect(estimator).toBeTruthy();
+
+  const title = `Проверка комментария к ссылке ${test.info().project.name}`;
+  const createResponse = await page.request.post("/api/estimate-jobs", {
+    data: {
+      title,
+      customer_name: "Синтетический заказчик",
+      manager_id: manager.id,
+      estimator_id: estimator.id,
+      received_at: "2026-09-03",
+      due_date: "2026-09-10",
+      status: "estimate_done",
+      site_costs_policy: "include",
+      smetter_url: "https://example.com/smetter/original",
+      result_comment: "Исходный комментарий",
+    },
+  });
+  expect(createResponse.ok()).toBeTruthy();
+
+  await openApp(page, "/?view=estimates");
+  await page.waitForLoadState("networkidle");
+  await page.waitForTimeout(500);
+
+  const job = page.locator(".estimate-job-row").filter({ hasText: title }).filter({
+    has: page.locator('[data-estimate-file-mode="link"]'),
+  }).first();
+  await expect(job).toBeAttached();
+  await job.evaluate((node) => {
+    (node as HTMLDetailsElement).open = true;
+  });
+  const linkButton = job.locator('[data-estimate-file-mode="link"]');
+  await expect(linkButton).toHaveAttribute("data-estimate-file-mode", "link");
+  await linkButton.click();
+
+  const dialog = page.locator("#estimateJobFileDialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator("#estimateJobFileForm")).toHaveAttribute("data-mode-override", "link");
+  await expect(dialog.locator("#estimateReplacementNoteWrap")).toBeHidden();
+  await expect(dialog.locator("#estimateFileInputWrap")).toBeHidden();
+  await expect(dialog.locator("#estimateResultCommentLabel")).toHaveText("Комментарий к ссылке и смете");
+  await expect(dialog.locator("textarea:visible")).toHaveCount(1);
+
+  const comment = `Проверочный комментарий к ссылке ${test.info().project.name}`;
+  await dialog.locator('input[name="smetter_url"]').fill("https://example.com/smetter/feedback-816");
+  await dialog.locator('textarea[name="result_comment"]').fill(comment);
+  await dialog.locator("#estimateJobFileSubmitButton").click();
+
+  await expect(dialog).toBeHidden();
+  await expect(job.locator(".estimate-result-note")).toContainText("Комментарий к смете");
+  await expect(job.locator(".estimate-result-note")).toContainText(comment);
+});
+
 test("feedback delete controls are available only to owner", async ({ page }) => {
   const externalId = `e2e-feedback-delete-${Date.now()}-${Math.random()}`;
   const createResponse = await page.request.post("/api/feedback", {

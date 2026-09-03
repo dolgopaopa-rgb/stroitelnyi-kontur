@@ -3372,6 +3372,21 @@ h2 {
   margin-top: 3px;
 }
 
+.estimate-result-note {
+  border: 1px solid #cfe3df;
+  border-radius: 8px;
+  background: #f2faf8;
+  padding: 8px 10px;
+}
+
+.estimate-result-note strong {
+  color: var(--brand);
+}
+
+.estimate-result-note p {
+  margin-top: 3px;
+}
+
 .estimate-job-links {
   display: grid;
   gap: 5px;

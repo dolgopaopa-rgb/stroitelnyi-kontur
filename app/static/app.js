@@ -3640,10 +3640,10 @@ function renderEstimateJobRow(job) {
           ${job.site_costs_comment ? `<p class="muted">Организация площадки: ${escapeHtml(job.site_costs_comment)}</p>` : ""}
           ${smetterHref ? `<a class="link-button inline-link" href="${escapeAttr(smetterHref)}" target="_blank" rel="noopener noreferrer">Открыть Сметтер</a>` : ""}
           ${renderEstimateJobLinks(quickLinks)}
+          ${job.result_comment ? `<div class="estimate-result-note"><strong>Комментарий к смете</strong><p>${linkifyText(job.result_comment)}</p></div>` : ""}
           ${job.comment ? `<p>${linkifyText(job.comment)}</p>` : ""}
           ${job.question_comment ? `<div class="estimate-question-note"><strong>Вопрос сметчика</strong><p>${linkifyText(job.question_comment)}</p></div>` : ""}
           ${job.return_comment ? `<p class="muted danger-text">Возврат менеджеру: ${linkifyText(job.return_comment)}</p>` : ""}
-          ${job.result_comment ? `<p class="muted">Итог: ${linkifyText(job.result_comment)}</p>` : ""}
           ${renderEstimateJobFiles(job.files, job.id, canManageFiles)}
         </div>
         <div class="estimate-job-actions">
@@ -3707,9 +3707,33 @@ function updateEstimateFileDialogMode() {
   const form = qs("#estimateJobFileForm");
   if (!form) return;
   const mode = form.elements.mode.value || "add";
+  const modeOverride = form.dataset.modeOverride || "";
+  const isLinkMode = modeOverride === "link";
+  const isCommentMode = modeOverride === "comment";
+  const isFocusedMode = isLinkMode || isCommentMode;
+  const actionWrap = qs("#estimateFileActionWrap");
   const replaceWrap = qs("#estimateReplaceFileWrap");
+  const replacementNoteWrap = qs("#estimateReplacementNoteWrap");
+  const smetterUrlWrap = qs("#estimateSmetterUrlWrap");
+  const resultCommentLabel = qs("#estimateResultCommentLabel");
+  const fileInputWrap = qs("#estimateFileInputWrap");
+  const submitButton = qs("#estimateJobFileSubmitButton");
   const fileInput = form.elements.attachments;
-  if (replaceWrap) replaceWrap.hidden = mode !== "replace";
+  if (actionWrap) actionWrap.hidden = isFocusedMode;
+  if (replaceWrap) replaceWrap.hidden = isFocusedMode || mode !== "replace";
+  if (replacementNoteWrap) replacementNoteWrap.hidden = isFocusedMode || mode !== "replace";
+  if (smetterUrlWrap) smetterUrlWrap.hidden = isCommentMode;
+  if (fileInputWrap) fileInputWrap.hidden = isFocusedMode;
+  if (resultCommentLabel) {
+    resultCommentLabel.textContent = isLinkMode ? "Комментарий к ссылке и смете" : "Комментарий сметчика";
+  }
+  if (submitButton) {
+    submitButton.textContent = isLinkMode
+      ? "Сохранить ссылку и комментарий"
+      : isCommentMode
+        ? "Сохранить комментарий"
+        : "Сохранить файлы";
+  }
   if (fileInput) fileInput.multiple = mode !== "replace";
 }
 
@@ -3718,6 +3742,7 @@ function openEstimateJobFileDialog(jobId, replaceFileId = "", modeOverride = "")
   const form = qs("#estimateJobFileForm");
   if (!job || !form) return;
   form.reset();
+  form.dataset.modeOverride = modeOverride;
   form.elements.id.value = job.id;
   form.elements.smetter_url.value = job.smetter_url || estimateSmetterHref(job) || "";
   form.elements.result_comment.value = job.result_comment || "";

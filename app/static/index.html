@@ -15,7 +15,7 @@
     <link rel="preload" href="/static/assets/brand-2026/Involve-Regular.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="/static/assets/brand-2026/Involve-SemiBold.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="/static/assets/brand-2026/Haval-Light.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="stylesheet" href="/static/styles.css?v=20260809-openvillage-brand-v1" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260903-estimate-comment-v2" />
     <link rel="stylesheet" href="/static/brand-2026.css?v=20260809-openvillage-brand-v1" />
   </head>
   <body class="brand-system-2026">
@@ -941,7 +941,7 @@
           <button type="button" class="icon" data-close="estimateJobFileDialog">×</button>
         </div>
         <input name="id" type="hidden" />
-        <label>
+        <label id="estimateFileActionWrap">
           Действие
           <select name="mode">
             <option value="add">Добавить новый файл</option>
@@ -953,25 +953,25 @@
           <select name="replace_file_id"></select>
           <span class="field-hint">Старая версия останется в истории сметы.</span>
         </label>
-        <label>Комментарий <textarea name="replacement_note" rows="2" placeholder="Например: новая версия после правок заказчика"></textarea></label>
-        <label>
+        <label id="estimateReplacementNoteWrap">Комментарий к новой версии файла <textarea name="replacement_note" rows="2" placeholder="Например: новая версия после правок заказчика"></textarea></label>
+        <label id="estimateSmetterUrlWrap">
           Ссылка на Сметтер
           <input name="smetter_url" type="url" placeholder="https://app.smetter.ru/estimate/..." />
           <span class="field-hint">Можно сохранить ссылку без загрузки нового файла.</span>
         </label>
-        <label>
-          Комментарий сметчика
+        <label id="estimateResultCommentWrap">
+          <span id="estimateResultCommentLabel">Комментарий сметчика</span>
           <textarea name="result_comment" rows="4" placeholder="Например: что учтено, что осталось уточнить, где находится ссылка на смету"></textarea>
           <span class="field-hint">Комментарий будет показан полностью в карточке сметы.</span>
         </label>
-        <label>
+        <label id="estimateFileInputWrap">
           Файл
           <input name="attachments" type="file" multiple accept=".pdf,.xlsx,.xls,.doc,.docx,.zip,.rar,.7z,.jpg,.jpeg,.png,.webp" />
           <span class="field-hint">В режиме замены выберите один файл. В режиме добавления можно выбрать несколько.</span>
         </label>
         <div class="form-actions">
           <button type="button" class="secondary" data-close="estimateJobFileDialog">Отмена</button>
-          <button class="primary" type="submit">Сохранить файлы</button>
+          <button class="primary" id="estimateJobFileSubmitButton" type="submit">Сохранить файлы</button>
         </div>
       </form>
     </dialog>
@@ -1284,6 +1284,6 @@
       </div>
     </div>
     <div class="toast" id="toast"></div>
-    <script src="/static/app.compat.js?v=20260809-openvillage-brand-v1"></script>
+    <script src="/static/app.compat.js?v=20260903-estimate-comment-v2"></script>
   </body>
 </html>
