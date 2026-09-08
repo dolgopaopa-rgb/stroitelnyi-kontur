@@ -13,7 +13,7 @@
     <link rel="icon" type="image/svg+xml" href="/static/assets/d2dom-logo-tile.svg?v=20260825-crm-theme" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
     <link rel="stylesheet" href="/static/styles.css?v=20260824-compact-operational-screens" />
-    <link rel="stylesheet" href="/static/crm-theme.css?v=20260908-balanced-workspaces" />
+    <link rel="stylesheet" href="/static/crm-theme.css?v=20260908-role-workspaces" />
   </head>
   <body>
     <svg class="icon-sprite" aria-hidden="true">
@@ -254,6 +254,7 @@
             </div>
             <div class="compact-stats" id="estimateJobStats"></div>
             <div class="estimate-schedule" id="estimateJobSchedule"></div>
+            <h3 id="estimateJobFilterSummary" class="estimate-filter-summary" role="status"></h3>
             <div class="table estimate-job-list" id="estimateJobRows"></div>
           </div>
         </section>
@@ -282,17 +283,19 @@
                 <button class="pipeline-filter" type="button" data-material-pipeline-filter="problem">Проблема</button>
                 <button class="pipeline-filter" type="button" data-material-pipeline-filter="closed">Закрыто</button>
               </div>
-              <div class="material-quick-filters" role="tablist" aria-label="Быстрые фильтры заявок">
-                <button class="quick-filter active" type="button" data-material-quick-filter="all">Все заявки</button>
-                <button class="quick-filter" type="button" data-material-quick-filter="mine">Мои</button>
-                <button class="quick-filter" type="button" data-material-quick-filter="by_object">По объекту</button>
-                <button class="quick-filter" type="button" data-material-quick-filter="urgent">Срочные</button>
-                <button class="quick-filter" type="button" data-material-quick-filter="no_responsible">Без ответственного</button>
-                <button class="quick-filter" type="button" data-material-quick-filter="no_due">Без срока</button>
-                <button class="quick-filter" type="button" data-material-quick-filter="blocker">Тормозит объект</button>
-                <button class="quick-filter" type="button" data-material-quick-filter="extra">Допработы</button>
-                <button class="quick-filter" type="button" data-material-quick-filter="out_of_estimate">Вне основной сметы</button>
-              </div>
+              <label class="material-quick-filter-field">Заявки
+                <select id="materialQuickFilterSelect" aria-controls="materialRows">
+                  <option value="all" data-label="Все заявки">Все заявки</option>
+                  <option value="mine" data-label="Мои">Мои</option>
+                  <option value="by_object" data-label="По объекту">По объекту</option>
+                  <option value="urgent" data-label="Срочные">Срочные</option>
+                  <option value="no_responsible" data-label="Без ответственного">Без ответственного</option>
+                  <option value="no_due" data-label="Без срока">Без срока</option>
+                  <option value="blocker" data-label="Тормозит объект">Тормозит объект</option>
+                  <option value="extra" data-label="Допработы">Допработы</option>
+                  <option value="out_of_estimate" data-label="Вне основной сметы">Вне основной сметы</option>
+                </select>
+              </label>
               <div class="table" id="materialRows" role="tabpanel"></div>
             </section>
             <section class="panel materials-estimate-panel">
@@ -1173,6 +1176,6 @@
       </div>
     </div>
     <div class="toast" id="toast"></div>
-    <script src="/static/app.compat.js?v=20260908-balanced-workspaces"></script>
+    <script src="/static/app.compat.js?v=20260908-role-workspaces"></script>
   </body>
 </html>

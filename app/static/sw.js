@@ -1,9 +1,9 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260908-balanced-workspaces";
+const CACHE_NAME = "stroitelnyi-kontur-20260908-role-workspaces";
 const CORE_ASSETS = [
   "/",
   "/static/styles.css?v=20260824-compact-operational-screens",
-  "/static/crm-theme.css?v=20260908-balanced-workspaces",
-  "/static/app.compat.js?v=20260908-balanced-workspaces",
+  "/static/crm-theme.css?v=20260908-role-workspaces",
+  "/static/app.compat.js?v=20260908-role-workspaces",
   "/static/manifest.webmanifest?v=20260825-crm-theme-v3",
   "/static/assets/d2dom-logo-tile.svg?v=20260825-crm-theme",
   "/static/assets/d2dom-logo-white.svg",

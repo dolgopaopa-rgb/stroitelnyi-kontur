@@ -1394,7 +1394,8 @@ dialog::backdrop {
   align-content: start;
 }
 
-#todayView[data-role="owner"] .today-grid .panel-head {
+#todayView[data-role="owner"] .today-grid .panel-head,
+#todayView[data-role="estimator"] .today-grid .panel-head {
   min-height: 48px;
 }
 
@@ -1476,7 +1477,6 @@ dialog::backdrop {
   grid-column: 1 / -1;
 }
 
-#todayView[data-role="sales_manager"] #todayAttention,
 #todayView[data-role="sales_manager"] #todayComments {
   max-height: 126px;
   overflow-y: auto;
@@ -1489,25 +1489,53 @@ dialog::backdrop {
 }
 
 #todayView[data-role="sales_manager"] .today-object-card {
-  gap: 5px;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "head" "metrics" "actions";
+  grid-template-rows: auto 1fr auto;
+  align-items: start;
+  gap: 8px;
   min-height: 0;
   padding: 9px 10px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 8px;
+}
+
+#todayView[data-role="sales_manager"] .today-object-card.is-expanded {
+  grid-template-areas: "head" "metrics" "actions" "details";
+  grid-template-rows: auto 1fr auto auto;
+}
+
+#todayView[data-role="sales_manager"] .today-object-head {
+  align-items: start;
+  gap: 8px;
+}
+
+#todayView[data-role="sales_manager"] .today-object-head strong {
+  flex: 1;
+  line-height: 1.4;
+}
+
+#todayView[data-role="sales_manager"] .today-object-head > .pill {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  border-radius: 4px;
 }
 
 #todayView[data-role="sales_manager"] .today-object-metrics {
   gap: 4px;
+  align-content: start;
 }
 
 #todayView[data-role="sales_manager"] .today-object-actions {
-  justify-content: flex-end;
-  margin-top: 1px;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  margin-top: 0;
 }
 
 #todayView[data-role="sales_manager"] .today-object-actions .tiny {
   min-height: 30px;
   padding-inline: 10px;
+  border-radius: 6px;
 }
 
 #dashboardView .dashboard-sortable {
@@ -2189,6 +2217,147 @@ dialog::backdrop {
     line-height: 1.2;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
+  }
+}
+
+#estimatesView .task-stat {
+  cursor: pointer;
+  text-align: left;
+}
+
+#estimatesView .task-stat.active {
+  outline: 2px solid var(--brand);
+  outline-offset: -2px;
+}
+
+#estimatesView .task-stat:focus-visible {
+  outline: 3px solid var(--text);
+  outline-offset: -3px;
+}
+
+#estimatesView .estimate-job-row[data-estimate-tone="active"],
+#estimatesView .estimate-timeline-row[data-estimate-tone="active"] {
+  background: var(--info-soft);
+  border-left: 4px solid var(--info);
+}
+
+#estimatesView .estimate-job-row[data-estimate-tone="overdue"],
+#estimatesView .estimate-timeline-row[data-estimate-tone="overdue"] {
+  background: var(--danger-soft);
+  border-left: 4px solid var(--danger);
+}
+
+#estimatesView .estimate-timeline-row {
+  padding: 8px 10px;
+  border-radius: 6px;
+}
+
+#estimatesView .estimate-filter-summary {
+  margin: 16px 0 10px;
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+#materialsView .materials-layout {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 14px;
+}
+
+#materialsView .materials-layout > .panel {
+  min-width: 0;
+}
+
+#materialsView .materials-layout > .panel > .panel-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(28px, auto) minmax(44px, auto);
+  gap: 8px;
+  align-items: start;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+}
+
+#materialsView .materials-layout .panel-head h2 {
+  font-size: 18px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+#materialsView .materials-layout .panel-head button {
+  min-height: 44px;
+  height: auto;
+  justify-self: start;
+  border-radius: 6px;
+}
+
+#materialsView .materials-layout .panel-head .stack-line {
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+#materialsView .material-list-toolbar {
+  margin-bottom: 12px;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+#materialsView .material-pipeline-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  overflow: visible;
+  margin: 0 0 12px;
+}
+
+#materialsView .material-pipeline-tabs .pipeline-filter {
+  min-height: 36px;
+  height: auto;
+  white-space: normal;
+  border-radius: 4px;
+}
+
+#materialsView .material-quick-filter-field {
+  display: grid;
+  grid-template-columns: auto minmax(0, 280px);
+  align-items: center;
+  justify-content: start;
+  gap: 10px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+#materialsView #materialQuickFilterSelect {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  border-radius: 6px;
+}
+
+#materialsView #materialRows {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 1100px) {
+  #materialsView .materials-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #materialsView .material-pipeline-tabs .pipeline-filter {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 430px) {
+  #todayView[data-role="sales_manager"] .today-object-head {
+    flex-wrap: wrap;
+  }
+
+  #todayView[data-role="sales_manager"] .today-object-head strong {
+    flex-basis: 100%;
   }
 }
 

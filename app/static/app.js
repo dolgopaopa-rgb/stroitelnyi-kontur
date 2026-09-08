@@ -33,6 +33,7 @@ const state = {
   photoReports: [],
   objectRemarks: [],
   estimateJobs: [],
+  estimateJobFilter: "all",
   estimateMaterials: [],
   estimatePreviewRows: [],
   showEstimateMaterials: false,
@@ -3055,6 +3056,22 @@ function taskPriorityLevel(priority) {
   }[priority] || "";
 }
 
+function estimateJobIsOverdue(job) {
+  return job.status !== "estimate_done" && levelByDate(job.due_date) === "danger";
+}
+
+function estimateJobMatchesFilter(job, filter) {
+  if (filter === "active") return ["estimate_new", "estimate_in_work", "estimate_question"].includes(job.status);
+  if (filter === "overdue") return estimateJobIsOverdue(job);
+  const statuses = { done: "estimate_done", hold: "estimate_hold", returned: "estimate_returned", questions: "estimate_question" };
+  return filter === "all" || job.status === statuses[filter];
+}
+
+function estimateJobTone(job) {
+  if (estimateJobIsOverdue(job)) return "overdue";
+  return estimateJobMatchesFilter(job, "active") ? "active" : "neutral";
+}
+
 function estimateJobStatusLevel(job) {
   if (job.status === "estimate_done") return "success";
   if (levelByDate(job.due_date) === "danger") return "danger";
@@ -3125,7 +3142,7 @@ function estimateJobStats(jobs) {
   return {
     active: jobs.filter((job) => ["estimate_new", "estimate_in_work", "estimate_question"].includes(job.status)).length,
     done: jobs.filter((job) => job.status === "estimate_done").length,
-    overdue: jobs.filter((job) => job.status !== "estimate_done" && levelByDate(job.due_date) === "danger").length,
+    overdue: jobs.filter(estimateJobIsOverdue).length,
     hold: jobs.filter((job) => job.status === "estimate_hold").length,
     returned: jobs.filter((job) => job.status === "estimate_returned").length,
     questions: jobs.filter((job) => job.status === "estimate_question").length,
@@ -3136,24 +3153,24 @@ function renderEstimateJobStats(jobs) {
   const stats = estimateJobStats(jobs);
   const total = Math.max(jobs.length, 1);
   const segments = [
-    ["Все", jobs.length, ""],
-    ["В работе", stats.active, "blue"],
-    ["Просрочено", stats.overdue, "danger"],
-    ["Уточнение", stats.questions, "warning"],
-    ["Сдано", stats.done, "success"],
-    ["Пауза", stats.hold, "warning"],
-    ["Возврат", stats.returned, "danger"],
+    ["all", "Все", jobs.length, ""],
+    ["active", "В работе", stats.active, "blue"],
+    ["overdue", "Просрочено", stats.overdue, "danger"],
+    ["questions", "Уточнение", stats.questions, "warning"],
+    ["done", "Сдано", stats.done, "success"],
+    ["hold", "Пауза", stats.hold, "warning"],
+    ["returned", "Возврат", stats.returned, "danger"],
   ];
   return `
     <div class="task-stats">
       ${segments
         .map(
-          ([title, count, level]) => `
-          <div class="task-stat ${level}">
+          ([key, title, count, level]) => `
+          <button type="button" class="task-stat ${level} ${state.estimateJobFilter === key ? "active" : ""}" data-estimate-job-filter="${key}" aria-pressed="${state.estimateJobFilter === key}" aria-controls="estimateJobRows">
             <span>${title}</span>
             <strong>${count}</strong>
             <div class="stat-bar"><i style="width: ${(count / total) * 100}%"></i></div>
-          </div>`
+          </button>`
         )
         .join("")}
     </div>`;
@@ -3176,14 +3193,14 @@ function renderEstimateSchedule(jobs) {
   return activeJobs
     .map(
       (job) => `
-      <div class="estimate-timeline-row">
+      <div class="estimate-timeline-row" data-estimate-tone="${estimateJobTone(job)}">
         <div class="estimate-timeline-main">
           <strong>${escapeHtml(job.title)}</strong>
           <span>${escapeHtml(job.estimator_name || "сметчик не назначен")} · ${formatDateRu(job.received_at)} → ${formatDateRu(job.due_date)}</span>
           ${job.question_comment ? `<em>Вопрос сметчика: ${escapeHtml(job.question_comment)}</em>` : ""}
         </div>
         <div class="estimate-timeline-track ${estimateJobStatusLevel(job)}"><i style="width: ${estimateJobProgress(job)}%"></i></div>
-        ${pill(label(job.status), estimateJobStatusLevel(job))}
+        ${pill(estimateJobIsOverdue(job) ? "Просрочено" : label(job.status), estimateJobStatusLevel(job))}
       </div>`
     )
     .join("");
@@ -3313,12 +3330,12 @@ function renderEstimateJobRow(job) {
   const canAnswerQuestion = canEdit && job.status === "estimate_question" && ["owner", "construction_manager", "sales_manager"].includes(currentRoleBase());
   const smetterHref = estimateSmetterHref(job);
   return `
-    <article class="row estimate-job-row">
+    <article class="row estimate-job-row" data-estimate-job="${job.id}" data-estimate-tone="${estimateJobTone(job)}">
       <div class="estimate-job-main">
         <div class="stack-line">
           <strong>${escapeHtml(job.title)}</strong>
           ${pill(label(job.status), statusLevel)}
-          ${pill(job.due_date || "без срока", job.status === "estimate_done" ? "success" : levelByDate(job.due_date))}
+          ${pill(`${estimateJobIsOverdue(job) ? "Просрочено · " : ""}${job.due_date ? `Срок: ${formatDateRu(job.due_date)}` : "Без срока"}`, job.status === "estimate_done" ? "success" : levelByDate(job.due_date))}
         </div>
         <div class="muted">${escapeHtml(job.customer_name || "Заказчик не указан")} · ${escapeHtml(job.project_title || "без карточки объекта")} · ${estimateJobTypeLabel(job.estimate_type)}</div>
         <div class="muted">получено: ${formatDateRu(job.received_at) || "не указано"} · выдал задание: ${escapeHtml(job.manager_name || "не назначен")} · сметчик: ${escapeHtml(job.estimator_name || "не назначен")}</div>
@@ -4067,8 +4084,8 @@ async function renderToday() {
     ? renderLimitedRows(todayTasks, renderTodayTaskCard, { limit: 5, moreTarget: 'data-view-target="tasks"' })
     : `<div class="empty-state"><strong>На сегодня задач нет</strong><p class="muted">Проверьте просроченные или откройте объект.</p></div>`;
   qs("#todayAttention").innerHTML = decisionItems.length
-    ? renderLimitedRows(decisionItems, renderTodayDecisionItem, currentRoleBase() === "owner"
-      ? { limit: 2, expandKey: "today-owner-attention" }
+    ? renderLimitedRows(decisionItems, renderTodayDecisionItem, ["owner", "estimator", "sales_manager"].includes(currentRoleBase())
+      ? { limit: 2, expandKey: `today-${currentRoleBase()}-attention` }
       : { limit: 5, moreTarget: 'data-view-target="tasks"' })
     : `<div class="attention-empty"><strong>Критичных сигналов нет</strong><span>На сейчас ничего срочного не найдено.</span></div>`;
   qs("#todayMaterials").innerHTML = riskyMaterials.length
@@ -4114,11 +4131,15 @@ async function renderEstimateJobs() {
     return;
   }
   const jobs = state.estimateJobs || [];
+  const filteredJobs = jobs.filter((job) => estimateJobMatchesFilter(job, state.estimateJobFilter));
   statsNode.innerHTML = renderEstimateJobStats(jobs);
-  scheduleNode.innerHTML = renderEstimateSchedule(jobs);
-  rowsNode.innerHTML = jobs.length
-    ? jobs.map(renderEstimateJobRow).join("")
-    : `<p class="muted">Сметных заданий пока нет. Нажмите “Добавить задание”, чтобы зафиксировать входящую смету в работе.</p>`;
+  scheduleNode.hidden = !filteredJobs.some((job) => job.status !== "estimate_done");
+  scheduleNode.innerHTML = renderEstimateSchedule(filteredJobs);
+  const filterTitle = { all: "Все сметные задания", active: "В работе", overdue: "Просрочено", questions: "Уточнение", done: "Сдано", hold: "Пауза", returned: "Возврат" }[state.estimateJobFilter];
+  qs("#estimateJobFilterSummary").textContent = `${filterTitle} · ${filteredJobs.length}`;
+  rowsNode.innerHTML = filteredJobs.length
+    ? filteredJobs.map(renderEstimateJobRow).join("")
+    : `<p class="muted">${jobs.length ? "В выбранной категории смет нет." : "Сметных заданий пока нет."}</p>`;
 }
 
 function notificationTargetAttrs(row) {
@@ -5458,6 +5479,9 @@ function renderTaskWorkflowSections(tasks) {
 }
 
 async function renderTasks() {
+  const isEstimator = currentRoleBase() === "estimator";
+  qs("#tasksView > .panel > .panel-head h2").textContent = isEstimator ? "Проверки по смете" : "Задачи";
+  qs("#tasksView .task-detail-panel h3").textContent = isEstimator ? "Проверки объекта" : "Задачи объекта";
   const allTasks = visibleTasksForRole(await api("/api/tasks"));
   state.lastTasks = allTasks;
   const grouped = allTasks.reduce((acc, task) => {
@@ -5509,7 +5533,7 @@ async function renderTasks() {
   const visibleTasks = tasks.filter((task) => taskMatchesFilter(task, state.taskFilter));
   qs("#taskRows").innerHTML = visibleTasks.length
     ? renderTaskWorkflowSections(visibleTasks)
-    : `<p class="muted">${tasks.length ? "В этом фильтре задач нет." : "Задач пока нет."}</p>`;
+    : `<p class="muted">${isEstimator ? (tasks.length ? "В этом фильтре проверок нет." : "Назначенных проверок пока нет.") : (tasks.length ? "В этом фильтре задач нет." : "Задач пока нет.")}</p>`;
 }
 
 function workProjectId() {
@@ -6035,9 +6059,7 @@ async function renderMaterials() {
     const count = buildMaterialBatches(state.materialRequests || []).filter((batch) => key === "all" || materialPipelineStatus(batch) === key).length;
     button.dataset.count = String(count || "");
   });
-  qsa("[data-material-quick-filter]").forEach((button) => {
-    button.classList.toggle("active", button.dataset.materialQuickFilter === state.materialQuickFilter);
-  });
+  qs("#materialQuickFilterSelect").value = state.materialQuickFilter;
   const exportButton = qs("#exportCompletedMaterialsButton");
   if (exportButton) exportButton.hidden = !["owner", "construction_manager", "finance_director", "accountant", "procurement_manager"].includes(currentRoleBase());
   const items = await api(`/api/material-requests?archive=${requestedMode === "archive" ? "1" : "0"}`);
@@ -6050,10 +6072,9 @@ async function renderMaterials() {
     button.classList.toggle("active", key === state.materialPipelineFilter);
     button.dataset.count = String(allBatches.filter((batch) => key === "all" || materialPipelineStatus(batch) === key).length);
   });
-  qsa("[data-material-quick-filter]").forEach((button) => {
-    const key = button.dataset.materialQuickFilter || "all";
-    button.classList.toggle("active", key === state.materialQuickFilter);
-    button.dataset.count = String(allBatches.filter((batch) => materialBatchMatchesQuickFilter(batch, key)).length || "");
+  qsa("#materialQuickFilterSelect option").forEach((option) => {
+    const count = allBatches.filter((batch) => materialBatchMatchesQuickFilter(batch, option.value)).length;
+    option.textContent = `${option.dataset.label} (${count})`;
   });
   const pipelineBatches =
     state.materialPipelineFilter === "all"
@@ -8061,12 +8082,10 @@ function bindEvents() {
       await renderMaterials();
     })
   );
-  qsa("[data-material-quick-filter]").forEach((button) =>
-    button.addEventListener("click", async () => {
-      state.materialQuickFilter = button.dataset.materialQuickFilter || "all";
-      await renderMaterials();
-    })
-  );
+  qs("#materialQuickFilterSelect").addEventListener("change", async (event) => {
+    state.materialQuickFilter = event.target.value || "all";
+    await renderMaterials();
+  });
   qs("#exportCompletedMaterialsButton").addEventListener("click", () => {
     const projectId = qs('#estimateImportForm select[name="project_id"]')?.value || "";
     const suffix = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
@@ -8348,6 +8367,14 @@ function bindEvents() {
     const taskActionButton = event.target.closest("[data-task-action]");
     if (taskActionButton) {
       await handleTaskAction(taskActionButton);
+      return;
+    }
+
+    const estimateFilterButton = event.target.closest("[data-estimate-job-filter]");
+    if (estimateFilterButton) {
+      state.estimateJobFilter = estimateFilterButton.dataset.estimateJobFilter;
+      await renderEstimateJobs();
+      qs(`[data-estimate-job-filter="${state.estimateJobFilter}"]`)?.focus({ preventScroll: true });
       return;
     }
 
