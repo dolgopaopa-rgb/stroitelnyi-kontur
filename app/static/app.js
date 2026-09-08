@@ -3692,11 +3692,17 @@ function renderTodayKpis(items = []) {
     .join("");
 }
 
-function renderLimitedRows(items, renderer, { limit = 5, empty = "", moreTarget = "" } = {}) {
+function renderLimitedRows(items, renderer, { limit = 5, empty = "", moreTarget = "", expandKey = "" } = {}) {
   if (!items.length) return empty;
   const visible = items.slice(0, limit).map(renderer).join("");
   const hidden = items.length - limit;
   if (hidden <= 0) return visible;
+  if (expandKey) {
+    return `${visible}<details class="today-list-disclosure" data-collapsible-key="${escapeAttr(expandKey)}"${openAttrForKey(expandKey)}>
+      <summary><span class="disclosure-closed">Показать ещё ${hidden}</span><span class="disclosure-open">Свернуть</span></summary>
+      <div class="list">${items.slice(limit).map(renderer).join("")}</div>
+    </details>`;
+  }
   return `${visible}<button class="show-all-link" type="button" ${moreTarget || 'data-view-target="today"'}>Показать все ${items.length}</button>`;
 }
 
@@ -4061,7 +4067,9 @@ async function renderToday() {
     ? renderLimitedRows(todayTasks, renderTodayTaskCard, { limit: 5, moreTarget: 'data-view-target="tasks"' })
     : `<div class="empty-state"><strong>На сегодня задач нет</strong><p class="muted">Проверьте просроченные или откройте объект.</p></div>`;
   qs("#todayAttention").innerHTML = decisionItems.length
-    ? renderLimitedRows(decisionItems, renderTodayDecisionItem, { limit: 5, moreTarget: 'data-view-target="tasks"' })
+    ? renderLimitedRows(decisionItems, renderTodayDecisionItem, currentRoleBase() === "owner"
+      ? { limit: 2, expandKey: "today-owner-attention" }
+      : { limit: 5, moreTarget: 'data-view-target="tasks"' })
     : `<div class="attention-empty"><strong>Критичных сигналов нет</strong><span>На сейчас ничего срочного не найдено.</span></div>`;
   qs("#todayMaterials").innerHTML = riskyMaterials.length
     ? renderLimitedRows(riskyMaterials, renderTodayMaterialCard, { limit: 5, moreTarget: 'data-view-target="materials"' })
@@ -5396,7 +5404,7 @@ function taskWorkflowBucket(task) {
   return { key: "other", title: "Остальные задачи", hint: "Задачи, доступные вашей роли для просмотра." };
 }
 
-function renderTaskCard(task) {
+function renderTaskCard(task, workflow = null) {
   const canReview = taskIsWaitingCheck(task) && canActOnTaskAsReviewer(task);
   const lastComment = latestTaskComment(task);
   const taskKey = `task:${task.id}`;
@@ -5406,7 +5414,7 @@ function renderTaskCard(task) {
         <span class="task-summary-main">
           <span class="task-summary-title"><span data-testid="task-type-badge">${pill(taskTypeLabel(task), taskTypeLevel(task))}</span><strong data-testid="task-title">${escapeHtml(taskDisplayTitle(task))}</strong></span>
           <span class="task-summary-meta" data-testid="task-meta">${escapeHtml(task.project_title || "объект не указан")} · ${escapeHtml(task.assignee_name || "ответственный не назначен")} · ${task.due_date ? formatDateRu(task.due_date) : "без срока"} · ${escapeHtml(taskVisibilityReason(task))}</span>
-          <span class="stack-line"><span data-testid="task-status-badge">${pill(label(taskStatusKey(task)), taskStatusLevel(taskStatusKey(task)))}</span><span data-testid="task-priority-badge">${pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority))}</span></span>
+          <span class="stack-line"><span data-testid="task-status-badge">${pill(label(taskStatusKey(task)), taskStatusLevel(taskStatusKey(task)))}</span><span data-testid="task-priority-badge">${pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority))}</span>${workflow ? `<span class="task-workflow-label" title="${escapeAttr(workflow.hint)}">${escapeHtml(workflow.title)}</span>` : ""}</span>
         </span>
       </summary>
       <div class="task-row-body">
@@ -5442,15 +5450,8 @@ function renderTaskWorkflowSections(tasks) {
     .map((key) => {
       const group = groups.get(key);
       return `
-        <section class="task-workflow-section" data-testid="task-workflow-section" data-task-workflow="${group.key}">
-          <div class="task-workflow-head">
-            <div>
-              <h3>${escapeHtml(group.title)}</h3>
-              <p class="muted">${escapeHtml(group.hint)}</p>
-            </div>
-            ${pill(`${group.tasks.length}`, "blue")}
-          </div>
-          <div class="task-workflow-list">${group.tasks.map(renderTaskCard).join("")}</div>
+        <section class="task-workflow-section" data-testid="task-workflow-section" data-task-workflow="${group.key}" aria-label="${escapeAttr(group.title)}: ${group.tasks.length}">
+          <div class="task-workflow-list">${group.tasks.map((task) => renderTaskCard(task, group)).join("")}</div>
         </section>`;
     })
     .join("");
