@@ -1,0 +1,1409 @@
+{
+  "browser": "152.0.7977.76",
+  "evidence": [
+    {
+      "role": "sales_manager",
+      "density": "comfortable",
+      "route": "/today",
+      "width": 320,
+      "height": 568,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "comfortable",
+      "route": "/today",
+      "width": 360,
+      "height": 640,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "comfortable",
+      "route": "/today",
+      "width": 375,
+      "height": 667,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "comfortable",
+      "route": "/today",
+      "width": 390,
+      "height": 844,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "comfortable",
+      "route": "/today",
+      "width": 430,
+      "height": 932,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "comfortable",
+      "route": "/today",
+      "width": 720,
+      "height": 840,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "comfortable",
+      "route": "/today",
+      "width": 832,
+      "height": 750,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "comfortable",
+      "route": "/today",
+      "width": 768,
+      "height": 1024,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "comfortable",
+      "route": "/today",
+      "width": 1024,
+      "height": 768,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "comfortable",
+      "route": "/today",
+      "width": 1280,
+      "height": 720,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "comfortable",
+      "route": "/today",
+      "width": 1440,
+      "height": 900,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "comfortable",
+      "route": "/today",
+      "width": 1920,
+      "height": 1080,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "comfortable",
+      "route": "/today",
+      "width": 3840,
+      "height": 2160,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "comfortable",
+      "route": "/estimates",
+      "width": 320,
+      "height": 568,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "comfortable",
+      "route": "/estimates",
+      "width": 360,
+      "height": 640,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "comfortable",
+      "route": "/estimates",
+      "width": 375,
+      "height": 667,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "comfortable",
+      "route": "/estimates",
+      "width": 390,
+      "height": 844,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "comfortable",
+      "route": "/estimates",
+      "width": 430,
+      "height": 932,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "comfortable",
+      "route": "/estimates",
+      "width": 720,
+      "height": 840,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "comfortable",
+      "route": "/estimates",
+      "width": 832,
+      "height": 750,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "comfortable",
+      "route": "/estimates",
+      "width": 768,
+      "height": 1024,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "comfortable",
+      "route": "/estimates",
+      "width": 1024,
+      "height": 768,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "comfortable",
+      "route": "/estimates",
+      "width": 1280,
+      "height": 720,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "comfortable",
+      "route": "/estimates",
+      "width": 1440,
+      "height": 900,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "comfortable",
+      "route": "/estimates",
+      "width": 1920,
+      "height": 1080,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "comfortable",
+      "route": "/estimates",
+      "width": 3840,
+      "height": 2160,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "compact",
+      "route": "/today",
+      "width": 320,
+      "height": 568,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "compact",
+      "route": "/today",
+      "width": 360,
+      "height": 640,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "compact",
+      "route": "/today",
+      "width": 375,
+      "height": 667,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "compact",
+      "route": "/today",
+      "width": 390,
+      "height": 844,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "compact",
+      "route": "/today",
+      "width": 430,
+      "height": 932,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "compact",
+      "route": "/today",
+      "width": 720,
+      "height": 840,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "compact",
+      "route": "/today",
+      "width": 832,
+      "height": 750,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "compact",
+      "route": "/today",
+      "width": 768,
+      "height": 1024,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "compact",
+      "route": "/today",
+      "width": 1024,
+      "height": 768,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "compact",
+      "route": "/today",
+      "width": 1280,
+      "height": 720,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "compact",
+      "route": "/today",
+      "width": 1440,
+      "height": 900,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "compact",
+      "route": "/today",
+      "width": 1920,
+      "height": 1080,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "compact",
+      "route": "/today",
+      "width": 3840,
+      "height": 2160,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "compact",
+      "route": "/estimates",
+      "width": 320,
+      "height": 568,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "compact",
+      "route": "/estimates",
+      "width": 360,
+      "height": 640,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "compact",
+      "route": "/estimates",
+      "width": 375,
+      "height": 667,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "compact",
+      "route": "/estimates",
+      "width": 390,
+      "height": 844,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "compact",
+      "route": "/estimates",
+      "width": 430,
+      "height": 932,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "compact",
+      "route": "/estimates",
+      "width": 720,
+      "height": 840,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "compact",
+      "route": "/estimates",
+      "width": 832,
+      "height": 750,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "compact",
+      "route": "/estimates",
+      "width": 768,
+      "height": 1024,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "compact",
+      "route": "/estimates",
+      "width": 1024,
+      "height": 768,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "compact",
+      "route": "/estimates",
+      "width": 1280,
+      "height": 720,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "compact",
+      "route": "/estimates",
+      "width": 1440,
+      "height": 900,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "compact",
+      "route": "/estimates",
+      "width": 1920,
+      "height": 1080,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "sales_manager",
+      "density": "compact",
+      "route": "/estimates",
+      "width": 3840,
+      "height": 2160,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/today",
+      "width": 320,
+      "height": 568,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/today",
+      "width": 360,
+      "height": 640,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/today",
+      "width": 375,
+      "height": 667,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/today",
+      "width": 390,
+      "height": 844,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/today",
+      "width": 430,
+      "height": 932,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/today",
+      "width": 720,
+      "height": 840,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/today",
+      "width": 832,
+      "height": 750,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/today",
+      "width": 768,
+      "height": 1024,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/today",
+      "width": 1024,
+      "height": 768,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/today",
+      "width": 1280,
+      "height": 720,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/today",
+      "width": 1440,
+      "height": 900,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/today",
+      "width": 1920,
+      "height": 1080,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/today",
+      "width": 3840,
+      "height": 2160,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/estimates",
+      "width": 320,
+      "height": 568,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/estimates",
+      "width": 360,
+      "height": 640,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/estimates",
+      "width": 375,
+      "height": 667,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/estimates",
+      "width": 390,
+      "height": 844,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/estimates",
+      "width": 430,
+      "height": 932,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/estimates",
+      "width": 720,
+      "height": 840,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/estimates",
+      "width": 832,
+      "height": 750,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/estimates",
+      "width": 768,
+      "height": 1024,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/estimates",
+      "width": 1024,
+      "height": 768,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/estimates",
+      "width": 1280,
+      "height": 720,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/estimates",
+      "width": 1440,
+      "height": 900,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/estimates",
+      "width": 1920,
+      "height": 1080,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/estimates",
+      "width": 3840,
+      "height": 2160,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/materials",
+      "width": 320,
+      "height": 568,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/materials",
+      "width": 360,
+      "height": 640,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/materials",
+      "width": 375,
+      "height": 667,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/materials",
+      "width": 390,
+      "height": 844,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/materials",
+      "width": 430,
+      "height": 932,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/materials",
+      "width": 720,
+      "height": 840,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/materials",
+      "width": 832,
+      "height": 750,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/materials",
+      "width": 768,
+      "height": 1024,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/materials",
+      "width": 1024,
+      "height": 768,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/materials",
+      "width": 1280,
+      "height": 720,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/materials",
+      "width": 1440,
+      "height": 900,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/materials",
+      "width": 1920,
+      "height": 1080,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/materials",
+      "width": 3840,
+      "height": 2160,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/tasks",
+      "width": 320,
+      "height": 568,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/tasks",
+      "width": 360,
+      "height": 640,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/tasks",
+      "width": 375,
+      "height": 667,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/tasks",
+      "width": 390,
+      "height": 844,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/tasks",
+      "width": 430,
+      "height": 932,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/tasks",
+      "width": 720,
+      "height": 840,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/tasks",
+      "width": 832,
+      "height": 750,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/tasks",
+      "width": 768,
+      "height": 1024,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/tasks",
+      "width": 1024,
+      "height": 768,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/tasks",
+      "width": 1280,
+      "height": 720,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/tasks",
+      "width": 1440,
+      "height": 900,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/tasks",
+      "width": 1920,
+      "height": 1080,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "comfortable",
+      "route": "/tasks",
+      "width": 3840,
+      "height": 2160,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/today",
+      "width": 320,
+      "height": 568,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/today",
+      "width": 360,
+      "height": 640,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/today",
+      "width": 375,
+      "height": 667,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/today",
+      "width": 390,
+      "height": 844,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/today",
+      "width": 430,
+      "height": 932,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/today",
+      "width": 720,
+      "height": 840,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/today",
+      "width": 832,
+      "height": 750,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/today",
+      "width": 768,
+      "height": 1024,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/today",
+      "width": 1024,
+      "height": 768,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/today",
+      "width": 1280,
+      "height": 720,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/today",
+      "width": 1440,
+      "height": 900,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/today",
+      "width": 1920,
+      "height": 1080,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/today",
+      "width": 3840,
+      "height": 2160,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/estimates",
+      "width": 320,
+      "height": 568,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/estimates",
+      "width": 360,
+      "height": 640,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/estimates",
+      "width": 375,
+      "height": 667,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/estimates",
+      "width": 390,
+      "height": 844,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/estimates",
+      "width": 430,
+      "height": 932,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/estimates",
+      "width": 720,
+      "height": 840,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/estimates",
+      "width": 832,
+      "height": 750,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/estimates",
+      "width": 768,
+      "height": 1024,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/estimates",
+      "width": 1024,
+      "height": 768,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/estimates",
+      "width": 1280,
+      "height": 720,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/estimates",
+      "width": 1440,
+      "height": 900,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/estimates",
+      "width": 1920,
+      "height": 1080,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/estimates",
+      "width": 3840,
+      "height": 2160,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/materials",
+      "width": 320,
+      "height": 568,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/materials",
+      "width": 360,
+      "height": 640,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/materials",
+      "width": 375,
+      "height": 667,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/materials",
+      "width": 390,
+      "height": 844,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/materials",
+      "width": 430,
+      "height": 932,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/materials",
+      "width": 720,
+      "height": 840,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/materials",
+      "width": 832,
+      "height": 750,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/materials",
+      "width": 768,
+      "height": 1024,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/materials",
+      "width": 1024,
+      "height": 768,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/materials",
+      "width": 1280,
+      "height": 720,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/materials",
+      "width": 1440,
+      "height": 900,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/materials",
+      "width": 1920,
+      "height": 1080,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/materials",
+      "width": 3840,
+      "height": 2160,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/tasks",
+      "width": 320,
+      "height": 568,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/tasks",
+      "width": 360,
+      "height": 640,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/tasks",
+      "width": 375,
+      "height": 667,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/tasks",
+      "width": 390,
+      "height": 844,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/tasks",
+      "width": 430,
+      "height": 932,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/tasks",
+      "width": 720,
+      "height": 840,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/tasks",
+      "width": 832,
+      "height": 750,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/tasks",
+      "width": 768,
+      "height": 1024,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/tasks",
+      "width": 1024,
+      "height": 768,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/tasks",
+      "width": 1280,
+      "height": 720,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/tasks",
+      "width": 1440,
+      "height": 900,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/tasks",
+      "width": 1920,
+      "height": 1080,
+      "overflow": 0,
+      "clipped": []
+    },
+    {
+      "role": "estimator",
+      "density": "compact",
+      "route": "/tasks",
+      "width": 3840,
+      "height": 2160,
+      "overflow": 0,
+      "clipped": []
+    }
+  ]
+}

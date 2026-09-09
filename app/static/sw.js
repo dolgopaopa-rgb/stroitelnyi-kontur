@@ -1,16 +1,17 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260809-openvillage-brand-v1";
+const CACHE_NAME = "stroitelnyi-kontur-20260909-production-crm";
 const CORE_ASSETS = [
   "/",
-  "/static/styles.css?v=20260809-openvillage-brand-v1",
-  "/static/brand-2026.css?v=20260809-openvillage-brand-v1",
-  "/static/app.compat.js?v=20260809-openvillage-brand-v1",
-  "/static/manifest.webmanifest?v=20260809-openvillage-brand-v1",
-  "/static/assets/brand-2026/d2dom-mark.svg",
-  "/static/assets/brand-2026/Haval-Light.woff2",
-  "/static/assets/brand-2026/Involve-Regular.woff2",
-  "/static/assets/brand-2026/Involve-SemiBold.woff2",
-  "/static/assets/brand-2026/d2dom-mark-192.png",
-  "/static/assets/brand-2026/d2dom-mark-512.png"
+  "/static/styles.css?v=20260909-production-crm",
+  "/static/crm-theme.css?v=20260909-production-crm",
+  "/static/app.compat.js?v=20260909-production-crm",
+  "/static/manifest.webmanifest?v=20260909-production-crm",
+  "/static/assets/d2dom-logo-tile.svg?v=20260825-crm-theme",
+  "/static/assets/d2dom-logo-white.svg",
+  "/static/assets/fonts/Haval-Light.woff2",
+  "/static/assets/fonts/Involve-Regular.woff2",
+  "/static/assets/fonts/Involve-SemiBold.woff2",
+  "/static/assets/g2-logo-192.png",
+  "/static/assets/g2-logo-512.png"
 ];
 
 self.addEventListener("install", (event) => {

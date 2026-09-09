@@ -37,7 +37,7 @@ const visualPages = [
   { view: "documents", path: "/documents", title: "База знаний", testId: "documents-page", activeViewId: "documentsView" },
   { view: "dashboard", path: "/signals", title: "Сигналы", testId: "signals-page", activeViewId: "dashboardView" },
   { view: "feedback", path: "/feedback", title: "Обратная связь по программе", testId: "feedback-page", activeViewId: "feedbackView" },
-  { view: "estimates", path: "/?view=estimates", title: "Сметы", testId: "estimates-page", activeViewId: "estimatesView" },
+  { view: "estimates", path: "/estimates", title: "Сметы", testId: "estimates-page", activeViewId: "estimatesView" },
 ];
 
 const d2domControlShots = [
@@ -176,8 +176,16 @@ async function selectRole(page, role) {
   if (!(await select.count().catch(() => 0))) return { ok: false, reason: "role switcher missing" };
   const options = await select.locator("option").evaluateAll((nodes) => nodes.map((node) => node.value)).catch(() => []);
   if (!options.includes(role)) return { ok: false, reason: `role option ${role} missing` };
-  await select.selectOption(role);
-  await page.waitForTimeout(350);
+  const viewport = page.viewportSize();
+  const needsDesktop = !(await select.isVisible());
+  try {
+    // Role selection is test setup; the mobile shell deliberately hides this control.
+    if (needsDesktop) await page.setViewportSize({ width: 1440, height: 900 });
+    await select.selectOption(role);
+    await page.waitForTimeout(350);
+  } finally {
+    if (needsDesktop && viewport) await page.setViewportSize(viewport);
+  }
   return { ok: true, reason: "selected" };
 }
 

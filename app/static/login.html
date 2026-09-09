@@ -3,15 +3,12 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#2d3235" />
+    <meta name="theme-color" content="#d9ddd8" />
     <meta name="robots" content="noindex" />
     <title>Вход - Строительный контур</title>
-    <link rel="manifest" href="/static/manifest.webmanifest?v=20260809-openvillage-brand-v1" />
-    <link rel="icon" type="image/svg+xml" href="/static/assets/brand-2026/d2dom-mark.svg" />
-    <link rel="apple-touch-icon" href="/static/assets/brand-2026/d2dom-mark-192.png" />
-    <link rel="preload" href="/static/assets/brand-2026/Involve-Regular.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="preload" href="/static/assets/brand-2026/Involve-SemiBold.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="preload" href="/static/assets/brand-2026/Haval-Light.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="manifest" href="/static/manifest.webmanifest?v=20260909-production-crm" />
+    <link rel="icon" type="image/svg+xml" href="/static/assets/d2dom-logo-tile.svg?v=20260825-crm-theme" />
+    <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
     <style>
       :root {
         --bg: #f4f6f8;
@@ -113,18 +110,21 @@
 
       .password-tools {
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
         gap: 8px;
       }
 
       .password-tool {
-        min-height: 38px;
+        min-width: 0;
+        min-height: 40px;
         border: 1px solid var(--line);
         border-radius: 7px;
         background: #fff;
         color: var(--brand);
-        padding: 0 8px;
-        white-space: nowrap;
+        padding: 6px 12px;
+        line-height: 1.2;
+        white-space: normal;
+        overflow-wrap: anywhere;
       }
 
       .password-tool:focus {
@@ -194,17 +194,21 @@
         .password-tools {
           grid-template-columns: 1fr;
         }
+
+        .password-tool {
+          min-height: 44px;
+        }
       }
     </style>
-    <link rel="stylesheet" href="/static/brand-2026.css?v=20260809-openvillage-brand-v1" />
+    <link rel="stylesheet" href="/static/crm-theme.css?v=20260909-production-crm" />
   </head>
   <body class="brand-system-2026 login-page">
     <main class="login-shell">
       <section class="login-card" aria-labelledby="loginTitle">
         <div class="brand">
-          <img src="/static/assets/brand-2026/d2dom-mark.svg" alt="" />
+          <img class="brand-logo" src="/static/assets/d2dom-logo-tile.svg" alt="" />
           <div>
-            <strong id="loginTitle">Контур Д²Дом</strong>
+            <strong id="loginTitle">Контур Д²ДОМ</strong>
             <span>Рабочая система компании</span>
           </div>
         </div>

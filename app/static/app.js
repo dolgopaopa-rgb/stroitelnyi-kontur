@@ -4,15 +4,20 @@ const routeViewMap = {
   "/today": "today",
   "/assistant": "assistant",
   "/objects": "projects",
+  "/estimates": "estimates",
   "/tasks": "tasks",
+  "/works": "works",
   "/materials": "materials",
+  "/variations": "variations",
   "/photo-reports": "photos",
   "/object-issues": "object_remarks",
+  "/locations": "locations",
   "/documents": "documents",
   "/signals": "dashboard",
   "/feedback": "feedback",
   "/settings": "events",
 };
+const viewRouteMap = Object.fromEntries(Object.entries(routeViewMap).map(([route, view]) => [view, route]));
 const pathView = routeViewMap[window.location.pathname] || "";
 const TASK_DESCRIPTION_COLLAPSED_IN_LIST = true;
 
@@ -29,6 +34,7 @@ const state = {
   photoReports: [],
   objectRemarks: [],
   estimateJobs: [],
+  estimateJobFilter: "all",
   estimateMaterials: [],
   estimatePreviewRows: [],
   showEstimateMaterials: true,
@@ -37,6 +43,7 @@ const state = {
   projectListMode: "active",
   estimateListMode: "active",
   materialListMode: "active",
+  materialRenderRequestId: 0,
   materialPipelineFilter: "all",
   materialQuickFilter: "all",
   taskFilter: "all",
@@ -284,8 +291,8 @@ function qs(selector) {
   return document.querySelector(selector);
 }
 
-function qsa(selector) {
-  return [...document.querySelectorAll(selector)];
+function qsa(selector, root = document) {
+  return [...root.querySelectorAll(selector)];
 }
 
 async function api(path, options = {}) {
@@ -1535,6 +1542,13 @@ function switchView(view) {
   if (!canView(view)) view = allowedViews()[0] || "dashboard";
   state.view = view;
   localStorage.setItem("currentView", view);
+  const viewRoute = viewRouteMap[view];
+  if (viewRoute && window.location.pathname !== viewRoute) {
+    const nextUrl = new URL(window.location.href);
+    nextUrl.pathname = viewRoute;
+    nextUrl.searchParams.delete("view");
+    window.history.replaceState({ view }, "", `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
+  }
   qsa(".nav-button").forEach((button) => {
     button.hidden = !canView(button.dataset.view);
     button.classList.toggle("active", button.dataset.view === view);
@@ -3239,6 +3253,22 @@ function taskPriorityLevel(priority) {
   }[priority] || "";
 }
 
+function estimateJobIsOverdue(job) {
+  return !["estimate_done", "archived"].includes(job.status) && levelByDate(job.due_date) === "danger";
+}
+
+function estimateJobMatchesFilter(job, filter) {
+  if (filter === "active") return ["estimate_new", "estimate_in_work", "estimate_question"].includes(job.status);
+  if (filter === "overdue") return estimateJobIsOverdue(job);
+  const statuses = { done: "estimate_done", hold: "estimate_hold", returned: "estimate_returned", questions: "estimate_question" };
+  return filter === "all" || job.status === statuses[filter];
+}
+
+function estimateJobTone(job) {
+  if (estimateJobIsOverdue(job)) return "overdue";
+  return estimateJobMatchesFilter(job, "active") ? "active" : "neutral";
+}
+
 function estimateJobStatusLevel(job) {
   if (job.status === "archived") return "";
   if (job.status === "estimate_done") return "success";
@@ -3310,7 +3340,7 @@ function estimateJobStats(jobs) {
   return {
     active: jobs.filter((job) => ["estimate_new", "estimate_in_work", "estimate_question"].includes(job.status)).length,
     done: jobs.filter((job) => job.status === "estimate_done").length,
-    overdue: jobs.filter((job) => !["estimate_done", "archived"].includes(job.status) && levelByDate(job.due_date) === "danger").length,
+    overdue: jobs.filter(estimateJobIsOverdue).length,
     hold: jobs.filter((job) => job.status === "estimate_hold").length,
     returned: jobs.filter((job) => job.status === "estimate_returned").length,
     questions: jobs.filter((job) => job.status === "estimate_question").length,
@@ -3391,6 +3421,7 @@ async function openManagerEstimateNoticeSection() {
   const dialog = qs("#managerEstimateNoticeDialog");
   if (dialog?.open) dialog.close();
   state.estimateListMode = "active";
+  state.estimateJobFilter = "all";
   await switchView("estimates");
   await renderEstimateJobs();
 }
@@ -3399,24 +3430,24 @@ function renderEstimateJobStats(jobs) {
   const stats = estimateJobStats(jobs);
   const total = Math.max(jobs.length, 1);
   const segments = [
-    ["Все", jobs.length, ""],
-    ["В работе", stats.active, "blue"],
-    ["Просрочено", stats.overdue, "danger"],
-    ["Уточнение", stats.questions, "warning"],
-    ["Сдано", stats.done, "success"],
-    ["Пауза", stats.hold, "warning"],
-    ["Возврат", stats.returned, "danger"],
+    ["all", "Все", jobs.length, ""],
+    ["active", "В работе", stats.active, "blue"],
+    ["overdue", "Просрочено", stats.overdue, "danger"],
+    ["questions", "Уточнение", stats.questions, "warning"],
+    ["done", "Сдано", stats.done, "success"],
+    ["hold", "Пауза", stats.hold, "warning"],
+    ["returned", "Возврат", stats.returned, "danger"],
   ];
   return `
     <div class="task-stats">
       ${segments
         .map(
-          ([title, count, level]) => `
-          <div class="task-stat ${level}">
+          ([key, title, count, level]) => `
+          <button type="button" class="task-stat ${level} ${state.estimateJobFilter === key ? "active" : ""}" data-estimate-job-filter="${key}" aria-pressed="${state.estimateJobFilter === key}" aria-controls="estimateJobRows">
             <span>${title}</span>
             <strong>${count}</strong>
             <div class="stat-bar"><i style="width: ${(count / total) * 100}%"></i></div>
-          </div>`
+          </button>`
         )
         .join("")}
     </div>`;
@@ -3439,14 +3470,14 @@ function renderEstimateSchedule(jobs) {
   return activeJobs
     .map(
       (job) => `
-      <div class="estimate-timeline-row">
+      <div class="estimate-timeline-row" data-estimate-tone="${estimateJobTone(job)}">
         <div class="estimate-timeline-main">
           <strong>${escapeHtml(job.title)}</strong>
           <span>${escapeHtml(job.estimator_name || "сметчик не назначен")} · ${formatDateRu(job.received_at)} → ${formatDateRu(job.due_date)}</span>
           ${job.question_comment ? `<em>Вопрос сметчика: ${escapeHtml(job.question_comment)}</em>` : ""}
         </div>
         <div class="estimate-timeline-track ${estimateJobStatusLevel(job)}"><i style="width: ${estimateJobProgress(job)}%"></i></div>
-        ${pill(label(job.status), estimateJobStatusLevel(job))}
+        ${pill(estimateJobIsOverdue(job) ? "Просрочено" : label(job.status), estimateJobStatusLevel(job))}
       </div>`
     )
     .join("");
@@ -3473,11 +3504,19 @@ function isEstimateImageFile(file) {
 function renderEstimateJobFiles(files = [], jobId = "", canManageFiles = false) {
   if (!Array.isArray(files) || !files.length) return "";
   return `
-    <div class="estimate-job-files">
+    <details class="estimate-files-group" data-testid="estimate-files-group">
+      <summary>
+        <span>Вложения</span>
+        <strong>${files.length}</strong>
+        <small>Показать файлы</small>
+      </summary>
+      <div class="estimate-job-files">
       ${files
         .map(
           (file) => {
-            const title = escapeHtml(file.title || file.file_name || "Файл");
+            const rawTitle = file.title || file.file_name || "Файл";
+            const title = escapeHtml(rawTitle);
+            const titleAttr = escapeAttr(rawTitle);
             const fileName = escapeHtml(file.file_name || "");
             const href = escapeAttr(estimateFileDownloadUrl(file));
             const isCurrent = Number(file.is_current ?? 1) !== 0;
@@ -3497,30 +3536,27 @@ function renderEstimateJobFiles(files = [], jobId = "", canManageFiles = false) 
             if (isEstimateImageFile(file)) {
               return `
           <div class="estimate-file-card ${isCurrent ? "" : "previous-version"}">
-            <button class="estimate-file-button" type="button" data-estimate-gallery-job="${escapeAttr(jobId)}" data-estimate-gallery-file="${escapeAttr(file.id)}">
+            <button class="estimate-file-button" type="button" title="${titleAttr}" aria-label="Открыть ${titleAttr}" data-estimate-gallery-job="${escapeAttr(jobId)}" data-estimate-gallery-file="${escapeAttr(file.id)}">
               <strong>${title}</strong>
               ${meta}
             </button>
-            ${printButton}
-            ${replaceButton}
-            ${deleteButton}
+            <div class="estimate-file-actions">${printButton}${replaceButton}${deleteButton}</div>
           </div>`;
             }
             return `
           <div class="estimate-file-card ${isCurrent ? "" : "previous-version"}">
-            <a href="${href}" ${previewAttrs}>
-              <strong>${escapeHtml(file.title || file.file_name || "Файл")}</strong>
+            <a href="${href}" title="${titleAttr}" aria-label="${escapeAttr(actionLabel)}: ${titleAttr}" ${previewAttrs}>
+              <strong>${title}</strong>
               ${meta}
               <span>${actionLabel}</span>
             </a>
-            ${printButton}
-            ${replaceButton}
-            ${deleteButton}
+            <div class="estimate-file-actions">${printButton}${replaceButton}${deleteButton}</div>
           </div>`;
           }
         )
         .join("")}
-    </div>`;
+      </div>
+    </details>`;
 }
 
 function estimateJobQuickLinks(job, smetterHref = "") {
@@ -3610,7 +3646,7 @@ function renderEstimateJobRow(job) {
   const summarySubTitle = job.project_title && job.title && job.title !== job.project_title ? job.title : "";
   const currentFilesCount = (job.files || []).filter((file) => Number(file.is_current ?? 1) !== 0).length;
   return `
-    <details class="row estimate-job-row estimate-job-collapsible" data-collapsible-key="${escapeAttr(collapsibleKey)}"${openAttrForKey(collapsibleKey)}>
+    <details class="row estimate-job-row estimate-job-collapsible" data-estimate-job="${job.id}" data-estimate-tone="${estimateJobTone(job)}" data-collapsible-key="${escapeAttr(collapsibleKey)}"${openAttrForKey(collapsibleKey)}>
       <summary class="estimate-job-summary">
         <span class="estimate-job-summary-main">
           <strong>${escapeHtml(summaryTitle)}</strong>
@@ -3618,7 +3654,7 @@ function renderEstimateJobRow(job) {
         </span>
         <span class="estimate-job-summary-badges">
           ${pill(label(job.status), statusLevel)}
-          ${pill(job.due_date || "без срока", job.status === "estimate_done" ? "success" : levelByDate(job.due_date))}
+          ${pill(`${estimateJobIsOverdue(job) ? "Просрочено · " : ""}${job.due_date ? `Срок: ${formatDateRu(job.due_date)}` : "Без срока"}`, job.status === "archived" ? "" : job.status === "estimate_done" ? "success" : levelByDate(job.due_date))}
           ${currentFilesCount ? pill(`Файлы: ${currentFilesCount}`, "blue") : ""}
           ${quickLinks.slice(0, 2).map(renderEstimateJobLink).join("")}
           ${quickLinks.length > 2 ? pill(`ещё ${quickLinks.length - 2}`, "blue") : ""}
@@ -3922,6 +3958,8 @@ function renderTaskNextAction(task, options = {}) {
 
 async function renderDashboard() {
   const [summary, tasks, materialRows] = await Promise.all([api("/api/summary"), api("/api/tasks"), api("/api/material-requests")]);
+  const dashboardView = qs("#dashboardView");
+  if (dashboardView) dashboardView.dataset.role = currentRoleBase();
   const roleTasks = visibleTasksForRole(tasks);
   const openRoleTasks = roleTasks.filter(isOpenTask);
   state.lastTasks = roleTasks;
@@ -4019,11 +4057,17 @@ function renderTodayKpis(items = []) {
     .join("");
 }
 
-function renderLimitedRows(items, renderer, { limit = 5, empty = "", moreTarget = "" } = {}) {
+function renderLimitedRows(items, renderer, { limit = 5, empty = "", moreTarget = "", expandKey = "" } = {}) {
   if (!items.length) return empty;
   const visible = items.slice(0, limit).map(renderer).join("");
   const hidden = items.length - limit;
   if (hidden <= 0) return visible;
+  if (expandKey) {
+    return `${visible}<details class="today-list-disclosure" data-collapsible-key="${escapeAttr(expandKey)}"${openAttrForKey(expandKey)}>
+      <summary><span class="disclosure-closed">Показать ещё ${hidden}</span><span class="disclosure-open">Свернуть</span></summary>
+      <div class="list">${items.slice(limit).map(renderer).join("")}</div>
+    </details>`;
+  }
   return `${visible}<button class="show-all-link" type="button" ${moreTarget || 'data-view-target="today"'}>Показать все ${items.length}</button>`;
 }
 
@@ -4225,9 +4269,15 @@ function syncMobileQuickActions() {
   if (state.mobileSheetMode === "menu") {
     const views = mobileMenuViewsForRole();
     if (title) title.textContent = "Разделы";
-    list.innerHTML = views
+    const viewButtons = views
       .map((view) => `<button class="secondary mobile-menu-item" type="button" data-view-target="${view}" data-mobile-menu-item="${view}">${escapeHtml(navLabelForView(view))}</button>`)
       .join("");
+    list.innerHTML = `${viewButtons}
+      <div class="mobile-menu-system-actions">
+        ${canEditProject() ? `<button class="primary" type="button" data-mobile-system-action="new-project">Новый объект</button>` : ""}
+        <button class="secondary" type="button" data-mobile-system-action="refresh">Обновить данные</button>
+        <button class="secondary danger-outline" type="button" data-mobile-system-action="logout">Выйти</button>
+      </div>`;
     sheet.hidden = !state.mobileQuickOpen;
     return;
   }
@@ -4382,7 +4432,9 @@ async function renderToday() {
     ? renderLimitedRows(todayTasks, renderTodayTaskCard, { limit: 5, moreTarget: 'data-view-target="tasks"' })
     : `<div class="empty-state"><strong>На сегодня задач нет</strong><p class="muted">Проверьте просроченные или откройте объект.</p></div>`;
   qs("#todayAttention").innerHTML = decisionItems.length
-    ? renderLimitedRows(decisionItems, renderTodayDecisionItem, { limit: 5, moreTarget: 'data-view-target="tasks"' })
+    ? renderLimitedRows(decisionItems, renderTodayDecisionItem, ["owner", "estimator", "sales_manager"].includes(currentRoleBase())
+      ? { limit: 2, expandKey: `today-${currentRoleBase()}-attention` }
+      : { limit: 5, moreTarget: 'data-view-target="tasks"' })
     : `<div class="attention-empty"><strong>Критичных сигналов нет</strong><span>На сейчас ничего срочного не найдено.</span></div>`;
   qs("#todayMaterials").innerHTML = riskyMaterials.length
     ? renderLimitedRows(riskyMaterials, renderTodayMaterialCard, { limit: 5, moreTarget: 'data-view-target="materials"' })
@@ -4429,11 +4481,15 @@ async function renderEstimateJobs() {
   }
   qsa("[data-estimate-list-mode]").forEach((button) => button.classList.toggle("active", button.dataset.estimateListMode === state.estimateListMode));
   const jobs = visibleEstimateJobs();
+  const filteredJobs = jobs.filter((job) => estimateJobMatchesFilter(job, state.estimateJobFilter));
   statsNode.innerHTML = renderEstimateJobStats(jobs);
-  scheduleNode.innerHTML = renderEstimateSchedule(jobs);
-  rowsNode.innerHTML = jobs.length
-    ? jobs.map(renderEstimateJobRow).join("")
-    : `<p class="muted">${state.estimateListMode === "archive" ? "В архиве сметных заданий пока нет." : "Активных сметных заданий пока нет. Нажмите “Добавить задание”, чтобы зафиксировать входящую смету в работе."}</p>`;
+  scheduleNode.hidden = !filteredJobs.some((job) => job.status !== "estimate_done");
+  scheduleNode.innerHTML = renderEstimateSchedule(filteredJobs);
+  const filterTitle = { all: "Все сметные задания", active: "В работе", overdue: "Просрочено", questions: "Уточнение", done: "Сдано", hold: "Пауза", returned: "Возврат" }[state.estimateJobFilter];
+  qs("#estimateJobFilterSummary").textContent = `${filterTitle} · ${filteredJobs.length}`;
+  rowsNode.innerHTML = filteredJobs.length
+    ? filteredJobs.map(renderEstimateJobRow).join("")
+    : `<p class="muted">${jobs.length ? "В выбранной категории смет нет." : "Сметных заданий пока нет."}</p>`;
   syncManagerEstimateNotice();
 }
 
@@ -4639,10 +4695,11 @@ function mediaPreviewLink(doc) {
   const href = `/api/documents/${doc.id}/download`;
   const rawTitle = doc.file_name || doc.title || "Файл";
   const title = escapeHtml(rawTitle);
+  const titleAttr = escapeAttr(rawTitle);
   const mime = String(doc.mime_type || "");
   const previewKind = filePreviewKind(rawTitle, mime);
   if (previewKind === "image") {
-    return `<a class="media-thumb" href="${href}" data-media-preview="image" data-media-url="${href}" data-media-title="${title}" data-media-mime="${escapeHtml(mime)}"><img src="${href}" alt="${title}" loading="lazy" /><span>${title}</span></a>`;
+    return `<a class="media-thumb" href="${href}" title="${titleAttr}" data-media-preview="image" data-media-url="${href}" data-media-title="${titleAttr}" data-media-mime="${escapeAttr(mime)}"><span class="media-thumb-visual"><span class="media-thumb-placeholder">Фото</span><img src="${href}" alt="${titleAttr}" data-media-image loading="lazy" decoding="async" /></span><span class="media-thumb-title">${title}</span></a>`;
   }
   if (previewKind === "video") {
     return `<a class="media-thumb video" href="${href}" data-media-preview="video" data-media-url="${href}" data-media-title="${title}" data-media-mime="${escapeHtml(mime)}"><span>Видео</span><small>${title}</small></a>`;
@@ -4654,6 +4711,25 @@ function mediaPreviewLink(doc) {
     return `<a class="media-thumb file" href="${href}" data-media-preview="text" data-media-url="${href}" data-media-title="${title}" data-media-mime="${escapeHtml(mime)}"><span>Файл</span><small>${title}</small></a>`;
   }
   return `<a class="media-thumb file" href="${href}" target="_blank" rel="noopener"><span>${title}</span></a>`;
+}
+
+function markUnavailableMediaImage(image) {
+  const link = image.closest(".media-thumb");
+  if (!link || link.classList.contains("is-unavailable")) return;
+  link.classList.add("is-unavailable");
+  link.removeAttribute("data-media-preview");
+  link.setAttribute("data-media-unavailable", "1");
+  link.setAttribute("aria-label", "Файл временно недоступен");
+  image.hidden = true;
+  const placeholder = link.querySelector(".media-thumb-placeholder");
+  if (placeholder) placeholder.textContent = "Файл недоступен";
+}
+
+function syncMediaImageStates(root = document) {
+  qsa("[data-media-image]", root).forEach((image) => {
+    image.addEventListener("error", () => markUnavailableMediaImage(image), { once: true });
+    if (image.complete && !image.naturalWidth) markUnavailableMediaImage(image);
+  });
 }
 
 function closeMediaPreview() {
@@ -4726,18 +4802,33 @@ function moveMediaPreview(delta) {
 
 function renderPhotoReportCard(report) {
   const attachments = (report.attachments || []).filter((doc) => String(doc.mime_type || "").startsWith("image/") || String(doc.mime_type || "").startsWith("video/"));
+  const hiddenAttachmentCount = Math.max(attachments.length - 4, 0);
   return `
     <article class="row photo-report-card" data-testid="photo-report-card">
       <div class="photo-report-main">
-        <div class="stack-line">
+        <div class="photo-report-heading">
           <strong>${escapeHtml(report.project_title || "Объект не указан")}</strong>
-          ${pill(statusLabel(report.status || "review"), statusLevel(report.status || "review"))}
-          ${pill(formatDateRu(report.report_date), "blue")}
+          <span class="photo-report-badges">
+            ${pill(statusLabel(report.status || "review"), statusLevel(report.status || "review"))}
+            ${pill(formatDateRu(report.report_date), "blue")}
+          </span>
         </div>
-        <div class="muted">автор: ${escapeHtml(report.author_name || "не указан")} · этап: ${escapeHtml(report.stage || "не указан")} · зоны: ${escapeHtml(report.zones || "не указаны")}</div>
+        <div class="photo-report-meta">
+          <span><small>Автор</small><strong>${escapeHtml(report.author_name || "не указан")}</strong></span>
+          <span><small>Этап</small><strong>${escapeHtml(report.stage || "не указан")}</strong></span>
+          <span><small>Зоны</small><strong>${escapeHtml(report.zones || "не указаны")}</strong></span>
+        </div>
         ${report.comment ? `<p>${escapeHtml(report.comment)}</p>` : ""}
       </div>
-      <div class="media-grid">${attachments.length ? attachments.map(mediaPreviewLink).join("") : `<span class="muted">Фото/видео не прикреплены.</span>`}</div>
+      <div class="media-grid">${
+        attachments.length
+          ? `${attachments.map(mediaPreviewLink).join("")}${
+              hiddenAttachmentCount
+                ? `<button class="media-more-button" type="button" data-open-media-gallery="4">Ещё ${hiddenAttachmentCount} ${pluralRu(hiddenAttachmentCount, "файл", "файла", "файлов")}</button>`
+                : ""
+            }`
+          : `<span class="muted">Фото/видео не прикреплены.</span>`
+      }</div>
     </article>`;
 }
 
@@ -4799,6 +4890,7 @@ async function renderPhotoReports() {
   rowsNode.innerHTML = reports.length
     ? reports.map(renderPhotoReportCard).join("")
     : renderPhotoEmptyState();
+  syncMediaImageStates(rowsNode);
 }
 
 function remarkPhotoBlock(title, doc) {
@@ -4859,10 +4951,13 @@ async function renderObjectRemarks() {
   rowsNode.innerHTML = filtered.length
     ? filtered.map(renderObjectRemarkCard).join("")
     : renderRemarkEmptyState();
+  syncMediaImageStates(rowsNode);
 }
 
 async function renderProjects() {
   const projects = state.projectListMode === "archive" ? state.archivedProjects : state.projects;
+  const hasSelectedProject = state.selectedProjectId && projects.some((project) => Number(project.id) === Number(state.selectedProjectId));
+  qs("#projectsView .split")?.classList.toggle("project-selection-empty", !hasSelectedProject);
   qs("#projectListTitle").textContent = state.projectListMode === "archive" ? "Архив объектов" : "Список объектов";
   qsa("[data-project-list]").forEach((button) => button.classList.toggle("active", button.dataset.projectList === state.projectListMode));
   const rowsNode = qs("#projectRows");
@@ -4875,7 +4970,7 @@ async function renderProjects() {
     ? projects
         .map(
           (project) => `
-          <div class="row clickable" data-open-project="${project.id}" data-testid="object-card">
+          <div class="row clickable ${Number(state.selectedProjectId) === Number(project.id) ? "active" : ""}" data-open-project="${project.id}" data-testid="object-card">
             <div class="row-grid project-list-card">
               <div class="project-card-main">
                 <strong>${project.title}</strong>
@@ -4894,7 +4989,6 @@ async function renderProjects() {
         )
         .join("")
     : `<p class="muted">${state.projectListMode === "archive" ? "В архиве пока пусто." : "Объектов пока нет."}</p>`;
-  const hasSelectedProject = state.selectedProjectId && projects.some((project) => Number(project.id) === Number(state.selectedProjectId));
   if (hasSelectedProject) await renderProjectDetail(state.selectedProjectId);
   else clearProjectDetail();
 }
@@ -5728,7 +5822,7 @@ function taskWorkflowBucket(task) {
   return { key: "other", title: "Остальные задачи", hint: "Задачи, доступные вашей роли для просмотра." };
 }
 
-function renderTaskCard(task) {
+function renderTaskCard(task, workflow = null) {
   const canReview = taskIsWaitingCheck(task) && canActOnTaskAsReviewer(task);
   const lastComment = latestTaskComment(task);
   const taskKey = `task:${task.id}`;
@@ -5738,7 +5832,7 @@ function renderTaskCard(task) {
         <span class="task-summary-main">
           <span class="task-summary-title"><span data-testid="task-type-badge">${pill(taskTypeLabel(task), taskTypeLevel(task))}</span><strong data-testid="task-title">${escapeHtml(taskDisplayTitle(task))}</strong></span>
           <span class="task-summary-meta" data-testid="task-meta">${escapeHtml(task.project_title || "объект не указан")} · ${escapeHtml(task.assignee_name || "ответственный не назначен")} · ${task.due_date ? formatDateRu(task.due_date) : "без срока"} · ${escapeHtml(taskVisibilityReason(task))}</span>
-          <span class="stack-line"><span data-testid="task-status-badge">${pill(label(taskStatusKey(task)), taskStatusLevel(taskStatusKey(task)))}</span><span data-testid="task-priority-badge">${pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority))}</span></span>
+          <span class="stack-line"><span data-testid="task-status-badge">${pill(label(taskStatusKey(task)), taskStatusLevel(taskStatusKey(task)))}</span><span data-testid="task-priority-badge">${pill(taskPriorityLabel(task.priority), taskPriorityLevel(task.priority))}</span>${workflow ? `<span class="task-workflow-label" title="${escapeAttr(workflow.hint)}">${escapeHtml(workflow.title)}</span>` : ""}</span>
         </span>
       </summary>
       <div class="task-row-body">
@@ -5774,21 +5868,17 @@ function renderTaskWorkflowSections(tasks) {
     .map((key) => {
       const group = groups.get(key);
       return `
-        <section class="task-workflow-section" data-testid="task-workflow-section" data-task-workflow="${group.key}">
-          <div class="task-workflow-head">
-            <div>
-              <h3>${escapeHtml(group.title)}</h3>
-              <p class="muted">${escapeHtml(group.hint)}</p>
-            </div>
-            ${pill(`${group.tasks.length}`, "blue")}
-          </div>
-          <div class="task-workflow-list">${group.tasks.map(renderTaskCard).join("")}</div>
+        <section class="task-workflow-section" data-testid="task-workflow-section" data-task-workflow="${group.key}" aria-label="${escapeAttr(group.title)}: ${group.tasks.length}">
+          <div class="task-workflow-list">${group.tasks.map((task) => renderTaskCard(task, group)).join("")}</div>
         </section>`;
     })
     .join("");
 }
 
 async function renderTasks() {
+  const isEstimator = currentRoleBase() === "estimator";
+  qs("#tasksView > .panel > .panel-head h2").textContent = isEstimator ? "Проверки по смете" : "Задачи";
+  qs("#tasksView .task-detail-panel h3").textContent = isEstimator ? "Проверки объекта" : "Задачи объекта";
   const allTasks = visibleTasksForRole(await api("/api/tasks"));
   state.lastTasks = allTasks;
   const grouped = allTasks.reduce((acc, task) => {
@@ -5840,7 +5930,7 @@ async function renderTasks() {
   const visibleTasks = tasks.filter((task) => taskMatchesFilter(task, state.taskFilter));
   qs("#taskRows").innerHTML = visibleTasks.length
     ? renderTaskWorkflowSections(visibleTasks)
-    : `<p class="muted">${tasks.length ? "В этом фильтре задач нет." : "Задач пока нет."}</p>`;
+    : `<p class="muted">${isEstimator ? (tasks.length ? "В этом фильтре проверок нет." : "Назначенных проверок пока нет.") : (tasks.length ? "В этом фильтре задач нет." : "Задач пока нет.")}</p>`;
 }
 
 function workProjectId() {
@@ -6354,8 +6444,12 @@ async function renderLocations() {
 }
 
 async function renderMaterials() {
+  const requestedMode = state.materialListMode;
+  const requestId = ++state.materialRenderRequestId;
   qsa("[data-material-list-mode]").forEach((button) => {
-    button.classList.toggle("active", button.dataset.materialListMode === state.materialListMode);
+    const isActive = button.dataset.materialListMode === requestedMode;
+    button.classList.toggle("active", isActive);
+    button.setAttribute("aria-selected", String(isActive));
   });
   qsa("[data-material-pipeline-filter]").forEach((button) => {
     const key = button.dataset.materialPipelineFilter;
@@ -6364,12 +6458,11 @@ async function renderMaterials() {
     const count = buildMaterialBatches(state.materialRequests || []).filter((batch) => key === "all" || materialPipelineStatus(batch) === key).length;
     button.dataset.count = String(count || "");
   });
-  qsa("[data-material-quick-filter]").forEach((button) => {
-    button.classList.toggle("active", button.dataset.materialQuickFilter === state.materialQuickFilter);
-  });
+  qs("#materialQuickFilterSelect").value = state.materialQuickFilter;
   const exportButton = qs("#exportCompletedMaterialsButton");
   if (exportButton) exportButton.hidden = !["owner", "construction_manager", "finance_director", "accountant", "procurement_manager"].includes(currentRoleBase());
-  const items = await api(`/api/material-requests?archive=${state.materialListMode === "archive" ? "1" : "0"}`);
+  const items = await api(`/api/material-requests?archive=${requestedMode === "archive" ? "1" : "0"}`);
+  if (requestId !== state.materialRenderRequestId || requestedMode !== state.materialListMode) return;
   const visibleItems = roleScopedMaterialRows(items);
   state.materialRequests = visibleItems;
   const allBatches = buildMaterialBatches(visibleItems);
@@ -6378,10 +6471,9 @@ async function renderMaterials() {
     button.classList.toggle("active", key === state.materialPipelineFilter);
     button.dataset.count = String(allBatches.filter((batch) => key === "all" || materialPipelineStatus(batch) === key).length);
   });
-  qsa("[data-material-quick-filter]").forEach((button) => {
-    const key = button.dataset.materialQuickFilter || "all";
-    button.classList.toggle("active", key === state.materialQuickFilter);
-    button.dataset.count = String(allBatches.filter((batch) => materialBatchMatchesQuickFilter(batch, key)).length || "");
+  qsa("#materialQuickFilterSelect option").forEach((option) => {
+    const count = allBatches.filter((batch) => materialBatchMatchesQuickFilter(batch, option.value)).length;
+    option.textContent = `${option.dataset.label} (${count})`;
   });
   const pipelineBatches =
     state.materialPipelineFilter === "all"
@@ -7489,6 +7581,63 @@ function integrityEntityGroup(entityType) {
   return entityType || "other";
 }
 
+const integrityViolationTitles = {
+  accepted_task_in_overdue: "Принятая задача отмечена просроченной",
+  waiting_check_without_submitted_at: "Не указана дата отправки на проверку",
+  accepted_without_accepted_at: "Не указана дата приёмки задачи",
+  invalid_task_status: "Неизвестный статус задачи",
+  task_without_required_assignee: "У задачи нет ответственного",
+  task_missing_project: "Задача не привязана к объекту",
+  active_photo_report_without_files: "В фотоотчёте нет файлов",
+  photo_report_files_count_mismatch: "Количество файлов фотоотчёта не совпадает",
+  photo_report_task_other_project: "Фотоотчёт и задача относятся к разным объектам",
+  multiple_active_photo_reports_for_task: "У задачи несколько активных фотоотчётов",
+  task_has_multiple_active_source_task_id: "Найдены повторяющиеся связи с задачей",
+  manual_photo_report_duplicate: "Найден повторяющийся ручной фотоотчёт",
+  missing_photo_signal_with_existing_report: "Сигнал о фотоотчёте устарел",
+  invalid_material_stage: "Неизвестный этап заявки на материалы",
+  invalid_material_health: "Неизвестное состояние заявки на материалы",
+  delivered_without_received_at: "Не указана дата получения материалов",
+  delivered_without_received_by: "Не указан получатель материалов",
+  ordered_without_procurement_responsible: "Не назначен ответственный за закупку",
+  in_transit_without_planned_delivery: "Не указана плановая дата доставки",
+  material_without_project: "Заявка на материалы не привязана к объекту",
+  material_problem_without_comment: "Для проблемы с материалом нет комментария",
+  material_batch_without_active_items: "В заявке нет активных позиций",
+  closed_material_with_open_blocker: "Закрытая заявка связана с открытым блокером",
+  material_item_without_project: "Позиция материала не привязана к объекту",
+  notification_missing_entity: "Уведомление связано с отсутствующей записью",
+  duplicate_signal: "Найден повторяющийся сигнал",
+  document_without_classification: "Документ не классифицирован",
+};
+
+const integrityEntityTitles = {
+  task: "Задача",
+  photo_report: "Фотоотчёт",
+  material_request: "Заявка на материалы",
+  material_request_batch: "Заявка на материалы",
+  notification: "Уведомление",
+  document: "Документ",
+  blocker: "Блокер",
+  signal: "Сигнал",
+};
+
+function integrityUserText(value) {
+  const replacements = {
+    submitted_at: "дата отправки на проверку",
+    accepted_at: "дата приёмки",
+    received_at: "дата получения",
+    received_by: "получатель",
+    planned_delivery_date: "плановая дата доставки",
+    source_task_id: "связь с задачей",
+    task_events: "история задачи",
+  };
+  return Object.entries(replacements).reduce(
+    (text, [technical, readable]) => text.split(technical).join(readable),
+    String(value || "")
+  );
+}
+
 function integritySeverityLevel(severity) {
   return severity === "critical" ? "danger" : severity === "warning" ? "warning" : "blue";
 }
@@ -7528,18 +7677,22 @@ async function renderDataIntegrity(force = false) {
           <div class="row dense-row">
             <div class="material-main">
               <div class="stack-line">
-                <strong>${escapeHtml(item.violation_type || "Нарушение")}</strong>
+                <strong>${escapeHtml(integrityViolationTitles[item.violation_type] || "Нарушение целостности данных")}</strong>
                 ${pill(item.severity === "critical" ? "Критично" : item.severity === "warning" ? "Предупреждение" : "Инфо", integritySeverityLevel(item.severity))}
               </div>
-              <div class="muted">${escapeHtml(item.entity_type || "entity")} #${escapeHtml(String(item.entity_id || ""))}${item.object ? ` · ${escapeHtml(item.object)}` : ""}</div>
-              <div>${escapeHtml(item.reason || "")}</div>
-              <div class="muted">Рекомендация: ${escapeHtml(item.recommendation || "Проверить вручную.")}</div>
+              <div class="muted">${escapeHtml(integrityEntityTitles[item.entity_type] || "Запись")} №${escapeHtml(String(item.entity_id || ""))}${item.object ? ` · ${escapeHtml(item.object)}` : ""}</div>
+              <div>${escapeHtml(integrityUserText(item.reason))}</div>
+              <div class="muted">Рекомендация: ${escapeHtml(integrityUserText(item.recommendation || "Проверить вручную."))}</div>
+              <details class="integrity-technical-details">
+                <summary>Технические данные</summary>
+                <code>${escapeHtml(item.violation_type || "unknown")} · ${escapeHtml(item.entity_type || "entity")} #${escapeHtml(String(item.entity_id || ""))}</code>
+              </details>
             </div>
             ${pill(item.auto_fix_safe ? "можно авто после команды" : "ручная проверка", item.auto_fix_safe ? "blue" : "warning")}
           </div>`
         )
         .join("")
-    : `<div class="empty-state"><strong>Нарушений по фильтру нет</strong><p class="muted">Data Integrity Agent не нашёл проблем в выбранной группе.</p></div>`;
+    : `<div class="empty-state"><strong>Нарушений по фильтру нет</strong><p class="muted">Проверка целостности не нашла проблем в выбранной группе.</p></div>`;
 }
 
 function eventType(type) {
@@ -8320,13 +8473,18 @@ function bindEvents() {
   });
   qsa("[data-material-list-mode]").forEach((button) =>
     button.addEventListener("click", async () => {
-      state.materialListMode = button.dataset.materialListMode;
+      const nextMode = button.dataset.materialListMode || "active";
+      if (nextMode === state.materialListMode) return;
+      state.materialListMode = nextMode;
+      state.materialPipelineFilter = "all";
+      state.materialQuickFilter = "all";
       await renderMaterials();
     })
   );
   qsa("[data-estimate-list-mode]").forEach((button) =>
     button.addEventListener("click", async () => {
       state.estimateListMode = button.dataset.estimateListMode || "active";
+      state.estimateJobFilter = "all";
       await renderEstimateJobs();
     })
   );
@@ -8336,12 +8494,10 @@ function bindEvents() {
       await renderMaterials();
     })
   );
-  qsa("[data-material-quick-filter]").forEach((button) =>
-    button.addEventListener("click", async () => {
-      state.materialQuickFilter = button.dataset.materialQuickFilter || "all";
-      await renderMaterials();
-    })
-  );
+  qs("#materialQuickFilterSelect").addEventListener("change", async (event) => {
+    state.materialQuickFilter = event.target.value || "all";
+    await renderMaterials();
+  });
   qs("#exportCompletedMaterialsButton").addEventListener("click", () => {
     const projectId = qs('#estimateImportForm select[name="project_id"]')?.value || "";
     const suffix = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
@@ -8406,6 +8562,25 @@ function bindEvents() {
   });
 
   document.addEventListener("click", async (event) => {
+    const unavailableMedia = event.target.closest("[data-media-unavailable]");
+    if (unavailableMedia) {
+      event.preventDefault();
+      showToast("Файл временно недоступен. Сообщите ответственному за хранение документов.");
+      return;
+    }
+
+    const mediaMoreButton = event.target.closest("[data-open-media-gallery]");
+    if (mediaMoreButton) {
+      event.preventDefault();
+      const galleryRoot = mediaMoreButton.closest(".media-grid, .remark-media-grid, .photo-report-card, .object-remark-card, .document-list, .knowledge-list");
+      const galleryItems = qsa("[data-media-preview]", galleryRoot || document).map(mediaPreviewItemFromLink).filter((item) => item.href);
+      const requestedIndex = Number(mediaMoreButton.dataset.openMediaGallery || 0);
+      const startIndex = Math.min(Math.max(requestedIndex, 0), Math.max(galleryItems.length - 1, 0));
+      const startItem = galleryItems[startIndex];
+      if (startItem) openMediaPreview({ ...startItem, items: galleryItems, index: startIndex });
+      return;
+    }
+
     const mediaPreviewButton = event.target.closest("[data-media-preview]");
     if (mediaPreviewButton) {
       event.preventDefault();
@@ -8440,6 +8615,21 @@ function bindEvents() {
     const managerEstimateOpenButton = event.target.closest("[data-manager-estimate-open-section]");
     if (managerEstimateOpenButton) {
       await openManagerEstimateNoticeSection();
+      return;
+    }
+
+    const mobileSystemAction = event.target.closest("[data-mobile-system-action]");
+    if (mobileSystemAction) {
+      toggleMobileQuickActions(false);
+      if (mobileSystemAction.dataset.mobileSystemAction === "refresh") {
+        await refreshAppFromUser("Обновляем данные").catch((error) => showToast(error.message));
+      } else if (mobileSystemAction.dataset.mobileSystemAction === "new-project") {
+        resetProjectDialog();
+        qs("#projectDialog").showModal();
+      } else if (mobileSystemAction.dataset.mobileSystemAction === "logout") {
+        localStorage.removeItem("currentRole");
+        window.location.href = "/logout";
+      }
       return;
     }
 
@@ -8607,6 +8797,14 @@ function bindEvents() {
     const taskActionButton = event.target.closest("[data-task-action]");
     if (taskActionButton) {
       await handleTaskAction(taskActionButton);
+      return;
+    }
+
+    const estimateFilterButton = event.target.closest("[data-estimate-job-filter]");
+    if (estimateFilterButton) {
+      state.estimateJobFilter = estimateFilterButton.dataset.estimateJobFilter;
+      await renderEstimateJobs();
+      qs(`[data-estimate-job-filter="${state.estimateJobFilter}"]`)?.focus({ preventScroll: true });
       return;
     }
 
@@ -9008,15 +9206,8 @@ function bindEvents() {
     const projectButton = event.target.closest("[data-open-project]");
     if (projectButton) {
       const projectId = Number(projectButton.dataset.openProject);
-      const sameProjectAlreadyOpen = state.view === "projects" && Number(state.selectedProjectId) === projectId;
       state.selectedProjectTab = "overview";
       switchView("projects");
-      if (sameProjectAlreadyOpen) {
-        state.selectedProjectId = null;
-        await renderProjects();
-        clearProjectDetail();
-        return;
-      }
       state.selectedProjectId = projectId;
       await renderProjects();
       await renderProjectDetail(state.selectedProjectId);
