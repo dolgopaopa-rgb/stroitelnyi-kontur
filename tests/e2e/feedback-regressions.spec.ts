@@ -120,6 +120,16 @@ test("estimate comments stay full length and can be edited after submission", as
 });
 
 test("feedback delete controls are available only to owner", async ({ page }) => {
+  const viewport = page.viewportSize()!;
+  // Mobile audit trace call@791 times out selecting owner at 390x844: the role
+  // picker is hidden <=1100px. Only role setup uses desktop; assertions keep the project viewport.
+  const selectFeedbackRole = async (role: string) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    expect(await switchRole(page, role)).toBeTruthy();
+    await expect(page.locator("#currentRoleSelect")).toHaveValue(role);
+    await page.setViewportSize(viewport);
+    await expect(page.locator("#feedbackView")).toHaveClass(/active/);
+  };
   const externalId = `e2e-feedback-delete-${Date.now()}-${Math.random()}`;
   const createResponse = await page.request.post("/api/feedback", {
     data: {
@@ -133,16 +143,16 @@ test("feedback delete controls are available only to owner", async ({ page }) =>
   expect(createResponse.ok()).toBeTruthy();
 
   await openApp(page, "/feedback");
-  await switchRole(page, "owner");
+  await selectFeedbackRole("owner");
   await expect(page.locator("#feedbackView")).toHaveClass(/active/);
   await expect(page.locator("#deleteSelectedFeedbackButton")).toBeVisible();
   await expect(page.locator("[data-feedback-delete]").first()).toBeVisible();
 
-  expect(await switchRole(page, "construction_manager")).toBeTruthy();
+  await selectFeedbackRole("construction_manager");
   await expect(page.locator("#deleteSelectedFeedbackButton")).toBeHidden();
   await expect(page.locator("[data-feedback-delete]")).toHaveCount(0);
 
-  expect(await switchRole(page, "finance_director")).toBeTruthy();
+  await selectFeedbackRole("finance_director");
   await expect(page.locator("#deleteSelectedFeedbackButton")).toBeHidden();
   await expect(page.locator("[data-feedback-delete]")).toHaveCount(0);
 
@@ -217,16 +227,21 @@ test("MAX feedback webhook accepts one latest message without browser session an
 });
 
 test("brand link opens home and compact topbar controls stay readable", async ({ page }) => {
-  await page.setViewportSize({ width: 936, height: 650 });
+  // Audit: brand trace call@910 clicked a hidden sidebar at 936px. Baseline
+  // 23dafdd crm-theme.css uses mobile navigation <=1100px and hides density <=1380px.
+  await page.setViewportSize({ width: 1200, height: 650 });
   await openApp(page, "/feedback");
 
+  await expect(page.locator(".brand")).toBeVisible();
+  await expect(page.getByTestId("mobile-bottom-nav")).toBeHidden();
   await expect(page.locator(".brand")).toHaveAttribute("href", "/today");
   await page.locator(".brand").click();
   await expect(page).toHaveURL(/\/today/);
   await expect(page.locator("#todayView")).toHaveClass(/active/);
 
+  await expect(page.locator(".density-switcher")).toBeHidden();
   const layout = await page.evaluate(() => {
-    const labels = [".topbar-object-switch", ".global-search", ".density-switcher", ".role-switcher"];
+    const labels = [".topbar-object-switch", ".global-search", ".role-switcher"];
     return labels.map((selector) => {
       const node = document.querySelector(selector);
       const box = node?.getBoundingClientRect();
@@ -243,6 +258,18 @@ test("brand link opens home and compact topbar controls stay readable", async ({
     expect(item.visible, `${item.selector} must be visible`).toBeTruthy();
     expect(item.width, `${item.selector} must not collapse in narrow desktop`).toBeGreaterThanOrEqual(120);
   }
+
+  await page.setViewportSize({ width: 936, height: 650 });
+  await openApp(page, "/feedback");
+  await expect(page.locator(".brand")).toBeHidden();
+  for (const selector of [".topbar-object-switch", ".global-search", ".density-switcher", ".role-switcher"]) {
+    await expect(page.locator(selector)).toBeHidden();
+  }
+  const mobileNav = page.getByTestId("mobile-bottom-nav");
+  await expect(mobileNav).toBeVisible();
+  await mobileNav.getByRole("button", { name: "Сегодня", exact: true }).click();
+  await expect(page).toHaveURL(/\/today/);
+  await expect(page.locator("#todayView")).toHaveClass(/active/);
 });
 
 test("estimate jobs have archive mode and project card can be collapsed explicitly", async ({ page }) => {
@@ -269,7 +296,9 @@ test("estimate job files are collapsed under object summary", async () => {
   const compat = readProjectFile("app/static/app.compat.js");
   const styles = readProjectFile("app/static/styles.css");
 
-  expect(html).toContain("20260711-main-estimate-materials");
+  // Both asset-version failures precede the regression assertions below.
+  // Baseline 23dafdd already uses 20260909-production-crm, not the July release.
+  expect(html).toMatch(/src="\/static\/app\.compat\.js\?v=[^"\s]+"/);
   expect(app).toContain("estimate-job-collapsible");
   expect(app).toContain("estimate-job-summary");
   expect(app).toContain("estimate-job-body");
@@ -333,7 +362,7 @@ test("delivered material batches do not stay in delivery risk", async ({ page })
   const compat = readProjectFile("app/static/app.compat.js");
   const server = readProjectFile("app/server.py");
 
-  expect(html).toContain("20260711-main-estimate-materials");
+  expect(html).toMatch(/src="\/static\/app\.compat\.js\?v=[^"\s]+"/);
   expect(app).toContain("function materialBatchHasOpenProblem");
   expect(app).toContain("function materialBatchIsFinalForAttention");
   expect(app).toContain("if (materialBatchIsFinalForAttention(batch)) return false");

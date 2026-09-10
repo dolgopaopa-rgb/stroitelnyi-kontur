@@ -34,7 +34,7 @@ test("Data Integrity Agent returns structured report and safe cleanup endpoint",
   });
   expect(fix.status).toBe(200);
   expect(fix.body.ok).toBeTruthy();
-  expect(fix.body.backup).toContain("backups/");
+  expect(fix.body.backup).toMatch(/^backups[\\/]data-integrity[\\/]construction-before-data-cleanup-\d{8}-\d{6}\.db$/);
   expect(fix.body.cleanup).toBeTruthy();
   expect(fix.body.after?.summary).toBeTruthy();
 });

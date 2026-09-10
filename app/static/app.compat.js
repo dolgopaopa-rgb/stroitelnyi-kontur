@@ -71,6 +71,7 @@
     estimateJobFilter: "all",
     estimateMaterials: [],
     estimatePreviewRows: [],
+    estimatePreviewFile: null,
     showEstimateMaterials: true,
     selectedProjectId: initialProjectId,
     selectedProjectTab: "overview",
@@ -653,6 +654,21 @@
   }
   function syncTopbarAccess() {
     const canUseRoleTools = Boolean(state.canSwitchRole);
+    const auditReadOnly = currentRoleBase() === "ai_auditor";
+    qsa("#newTaskButton, #newVariationButton, #newObjectRemarkButton, #newPhotoReportButton, #newEventButton, #newMaterialButton, #mobileQuickActionToggle").forEach((button) => {
+      button.hidden = auditReadOnly;
+      button.disabled = auditReadOnly;
+    });
+    qsa('#estimateImportForm [name="estimate_file"], #estimateImportForm [name="estimate_version"]').forEach((input) => {
+      input.disabled = auditReadOnly;
+      input.closest("label").hidden = auditReadOnly;
+    });
+    qsa('#estimateImportForm button[type="submit"], #previewEstimateButton').forEach((button) => {
+      button.hidden = auditReadOnly;
+      if (auditReadOnly) button.disabled = true;
+      else if (button.dataset.auditDisabled === "true") button.disabled = false;
+      button.dataset.auditDisabled = String(auditReadOnly);
+    });
     const ownerOnlyPageActions = state.view === "estimates" && currentRoleBase() !== "owner";
     const roleSwitcher = qs(".role-switcher");
     const refreshButton = qs("#refreshButton");
@@ -1027,10 +1043,11 @@
   function filePreviewKind(fileName = "", mimeType = "") {
     const mime = String(mimeType || "").toLowerCase();
     const name = String(fileName || "").toLowerCase();
-    if (mime.startsWith("image/") || /\.(png|jpe?g|webp|gif|heic|heif)$/i.test(name)) return "image";
-    if (mime.startsWith("video/") || /\.(mp4|mov|webm)$/i.test(name)) return "video";
-    if (mime === "application/pdf" || /\.pdf$/i.test(name)) return "pdf";
-    if (mime === "text/plain" || /\.txt$/i.test(name)) return "text";
+    const genericMime = !mime || mime === "application/octet-stream";
+    if (mime.startsWith("image/") || genericMime && /\.(png|jpe?g|jfif|webp|gif|heic|heif)$/i.test(name)) return "image";
+    if (mime.startsWith("video/") || genericMime && /\.(mp4|mov|webm)$/i.test(name)) return "video";
+    if (mime.split(";", 1)[0] === "application/pdf" || genericMime && /\.pdf$/i.test(name)) return "pdf";
+    if (mime.split(";", 1)[0] === "text/plain" || genericMime && /\.txt$/i.test(name)) return "text";
     return "";
   }
   function canPreviewInlineFile(fileName = "", mimeType = "") {
@@ -1044,14 +1061,14 @@
     const title = documentTitle(doc);
     const file = doc.file_name || "";
     if (!doc.file_path) {
-      return "\n      <div>\n        <strong>".concat(title, '</strong>\n        <div class="muted">').concat(type, " · файл не загружен</div>\n      </div>");
+      return "\n      <div>\n        <strong>".concat(escapeHtml(title), '</strong>\n        <div class="muted">').concat(escapeHtml(type), " · файл не загружен</div>\n      </div>");
     }
     const processLabel = String(doc.process_type || "").startsWith("variation:") ? "" : doc.process_type;
     const previewKind = filePreviewKind(file, doc.mime_type);
     const canPreview = Boolean(previewKind);
     const href = "/api/documents/".concat(doc.id, "/download");
-    const previewAttrs = canPreview ? 'data-media-preview="'.concat(previewKind, '" data-media-url="').concat(href, '" data-media-title="').concat(escapeHtml(title), '" data-media-mime="').concat(escapeHtml(doc.mime_type || ""), '"') : 'target="_blank" rel="noopener noreferrer" download';
-    return '\n    <a class="document-link '.concat(canPreview ? "" : "download-link", '" href="').concat(href, '" ').concat(previewAttrs, ">\n      <strong>").concat(title, "</strong>\n      <span>").concat([type, doc.status === "archived" ? "архивная версия" : "", doc.related_section, processLabel, file].filter(Boolean).join(" · "), "</span>\n      <small>").concat(fileOpenAction(file, doc.mime_type), "</small>\n    </a>");
+    const previewAttrs = canPreview ? 'data-media-preview="'.concat(previewKind, '" data-media-url="').concat(href, '" data-media-title="').concat(escapeAttr(title), '" data-media-mime="').concat(escapeAttr(doc.mime_type || ""), '"') : 'target="_blank" rel="noopener noreferrer" download';
+    return '\n    <a class="document-link '.concat(canPreview ? "" : "download-link", '" href="').concat(href, '" ').concat(previewAttrs, ">\n      <strong>").concat(escapeHtml(title), "</strong>\n      <span>").concat(escapeHtml([type, doc.status === "archived" ? "архивная версия" : "", doc.related_section, processLabel, file].filter(Boolean).join(" · ")), "</span>\n      <small>").concat(fileOpenAction(file, doc.mime_type), "</small>\n    </a>");
   }
   function contractTitleById(contracts = []) {
     return contracts.reduce((acc, contract) => {
@@ -1120,6 +1137,11 @@
     return Boolean(((_a = root == null ? void 0 : root.querySelector("[data-notify-personal]")) == null ? void 0 : _a.checked) || ((_b = root == null ? void 0 : root.querySelector('[name="notify_personal"]')) == null ? void 0 : _b.checked));
   }
   function showToast(message) {
+    const formStatus = qs("dialog[open] [data-file-form-status]");
+    if (formStatus) {
+      formStatus.textContent = message;
+      formStatus.hidden = false;
+    }
     const toast = qs("#toast");
     toast.textContent = message;
     toast.classList.add("active");
@@ -2881,7 +2903,7 @@
   function isEstimateImageFile(file) {
     const mime = String((file == null ? void 0 : file.mime_type) || "").toLowerCase();
     const fileName = String((file == null ? void 0 : file.file_name) || (file == null ? void 0 : file.title) || "").toLowerCase();
-    return mime.startsWith("image/") || /\.(jpe?g|png|webp|gif|bmp|heic|heif)$/i.test(fileName);
+    return filePreviewKind(fileName, mime) === "image" || (!mime || mime === "application/octet-stream") && /\.bmp$/i.test(fileName);
   }
   function renderEstimateJobFiles(files = [], jobId = "", canManageFiles = false) {
     if (!Array.isArray(files) || !files.length) return "";
@@ -3166,7 +3188,7 @@
     const userId = currentUserId();
     const idKey = "".concat(kind, "_id");
     const roleKey = "".concat(kind, "_role");
-    return task[idKey] === userId || task[roleKey] === currentRoleBase();
+    return Boolean(userId && task[idKey] === userId) || task[roleKey] === currentRoleBase();
   }
   function canDeleteTask(task) {
     if (["accepted", "waiting_check"].includes(taskStatusKey(task))) return false;
@@ -3376,6 +3398,7 @@
   }
   function mobileQuickActionsForRole() {
     const role = currentRoleBase();
+    if (role === "ai_auditor") return [];
     if (role === "master") {
       return [
         ["photo", "Добавить фото"],
@@ -3760,13 +3783,13 @@
       return '<a class="media-thumb" href="'.concat(href, '" title="').concat(titleAttr, '" data-media-preview="image" data-media-url="').concat(href, '" data-media-title="').concat(titleAttr, '" data-media-mime="').concat(escapeAttr(mime), '"><span class="media-thumb-visual"><span class="media-thumb-placeholder">Фото</span><img src="').concat(href, '" alt="').concat(titleAttr, '" data-media-image loading="lazy" decoding="async" /></span><span class="media-thumb-title">').concat(title, "</span></a>");
     }
     if (previewKind === "video") {
-      return '<a class="media-thumb video" href="'.concat(href, '" data-media-preview="video" data-media-url="').concat(href, '" data-media-title="').concat(title, '" data-media-mime="').concat(escapeHtml(mime), '"><span>Видео</span><small>').concat(title, "</small></a>");
+      return '<a class="media-thumb video" href="'.concat(href, '" data-media-preview="video" data-media-url="').concat(href, '" data-media-title="').concat(titleAttr, '" data-media-mime="').concat(escapeAttr(mime), '"><span>Видео</span><small>').concat(title, "</small></a>");
     }
     if (previewKind === "pdf") {
-      return '<a class="media-thumb file" href="'.concat(href, '" data-media-preview="pdf" data-media-url="').concat(href, '" data-media-title="').concat(title, '" data-media-mime="').concat(escapeHtml(mime), '"><span>PDF</span><small>').concat(title, "</small></a>");
+      return '<a class="media-thumb file" href="'.concat(href, '" data-media-preview="pdf" data-media-url="').concat(href, '" data-media-title="').concat(titleAttr, '" data-media-mime="').concat(escapeAttr(mime), '"><span>PDF</span><small>').concat(title, "</small></a>");
     }
     if (previewKind === "text") {
-      return '<a class="media-thumb file" href="'.concat(href, '" data-media-preview="text" data-media-url="').concat(href, '" data-media-title="').concat(title, '" data-media-mime="').concat(escapeHtml(mime), '"><span>Файл</span><small>').concat(title, "</small></a>");
+      return '<a class="media-thumb file" href="'.concat(href, '" data-media-preview="text" data-media-url="').concat(href, '" data-media-title="').concat(titleAttr, '" data-media-mime="').concat(escapeAttr(mime), '"><span>Файл</span><small>').concat(title, "</small></a>");
     }
     return '<a class="media-thumb file" href="'.concat(href, '" target="_blank" rel="noopener"><span>').concat(title, "</span></a>");
   }
@@ -3774,9 +3797,8 @@
     const link = image.closest(".media-thumb");
     if (!link || link.classList.contains("is-unavailable")) return;
     link.classList.add("is-unavailable");
-    link.removeAttribute("data-media-preview");
     link.setAttribute("data-media-unavailable", "1");
-    link.setAttribute("aria-label", "Файл временно недоступен");
+    link.setAttribute("aria-label", "Файл временно недоступен. Повторить просмотр");
     image.hidden = true;
     const placeholder = link.querySelector(".media-thumb-placeholder");
     if (placeholder) placeholder.textContent = "Файл недоступен";
@@ -3788,11 +3810,19 @@
     });
   }
   function closeMediaPreview() {
+    releaseMediaPreviewResource();
     const dialog = qs("#mediaPreviewDialog");
     const body = qs("#mediaPreviewBody");
     if (dialog == null ? void 0 : dialog.open) dialog.close();
     if (body) body.innerHTML = "";
     state.mediaPreview = { items: [], index: 0, touchX: null };
+  }
+  function releaseMediaPreviewResource() {
+    var _a;
+    (_a = state.mediaPreview.abortController) == null ? void 0 : _a.abort();
+    if (state.mediaPreview.objectUrl) URL.revokeObjectURL(state.mediaPreview.objectUrl);
+    state.mediaPreview.abortController = null;
+    state.mediaPreview.objectUrl = "";
   }
   function mediaPreviewItemFromLink(link) {
     var _a;
@@ -3815,6 +3845,7 @@
     const index = Math.min(Math.max(Number(state.mediaPreview.index || 0), 0), Math.max(items.length - 1, 0));
     const item = items[index];
     if (!item || !item.href || !dialog || !body) return;
+    releaseMediaPreviewResource();
     const safeTitle = item.title || "Просмотр файла";
     const mediaKind = item.kind || (String(item.mime || "").startsWith("video/") ? "video" : "image");
     state.mediaPreview.index = index;
@@ -3823,14 +3854,72 @@
     if (prevButton) prevButton.disabled = items.length <= 1;
     if (nextButton) nextButton.disabled = items.length <= 1;
     if (originalLink) originalLink.href = item.href;
+    const hrefAttr = escapeAttr(item.href);
+    const titleAttr = escapeAttr(safeTitle);
     if (mediaKind === "video") {
-      body.innerHTML = '<video src="'.concat(item.href, '" controls playsinline preload="metadata"></video>');
-    } else if (mediaKind === "pdf") {
-      body.innerHTML = '<iframe class="media-preview-frame" src="'.concat(item.href, '" title="').concat(escapeHtml(safeTitle), '"></iframe>');
-    } else if (mediaKind === "text") {
-      body.innerHTML = '<iframe class="media-preview-frame text-preview" src="'.concat(item.href, '" title="').concat(escapeHtml(safeTitle), '"></iframe>');
+      body.innerHTML = '<video src="'.concat(hrefAttr, '" controls playsinline preload="metadata"></video>');
+    } else if (mediaKind === "pdf" || mediaKind === "text") {
+      const status = document.createElement("p");
+      status.className = "muted";
+      status.style.color = "#fff";
+      status.style.padding = "16px";
+      status.setAttribute("role", "status");
+      status.textContent = "Загружаем файл";
+      body.replaceChildren(status);
+      const controller = new AbortController();
+      state.mediaPreview.abortController = controller;
+      (async () => {
+        try {
+          const response = await fetch(item.href, { signal: controller.signal });
+          if (!response.ok) throw new Error("Не удалось открыть файл (ошибка ".concat(response.status, ")."));
+          const blob = await response.blob();
+          if (controller.signal.aborted || state.mediaPreview.abortController !== controller) return;
+          const objectUrl = URL.createObjectURL(new Blob([blob], { type: mediaKind === "pdf" ? "application/pdf" : "text/plain;charset=utf-8" }));
+          state.mediaPreview.objectUrl = objectUrl;
+          const frame = document.createElement("iframe");
+          frame.className = "media-preview-frame".concat(mediaKind === "text" ? " text-preview" : "");
+          frame.title = safeTitle;
+          frame.src = objectUrl;
+          body.replaceChildren(frame);
+        } catch (error) {
+          if (controller.signal.aborted || state.mediaPreview.abortController !== controller) return;
+          status.textContent = error.message || "Не удалось открыть файл.";
+          const retry = document.createElement("button");
+          retry.type = "button";
+          retry.className = "secondary";
+          retry.textContent = "Повторить";
+          retry.addEventListener("click", renderMediaPreview);
+          status.append(" ", retry);
+        }
+      })();
     } else {
-      body.innerHTML = '<img src="'.concat(item.href, '" alt="').concat(escapeHtml(safeTitle), '" />');
+      body.innerHTML = '<img src="'.concat(hrefAttr, '" alt="').concat(titleAttr, '" />');
+    }
+    const media = body.querySelector("img, video");
+    if (media) {
+      const status = document.createElement("p");
+      status.className = "muted";
+      status.style.color = "#fff";
+      status.style.padding = "16px";
+      status.setAttribute("role", "status");
+      status.textContent = "Загружаем файл";
+      body.prepend(status);
+      const loaded = () => {
+        if (media.isConnected) status.remove();
+      };
+      media.addEventListener(media.tagName === "VIDEO" ? "loadedmetadata" : "load", loaded, { once: true });
+      media.addEventListener("error", () => {
+        if (!media.isConnected) return;
+        media.hidden = true;
+        status.textContent = "Не удалось открыть файл. Попробуйте ещё раз или откройте его отдельно.";
+        const retry = document.createElement("button");
+        retry.type = "button";
+        retry.className = "secondary";
+        retry.textContent = "Повторить";
+        retry.addEventListener("click", renderMediaPreview);
+        status.append(" ", retry);
+      }, { once: true });
+      if (media.tagName === "IMG" && media.complete && media.naturalWidth) loaded();
     }
   }
   function openMediaPreview({ href, title, mime, kind, items = [], index = 0 }) {
@@ -3841,6 +3930,7 @@
       return;
     }
     const galleryItems = items.length ? items : [{ href, title, mime, kind }];
+    releaseMediaPreviewResource();
     state.mediaPreview = { items: galleryItems, index, touchX: null };
     renderMediaPreview();
     if (!dialog.open) dialog.showModal();
@@ -3861,10 +3951,10 @@
   }
   function renderPhotoEmptyState(projects = projectsWithoutTodayPhoto()) {
     const count = projects.length;
-    return '\n    <section class="empty-state photo-empty-state">\n      <strong>Фотоотчётов пока нет</strong>\n      <p>По активным объектам сегодня нет '.concat(count, " фотоотчёт").concat(count === 1 ? "а" : count >= 2 && count <= 4 ? "ов" : "ов", ".</p>\n      ").concat(count ? '<div class="list compact-empty-list">'.concat(projects.slice(0, 8).map((project) => '\n                <div class="row empty-action-row">\n                  <button class="clickable empty-action-main" type="button" data-open-project="'.concat(project.id, '">\n                    <strong>').concat(escapeHtml(project.title || "Объект"), '</strong>\n                    <span class="muted">последний фотоотчёт: ').concat(latestPhotoReportDate(project.id) ? formatDateRu(latestPhotoReportDate(project.id)) : "не найден", "</span>\n                  </button>\n                  ").concat(canView("photos") ? '<button class="secondary tiny" type="button" data-mobile-action="photo" data-project-context="'.concat(project.id, '">Добавить</button>') : '<button class="secondary tiny" type="button" data-open-project="'.concat(project.id, '">Запросить</button>'), "\n                </div>")).join(""), "</div>") : '<p class="muted">По всем активным объектам есть фотоотчёт за сегодня.</p>', "\n    </section>");
+    return '\n    <section class="empty-state photo-empty-state">\n      <strong>Фотоотчётов пока нет</strong>\n      <p>По активным объектам сегодня нет '.concat(count, " фотоотчёт").concat(count === 1 ? "а" : count >= 2 && count <= 4 ? "ов" : "ов", ".</p>\n      ").concat(count ? '<div class="list compact-empty-list">'.concat(projects.slice(0, 8).map((project) => '\n                <div class="row empty-action-row">\n                  <button class="clickable empty-action-main" type="button" data-open-project="'.concat(project.id, '">\n                    <strong>').concat(escapeHtml(project.title || "Объект"), '</strong>\n                    <span class="muted">последний фотоотчёт: ').concat(latestPhotoReportDate(project.id) ? formatDateRu(latestPhotoReportDate(project.id)) : "не найден", "</span>\n                  </button>\n                  ").concat(currentRoleBase() === "ai_auditor" ? "" : canView("photos") ? '<button class="secondary tiny" type="button" data-mobile-action="photo" data-project-context="'.concat(project.id, '">Добавить</button>') : '<button class="secondary tiny" type="button" data-open-project="'.concat(project.id, '">Запросить</button>'), "\n                </div>")).join(""), "</div>") : '<p class="muted">По всем активным объектам есть фотоотчёт за сегодня.</p>', "\n    </section>");
   }
   function renderRemarkEmptyState() {
-    return '\n    <section class="empty-state remark-empty-state">\n      <strong>Замечаний по объектам пока нет</strong>\n      <p>Здесь будут строительные замечания: дефекты, переделки, контроль качества.</p>\n      <div class="remark-example-flow">\n        <span>Фото до</span>\n        <span>Описание</span>\n        <span>Ответственный</span>\n        <span>Срок</span>\n        <span>Фото после</span>\n        <span>Принято</span>\n      </div>\n      '.concat(canView("object_remarks") ? '<button class="secondary tiny" type="button" data-mobile-action="remark">Создать замечание</button>' : "", "\n    </section>");
+    return '\n    <section class="empty-state remark-empty-state">\n      <strong>Замечаний по объектам пока нет</strong>\n      <p>Здесь будут строительные замечания: дефекты, переделки, контроль качества.</p>\n      <div class="remark-example-flow">\n        <span>Фото до</span>\n        <span>Описание</span>\n        <span>Ответственный</span>\n        <span>Срок</span>\n        <span>Фото после</span>\n        <span>Принято</span>\n      </div>\n      '.concat(canView("object_remarks") && currentRoleBase() !== "ai_auditor" ? '<button class="secondary tiny" type="button" data-mobile-action="remark">Создать замечание</button>' : "", "\n    </section>");
   }
   async function renderPhotoReports() {
     const rowsNode = qs("#photoReportRows");
@@ -3960,7 +4050,7 @@
   function renderProjectEvents(events = []) {
     if (!events.length) return '<p class="muted">Событий пока нет.</p>';
     return '\n    <section class="project-history-section">\n      <div class="stack-line project-history-head">\n        <h3>История действий</h3>\n        '.concat(pill("".concat(events.length, " записей"), "blue"), '\n      </div>\n      <div class="list project-event-list">\n        ').concat(events.map(
-      (event) => '\n              <article class="row project-event-row">\n                <div class="stack-line">\n                  <strong>'.concat(escapeHtml(eventType(event.type)), "</strong>\n                  ").concat(pill(event.related_type === "material_request" ? "материалы" : escapeHtml(event.related_type || "объект"), event.related_type === "material_request" ? "blue" : ""), "\n                </div>\n                <p>").concat(escapeHtml(event.text || "").replace(/\n/g, "<br>"), '</p>\n                <div class="muted">').concat(escapeHtml(event.author_name || "автор не указан"), " · ").concat(formatDateRu(event.created_at) || event.created_at || "", "</div>\n              </article>")
+      (event) => '\n              <article class="row project-event-row">\n                <div class="stack-line">\n                  <strong>'.concat(escapeHtml(eventType(event.type)), "</strong>\n                  ").concat(pill(escapeHtml(eventType(event.related_type || "project")), event.related_type === "material_request" ? "blue" : ""), "\n                </div>\n                <p>").concat(escapeHtml(event.text || "").replace(/\n/g, "<br>"), '</p>\n                <div class="muted">').concat(escapeHtml(event.author_name || "автор не указан"), " · ").concat(formatDateRu(event.created_at) || event.created_at || "", "</div>\n              </article>")
     ).join(""), "\n      </div>\n    </section>");
   }
   function renderProjectHistory(project) {
@@ -4209,7 +4299,7 @@
   }
   function renderEstimatePreview() {
     qs("#estimatePreviewRows").innerHTML = state.estimatePreviewRows.length ? state.estimatePreviewRows.slice(0, 20).map(
-      (row) => '\n          <div class="row">\n            <div class="row-grid">\n              <div><strong>'.concat(row.name, '</strong><div class="muted">').concat(row.section || "Без раздела", "</div></div>\n              ").concat(pill("".concat(row.estimated_quantity || 0, " ").concat(row.unit || ""), "blue"), "\n              <div>").concat(money(row.unit_price), "</div>\n              ").concat(pill(money(row.total_price), "success"), "\n            </div>\n          </div>")
+      (row) => '\n          <div class="row">\n            <div class="row-grid">\n              <div><strong>'.concat(escapeHtml(row.name), '</strong><div class="muted">').concat(escapeHtml(row.section || "Без раздела"), "</div></div>\n              ").concat(pill(escapeHtml("".concat(row.estimated_quantity || 0, " ").concat(row.unit || "")), "blue"), "\n              <div>").concat(money(row.unit_price), "</div>\n              ").concat(pill(money(row.total_price), "success"), "\n            </div>\n          </div>")
     ).join("") : '<p class="muted">В файле не найдено строк материалов.</p>';
   }
   function fileToBase64(file) {
@@ -4250,14 +4340,28 @@
       canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
       const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
       if (!blob || blob.size >= file.size) return file;
-      return new File([blob], file.name, { type: "image/jpeg", lastModified: file.lastModified });
+      const fileName = /\.(jpe?g|jfif)$/i.test(file.name) ? file.name : file.name.replace(/\.[^.]+$/, "") + ".jpg";
+      return new File([blob], fileName, { type: "image/jpeg", lastModified: file.lastModified });
     } catch (error) {
       return file;
     }
   }
   async function prepareFileForUpload(file, type = "") {
+    if (!String(file.name || "").trim()) throw new Error("У файла нет имени. Выберите файл ещё раз.");
+    if (!file.size) throw new Error("Файл «".concat(file.name, "» пуст. Выберите непустой файл."));
     const uploadType = String(type || "");
     if (["photo_report", "object_remark_photo"].includes(uploadType)) {
+      const kind = filePreviewKind(file.name, file.type);
+      const mime = String(file.type || "").toLowerCase();
+      const genericMime = !mime || mime === "application/octet-stream";
+      if (mime && !genericMime && !/^(image|video)\//.test(mime) || !["image", "video"].includes(kind)) {
+        throw new Error("Файл «".concat(file.name, "» не является фото или видео."));
+      }
+      if (genericMime) {
+        const extension = file.name.split(".").pop().toLowerCase();
+        const mediaMime = { jpg: "image/jpeg", jpeg: "image/jpeg", jfif: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif", heic: "image/heic", heif: "image/heif", mp4: "video/mp4", mov: "video/quicktime", webm: "video/webm" }[extension];
+        if (mediaMime) file = new File([file], file.name, { type: mediaMime, lastModified: file.lastModified });
+      }
       return compressImageForUpload(file);
     }
     return file;
@@ -4269,7 +4373,7 @@
       title,
       type,
       related_type: relatedType,
-      file_name: file.name,
+      file_name: preparedFile.name,
       mime_type: preparedFile.type || file.type || "",
       file_base64: await fileToBase64(preparedFile)
     };
@@ -4295,12 +4399,17 @@
     )).filter(Boolean);
     return data;
   }
-  async function loadEstimatePreview() {
-    const file = qs('#estimateImportForm input[name="estimate_file"]').files[0];
+  async function loadEstimatePreview(file = qs('#estimateImportForm input[name="estimate_file"]').files[0]) {
+    state.estimatePreviewRows = [];
+    state.estimatePreviewFile = null;
+    renderEstimatePreview();
     if (!file) {
       showToast("Выберите файл .xlsx или CSV");
       return;
     }
+    if (!/\.(xlsx|csv)$/i.test(file.name)) throw new Error("Выберите файл .xlsx или CSV");
+    if (!file.size) throw new Error("Файл сметы пуст. Выберите непустой файл.");
+    let rows;
     if (file.name.toLowerCase().endsWith(".xlsx")) {
       const result = await api("/api/estimate-materials/preview-file", {
         method: "POST",
@@ -4309,11 +4418,14 @@
           file_base64: await fileToBase64(file)
         })
       });
-      state.estimatePreviewRows = result.rows || [];
+      rows = result.rows || [];
     } else {
       const text = await file.text();
-      state.estimatePreviewRows = readEstimateRows(text);
+      rows = readEstimateRows(text);
     }
+    if (qs('#estimateImportForm input[name="estimate_file"]').files[0] !== file) return;
+    state.estimatePreviewRows = rows;
+    state.estimatePreviewFile = file;
     renderEstimatePreview();
     showToast("Найдено строк: ".concat(state.estimatePreviewRows.length));
   }
@@ -4668,7 +4780,7 @@
     fillWorkExtraSectionSelect(works);
     fillWorkExtraRateSelect(works);
     const project = state.projects.find((item) => Number(item.id) === Number(projectId));
-    const fileNote = (project == null ? void 0 : project.work_task_file_name) ? '<p class="muted">Файл задания: '.concat(project.work_task_file_name, " · загружено работ: ").concat(works.length, "</p>") : '<p class="muted">Файл задания на работы по этому объекту еще не загружен.</p>';
+    const fileNote = (project == null ? void 0 : project.work_task_file_name) ? '<p class="muted">Файл задания: '.concat(escapeHtml(project.work_task_file_name), " · загружено работ: ").concat(works.length, "</p>") : '<p class="muted">Файл задания на работы по этому объекту еще не загружен.</p>';
     const processNote = '\n    <section class="hint-box neutral work-process-note">\n      <strong>Как читать раздел</strong>\n      <p>Слева — плановые работы из файла «Задание на работы» Сметтера. Справа — появившиеся работы: допы, превышения, переделки и расходы компании. На рабочем столе показываются задачи и контрольные сигналы, а не весь список работ по смете.</p>\n    </section>';
     const workTree = buildWorkTree(works);
     qs("#workRows").innerHTML = "".concat(processNote, '<div class="work-file-note">').concat(fileNote, "</div>") + (works.length ? Object.entries(workTree).map(
@@ -4999,7 +5111,7 @@
       ...folderDocs.map(renderKnowledgeDocumentRow)
     ].filter(Boolean).join("");
     const unclassifiedRows = allFolderDocs.filter(documentNeedsClassification);
-    const classificationNotice = unclassifiedRows.length ? '\n      <section class="classification-notice">\n        <strong>Требует классификации</strong>\n        <p class="muted">Эти файлы не удалось автоматически отнести к проекту, смете, договору, акту, счёту или фото/видео.</p>\n        <div class="stack-line">'.concat(unclassifiedRows.slice(0, 8).map((doc) => pill(documentTitle(doc), "warning")).join(""), '</div>\n        <button class="secondary tiny" type="button" data-knowledge-classification-filter="').concat(state.knowledgeClassificationOnly ? "all" : "unclassified", '">').concat(state.knowledgeClassificationOnly ? "Показать все файлы" : "Показать только неразобранные", "</button>\n      </section>") : "";
+    const classificationNotice = unclassifiedRows.length ? '\n      <section class="classification-notice">\n        <strong>Требует классификации</strong>\n        <p class="muted">Эти файлы не удалось автоматически отнести к проекту, смете, договору, акту, счёту или фото/видео.</p>\n        <div class="stack-line">'.concat(unclassifiedRows.slice(0, 8).map((doc) => pill(escapeHtml(documentTitle(doc)), "warning")).join(""), '</div>\n        <button class="secondary tiny" type="button" data-knowledge-classification-filter="').concat(state.knowledgeClassificationOnly ? "all" : "unclassified", '">').concat(state.knowledgeClassificationOnly ? "Показать все файлы" : "Показать только неразобранные", "</button>\n      </section>") : "";
     return '\n    <section class="knowledge-manager" data-knowledge-drop-zone data-folder-id="'.concat(escapeAttr(currentId), '">\n      ').concat(renderKnowledgeBreadcrumb(currentId, folders), '\n      <div class="knowledge-current-head">\n        <div>\n          <h3>').concat(escapeHtml((currentFolder == null ? void 0 : currentFolder.title) || "База знаний"), '</h3>\n          <p class="muted">').concat(currentId ? escapeHtml((currentFolder == null ? void 0 : currentFolder.path) || "") : "Корень базы знаний", " · ").concat(childFolders.length, " папок · ").concat(folderDocs.length, " файлов").concat(state.knowledgeClassificationOnly ? " · фильтр: требуют классификации" : "", "</p>\n        </div>\n        ").concat(canManageKnowledgeBase() ? '<div class="knowledge-drop-text">Перетащите файлы или папку сюда, чтобы загрузить их в текущую папку</div>' : "", '\n      </div>\n      <div class="knowledge-list">\n        ').concat(classificationNotice, "\n        ").concat(rows || '<p class="muted knowledge-empty">'.concat(emptyMessage, "</p>"), "\n      </div>\n      ").concat(canManageKnowledgeBase() ? renderKnowledgeUploadOverlay() : "", "\n    </section>");
   }
   function knowledgeUploadItem(file, relativePath = "") {
@@ -5434,9 +5546,13 @@
       decision: "Решение",
       comment: "Комментарий",
       document: "Документ",
+      photo_report: "Фотоотчёт",
+      variation: "Допработа",
+      material_request: "Материалы",
+      handover: "Передача объекта",
       problem: "Проблема",
       customer_approval: "Согласование"
-    }[type] || type;
+    }[type] || statusLabelMap[type] || type;
   }
   function formToJson(form) {
     const data = Object.fromEntries(new FormData(form).entries());
@@ -5454,6 +5570,52 @@
     form.reset();
     await loadAll();
     showToast(successMessage);
+  }
+  function bindFileFormSubmit(formId, handler) {
+    const form = qs("#".concat(formId));
+    if (!form) return;
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (currentRoleBase() === "ai_auditor") {
+        showToast("Режим просмотра: изменение данных недоступно");
+        return;
+      }
+      if (form.dataset.fileSubmitting === "true") return;
+      form.dataset.fileSubmitting = "true";
+      let status = form.querySelector("[data-file-form-status]");
+      if (!status) {
+        status = document.createElement("p");
+        status.className = "muted";
+        status.dataset.fileFormStatus = "";
+        status.setAttribute("role", "status");
+        form.insertBefore(status, form.querySelector(".form-actions"));
+      }
+      const loadingMessage = "Готовим и сохраняем файлы";
+      status.textContent = loadingMessage;
+      status.hidden = false;
+      const buttons = qsa('button[type="submit"]', form).map((button) => ({ button, disabled: button.disabled }));
+      buttons.forEach(({ button }) => {
+        button.disabled = true;
+      });
+      form.setAttribute("aria-busy", "true");
+      const loadingKey = "file-form-".concat(formId);
+      setAppLoading(true, "Готовим и сохраняем файлы", loadingKey);
+      try {
+        await handler(event);
+      } catch (error) {
+        const message = error.message || "Не удалось сохранить файлы. Попробуйте ещё раз.";
+        status.textContent = message;
+        showToast(message);
+      } finally {
+        if (status.textContent === loadingMessage) status.hidden = true;
+        buttons.forEach(({ button, disabled }) => {
+          button.disabled = disabled;
+        });
+        delete form.dataset.fileSubmitting;
+        form.removeAttribute("aria-busy");
+        setAppLoading(false, "", loadingKey);
+      }
+    });
   }
   async function submitPhotoReportForm(event) {
     var _a, _b;
@@ -5942,7 +6104,10 @@
     showToast("Ничего не найдено. Попробуйте другое слово.");
   }
   function bindEvents() {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H, _I, _J, _K, _L, _M, _N;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H, _I, _J, _K, _L;
+    qsa('input[type="file"][accept]').forEach((input) => {
+      if (/\.jpe?g(?:,|$)/i.test(input.accept) && !/\.jfif(?:,|$)/i.test(input.accept)) input.accept += ",.jfif";
+    });
     bindStableDetailsTouchGuard();
     bindWheelPageScroll();
     initPullToRefresh();
@@ -5978,6 +6143,12 @@
     qs("#refreshButton").addEventListener("click", () => refreshAppFromUser("Обновляем данные").catch((error) => showToast(error.message)));
     (_e = qs("#mobileQuickActionToggle")) == null ? void 0 : _e.addEventListener("click", () => toggleMobileQuickActions());
     (_f = qs("#mobileQuickActionClose")) == null ? void 0 : _f.addEventListener("click", () => toggleMobileQuickActions(false));
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && state.mobileQuickOpen && !hasOpenDialog()) {
+        event.preventDefault();
+        toggleMobileQuickActions(false);
+      }
+    });
     (_g = qs("#mobileMoreButton")) == null ? void 0 : _g.addEventListener("click", () => toggleMobileMenu(true));
     (_h = qs("#logoutButton")) == null ? void 0 : _h.addEventListener("click", () => {
       localStorage.removeItem("currentRole");
@@ -6122,6 +6293,7 @@
     (_w = qs("#mediaPreviewPrev")) == null ? void 0 : _w.addEventListener("click", () => moveMediaPreview(-1));
     (_x = qs("#mediaPreviewNext")) == null ? void 0 : _x.addEventListener("click", () => moveMediaPreview(1));
     (_y = qs("#mediaPreviewDialog")) == null ? void 0 : _y.addEventListener("close", () => {
+      releaseMediaPreviewResource();
       const body = qs("#mediaPreviewBody");
       if (body) body.innerHTML = "";
       state.mediaPreview = { items: [], index: 0, touchX: null };
@@ -6229,7 +6401,25 @@
       state.showEstimateMaterials = true;
       await renderEstimateMaterials();
     });
-    qs("#previewEstimateButton").addEventListener("click", loadEstimatePreview);
+    qs('#estimateImportForm input[name="estimate_file"]').addEventListener("change", () => {
+      state.estimatePreviewRows = [];
+      state.estimatePreviewFile = null;
+      renderEstimatePreview();
+    });
+    qs("#previewEstimateButton").addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      if (button.disabled || qs("#estimateImportForm").dataset.fileSubmitting === "true") return;
+      button.disabled = true;
+      setAppLoading(true, "Читаем файл сметы", "estimate-preview");
+      try {
+        await loadEstimatePreview();
+      } catch (error) {
+        showToast(error.message || "Не удалось прочитать смету. Выберите файл ещё раз.");
+      } finally {
+        button.disabled = false;
+        setAppLoading(false, "", "estimate-preview");
+      }
+    });
     qs('#workProjectForm select[name="project_id"]').addEventListener("change", async (event) => {
       state.selectedWorkProjectId = Number(event.target.value);
       qs('#workExtraForm select[name="project_id"]').value = event.target.value;
@@ -6281,12 +6471,6 @@
     });
     document.addEventListener("click", async (event) => {
       var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k2, _l2, _m2, _n2, _o2, _p2, _q2, _r2, _s2, _t2, _u2;
-      const unavailableMedia = event.target.closest("[data-media-unavailable]");
-      if (unavailableMedia) {
-        event.preventDefault();
-        showToast("Файл временно недоступен. Сообщите ответственному за хранение документов.");
-        return;
-      }
       const mediaMoreButton = event.target.closest("[data-open-media-gallery]");
       if (mediaMoreButton) {
         event.preventDefault();
@@ -7016,9 +7200,9 @@
       qs('#taskForm input[name="creator_id"]').value = currentUserId() || "";
       submitForm("taskDialog", "taskForm", "/api/tasks", "Задача создана");
     });
-    (_L = qs("#photoReportForm")) == null ? void 0 : _L.addEventListener("submit", submitPhotoReportForm);
-    (_M = qs("#objectRemarkForm")) == null ? void 0 : _M.addEventListener("submit", submitObjectRemarkForm);
-    qs("#estimateJobForm").addEventListener("submit", async (event) => {
+    bindFileFormSubmit("photoReportForm", submitPhotoReportForm);
+    bindFileFormSubmit("objectRemarkForm", submitObjectRemarkForm);
+    bindFileFormSubmit("estimateJobForm", async (event) => {
       var _a2;
       event.preventDefault();
       const form = qs("#estimateJobForm");
@@ -7039,7 +7223,7 @@
       await renderDashboard();
       showToast(id ? "Сметное задание обновлено" : "Сметное задание создано");
     });
-    qs("#estimateJobDoneForm").addEventListener("submit", async (event) => {
+    bindFileFormSubmit("estimateJobDoneForm", async (event) => {
       var _a2;
       event.preventDefault();
       const form = qs("#estimateJobDoneForm");
@@ -7065,7 +7249,7 @@
       await renderDashboard();
       showToast("Смета сдана, файлы сохранены");
     });
-    qs("#estimateJobFileForm").addEventListener("submit", async (event) => {
+    bindFileFormSubmit("estimateJobFileForm", async (event) => {
       var _a2, _b2, _c2, _d2;
       event.preventDefault();
       const form = qs("#estimateJobFileForm");
@@ -7213,14 +7397,14 @@
       await renderLocations();
       showToast("Локация поставщика добавлена");
     });
-    qs("#estimateImportForm").addEventListener("submit", async (event) => {
+    bindFileFormSubmit("estimateImportForm", async (event) => {
       event.preventDefault();
-      if (!state.estimatePreviewRows.length) {
-        await loadEstimatePreview();
-      }
-      if (!state.estimatePreviewRows.length) return;
       const form = qs("#estimateImportForm");
       const file = form.elements.estimate_file.files[0];
+      if (!file || state.estimatePreviewFile !== file || !state.estimatePreviewRows.length) {
+        await loadEstimatePreview(file);
+      }
+      if (!state.estimatePreviewRows.length || state.estimatePreviewFile !== file) return;
       await api("/api/estimate-materials/import", {
         method: "POST",
         body: JSON.stringify({
@@ -7234,13 +7418,14 @@
         })
       });
       state.estimatePreviewRows = [];
+      state.estimatePreviewFile = null;
       state.showEstimateMaterials = true;
       qs("#estimatePreviewRows").innerHTML = '<p class="muted">Файл загружен. Можно выбрать другой файл.</p>';
       await loadAll();
       switchView("materials");
       showToast("Материалы сметы загружены в объект");
     });
-    (_N = qs("#knowledgeFolderForm")) == null ? void 0 : _N.addEventListener("submit", async (event) => {
+    (_L = qs("#knowledgeFolderForm")) == null ? void 0 : _L.addEventListener("submit", async (event) => {
       event.preventDefault();
       const form = qs("#knowledgeFolderForm");
       try {
@@ -7254,7 +7439,7 @@
         showToast(error.message || "Не удалось создать папку");
       }
     });
-    qs("#documentForm").addEventListener("submit", async (event) => {
+    bindFileFormSubmit("documentForm", async (event) => {
       var _a2, _b2;
       event.preventDefault();
       const form = qs("#documentForm");
@@ -7277,7 +7462,7 @@
         setKnowledgeUploading(false);
       }
     });
-    qs("#contractForm").addEventListener("submit", async (event) => {
+    bindFileFormSubmit("contractForm", async (event) => {
       var _a2, _b2, _c2, _d2;
       event.preventDefault();
       const form = qs("#contractForm");

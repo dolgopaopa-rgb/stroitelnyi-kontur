@@ -1,8 +1,10 @@
 import { expect, test } from "@playwright/test";
 import { spawnSync } from "node:child_process";
 
-test("ai auditor opens app in fresh read-only context and cannot mutate data", async ({ browser }) => {
-  const result = spawnSync("python", ["tools/create_ai_audit_token.py", "--public-url", process.env.KONTUR_BASE_URL || "http://127.0.0.1:8765"], { encoding: "utf8" });
+test("ai auditor opens app in fresh read-only context and cannot mutate data", async ({ browser, baseURL }) => {
+  expect(baseURL, "The audit token must target the configured Playwright server").toBeTruthy();
+  const result = spawnSync(process.env.PYTHON || "python", ["tools/create_ai_audit_token.py", "--public-url", new URL(baseURL!).origin], { encoding: "utf8" });
+  expect(result.status, result.stderr || result.error?.message).toBe(0);
   const loginUrl = result.stdout.match(/login_url=(\S+)/)?.[1];
   expect(loginUrl).toBeTruthy();
   const context = await browser.newContext();
@@ -17,6 +19,8 @@ test("ai auditor opens app in fresh read-only context and cannot mutate data", a
     expect(sessionResponse.status()).toBe(200);
     const session = await sessionResponse.json();
     expect(session.role).toBe("ai_auditor");
+    expect(session.user.role).toBe("ai_auditor");
+    expect(session.can_switch_role).toBe(false);
     for (const method of ["post", "put", "patch", "delete"] as const) {
       const mutateResponse = await context.request[method](new URL("/api/tasks", page.url()).toString(), method === "delete" ? {} : { data: {} });
       expect(mutateResponse.status(), `${method.toUpperCase()} /api/tasks`).toBe(403);

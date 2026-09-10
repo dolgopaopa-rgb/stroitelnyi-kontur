@@ -11,17 +11,21 @@ import mimetypes
 import os
 import re
 import shutil
+import sqlite3
 import subprocess
 import threading
 import time
 import zipfile
 import xml.etree.ElementTree as ET
+from contextlib import closing
 from datetime import date, datetime
+from http.client import HTTPException
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse
 from urllib.request import Request, urlopen
+from uuid import uuid4
 
 from database import DATA_DIR, DB_PATH, connect, init_db, row_to_dict, rows_to_dicts
 from data_integrity import apply_data_integrity_fixes, run_data_integrity_checks
@@ -344,6 +348,8 @@ def current_access_account(handler: BaseHTTPRequestHandler) -> dict | None:
 
 def read_json(handler: BaseHTTPRequestHandler) -> dict:
     length = int(handler.headers.get("Content-Length", "0"))
+    if length < 0:
+        raise ValueError("Некорректная длина запроса")
     if not length:
         return {}
     raw = handler.rfile.read(length).decode("utf-8")
@@ -705,6 +711,19 @@ def import_estimate_material_rows(db, project_id: int, rows: list[dict], source:
 
 
 def archive_completed_material_batches(db) -> None:
+    # An UPDATE matching no rows still takes SQLite's single writer lock.
+    pending = db.execute(
+        """
+        SELECT 1 FROM material_request_batches
+        WHERE archived_at IS NULL
+          AND status = 'received'
+          AND received_at IS NOT NULL
+          AND datetime(received_at) <= datetime('now', '-2 days')
+        LIMIT 1
+        """
+    ).fetchone()
+    if not pending:
+        return
     db.execute(
         """
         UPDATE material_request_batches
@@ -718,6 +737,23 @@ def archive_completed_material_batches(db) -> None:
           AND datetime(received_at) <= datetime('now', '-2 days')
         """
     )
+
+
+def archive_material_batches_for_read(db) -> None:
+    if db.in_transaction:
+        return
+    busy_timeout = db.execute("PRAGMA busy_timeout").fetchone()[0]
+    try:
+        db.execute("PRAGMA busy_timeout = 0")
+        archive_completed_material_batches(db)
+        db.commit()
+    except sqlite3.OperationalError as exc:
+        if getattr(exc, "sqlite_errorcode", 0) & 0xFF not in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}:
+            raise
+        # Only this GET's maintenance is rolled back; a later GET retries it.
+        db.rollback()
+    finally:
+        db.execute(f"PRAGMA busy_timeout = {int(busy_timeout)}")
 
 
 def import_smetter_materials_from_documents(db, project_id: int, files: list[dict]) -> int:
@@ -2117,6 +2153,19 @@ def account_user_id(account: dict | None) -> int:
         return 0
 
 
+def resolve_action_actor(
+    account: dict | None,
+    actor_role: object = None,
+    actor_id: object = None,
+    *,
+    default_role: str | None = None,
+) -> tuple[str, int | None]:
+    if not (account or {}).get("can_switch_role"):
+        return account_role(account), account_user_id(account) or None
+    role_fallback = account_role(account) if default_role is None else default_role
+    return str(actor_role or role_fallback), int(actor_id or 0) or account_user_id(account) or None
+
+
 READ_ONLY_ROLES = {"ai_auditor"}
 AI_AUDIT_LOGIN = os.environ.get("APP_AI_AUDIT_LOGIN", "ai_auditor_8c8c15").strip() or "ai_auditor_8c8c15"
 AUDIT_SAFE_DOCUMENT_TYPES = {"smetter_materials", "smetter_work_task", "project_documentation", "detail_node", "regulation", "standard", "instruction", "other"}
@@ -2637,7 +2686,7 @@ def format_date_ru(value: str | None = None) -> str:
 
 def safe_file_name(file_name: str) -> str:
     name = Path(file_name or "file").name.strip() or "file"
-    return re.sub(r"[^A-Za-zА-Яа-я0-9._() -]+", "_", name)[:140]
+    return re.sub(r"[^A-Za-zА-Яа-яЁё0-9._() -]+", "_", name)[:140]
 
 
 def yandex_disk_configured() -> bool:
@@ -2760,6 +2809,24 @@ def ensure_knowledge_folder_path(db, parent_id: int | None, segments: list[str],
     return current_parent
 
 
+def plan_knowledge_folder_path(folders_by_id: dict[int, dict], parent_id: int | None, segments: list[str]) -> str:
+    current_parent = parent_id
+    for segment in segments:
+        title = normalize_folder_title(segment)
+        existing = next(
+            (folder for folder in folders_by_id.values()
+             if (folder.get("parent_id") or None) == current_parent and str(folder["title"]).strip().lower() == title.lower()),
+            None,
+        )
+        if existing:
+            current_parent = int(existing["id"])
+        else:
+            planned_id = min([0, *folders_by_id]) - 1
+            folders_by_id[planned_id] = {"id": planned_id, "parent_id": current_parent, "title": title}
+            current_parent = planned_id
+    return knowledge_folder_path_from_map(folders_by_id, current_parent)
+
+
 def attach_knowledge_folder_paths(db, documents: list[dict]) -> list[dict]:
     folders_by_id = {int(row["id"]): row for row in knowledge_folder_rows(db)}
     for document in documents:
@@ -2794,7 +2861,7 @@ def ensure_yandex_folder(folder_path: str) -> None:
                 raise
 
 
-def project_upload_folder(db, project_id: int, related_type: str, doc_type: str, folder_path: str = "") -> str:
+def project_upload_folder(db, project_id: int, related_type: str, doc_type: str, folder_path: str = "", *, estimate_job_title: str | None = None) -> str:
     root = yandex_disk_root()
     if related_type == "knowledge_base":
         base = f"{root}/База знаний"
@@ -2804,16 +2871,18 @@ def project_upload_folder(db, project_id: int, related_type: str, doc_type: str,
             return base
         return f"{base}/{yandex_path_part(doc_type, 'documents')}"
     if related_type == "estimate_job":
-        row = db.execute("SELECT title FROM estimate_jobs WHERE id = ?", (project_id,)).fetchone()
-        title = row["title"] if row else f"estimate_job_{project_id}"
+        title = estimate_job_title
+        if title is None:
+            row = db.execute("SELECT title FROM estimate_jobs WHERE id = ?", (project_id,)).fetchone()
+            title = row["title"] if row else f"estimate_job_{project_id}"
         return f"{root}/Сметы/{yandex_path_part(title, f'estimate_job_{project_id}')}/{yandex_path_part(doc_type, 'files')}"
     row = db.execute("SELECT title FROM projects WHERE id = ?", (project_id,)).fetchone()
     project_title = row["title"] if row else f"project_{project_id}"
     return f"{root}/Объекты/{yandex_path_part(project_title, f'project_{project_id}')}/{yandex_path_part(doc_type, 'documents')}"
 
 
-def upload_to_yandex_disk(db, project_id: int, related_type: str, doc_type: str, target_name: str, raw: bytes, folder_path: str = "") -> str:
-    folder = project_upload_folder(db, project_id, related_type, doc_type, folder_path)
+def upload_to_yandex_disk(db, project_id: int, related_type: str, doc_type: str, target_name: str, raw: bytes, folder_path: str = "", *, estimate_job_title: str | None = None) -> str:
+    folder = project_upload_folder(db, project_id, related_type, doc_type, folder_path, estimate_job_title=estimate_job_title)
     ensure_yandex_folder(folder)
     remote_path = f"{folder}/{target_name}"
     payload = yandex_api_request("GET", "/resources/upload", {"path": remote_path, "overwrite": "true"})
@@ -2836,11 +2905,11 @@ def save_to_local_uploads(project_id: int, target_name: str, raw: bytes, folder_
     return str(target_path.relative_to(DATA_DIR))
 
 
-def save_uploaded_file(db, project_id: int, related_type: str, doc_type: str, target_name: str, raw: bytes, folder_path: str = "") -> str:
+def save_uploaded_file(db, project_id: int, related_type: str, doc_type: str, target_name: str, raw: bytes, folder_path: str = "", *, estimate_job_title: str | None = None) -> str:
     if yandex_disk_configured():
         try:
-            return upload_to_yandex_disk(db, project_id, related_type, doc_type, target_name, raw, folder_path)
-        except (HTTPError, URLError, TimeoutError, RuntimeError, OSError) as exc:
+            return upload_to_yandex_disk(db, project_id, related_type, doc_type, target_name, raw, folder_path, estimate_job_title=estimate_job_title)
+        except (HTTPError, URLError, TimeoutError, RuntimeError, OSError, HTTPException, ValueError) as exc:
             print(f"Yandex Disk upload failed, saved locally instead: {exc}")
     return save_to_local_uploads(project_id, target_name, raw, folder_path)
 
@@ -2936,7 +3005,7 @@ def stream_local_file(
         handler.end_headers()
         return
 
-    start, end = byte_range if byte_range else (0, max(file_size - 1, 0))
+    start, end = byte_range if byte_range else (0, file_size - 1)
     content_length = max(end - start + 1, 0)
     handler.send_response(206 if byte_range else 200)
     handler.send_header("Content-Type", content_type)
@@ -2961,7 +3030,7 @@ def stream_local_file(
                     break
                 handler.wfile.write(chunk)
                 remaining -= len(chunk)
-    except (BrokenPipeError, ConnectionResetError):
+    except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
         return
 
 
@@ -3040,6 +3109,63 @@ def knowledge_base_project_id(db) -> int:
     return int(cursor.lastrowid)
 
 
+def validate_photo_report_file(file_data: dict) -> None:
+    file_name = str(file_data.get("file_name") or "")
+    # These mobile camera formats are not all present in Python/Linux MIME tables.
+    media_types = {
+        ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".jpe": "image/jpeg", ".jfif": "image/jpeg",
+        ".png": "image/png", ".gif": "image/gif", ".bmp": "image/bmp", ".webp": "image/webp",
+        ".heic": "image/heic", ".heif": "image/heif", ".avif": "image/avif",
+        ".mov": "video/quicktime", ".mp4": "video/mp4", ".webm": "video/webm", ".m4v": "video/x-m4v",
+    }
+    expected_type = media_types.get(Path(file_name).suffix.lower()) or mimetypes.guess_type(file_name)[0] or ""
+    supplied_type = str(file_data.get("mime_type") or "").split(";", 1)[0].strip().lower()
+    content_type = expected_type if supplied_type in {"", "application/octet-stream"} else supplied_type
+    # Image compression can preserve a PNG name while producing JPEG bytes.
+    family = content_type.split("/", 1)[0]
+    if family not in {"image", "video"} or expected_type.split("/", 1)[0] != family:
+        raise ValueError("В фотоотчёт можно прикрепить только фото или видео. Проверьте формат файла.")
+    encoded = str(file_data.get("file_base64") or "")
+    if "," in encoded:
+        encoded = encoded.split(",", 1)[1]
+    try:
+        raw = base64.b64decode(re.sub(r"\s+", "", encoded), validate=True)
+    except ValueError as exc:
+        raise ValueError("Не удалось прочитать файл фотоотчёта.") from exc
+    if not raw:
+        raise ValueError("Пустой файл нельзя добавить в фотоотчёт.")
+    file_data["mime_type"] = content_type
+
+
+def prepare_document_file(
+    db,
+    project_id: int,
+    file_data: dict,
+    title: str,
+    doc_type: str,
+    related_type: str = "project",
+    folder_path: str = "",
+) -> tuple[str, str, int] | None:
+    file_name = safe_file_name(file_data.get("file_name") or title)
+    encoded = file_data.get("file_base64") or ""
+    if not encoded:
+        return None
+    if "," in encoded:
+        encoded = encoded.split(",", 1)[1]
+    raw = base64.b64decode(encoded)
+    target_name = f"{uuid4().hex}_{file_name}"
+    stored_path = save_uploaded_file(db, project_id, related_type, doc_type, target_name, raw, folder_path)
+    return file_name, stored_path, len(raw)
+
+
+def discard_prepared_document_files(prepared_files: list[tuple[str, str, int]]) -> None:
+    for _, stored_path, _ in prepared_files:
+        try:
+            delete_stored_file(stored_path)
+        except (HTTPError, URLError, TimeoutError, RuntimeError, OSError, HTTPException, ValueError) as exc:
+            print(f"Could not remove unused prepared document: {exc}")
+
+
 def save_document_file(
     db,
     project_id: int,
@@ -3050,16 +3176,21 @@ def save_document_file(
     folder_id: int | None = None,
     folder_path: str = "",
     owner_id: int | None = None,
+    *,
+    prepared_file: tuple[str, str, int] | None = None,
 ) -> int | None:
-    file_name = safe_file_name(file_data.get("file_name") or title)
-    encoded = file_data.get("file_base64") or ""
-    if not encoded:
+    prepared_file = prepared_file or prepare_document_file(db, project_id, file_data, title, doc_type, related_type, folder_path)
+    if not prepared_file:
         return None
-    if "," in encoded:
-        encoded = encoded.split(",", 1)[1]
-    raw = base64.b64decode(encoded)
-    target_name = f"{int(time.time() * 1000)}_{file_name}"
-    stored_path = save_uploaded_file(db, project_id, related_type, doc_type, target_name, raw, folder_path)
+    file_name, stored_path, file_size = prepared_file
+    if not stored_path.startswith(YANDEX_DISK_FILE_PREFIX):
+        source = DATA_DIR / stored_path
+        staging_root = UPLOAD_DIR / "project_0"
+        if related_type == "knowledge_base" and source.is_relative_to(staging_root):
+            target = UPLOAD_DIR / f"project_{project_id}" / source.relative_to(staging_root)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            source.replace(target)
+            stored_path = str(target.relative_to(DATA_DIR))
     cursor = db.execute(
         """
         INSERT INTO documents (
@@ -3081,7 +3212,7 @@ def save_document_file(
             file_name,
             stored_path,
             file_data.get("mime_type") or mimetypes.guess_type(file_name)[0] or "application/octet-stream",
-            len(raw),
+            file_size,
         ),
     )
     return int(cursor.lastrowid)
@@ -3117,8 +3248,10 @@ def save_process_attachments(
     doc_type: str,
     process_type: str,
     owner_id: int | None = None,
+    prepared_files: list[tuple[str, str, int]] | None = None,
 ) -> list[int]:
     document_ids: list[int] = []
+    prepared = iter(prepared_files) if prepared_files is not None else None
     for attachment in attachments or []:
         if not isinstance(attachment, dict) or not attachment.get("file_base64"):
             continue
@@ -3132,6 +3265,7 @@ def save_process_attachments(
             doc_type,
             related_type,
             owner_id=owner_id,
+            prepared_file=next(prepared) if prepared is not None else None,
         )
         if document_id:
             document_ids.append(document_id)
@@ -3704,14 +3838,7 @@ def blockers_payload(db, account: dict | None, project_id: int | None = None) ->
     return rows
 
 
-def save_estimate_job_file(
-    db,
-    estimate_job_id: int,
-    file_data: dict,
-    uploaded_by: int | None = None,
-    replace_file_id: int | None = None,
-    replacement_note: str = "",
-) -> int | None:
+def prepare_estimate_job_file(db, estimate_job_id: int, file_data: dict, *, title: str | None = None) -> tuple[str, str, int] | None:
     file_name = safe_file_name(file_data.get("file_name") or file_data.get("title") or "file")
     encoded = file_data.get("file_base64") or ""
     if not encoded:
@@ -3719,27 +3846,57 @@ def save_estimate_job_file(
     if "," in encoded:
         encoded = encoded.split(",", 1)[1]
     raw = base64.b64decode(encoded)
-    target_name = f"{int(time.time() * 1000)}_{file_name}"
-    stored_path = save_uploaded_file(db, estimate_job_id, "estimate_job", "attachments", target_name, raw)
+    target_name = f"{uuid4().hex}_{file_name}"
+    folder_path = "pending_estimates" if not estimate_job_id else ""
+    stored_path = save_uploaded_file(db, estimate_job_id, "estimate_job", "attachments", target_name, raw, folder_path, estimate_job_title=title)
+    return file_name, stored_path, len(raw)
+
+
+def save_estimate_job_file(
+    db,
+    estimate_job_id: int,
+    file_data: dict,
+    uploaded_by: int | None = None,
+    replace_file_id: int | None = None,
+    replacement_note: str = "",
+    *,
+    prepared_file: tuple[str, str, int] | None = None,
+) -> int | None:
+    prepared_file = prepared_file or prepare_estimate_job_file(db, estimate_job_id, file_data)
+    if not prepared_file:
+        return None
+    file_name, stored_path, file_size = prepared_file
+    if not stored_path.startswith(YANDEX_DISK_FILE_PREFIX):
+        source = DATA_DIR / stored_path
+        if source.parent == UPLOAD_DIR / "project_0" / "pending_estimates":
+            # The new job now has an ID; only a same-filesystem rename remains under the lock.
+            target_dir = UPLOAD_DIR / f"project_{estimate_job_id}"
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target = target_dir / source.name
+            source.replace(target)
+            stored_path = str(target.relative_to(DATA_DIR))
     replaced_file = None
     version_no = 1
     if replace_file_id:
         replaced_file = db.execute(
-            "SELECT * FROM estimate_job_files WHERE id = ? AND estimate_job_id = ?",
+            "SELECT * FROM estimate_job_files WHERE id = ? AND estimate_job_id = ? AND is_current = 1",
             (replace_file_id, estimate_job_id),
         ).fetchone()
-        if replaced_file:
-            version_no = int(replaced_file["version_no"] or 1) + 1
-            db.execute(
-                """
-                UPDATE estimate_job_files
-                SET is_current = 0,
-                    replaced_at = CURRENT_TIMESTAMP,
-                    replacement_note = ?
-                WHERE id = ?
-                """,
-                (replacement_note, int(replaced_file["id"])),
-            )
+        if not replaced_file:
+            raise ValueError("Файл уже заменён или удалён. Обновите список файлов и повторите замену.")
+        version_no = int(replaced_file["version_no"] or 1) + 1
+        replaced = db.execute(
+            """
+            UPDATE estimate_job_files
+            SET is_current = 0,
+                replaced_at = CURRENT_TIMESTAMP,
+                replacement_note = ?
+            WHERE id = ? AND estimate_job_id = ? AND is_current = 1
+            """,
+            (replacement_note, replace_file_id, estimate_job_id),
+        )
+        if replaced.rowcount != 1:
+            raise ValueError("Файл уже заменён или удалён. Обновите список файлов и повторите замену.")
     cursor = db.execute(
         """
         INSERT INTO estimate_job_files (
@@ -3754,7 +3911,7 @@ def save_estimate_job_file(
             file_name,
             stored_path,
             file_data.get("mime_type") or mimetypes.guess_type(file_name)[0] or "application/octet-stream",
-            len(raw),
+            file_size,
             version_no,
             int(replaced_file["id"]) if replaced_file else None,
             replacement_note,
@@ -5434,7 +5591,7 @@ class AppHandler(BaseHTTPRequestHandler):
         html_response(self, html_body)
 
     def serve_document_download(self, document_id: int) -> None:
-        with connect() as db:
+        with closing(connect()) as db:
             if is_ai_auditor_account(current_access_account(self)):
                 self.send_error(403)
                 return
@@ -5445,31 +5602,10 @@ class AppHandler(BaseHTTPRequestHandler):
             if not document_visible_for_account(row_to_dict(document), current_access_account(self)):
                 self.send_error(403)
                 return
-            stored_path = str(document["file_path"])
-            file_name = document["file_name"] or Path(stored_path).name
-            content_type = document["mime_type"] or mimetypes.guess_type(file_name)[0] or "application/octet-stream"
-            if stored_path.startswith(YANDEX_DISK_FILE_PREFIX):
-                try:
-                    raw = download_from_yandex_disk(stored_path)
-                except (HTTPError, URLError, TimeoutError, RuntimeError, OSError):
-                    self.send_error(502)
-                    return
-                stream_inline_bytes(self, raw, file_name, content_type)
-                return
-            else:
-                file_path = (DATA_DIR / stored_path).resolve()
-                if DATA_DIR.resolve() not in file_path.parents and file_path != DATA_DIR.resolve():
-                    self.send_error(403)
-                    return
-                if not file_path.exists() or not file_path.is_file():
-                    self.send_error(404)
-                    return
-                file_name = document["file_name"] or file_path.name
-                content_type = document["mime_type"] or mimetypes.guess_type(file_name)[0] or "application/octet-stream"
-            stream_local_file(self, file_path, file_name, content_type)
+        self.serve_stored_file(document)
 
     def serve_estimate_job_file_download(self, file_id: int) -> None:
-        with connect() as db:
+        with closing(connect()) as db:
             if is_ai_auditor_account(current_access_account(self)):
                 self.send_error(403)
                 return
@@ -5480,28 +5616,28 @@ class AppHandler(BaseHTTPRequestHandler):
             if not item or not item["file_path"]:
                 self.send_error(404)
                 return
-            stored_path = str(item["file_path"])
-            file_name = item["file_name"] or Path(stored_path).name
-            content_type = item["mime_type"] or mimetypes.guess_type(file_name)[0] or "application/octet-stream"
-            if stored_path.startswith(YANDEX_DISK_FILE_PREFIX):
-                try:
-                    raw = download_from_yandex_disk(stored_path)
-                except (HTTPError, URLError, TimeoutError, RuntimeError, OSError):
-                    self.send_error(502)
-                    return
-                stream_inline_bytes(self, raw, file_name, content_type)
+        self.serve_stored_file(item)
+
+    def serve_stored_file(self, item) -> None:
+        stored_path = str(item["file_path"])
+        file_name = item["file_name"] or Path(stored_path).name
+        content_type = item["mime_type"] or mimetypes.guess_type(file_name)[0] or "application/octet-stream"
+        if stored_path.startswith(YANDEX_DISK_FILE_PREFIX):
+            try:
+                raw = download_from_yandex_disk(stored_path)
+            except (HTTPError, URLError, TimeoutError, RuntimeError, OSError, HTTPException, ValueError):
+                self.send_error(502)
                 return
-            else:
-                file_path = (DATA_DIR / stored_path).resolve()
-                if DATA_DIR.resolve() not in file_path.parents and file_path != DATA_DIR.resolve():
-                    self.send_error(403)
-                    return
-                if not file_path.exists() or not file_path.is_file():
-                    self.send_error(404)
-                    return
-                file_name = item["file_name"] or file_path.name
-                content_type = item["mime_type"] or mimetypes.guess_type(file_name)[0] or "application/octet-stream"
-            stream_local_file(self, file_path, file_name, content_type)
+            stream_inline_bytes(self, raw, file_name, content_type)
+            return
+        file_path = (DATA_DIR / stored_path).resolve()
+        if DATA_DIR.resolve() not in file_path.parents and file_path != DATA_DIR.resolve():
+            self.send_error(403)
+            return
+        if not file_path.is_file():
+            self.send_error(404)
+            return
+        stream_local_file(self, file_path, file_name, content_type)
 
     def serve_material_requests_export(self, query: dict[str, list[str]]) -> None:
         if is_ai_auditor_account(current_access_account(self)):
@@ -5509,7 +5645,7 @@ class AppHandler(BaseHTTPRequestHandler):
             return
         project_id = int(query.get("project_id", ["0"])[0] or 0)
         with connect() as db:
-            archive_completed_material_batches(db)
+            archive_material_batches_for_read(db)
             params: list[object] = []
             where = ["b.status = 'received'"]
             if project_id:
@@ -5691,9 +5827,9 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
         write_response_body(self, body)
 
     def handle_api_get(self, path: str, query: dict[str, list[str]]) -> None:
-        with connect() as db:
+        with closing(connect()) as db, db:
             account = current_access_account(self) or {}
-            archive_completed_material_batches(db)
+            archive_material_batches_for_read(db)
             if path == "/api/session":
                 user = None
                 if account.get("user_id"):
@@ -6330,6 +6466,8 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 if not attachments_payload:
                     json_response(self, {"error": "Фотоотчёт нельзя отправить без фото или видео."}, 400)
                     return
+                for attachment in attachments_payload:
+                    validate_photo_report_file(attachment)
                 actor_id = int(data.get("author_id") or 0) or account_user_id(account) or user_id_by_role(db, "construction_manager")
                 report_date = data.get("report_date") or datetime.utcnow().date().isoformat()
                 stage = str(data.get("stage") or "")
@@ -6343,23 +6481,50 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 related_task_ids = parse_id_list(data.get("related_task_ids"))
                 if task_id and task_id not in related_task_ids:
                     related_task_ids.insert(0, task_id)
-                existing_report = active_photo_report_for_task(db, task_id)
-                if existing_report:
-                    json_response(self, {"id": existing_report["id"], "duplicate": True, "task_id": task_id}, 200)
-                    return
-                if not task_id:
+
+                def duplicate_result() -> dict | None:
+                    if task_id:
+                        existing_report = active_photo_report_for_task(db, task_id)
+                        if existing_report:
+                            return {"id": existing_report["id"], "duplicate": True, "task_id": task_id}
+                        return None
                     existing_report = duplicate_photo_report_without_task(
-                        db,
-                        project_id=project_id,
-                        report_date=report_date,
-                        author_id=actor_id,
-                        comment=comment,
-                        stage=stage,
-                        zones=zones,
+                        db, project_id=project_id, report_date=report_date, author_id=actor_id,
+                        comment=comment, stage=stage, zones=zones,
                     )
                     if existing_report:
-                        json_response(self, {"id": existing_report["id"], "duplicate": True}, 200)
-                        return
+                        return {"id": existing_report["id"], "duplicate": True}
+                    return None
+
+                duplicate = duplicate_result()
+                if duplicate:
+                    json_response(self, duplicate, 200)
+                    return
+                prepared_files = [
+                    prepare_document_file(db, project_id, item, item.get("title") or item.get("file_name") or "Вложение", "photo_report", "photo_report")
+                    for item in attachments_payload
+                ]
+                # Serialize the second deduplication check, not the network transfer.
+                db.execute("BEGIN IMMEDIATE")
+                project = db.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+                if not project or not project_visible_for_account(row_to_dict(project), account):
+                    db.rollback()
+                    discard_prepared_document_files(prepared_files)
+                    json_response(self, {"error": "Project not found"}, 404)
+                    return
+                try:
+                    photo_report_task_id_from_payload(db, data, project_id)
+                except ValueError as error:
+                    db.rollback()
+                    discard_prepared_document_files(prepared_files)
+                    json_response(self, {"error": str(error)}, 400)
+                    return
+                duplicate = duplicate_result()
+                if duplicate:
+                    db.rollback()
+                    discard_prepared_document_files(prepared_files)
+                    json_response(self, duplicate, 200)
+                    return
                 cursor = db.execute(
                     """
                     INSERT INTO photo_reports (
@@ -6388,6 +6553,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     doc_type="photo_report",
                     process_type=f"photo_report:{report_id}",
                     owner_id=actor_id,
+                    prepared_files=prepared_files,
                 )
                 if not document_ids:
                     raise ValueError("Не удалось сохранить файлы фотоотчёта. Отчёт не создан.")
@@ -6425,6 +6591,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             report_id,
                             force_max=force_max,
                         )
+                db.commit()
                 json_response(self, {"id": report_id, "documents": document_ids, "task_id": task_id}, 201)
                 return
 
@@ -6602,6 +6769,8 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 site_costs_policy = data.get("site_costs_policy") or "include"
                 if site_costs_policy not in {"include", "exclude", "clarify"}:
                     site_costs_policy = "include"
+                attachments = [item for item in data.get("attachments") or [] if isinstance(item, dict) and item.get("file_base64")]
+                prepared_files = [prepare_estimate_job_file(db, 0, item, title=data.get("title")) for item in attachments]
                 cursor = db.execute(
                     """
                     INSERT INTO estimate_jobs (
@@ -6635,9 +6804,8 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     ),
                 )
                 estimate_job_id = int(cursor.lastrowid)
-                attachments = [item for item in data.get("attachments") or [] if isinstance(item, dict) and item.get("file_base64")]
-                for attachment in attachments:
-                    save_estimate_job_file(db, estimate_job_id, attachment, account_user_id(account))
+                for attachment, prepared_file in zip(attachments, prepared_files):
+                    save_estimate_job_file(db, estimate_job_id, attachment, account_user_id(account), prepared_file=prepared_file)
                 notify_users(
                     db,
                     {int(data.get("estimator_id") or 0), int(data.get("manager_id") or 0), user_id_by_role(db, "construction_manager"), user_id_by_role(db, "owner")} - {0, None},
@@ -6647,6 +6815,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     "estimate_job",
                     estimate_job_id,
                 )
+                db.commit()
                 json_response(self, {"id": estimate_job_id}, 201)
                 return
 
@@ -6670,16 +6839,6 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                 if not attachments and not smetter_url and not result_comment_present:
                     json_response(self, {"error": "Прикрепите файл сметы, укажите ссылку на Сметтер или измените комментарий"}, 400)
                     return
-                if smetter_url:
-                    db.execute(
-                        "UPDATE estimate_jobs SET smetter_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                        (smetter_url, estimate_job_id),
-                    )
-                if result_comment_present:
-                    db.execute(
-                        "UPDATE estimate_jobs SET result_comment = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                        (result_comment, estimate_job_id),
-                    )
                 replace_file_id = int(data.get("replace_file_id") or 0) or None
                 replacement_note = str(data.get("replacement_note") or "").strip()
                 saved_ids: list[int] = []
@@ -6694,6 +6853,12 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     if len(attachments) > 1:
                         json_response(self, {"error": "Для замены выберите один новый файл"}, 400)
                         return
+                elif replace_file_id:
+                    json_response(self, {"error": "Для замены выберите новую версию файла"}, 400)
+                    return
+                # Transfer every file before the first write, keeping DB changes atomic.
+                prepared_files = [prepare_estimate_job_file(db, estimate_job_id, item) for item in attachments]
+                if replace_file_id and attachments:
                     new_file_id = save_estimate_job_file(
                         db,
                         estimate_job_id,
@@ -6701,23 +6866,31 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         account_user_id(account),
                         replace_file_id,
                         replacement_note,
+                        prepared_file=prepared_files[0],
                     )
                     if new_file_id:
                         saved_ids.append(new_file_id)
                     else:
                         json_response(self, {"error": "Не удалось сохранить новую версию файла"}, 400)
                         return
-                elif replace_file_id and not attachments:
-                    json_response(self, {"error": "Для замены выберите новую версию файла"}, 400)
-                    return
                 elif attachments:
-                    for attachment in attachments:
-                        new_file_id = save_estimate_job_file(db, estimate_job_id, attachment, account_user_id(account))
+                    for attachment, prepared_file in zip(attachments, prepared_files):
+                        new_file_id = save_estimate_job_file(db, estimate_job_id, attachment, account_user_id(account), prepared_file=prepared_file)
                         if new_file_id:
                             saved_ids.append(new_file_id)
                     if not saved_ids:
                         json_response(self, {"error": "Не удалось сохранить файлы сметы"}, 400)
                         return
+                if smetter_url:
+                    db.execute(
+                        "UPDATE estimate_jobs SET smetter_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        (smetter_url, estimate_job_id),
+                    )
+                if result_comment_present:
+                    db.execute(
+                        "UPDATE estimate_jobs SET result_comment = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        (result_comment, estimate_job_id),
+                    )
                 action_text = (
                     "заменен файл сметы"
                     if replace_file_id and attachments
@@ -6748,6 +6921,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             account_user_id(account),
                         ),
                     )
+                db.commit()
                 json_response(self, {"id": estimate_job_id, "files": saved_ids})
                 return
 
@@ -6853,6 +7027,8 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     next_status = "estimate_new" if resend_to_estimator else row["status"]
                     next_return_comment = "" if resend_to_estimator else row["return_comment"] or ""
                     next_question_comment = "" if resend_to_estimator else row["question_comment"] or ""
+                    attachments = [item for item in data.get("attachments") or [] if isinstance(item, dict) and item.get("file_base64")]
+                    prepared_files = [prepare_estimate_job_file(db, estimate_job_id, item, title=data.get("title")) for item in attachments]
                     db.execute(
                         """
                         UPDATE estimate_jobs
@@ -6897,9 +7073,8 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             estimate_job_id,
                         ),
                     )
-                    attachments = [item for item in data.get("attachments") or [] if isinstance(item, dict) and item.get("file_base64")]
-                    for attachment in attachments:
-                        save_estimate_job_file(db, estimate_job_id, attachment, account_user_id(account))
+                    for attachment, prepared_file in zip(attachments, prepared_files):
+                        save_estimate_job_file(db, estimate_job_id, attachment, account_user_id(account), prepared_file=prepared_file)
                     if resend_to_estimator:
                         notify_users(
                             db,
@@ -6910,6 +7085,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                             "estimate_job",
                             estimate_job_id,
                         )
+                    db.commit()
                     json_response(self, {"id": estimate_job_id})
                     return
                 status = data.get("status") or row["status"]
@@ -6932,6 +7108,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     delivered_at = data.get("delivered_at") or date.today().isoformat()
                 result_comment = data.get("result_comment") or row["result_comment"] or ""
                 attachments = [item for item in data.get("attachments") or [] if isinstance(item, dict) and item.get("file_base64")]
+                prepared_files = [prepare_estimate_job_file(db, estimate_job_id, item) for item in attachments] if status == "estimate_done" else []
                 db.execute(
                     """
                     UPDATE estimate_jobs
@@ -6953,8 +7130,8 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     ),
                 )
                 if status == "estimate_done":
-                    for attachment in attachments:
-                        save_estimate_job_file(db, estimate_job_id, attachment, account_user_id(account))
+                    for attachment, prepared_file in zip(attachments, prepared_files):
+                        save_estimate_job_file(db, estimate_job_id, attachment, account_user_id(account), prepared_file=prepared_file)
                 notification_title = "Статус сметы изменен"
                 notification_message = f"{row['title']}: {status}"
                 if status == "estimate_returned":
@@ -6979,6 +7156,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     "estimate_job",
                     estimate_job_id,
                 )
+                db.commit()
                 json_response(self, {"id": estimate_job_id, "status": status})
                 return
 
@@ -7596,7 +7774,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
             document_action = re.match(r"^/api/documents/(\d+)/delete$", path)
             if document_action:
                 document_id = int(document_action.group(1))
-                actor_role = data.get("actor_role") or ""
+                actor_role, _ = resolve_action_actor(account, data.get("actor_role"), default_role="")
                 if actor_role not in {"owner", "construction_manager"}:
                     raise ValueError("Удалять материалы базы знаний может только ген.директор или руководитель строительства.")
                 document = db.execute("SELECT * FROM documents WHERE id = ?", (document_id,)).fetchone()
@@ -7618,8 +7796,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
             if variation_action:
                 variation_id = int(variation_action.group(1))
                 action = variation_action.group(2)
-                actor_role = str(data.get("actor_role") or account_role(account))
-                actor_id = int(data.get("actor_id") or 0) or account_user_id(account) or None
+                actor_role, actor_id = resolve_action_actor(account, data.get("actor_role"), data.get("actor_id"))
                 if action in {"approve", "reject"} and actor_role not in {"owner", "construction_manager", "finance_director"}:
                     raise ValueError("Согласовать или отклонить допработу может только ген.директор или руководитель строительства.")
                 variation = db.execute(
@@ -9454,9 +9631,22 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     json_response(self, {"error": "Для документа объекта нужно выбрать объект"}, 400)
                     return
                 if related_type == "knowledge_base":
-                    project_id = knowledge_base_project_id(db)
+                    project_id = 0
+                planned_folders = {int(row["id"]): row for row in knowledge_folder_rows(db)} if related_type == "knowledge_base" else {}
 
-                def save_document_payload(item: dict) -> int | None:
+                def prepare_document_payload(item: dict):
+                    item_file = dict(item.get("document_file") or {})
+                    if not item_file.get("file_base64"):
+                        return None
+                    base_folder_id = validate_knowledge_folder(db, int(item.get("folder_id") or data.get("folder_id") or 0) or None)
+                    relative_parts = normalize_relative_path(item.get("relative_path") or item_file.get("relative_path") or "")
+                    folder_path = plan_knowledge_folder_path(planned_folders, base_folder_id, relative_parts[:-1]) if related_type == "knowledge_base" else ""
+                    file_name = item_file.get("file_name") or item.get("title") or data.get("title") or "Документ"
+                    title = item.get("title") or data.get("title") or file_name
+                    doc_type = item.get("type") or data.get("type") or "other"
+                    return prepare_document_file(db, project_id, item_file, title, doc_type, related_type, folder_path), folder_path
+
+                def save_document_payload(item: dict, prepared_file: tuple[str, str, int], planned_folder_path: str) -> int | None:
                     item_file = dict(item.get("document_file") or {})
                     if not item_file.get("file_base64"):
                         return None
@@ -9472,6 +9662,8 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         account_user_id(account) or None,
                     )
                     folder_path = knowledge_folder_path(db, folder_id) if related_type == "knowledge_base" else ""
+                    if folder_path != planned_folder_path:
+                        raise ValueError("Папка изменилась во время загрузки. Повторите отправку файлов.")
                     item_file["related_section"] = item.get("related_section") or data.get("related_section") or ""
                     item_file["contract_id"] = item.get("contract_id") or data.get("contract_id") or None
                     item_file["process_type"] = item.get("process_type") or data.get("process_type") or ""
@@ -9488,6 +9680,7 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                         folder_id=folder_id,
                         folder_path=folder_path,
                         owner_id=owner_id,
+                        prepared_file=prepared_file,
                     )
                     if not document_id:
                         return None
@@ -9513,20 +9706,24 @@ body{{font-family:Arial,sans-serif;margin:24px;color:#111}}h1{{font-size:24px}}h
                     return document_id
 
                 documents_payload = data.get("documents")
-                if isinstance(documents_payload, list) and documents_payload:
-                    document_ids = [doc_id for doc_id in (save_document_payload(item or {}) for item in documents_payload) if doc_id]
-                    if not document_ids:
+                is_batch = isinstance(documents_payload, list) and bool(documents_payload)
+                items = [item or {} for item in documents_payload] if is_batch else ([data] if (data.get("document_file") or {}).get("file_base64") else [])
+                if items:
+                    prepared_payloads = [(item, prepare_document_payload(item)) for item in items]
+                    prepared_payloads = [(item, prepared) for item, prepared in prepared_payloads if prepared]
+                    if not prepared_payloads:
                         json_response(self, {"error": "Не найден ни один файл для загрузки"}, 400)
                         return
-                    json_response(self, {"ids": document_ids, "count": len(document_ids)}, 201)
+                    db.execute("BEGIN IMMEDIATE")
+                    if related_type == "knowledge_base":
+                        project_id = knowledge_base_project_id(db)
+                    document_ids = [save_document_payload(item, *prepared) for item, prepared in prepared_payloads]
+                    db.commit()
+                    json_response(self, {"ids": document_ids, "count": len(document_ids)} if is_batch else {"id": document_ids[0]}, 201)
                     return
 
-                file_data = data.get("document_file") or {}
-                if file_data.get("file_base64"):
-                    document_id = save_document_payload(data)
-                    json_response(self, {"id": document_id}, 201)
-                    return
-
+                if related_type == "knowledge_base":
+                    project_id = knowledge_base_project_id(db)
                 folder_id = validate_knowledge_folder(db, int(data.get("folder_id") or 0) or None) if related_type == "knowledge_base" else None
                 cursor = db.execute(
                     """

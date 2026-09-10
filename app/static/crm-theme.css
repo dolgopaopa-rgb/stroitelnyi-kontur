@@ -446,6 +446,13 @@ h3 {
   border-color: rgba(123, 13, 24, 0.28);
 }
 
+#mediaPreviewOpenOriginal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
 .danger-button,
 .logout-button {
   background: rgba(123, 13, 24, 0.08);
@@ -1782,7 +1789,8 @@ dialog::backdrop {
   font-size: 11px;
 }
 
-.estimate-job-files {
+.estimate-job-files,
+.compact-ui-v1 #estimatesView .estimate-job-files {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
   gap: 6px;
@@ -2021,7 +2029,8 @@ dialog::backdrop {
     max-height: none;
   }
 
-  .estimate-job-files {
+  .estimate-job-files,
+  .compact-ui-v1 #estimatesView .estimate-job-files {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -2209,8 +2218,7 @@ dialog::backdrop {
     -webkit-line-clamp: 2;
   }
 
-  #photosView .media-thumb-title,
-  .estimate-job-files strong {
+  #photosView .media-thumb-title {
     display: -webkit-box;
     overflow: hidden;
     white-space: normal;
@@ -2577,4 +2585,133 @@ dialog::backdrop {
   max-width: 100%;
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+/* Both object switches must share the available width, including tablet sizes. */
+#projectsView .project-list-tools {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  justify-content: stretch;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  overflow: visible;
+}
+
+#projectsView .project-list-tools .segmented-control {
+  width: 100%;
+  min-width: 0;
+}
+
+#projectsView .project-list-tools .segment {
+  min-width: 0;
+  white-space: normal;
+}
+
+/* The list-only cards use two named areas, not the old three-column table. */
+#projectsView .split.project-selection-empty #projectRows .row {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+#projectsView .split.project-selection-empty #projectRows .project-list-card,
+.compact-ui-v1 #projectsView .split.is-list-only #projectRows.project-table-mode .project-list-card {
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+#estimatesView .estimate-job-body {
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 280px);
+}
+
+.compact-ui-v1 #estimatesView .estimate-file-card {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* Hints belong below their own field, not in the height of a neighbouring input. */
+.form label,
+.form .grid-2 {
+  min-width: 0;
+  align-content: start;
+}
+
+.form input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+.form select {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 40px;
+  align-self: start;
+}
+
+.form textarea {
+  min-width: 0;
+  max-width: 100%;
+  align-self: start;
+}
+
+.form .modal-head h2 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.form .modal-head > .icon {
+  flex-shrink: 0;
+}
+
+@supports (grid-template-rows: subgrid) {
+  .form .grid-2 > label {
+    grid-row: span 2;
+    grid-template-rows: subgrid;
+    row-gap: 6px;
+  }
+
+  .form .grid-2:has(> label > .field-hint) > label {
+    grid-row: span 3;
+  }
+}
+
+@media (min-width: 821px) {
+  .form .extra-material-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .form .extra-material-row > .icon {
+    justify-self: end;
+  }
+}
+
+@media (max-width: 1100px) {
+  #projectsView .project-list-tools .segment {
+    min-height: 44px;
+  }
+
+  #estimatesView .estimate-job-body,
+  #photosView .photo-reports-layout,
+  .compact-ui-v1 #photosView .photo-reports-layout,
+  #photosView .photo-report-card,
+  .compact-ui-v1 #photosView .photo-report-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .compact-ui-v1 #photosView .media-grid {
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  }
+
+  .form input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+  .form select,
+  .form textarea {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 720px) {
+  #projectsView .project-list-tools {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #projectsView .split.project-selection-empty #projectRows .project-list-card,
+  .compact-ui-v1 #projectsView .split.is-list-only #projectRows.project-table-mode .project-list-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

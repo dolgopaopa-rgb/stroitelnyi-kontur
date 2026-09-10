@@ -323,15 +323,29 @@ test("estimate attachments stay collapsed and open as compact tiles", async ({ p
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/?view=estimates", { waitUntil: "domcontentloaded" });
   await expect(page.locator("#estimatesView")).toHaveClass(/active/);
-  const group = page.getByTestId("estimate-files-group");
+  // Audit trace after@call@3505: both details lack open; call@3515 targets the
+  // hidden inner summary. This nested disclosure already exists in 23dafdd.
+  const job = page.locator('.estimate-job-row[data-estimate-job="901"]');
+  const group = job.getByTestId("estimate-files-group");
+  await expect(job).toBeVisible();
+  await expect(job).not.toHaveAttribute("open", "");
   await expect(group).toHaveCount(1);
+  await expect(group).toBeHidden();
   await expect(group).not.toHaveAttribute("open", "");
-  const collapsedRowHeight = await page.locator(".estimate-job-row").evaluate((node) => node.getBoundingClientRect().height);
+  const collapsedRowHeight = await job.evaluate((node) => node.getBoundingClientRect().height);
   expect(collapsedRowHeight).toBeLessThan(190);
 
+  await job.locator(":scope > summary").click();
+  await expect(job).toHaveAttribute("open", "");
+  await expect(group).toBeVisible();
+  await expect(group).not.toHaveAttribute("open", "");
+  await expect(group.locator(".estimate-job-files")).toBeHidden();
   await group.locator("summary").click();
   await expect(group).toHaveAttribute("open", "");
   await expect(group.locator(".estimate-file-card")).toHaveCount(4);
+  for (const tile of await group.locator(".estimate-file-card").all()) {
+    await expect(tile).toBeVisible();
+  }
   const tileSizes = await group.locator(".estimate-file-card").evaluateAll((nodes) => nodes.map((node) => {
     const rect = node.getBoundingClientRect();
     return { width: rect.width, height: rect.height };
@@ -341,13 +355,20 @@ test("estimate attachments stay collapsed and open as compact tiles", async ({ p
   await page.screenshot({ path: testInfo.outputPath("estimates-compact-files-1440.png"), fullPage: true });
   await group.locator("summary").click();
   await expect(group).not.toHaveAttribute("open", "");
+  await expect(group.locator(".estimate-job-files")).toBeHidden();
 
   await page.setViewportSize({ width: 390, height: 844 });
-  const mobileGroup = page.getByTestId("estimate-files-group");
+  const mobileGroup = job.getByTestId("estimate-files-group");
+  await expect(job).toHaveAttribute("open", "");
   await expect(mobileGroup).toHaveCount(1);
+  await expect(mobileGroup).toBeVisible();
   await expect(mobileGroup).not.toHaveAttribute("open", "");
   await mobileGroup.locator("summary").click();
+  await expect(mobileGroup).toHaveAttribute("open", "");
   await expect(mobileGroup.locator(".estimate-file-card")).toHaveCount(4);
+  for (const tile of await mobileGroup.locator(".estimate-file-card").all()) {
+    await expect(tile).toBeVisible();
+  }
   const mobileGeometry = await page.evaluate(() => {
     const visible = (node: HTMLElement) => {
       const rect = node.getBoundingClientRect();
@@ -379,4 +400,7 @@ test("estimate attachments stay collapsed and open as compact tiles", async ({ p
   expect(mobileGeometry.compactTiles).toBeTruthy();
   expect(mobileGeometry.touchTargets).toBeTruthy();
   await page.screenshot({ path: testInfo.outputPath("estimates-compact-files-390.png"), fullPage: true });
+  await job.locator(":scope > summary").click();
+  await expect(job).not.toHaveAttribute("open", "");
+  await expect(mobileGroup).toBeHidden();
 });

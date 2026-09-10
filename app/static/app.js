@@ -37,6 +37,7 @@ const state = {
   estimateJobFilter: "all",
   estimateMaterials: [],
   estimatePreviewRows: [],
+  estimatePreviewFile: null,
   showEstimateMaterials: true,
   selectedProjectId: initialProjectId,
   selectedProjectTab: "overview",
@@ -697,6 +698,21 @@ function syncNavigationAccess() {
 
 function syncTopbarAccess() {
   const canUseRoleTools = Boolean(state.canSwitchRole);
+  const auditReadOnly = currentRoleBase() === "ai_auditor";
+  qsa("#newTaskButton, #newVariationButton, #newObjectRemarkButton, #newPhotoReportButton, #newEventButton, #newMaterialButton, #mobileQuickActionToggle").forEach((button) => {
+    button.hidden = auditReadOnly;
+    button.disabled = auditReadOnly;
+  });
+  qsa('#estimateImportForm [name="estimate_file"], #estimateImportForm [name="estimate_version"]').forEach((input) => {
+    input.disabled = auditReadOnly;
+    input.closest("label").hidden = auditReadOnly;
+  });
+  qsa('#estimateImportForm button[type="submit"], #previewEstimateButton').forEach((button) => {
+    button.hidden = auditReadOnly;
+    if (auditReadOnly) button.disabled = true;
+    else if (button.dataset.auditDisabled === "true") button.disabled = false;
+    button.dataset.auditDisabled = String(auditReadOnly);
+  });
   const ownerOnlyPageActions = state.view === "estimates" && currentRoleBase() !== "owner";
   const roleSwitcher = qs(".role-switcher");
   const refreshButton = qs("#refreshButton");
@@ -1149,10 +1165,11 @@ function documentTitle(doc) {
 function filePreviewKind(fileName = "", mimeType = "") {
   const mime = String(mimeType || "").toLowerCase();
   const name = String(fileName || "").toLowerCase();
-  if (mime.startsWith("image/") || /\.(png|jpe?g|webp|gif|heic|heif)$/i.test(name)) return "image";
-  if (mime.startsWith("video/") || /\.(mp4|mov|webm)$/i.test(name)) return "video";
-  if (mime === "application/pdf" || /\.pdf$/i.test(name)) return "pdf";
-  if (mime === "text/plain" || /\.txt$/i.test(name)) return "text";
+  const genericMime = !mime || mime === "application/octet-stream";
+  if (mime.startsWith("image/") || (genericMime && /\.(png|jpe?g|jfif|webp|gif|heic|heif)$/i.test(name))) return "image";
+  if (mime.startsWith("video/") || (genericMime && /\.(mp4|mov|webm)$/i.test(name))) return "video";
+  if (mime.split(";", 1)[0] === "application/pdf" || (genericMime && /\.pdf$/i.test(name))) return "pdf";
+  if (mime.split(";", 1)[0] === "text/plain" || (genericMime && /\.txt$/i.test(name))) return "text";
   return "";
 }
 
@@ -1171,8 +1188,8 @@ function documentFileLink(doc) {
   if (!doc.file_path) {
     return `
       <div>
-        <strong>${title}</strong>
-        <div class="muted">${type} · файл не загружен</div>
+        <strong>${escapeHtml(title)}</strong>
+        <div class="muted">${escapeHtml(type)} · файл не загружен</div>
       </div>`;
   }
   const processLabel = String(doc.process_type || "").startsWith("variation:") ? "" : doc.process_type;
@@ -1180,12 +1197,12 @@ function documentFileLink(doc) {
   const canPreview = Boolean(previewKind);
   const href = `/api/documents/${doc.id}/download`;
   const previewAttrs = canPreview
-    ? `data-media-preview="${previewKind}" data-media-url="${href}" data-media-title="${escapeHtml(title)}" data-media-mime="${escapeHtml(doc.mime_type || "")}"`
+    ? `data-media-preview="${previewKind}" data-media-url="${href}" data-media-title="${escapeAttr(title)}" data-media-mime="${escapeAttr(doc.mime_type || "")}"`
     : `target="_blank" rel="noopener noreferrer" download`;
   return `
     <a class="document-link ${canPreview ? "" : "download-link"}" href="${href}" ${previewAttrs}>
-      <strong>${title}</strong>
-      <span>${[type, doc.status === "archived" ? "архивная версия" : "", doc.related_section, processLabel, file].filter(Boolean).join(" · ")}</span>
+      <strong>${escapeHtml(title)}</strong>
+      <span>${escapeHtml([type, doc.status === "archived" ? "архивная версия" : "", doc.related_section, processLabel, file].filter(Boolean).join(" · "))}</span>
       <small>${fileOpenAction(file, doc.mime_type)}</small>
     </a>`;
 }
@@ -1326,6 +1343,11 @@ function readPersonalNotify(root) {
 }
 
 function showToast(message) {
+  const formStatus = qs('dialog[open] [data-file-form-status]');
+  if (formStatus) {
+    formStatus.textContent = message;
+    formStatus.hidden = false;
+  }
   const toast = qs("#toast");
   toast.textContent = message;
   toast.classList.add("active");
@@ -3498,7 +3520,7 @@ function estimateSmetterHref(job = {}) {
 function isEstimateImageFile(file) {
   const mime = String(file?.mime_type || "").toLowerCase();
   const fileName = String(file?.file_name || file?.title || "").toLowerCase();
-  return mime.startsWith("image/") || /\.(jpe?g|png|webp|gif|bmp|heic|heif)$/i.test(fileName);
+  return filePreviewKind(fileName, mime) === "image" || ((!mime || mime === "application/octet-stream") && /\.bmp$/i.test(fileName));
 }
 
 function renderEstimateJobFiles(files = [], jobId = "", canManageFiles = false) {
@@ -3906,7 +3928,7 @@ function canActAsTaskUser(task, kind) {
   const userId = currentUserId();
   const idKey = `${kind}_id`;
   const roleKey = `${kind}_role`;
-  return task[idKey] === userId || task[roleKey] === currentRoleBase();
+  return Boolean(userId && task[idKey] === userId) || task[roleKey] === currentRoleBase();
 }
 
 function canDeleteTask(task) {
@@ -4231,6 +4253,7 @@ function renderTodayPrimaryActions(profile) {
 
 function mobileQuickActionsForRole() {
   const role = currentRoleBase();
+  if (role === "ai_auditor") return [];
   if (role === "master") {
     return [
       ["photo", "Добавить фото"],
@@ -4702,13 +4725,13 @@ function mediaPreviewLink(doc) {
     return `<a class="media-thumb" href="${href}" title="${titleAttr}" data-media-preview="image" data-media-url="${href}" data-media-title="${titleAttr}" data-media-mime="${escapeAttr(mime)}"><span class="media-thumb-visual"><span class="media-thumb-placeholder">Фото</span><img src="${href}" alt="${titleAttr}" data-media-image loading="lazy" decoding="async" /></span><span class="media-thumb-title">${title}</span></a>`;
   }
   if (previewKind === "video") {
-    return `<a class="media-thumb video" href="${href}" data-media-preview="video" data-media-url="${href}" data-media-title="${title}" data-media-mime="${escapeHtml(mime)}"><span>Видео</span><small>${title}</small></a>`;
+    return `<a class="media-thumb video" href="${href}" data-media-preview="video" data-media-url="${href}" data-media-title="${titleAttr}" data-media-mime="${escapeAttr(mime)}"><span>Видео</span><small>${title}</small></a>`;
   }
   if (previewKind === "pdf") {
-    return `<a class="media-thumb file" href="${href}" data-media-preview="pdf" data-media-url="${href}" data-media-title="${title}" data-media-mime="${escapeHtml(mime)}"><span>PDF</span><small>${title}</small></a>`;
+    return `<a class="media-thumb file" href="${href}" data-media-preview="pdf" data-media-url="${href}" data-media-title="${titleAttr}" data-media-mime="${escapeAttr(mime)}"><span>PDF</span><small>${title}</small></a>`;
   }
   if (previewKind === "text") {
-    return `<a class="media-thumb file" href="${href}" data-media-preview="text" data-media-url="${href}" data-media-title="${title}" data-media-mime="${escapeHtml(mime)}"><span>Файл</span><small>${title}</small></a>`;
+    return `<a class="media-thumb file" href="${href}" data-media-preview="text" data-media-url="${href}" data-media-title="${titleAttr}" data-media-mime="${escapeAttr(mime)}"><span>Файл</span><small>${title}</small></a>`;
   }
   return `<a class="media-thumb file" href="${href}" target="_blank" rel="noopener"><span>${title}</span></a>`;
 }
@@ -4717,9 +4740,8 @@ function markUnavailableMediaImage(image) {
   const link = image.closest(".media-thumb");
   if (!link || link.classList.contains("is-unavailable")) return;
   link.classList.add("is-unavailable");
-  link.removeAttribute("data-media-preview");
   link.setAttribute("data-media-unavailable", "1");
-  link.setAttribute("aria-label", "Файл временно недоступен");
+  link.setAttribute("aria-label", "Файл временно недоступен. Повторить просмотр");
   image.hidden = true;
   const placeholder = link.querySelector(".media-thumb-placeholder");
   if (placeholder) placeholder.textContent = "Файл недоступен";
@@ -4733,11 +4755,19 @@ function syncMediaImageStates(root = document) {
 }
 
 function closeMediaPreview() {
+  releaseMediaPreviewResource();
   const dialog = qs("#mediaPreviewDialog");
   const body = qs("#mediaPreviewBody");
   if (dialog?.open) dialog.close();
   if (body) body.innerHTML = "";
   state.mediaPreview = { items: [], index: 0, touchX: null };
+}
+
+function releaseMediaPreviewResource() {
+  state.mediaPreview.abortController?.abort();
+  if (state.mediaPreview.objectUrl) URL.revokeObjectURL(state.mediaPreview.objectUrl);
+  state.mediaPreview.abortController = null;
+  state.mediaPreview.objectUrl = "";
 }
 
 function mediaPreviewItemFromLink(link) {
@@ -4761,6 +4791,7 @@ function renderMediaPreview() {
   const index = Math.min(Math.max(Number(state.mediaPreview.index || 0), 0), Math.max(items.length - 1, 0));
   const item = items[index];
   if (!item || !item.href || !dialog || !body) return;
+  releaseMediaPreviewResource();
   const safeTitle = item.title || "Просмотр файла";
   const mediaKind = item.kind || (String(item.mime || "").startsWith("video/") ? "video" : "image");
   state.mediaPreview.index = index;
@@ -4769,14 +4800,71 @@ function renderMediaPreview() {
   if (prevButton) prevButton.disabled = items.length <= 1;
   if (nextButton) nextButton.disabled = items.length <= 1;
   if (originalLink) originalLink.href = item.href;
+  const hrefAttr = escapeAttr(item.href);
+  const titleAttr = escapeAttr(safeTitle);
   if (mediaKind === "video") {
-    body.innerHTML = `<video src="${item.href}" controls playsinline preload="metadata"></video>`;
-  } else if (mediaKind === "pdf") {
-    body.innerHTML = `<iframe class="media-preview-frame" src="${item.href}" title="${escapeHtml(safeTitle)}"></iframe>`;
-  } else if (mediaKind === "text") {
-    body.innerHTML = `<iframe class="media-preview-frame text-preview" src="${item.href}" title="${escapeHtml(safeTitle)}"></iframe>`;
+    body.innerHTML = `<video src="${hrefAttr}" controls playsinline preload="metadata"></video>`;
+  } else if (mediaKind === "pdf" || mediaKind === "text") {
+    const status = document.createElement("p");
+    status.className = "muted";
+    status.style.color = "#fff";
+    status.style.padding = "16px";
+    status.setAttribute("role", "status");
+    status.textContent = "Загружаем файл";
+    body.replaceChildren(status);
+    const controller = new AbortController();
+    state.mediaPreview.abortController = controller;
+    (async () => {
+      try {
+        const response = await fetch(item.href, { signal: controller.signal });
+        if (!response.ok) throw new Error(`Не удалось открыть файл (ошибка ${response.status}).`);
+        const blob = await response.blob();
+        if (controller.signal.aborted || state.mediaPreview.abortController !== controller) return;
+        // The object URL lives only for this preview; it is revoked on close or slide change.
+        const objectUrl = URL.createObjectURL(new Blob([blob], { type: mediaKind === "pdf" ? "application/pdf" : "text/plain;charset=utf-8" }));
+        state.mediaPreview.objectUrl = objectUrl;
+        const frame = document.createElement("iframe");
+        frame.className = `media-preview-frame${mediaKind === "text" ? " text-preview" : ""}`;
+        frame.title = safeTitle;
+        frame.src = objectUrl;
+        body.replaceChildren(frame);
+      } catch (error) {
+        if (controller.signal.aborted || state.mediaPreview.abortController !== controller) return;
+        status.textContent = error.message || "Не удалось открыть файл.";
+        const retry = document.createElement("button");
+        retry.type = "button";
+        retry.className = "secondary";
+        retry.textContent = "Повторить";
+        retry.addEventListener("click", renderMediaPreview);
+        status.append(" ", retry);
+      }
+    })();
   } else {
-    body.innerHTML = `<img src="${item.href}" alt="${escapeHtml(safeTitle)}" />`;
+    body.innerHTML = `<img src="${hrefAttr}" alt="${titleAttr}" />`;
+  }
+  const media = body.querySelector("img, video");
+  if (media) {
+    const status = document.createElement("p");
+    status.className = "muted";
+    status.style.color = "#fff";
+    status.style.padding = "16px";
+    status.setAttribute("role", "status");
+    status.textContent = "Загружаем файл";
+    body.prepend(status);
+    const loaded = () => { if (media.isConnected) status.remove(); };
+    media.addEventListener(media.tagName === "VIDEO" ? "loadedmetadata" : "load", loaded, { once: true });
+    media.addEventListener("error", () => {
+      if (!media.isConnected) return;
+      media.hidden = true;
+      status.textContent = "Не удалось открыть файл. Попробуйте ещё раз или откройте его отдельно.";
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.className = "secondary";
+      retry.textContent = "Повторить";
+      retry.addEventListener("click", renderMediaPreview);
+      status.append(" ", retry);
+    }, { once: true });
+    if (media.tagName === "IMG" && media.complete && media.naturalWidth) loaded();
   }
 }
 
@@ -4788,6 +4876,7 @@ function openMediaPreview({ href, title, mime, kind, items = [], index = 0 }) {
     return;
   }
   const galleryItems = items.length ? items : [{ href, title, mime, kind }];
+  releaseMediaPreviewResource();
   state.mediaPreview = { items: galleryItems, index, touchX: null };
   renderMediaPreview();
   if (!dialog.open) dialog.showModal();
@@ -4854,7 +4943,7 @@ function renderPhotoEmptyState(projects = projectsWithoutTodayPhoto()) {
                     <strong>${escapeHtml(project.title || "Объект")}</strong>
                     <span class="muted">последний фотоотчёт: ${latestPhotoReportDate(project.id) ? formatDateRu(latestPhotoReportDate(project.id)) : "не найден"}</span>
                   </button>
-                  ${canView("photos") ? `<button class="secondary tiny" type="button" data-mobile-action="photo" data-project-context="${project.id}">Добавить</button>` : `<button class="secondary tiny" type="button" data-open-project="${project.id}">Запросить</button>`}
+                  ${currentRoleBase() === "ai_auditor" ? "" : canView("photos") ? `<button class="secondary tiny" type="button" data-mobile-action="photo" data-project-context="${project.id}">Добавить</button>` : `<button class="secondary tiny" type="button" data-open-project="${project.id}">Запросить</button>`}
                 </div>`)
               .join("")}</div>`
           : `<p class="muted">По всем активным объектам есть фотоотчёт за сегодня.</p>`
@@ -4875,7 +4964,7 @@ function renderRemarkEmptyState() {
         <span>Фото после</span>
         <span>Принято</span>
       </div>
-      ${canView("object_remarks") ? `<button class="secondary tiny" type="button" data-mobile-action="remark">Создать замечание</button>` : ""}
+      ${canView("object_remarks") && currentRoleBase() !== "ai_auditor" ? `<button class="secondary tiny" type="button" data-mobile-action="remark">Создать замечание</button>` : ""}
     </section>`;
 }
 
@@ -5103,7 +5192,7 @@ function renderProjectEvents(events = []) {
               <article class="row project-event-row">
                 <div class="stack-line">
                   <strong>${escapeHtml(eventType(event.type))}</strong>
-                  ${pill(event.related_type === "material_request" ? "материалы" : escapeHtml(event.related_type || "объект"), event.related_type === "material_request" ? "blue" : "")}
+                  ${pill(escapeHtml(eventType(event.related_type || "project")), event.related_type === "material_request" ? "blue" : "")}
                 </div>
                 <p>${escapeHtml(event.text || "").replace(/\n/g, "<br>")}</p>
                 <div class="muted">${escapeHtml(event.author_name || "автор не указан")} · ${formatDateRu(event.created_at) || event.created_at || ""}</div>
@@ -5653,8 +5742,8 @@ function renderEstimatePreview() {
           (row) => `
           <div class="row">
             <div class="row-grid">
-              <div><strong>${row.name}</strong><div class="muted">${row.section || "Без раздела"}</div></div>
-              ${pill(`${row.estimated_quantity || 0} ${row.unit || ""}`, "blue")}
+              <div><strong>${escapeHtml(row.name)}</strong><div class="muted">${escapeHtml(row.section || "Без раздела")}</div></div>
+              ${pill(escapeHtml(`${row.estimated_quantity || 0} ${row.unit || ""}`), "blue")}
               <div>${money(row.unit_price)}</div>
               ${pill(money(row.total_price), "success")}
             </div>
@@ -5705,15 +5794,29 @@ async function compressImageForUpload(file, { maxSide = 2000, quality = 0.82 } =
     canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
     const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
     if (!blob || blob.size >= file.size) return file;
-    return new File([blob], file.name, { type: "image/jpeg", lastModified: file.lastModified });
+    const fileName = /\.(jpe?g|jfif)$/i.test(file.name) ? file.name : file.name.replace(/\.[^.]+$/, "") + ".jpg";
+    return new File([blob], fileName, { type: "image/jpeg", lastModified: file.lastModified });
   } catch (error) {
     return file;
   }
 }
 
 async function prepareFileForUpload(file, type = "") {
+  if (!String(file.name || "").trim()) throw new Error("У файла нет имени. Выберите файл ещё раз.");
+  if (!file.size) throw new Error(`Файл «${file.name}» пуст. Выберите непустой файл.`);
   const uploadType = String(type || "");
   if (["photo_report", "object_remark_photo"].includes(uploadType)) {
+    const kind = filePreviewKind(file.name, file.type);
+    const mime = String(file.type || "").toLowerCase();
+    const genericMime = !mime || mime === "application/octet-stream";
+    if ((mime && !genericMime && !/^(image|video)\//.test(mime)) || !["image", "video"].includes(kind)) {
+      throw new Error(`Файл «${file.name}» не является фото или видео.`);
+    }
+    if (genericMime) {
+      const extension = file.name.split(".").pop().toLowerCase();
+      const mediaMime = { jpg: "image/jpeg", jpeg: "image/jpeg", jfif: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif", heic: "image/heic", heif: "image/heif", mp4: "video/mp4", mov: "video/quicktime", webm: "video/webm" }[extension];
+      if (mediaMime) file = new File([file], file.name, { type: mediaMime, lastModified: file.lastModified });
+    }
     return compressImageForUpload(file);
   }
   return file;
@@ -5726,7 +5829,7 @@ async function fileDocumentPayload(file, title, type, relatedType = "handover") 
     title,
     type,
     related_type: relatedType,
-    file_name: file.name,
+    file_name: preparedFile.name,
     mime_type: preparedFile.type || file.type || "",
     file_base64: await fileToBase64(preparedFile),
   };
@@ -5756,12 +5859,17 @@ async function projectFormToJson(form) {
   return data;
 }
 
-async function loadEstimatePreview() {
-  const file = qs('#estimateImportForm input[name="estimate_file"]').files[0];
+async function loadEstimatePreview(file = qs('#estimateImportForm input[name="estimate_file"]').files[0]) {
+  state.estimatePreviewRows = [];
+  state.estimatePreviewFile = null;
+  renderEstimatePreview();
   if (!file) {
     showToast("Выберите файл .xlsx или CSV");
     return;
   }
+  if (!/\.(xlsx|csv)$/i.test(file.name)) throw new Error("Выберите файл .xlsx или CSV");
+  if (!file.size) throw new Error("Файл сметы пуст. Выберите непустой файл.");
+  let rows;
   if (file.name.toLowerCase().endsWith(".xlsx")) {
     const result = await api("/api/estimate-materials/preview-file", {
       method: "POST",
@@ -5770,11 +5878,14 @@ async function loadEstimatePreview() {
         file_base64: await fileToBase64(file),
       }),
     });
-    state.estimatePreviewRows = result.rows || [];
+    rows = result.rows || [];
   } else {
     const text = await file.text();
-    state.estimatePreviewRows = readEstimateRows(text);
+    rows = readEstimateRows(text);
   }
+  if (qs('#estimateImportForm input[name="estimate_file"]').files[0] !== file) return;
+  state.estimatePreviewRows = rows;
+  state.estimatePreviewFile = file;
   renderEstimatePreview();
   showToast(`Найдено строк: ${state.estimatePreviewRows.length}`);
 }
@@ -6324,7 +6435,7 @@ async function renderWorks() {
   fillWorkExtraRateSelect(works);
   const project = state.projects.find((item) => Number(item.id) === Number(projectId));
   const fileNote = project?.work_task_file_name
-    ? `<p class="muted">Файл задания: ${project.work_task_file_name} · загружено работ: ${works.length}</p>`
+    ? `<p class="muted">Файл задания: ${escapeHtml(project.work_task_file_name)} · загружено работ: ${works.length}</p>`
     : `<p class="muted">Файл задания на работы по этому объекту еще не загружен.</p>`;
   const processNote = `
     <section class="hint-box neutral work-process-note">
@@ -7151,7 +7262,7 @@ function renderKnowledgeFileManager(folders = [], docs = []) {
       <section class="classification-notice">
         <strong>Требует классификации</strong>
         <p class="muted">Эти файлы не удалось автоматически отнести к проекту, смете, договору, акту, счёту или фото/видео.</p>
-        <div class="stack-line">${unclassifiedRows.slice(0, 8).map((doc) => pill(documentTitle(doc), "warning")).join("")}</div>
+        <div class="stack-line">${unclassifiedRows.slice(0, 8).map((doc) => pill(escapeHtml(documentTitle(doc)), "warning")).join("")}</div>
         <button class="secondary tiny" type="button" data-knowledge-classification-filter="${state.knowledgeClassificationOnly ? "all" : "unclassified"}">${state.knowledgeClassificationOnly ? "Показать все файлы" : "Показать только неразобранные"}</button>
       </section>`
     : "";
@@ -7700,9 +7811,13 @@ function eventType(type) {
     decision: "Решение",
     comment: "Комментарий",
     document: "Документ",
+    photo_report: "Фотоотчёт",
+    variation: "Допработа",
+    material_request: "Материалы",
+    handover: "Передача объекта",
     problem: "Проблема",
     customer_approval: "Согласование",
-  }[type] || type;
+  }[type] || statusLabelMap[type] || type;
 }
 
 function formToJson(form) {
@@ -7722,6 +7837,49 @@ async function submitForm(dialogId, formId, endpoint, successMessage) {
   form.reset();
   await loadAll();
   showToast(successMessage);
+}
+
+function bindFileFormSubmit(formId, handler) {
+  const form = qs(`#${formId}`);
+  if (!form) return;
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (currentRoleBase() === "ai_auditor") {
+      showToast("Режим просмотра: изменение данных недоступно");
+      return;
+    }
+    if (form.dataset.fileSubmitting === "true") return;
+    form.dataset.fileSubmitting = "true";
+    let status = form.querySelector("[data-file-form-status]");
+    if (!status) {
+      status = document.createElement("p");
+      status.className = "muted";
+      status.dataset.fileFormStatus = "";
+      status.setAttribute("role", "status");
+      form.insertBefore(status, form.querySelector(".form-actions"));
+    }
+    const loadingMessage = "Готовим и сохраняем файлы";
+    status.textContent = loadingMessage;
+    status.hidden = false;
+    const buttons = qsa('button[type="submit"]', form).map((button) => ({ button, disabled: button.disabled }));
+    buttons.forEach(({ button }) => { button.disabled = true; });
+    form.setAttribute("aria-busy", "true");
+    const loadingKey = `file-form-${formId}`;
+    setAppLoading(true, "Готовим и сохраняем файлы", loadingKey);
+    try {
+      await handler(event);
+    } catch (error) {
+      const message = error.message || "Не удалось сохранить файлы. Попробуйте ещё раз.";
+      status.textContent = message;
+      showToast(message);
+    } finally {
+      if (status.textContent === loadingMessage) status.hidden = true;
+      buttons.forEach(({ button, disabled }) => { button.disabled = disabled; });
+      delete form.dataset.fileSubmitting;
+      form.removeAttribute("aria-busy");
+      setAppLoading(false, "", loadingKey);
+    }
+  });
 }
 
 async function submitPhotoReportForm(event) {
@@ -8228,6 +8386,9 @@ async function runGlobalSearch(rawQuery) {
 }
 
 function bindEvents() {
+  qsa('input[type="file"][accept]').forEach((input) => {
+    if (/\.jpe?g(?:,|$)/i.test(input.accept) && !/\.jfif(?:,|$)/i.test(input.accept)) input.accept += ",.jfif";
+  });
   bindStableDetailsTouchGuard();
   bindWheelPageScroll();
   initPullToRefresh();
@@ -8263,6 +8424,12 @@ function bindEvents() {
   qs("#refreshButton").addEventListener("click", () => refreshAppFromUser("Обновляем данные").catch((error) => showToast(error.message)));
   qs("#mobileQuickActionToggle")?.addEventListener("click", () => toggleMobileQuickActions());
   qs("#mobileQuickActionClose")?.addEventListener("click", () => toggleMobileQuickActions(false));
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && state.mobileQuickOpen && !hasOpenDialog()) {
+      event.preventDefault();
+      toggleMobileQuickActions(false);
+    }
+  });
   qs("#mobileMoreButton")?.addEventListener("click", () => toggleMobileMenu(true));
   qs("#logoutButton")?.addEventListener("click", () => {
     localStorage.removeItem("currentRole");
@@ -8407,6 +8574,7 @@ function bindEvents() {
   qs("#mediaPreviewPrev")?.addEventListener("click", () => moveMediaPreview(-1));
   qs("#mediaPreviewNext")?.addEventListener("click", () => moveMediaPreview(1));
   qs("#mediaPreviewDialog")?.addEventListener("close", () => {
+    releaseMediaPreviewResource();
     const body = qs("#mediaPreviewBody");
     if (body) body.innerHTML = "";
     state.mediaPreview = { items: [], index: 0, touchX: null };
@@ -8511,7 +8679,25 @@ function bindEvents() {
     state.showEstimateMaterials = true;
     await renderEstimateMaterials();
   });
-  qs("#previewEstimateButton").addEventListener("click", loadEstimatePreview);
+  qs('#estimateImportForm input[name="estimate_file"]').addEventListener("change", () => {
+    state.estimatePreviewRows = [];
+    state.estimatePreviewFile = null;
+    renderEstimatePreview();
+  });
+  qs("#previewEstimateButton").addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    if (button.disabled || qs("#estimateImportForm").dataset.fileSubmitting === "true") return;
+    button.disabled = true;
+    setAppLoading(true, "Читаем файл сметы", "estimate-preview");
+    try {
+      await loadEstimatePreview();
+    } catch (error) {
+      showToast(error.message || "Не удалось прочитать смету. Выберите файл ещё раз.");
+    } finally {
+      button.disabled = false;
+      setAppLoading(false, "", "estimate-preview");
+    }
+  });
   qs('#workProjectForm select[name="project_id"]').addEventListener("change", async (event) => {
     state.selectedWorkProjectId = Number(event.target.value);
     qs('#workExtraForm select[name="project_id"]').value = event.target.value;
@@ -8562,13 +8748,6 @@ function bindEvents() {
   });
 
   document.addEventListener("click", async (event) => {
-    const unavailableMedia = event.target.closest("[data-media-unavailable]");
-    if (unavailableMedia) {
-      event.preventDefault();
-      showToast("Файл временно недоступен. Сообщите ответственному за хранение документов.");
-      return;
-    }
-
     const mediaMoreButton = event.target.closest("[data-open-media-gallery]");
     if (mediaMoreButton) {
       event.preventDefault();
@@ -9350,9 +9529,9 @@ function bindEvents() {
     qs('#taskForm input[name="creator_id"]').value = currentUserId() || "";
     submitForm("taskDialog", "taskForm", "/api/tasks", "Задача создана");
   });
-  qs("#photoReportForm")?.addEventListener("submit", submitPhotoReportForm);
-  qs("#objectRemarkForm")?.addEventListener("submit", submitObjectRemarkForm);
-  qs("#estimateJobForm").addEventListener("submit", async (event) => {
+  bindFileFormSubmit("photoReportForm", submitPhotoReportForm);
+  bindFileFormSubmit("objectRemarkForm", submitObjectRemarkForm);
+  bindFileFormSubmit("estimateJobForm", async (event) => {
     event.preventDefault();
     const form = qs("#estimateJobForm");
     const payload = formToJson(form);
@@ -9372,7 +9551,7 @@ function bindEvents() {
     await renderDashboard();
     showToast(id ? "Сметное задание обновлено" : "Сметное задание создано");
   });
-  qs("#estimateJobDoneForm").addEventListener("submit", async (event) => {
+  bindFileFormSubmit("estimateJobDoneForm", async (event) => {
     event.preventDefault();
     const form = qs("#estimateJobDoneForm");
     const id = form.elements.id.value;
@@ -9397,7 +9576,7 @@ function bindEvents() {
     await renderDashboard();
     showToast("Смета сдана, файлы сохранены");
   });
-  qs("#estimateJobFileForm").addEventListener("submit", async (event) => {
+  bindFileFormSubmit("estimateJobFileForm", async (event) => {
     event.preventDefault();
     const form = qs("#estimateJobFileForm");
     const id = form.elements.id.value;
@@ -9547,14 +9726,14 @@ function bindEvents() {
     await renderLocations();
     showToast("Локация поставщика добавлена");
   });
-  qs("#estimateImportForm").addEventListener("submit", async (event) => {
+  bindFileFormSubmit("estimateImportForm", async (event) => {
     event.preventDefault();
-    if (!state.estimatePreviewRows.length) {
-      await loadEstimatePreview();
-    }
-    if (!state.estimatePreviewRows.length) return;
     const form = qs("#estimateImportForm");
     const file = form.elements.estimate_file.files[0];
+    if (!file || state.estimatePreviewFile !== file || !state.estimatePreviewRows.length) {
+      await loadEstimatePreview(file);
+    }
+    if (!state.estimatePreviewRows.length || state.estimatePreviewFile !== file) return;
     await api("/api/estimate-materials/import", {
       method: "POST",
       body: JSON.stringify({
@@ -9568,6 +9747,7 @@ function bindEvents() {
       }),
     });
     state.estimatePreviewRows = [];
+    state.estimatePreviewFile = null;
     state.showEstimateMaterials = true;
     qs("#estimatePreviewRows").innerHTML = `<p class="muted">Файл загружен. Можно выбрать другой файл.</p>`;
     await loadAll();
@@ -9589,7 +9769,7 @@ function bindEvents() {
     }
   });
 
-  qs("#documentForm").addEventListener("submit", async (event) => {
+  bindFileFormSubmit("documentForm", async (event) => {
     event.preventDefault();
     const form = qs("#documentForm");
     try {
@@ -9611,7 +9791,7 @@ function bindEvents() {
       setKnowledgeUploading(false);
     }
   });
-  qs("#contractForm").addEventListener("submit", async (event) => {
+  bindFileFormSubmit("contractForm", async (event) => {
     event.preventDefault();
     const form = qs("#contractForm");
     try {

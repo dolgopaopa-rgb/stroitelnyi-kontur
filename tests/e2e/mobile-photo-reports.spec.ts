@@ -2,7 +2,7 @@ import { expect, Page, test } from "@playwright/test";
 import { openApp, switchRole } from "../helpers/auth";
 
 const tinyPng =
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=";
 
 async function ensurePhotoReportFixture(page: Page) {
   return page.evaluate(async (imageBase64) => {
@@ -59,8 +59,13 @@ test("mobile photo reports are readable and images open for foreman and procurem
   const fixture = await ensurePhotoReportFixture(page);
 
   for (const role of [`foreman:${fixture.foremanId}`, "procurement_manager"]) {
+    // Preview roles are selected on desktop; every media assertion stays mobile.
+    await page.setViewportSize({ width: 1366, height: 900 });
     const available = await switchRole(page, role);
     expect(available, `${role} must be selectable for mobile photo report access`).toBeTruthy();
+    await expect(page.locator("#currentRoleSelect")).toHaveValue(role);
+    await expect(page.locator("#todayView")).toHaveAttribute("data-role", role.split(":")[0]);
+    await page.setViewportSize(viewport || { width: 390, height: 844 });
 
     await openApp(page, "/photo-reports");
     await expect(page.locator("#photosView")).toHaveClass(/active/);
@@ -78,22 +83,31 @@ test("mobile photo reports are readable and images open for foreman and procurem
         })
         .map((node) => Math.round((node as HTMLElement).getBoundingClientRect().width))
     );
+    expect(panelWidths.length, `${role}: photo report panels must exist`).toBeGreaterThan(0);
     expect(Math.min(...panelWidths), `${role}: photo report panels must not become narrow columns`).toBeGreaterThan(
       Math.min(300, (viewport?.width || 390) - 40)
     );
 
-    const card = page.locator('[data-testid="photo-report-card"]').first();
+    const card = page.locator('#photosView [data-testid="photo-report-card"]').filter({
+      has: page.locator(".media-thumb", { hasText: fixture.fileName }),
+    });
+    await expect(card, `${role}: inspect the report created by this test`).toHaveCount(1);
     await expect(card).toBeVisible();
     const cardBox = await card.boundingBox();
     expect(cardBox?.width || 0, `${role}: photo report card width`).toBeGreaterThan(Math.min(300, (viewport?.width || 390) - 40));
 
-    const thumb = page.locator('[data-testid="photo-report-card"] .media-thumb', { hasText: fixture.fileName }).first();
+    const thumb = card.locator(".media-thumb", { hasText: fixture.fileName });
     await expect(thumb).toBeVisible();
+    const secondThumb = card.locator(".media-thumb", { hasText: fixture.secondFileName });
+    await expect(secondThumb).toBeVisible();
     const thumbBox = await thumb.boundingBox();
     expect(thumbBox?.width || 0, `${role}: photo preview thumbnail width`).toBeGreaterThanOrEqual(120);
 
     const href = await thumb.getAttribute("href");
     expect(href, `${role}: photo preview must have a link`).toBeTruthy();
+    const secondHref = await secondThumb.getAttribute("href");
+    expect(secondHref, `${role}: the second photo must have its own link`).toBeTruthy();
+    expect(secondHref).not.toBe(href);
     const response = await page.request.get(href || "");
     expect(response.status(), `${role}: photo link must open inside Kontur`).toBe(200);
     expect(response.headers()["content-type"] || "", `${role}: photo response must be an image`).toMatch(/^image\//);
@@ -101,16 +115,24 @@ test("mobile photo reports are readable and images open for foreman and procurem
     await thumb.click();
     const previewDialog = page.locator('[data-testid="media-preview-dialog"]');
     await expect(previewDialog, `${role}: photo must open in an in-app preview dialog`).toBeVisible();
-    await expect(page.locator('[data-testid="media-preview-body"] img'), `${role}: preview dialog must render the image`).toBeVisible();
+    const previewImage = page.locator('[data-testid="media-preview-body"] img');
+    await expect(previewImage, `${role}: preview dialog must render the image`).toBeVisible();
+    await expect(previewImage).toHaveAttribute("src", href!);
+    await expect.poll(() => previewImage.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true);
     await expect(page.locator('[data-testid="media-preview-toolbar"]'), `${role}: preview dialog must expose slideshow controls`).toBeVisible();
     const counter = page.locator('[data-testid="media-preview-counter"]');
     await expect(counter, `${role}: preview counter must show the first slide`).toHaveText(/1 \/ [2-9]\d*/);
     await page.locator('[data-testid="media-preview-next"]').click();
     await expect(counter, `${role}: next button must switch to the second slide`).toHaveText(/2 \/ [2-9]\d*/);
+    await expect(previewImage).toHaveAttribute("src", secondHref!);
+    await expect.poll(() => previewImage.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true);
     await page.locator('[data-testid="media-preview-prev"]').click();
     await expect(counter, `${role}: previous button must switch back to the first slide`).toHaveText(/1 \/ [2-9]\d*/);
+    await expect(previewImage).toHaveAttribute("src", href!);
     await expect(page.locator("#mediaPreviewCloseBottom"), `${role}: preview dialog must have an obvious close/back button`).toBeVisible();
     await page.locator("#mediaPreviewCloseBottom").click();
     await expect(previewDialog, `${role}: preview dialog must close without leaving the app`).not.toBeVisible();
+    await expect(page.locator("#photosView")).toHaveClass(/active/);
+    await expect(thumb).toBeVisible();
   }
 });
