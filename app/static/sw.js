@@ -1,10 +1,10 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260910-file-ui-audit";
+const CACHE_NAME = "stroitelnyi-kontur-20260910-file-ui-audit-2";
 const CORE_ASSETS = [
   "/",
-  "/static/styles.css?v=20260910-file-ui-audit",
-  "/static/crm-theme.css?v=20260910-file-ui-audit",
-  "/static/app.compat.js?v=20260910-file-ui-audit",
-  "/static/manifest.webmanifest?v=20260910-file-ui-audit",
+  "/static/styles.css?v=20260910-file-ui-audit-2",
+  "/static/crm-theme.css?v=20260910-file-ui-audit-2",
+  "/static/app.compat.js?v=20260910-file-ui-audit-2",
+  "/static/manifest.webmanifest?v=20260910-file-ui-audit-2",
   "/static/assets/d2dom-logo-tile.svg?v=20260825-crm-theme",
   "/static/assets/d2dom-logo-white.svg",
   "/static/assets/fonts/Haval-Light.woff2",
@@ -39,7 +39,7 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
 
   const url = new URL(request.url);
-  if (url.pathname.startsWith("/api/") || url.pathname === "/logout" || url.pathname === "/login") return;
+  if (url.pathname.startsWith("/api/") || ["/version", "/health", "/logout", "/login"].includes(url.pathname)) return;
 
   if (url.pathname.startsWith("/static/") && [".css", ".js", ".webmanifest"].some((suffix) => url.pathname.endsWith(suffix))) {
     event.respondWith(
