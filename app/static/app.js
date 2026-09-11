@@ -4000,23 +4000,19 @@ async function renderDashboard() {
   qs("#dashboardTaskStats").innerHTML =
     renderTaskStats(openRoleTasks, state.taskFilter, { hideZero: true, emptyText: "Активных задач по выбранной роли пока нет." }) +
     `<p class="muted dashboard-context-note">На рабочем столе показаны только открытые задачи. Принятые задачи остаются в полном разделе «Задачи» в фильтре «Принято».</p>`;
-  qs("#dashboardProjects").innerHTML = state.projects
-    .slice(0, 4)
-    .map(
+  qs("#dashboardProjects").innerHTML = renderLimitedRows(
+    state.projects,
       (project) => `
       <button class="row clickable" data-open-project="${project.id}">
-        <div class="stack-line"><strong>${project.title}</strong>${pill(label(project.status), "blue")}</div>
-        <div class="muted">${project.customer_name || "Заказчик не указан"} · ${project.foreman_name || "Прораб не назначен"}</div>
-      </button>`
-    )
-    .join("");
-  qs("#dashboardTasks").innerHTML = renderCollapsibleList({
-    items: openRoleTasks,
-    visibleCount: 3,
-    emptyText: "Активных задач пока нет.",
-    renderItem: renderDashboardTaskRow,
-    moreLabel: "Остальные задачи",
-    key: "dashboardTasks",
+        <div class="stack-line"><strong>${escapeHtml(project.title)}</strong>${pill(label(project.status), "blue")}</div>
+        <div class="muted">${escapeHtml(project.customer_name || "Заказчик не указан")} · ${escapeHtml(project.foreman_name || "Прораб не назначен")}</div>
+      </button>`,
+    { limit: 2, expandKey: "signals-projects", empty: '<p class="muted">Активных объектов пока нет.</p>' }
+  );
+  qs("#dashboardTasks").innerHTML = renderLimitedRows(openRoleTasks, renderDashboardTaskRow, {
+    limit: 2,
+    expandKey: "signals-tasks",
+    empty: '<p class="muted">Активных задач пока нет.</p>',
   });
   initSortableZones(qs("#dashboardView"));
 }
@@ -4440,8 +4436,7 @@ async function renderToday() {
   const openRemarks = roleRemarks.filter((remark) => !["accepted", "closed"].includes(remark.status)).sort((a, b) => Number(isDateOverdue(b.due_date)) - Number(isDateOverdue(a.due_date)) || String(a.due_date || "9999").localeCompare(String(b.due_date || "9999")));
   const recentComments = notifications
     .filter((row) => isLast24Hours(row.created_at))
-    .filter((row) => !row.project_id || isLeadershipRole() || roleProjectIds.has(Number(row.project_id || 0)))
-    .slice(0, 12);
+    .filter((row) => !row.project_id || isLeadershipRole() || roleProjectIds.has(Number(row.project_id || 0)));
   const decisionItems = todayDecisionItems({ overdueTasks, returnedTasks, waitingTasks, riskyMaterials, noPhotoProjects, blockers: roleBlockers, remarks: openRemarks });
   qs("#todayKpis").innerHTML = renderTodayKpis([
     ["Требует действия", decisionItems.length, "!", decisionItems.length ? "danger" : "", 'data-view-target="tasks"'],
@@ -4452,7 +4447,7 @@ async function renderToday() {
     ["Материалы под риском", riskyMaterials.length, "◫", riskyMaterials.length ? "warning" : "", 'data-view-target="materials"'],
   ].map(([label, value, icon, level, attrs]) => ({ label, value, icon, level, attrs })));
   qs("#todayTasks").innerHTML = todayTasks.length
-    ? renderLimitedRows(todayTasks, renderTodayTaskCard, { limit: 5, moreTarget: 'data-view-target="tasks"' })
+    ? renderLimitedRows(todayTasks, renderTodayTaskCard, { limit: 2, expandKey: `today-${currentRoleBase()}-tasks` })
     : `<div class="empty-state"><strong>На сегодня задач нет</strong><p class="muted">Проверьте просроченные или откройте объект.</p></div>`;
   qs("#todayAttention").innerHTML = decisionItems.length
     ? renderLimitedRows(decisionItems, renderTodayDecisionItem, ["owner", "estimator", "sales_manager"].includes(currentRoleBase())
@@ -4460,7 +4455,7 @@ async function renderToday() {
       : { limit: 5, moreTarget: 'data-view-target="tasks"' })
     : `<div class="attention-empty"><strong>Критичных сигналов нет</strong><span>На сейчас ничего срочного не найдено.</span></div>`;
   qs("#todayMaterials").innerHTML = riskyMaterials.length
-    ? renderLimitedRows(riskyMaterials, renderTodayMaterialCard, { limit: 5, moreTarget: 'data-view-target="materials"' })
+    ? renderLimitedRows(riskyMaterials, renderTodayMaterialCard, { limit: 2, expandKey: `today-${currentRoleBase()}-materials` })
     : `<div class="empty-state"><strong>Заявок под риском нет</strong><p class="muted">Заявки появятся здесь, когда прораб или руководитель запросит материалы.</p>${canView("materials") ? `<button class="secondary tiny" type="button" data-view-target="materials">Открыть материалы</button>` : ""}</div>`;
   qs("#todayComments").innerHTML = recentComments.length
     ? renderLimitedRows(
@@ -4471,7 +4466,7 @@ async function renderToday() {
             <div class="muted">${escapeHtml(row.project_title || "без объекта")} · ${formatDateRu(row.created_at)}</div>
             <p>${escapeHtml(row.text || "")}</p>
           </button>`,
-        { limit: 5, moreTarget: 'data-view-target="dashboard"' }
+        { limit: 2, expandKey: `today-${currentRoleBase()}-comments` }
       )
     : `<p class="muted">Новых комментариев за 24 часа нет.</p>`;
   qs("#todayObjects").innerHTML = activeProjects.length
@@ -4661,7 +4656,8 @@ async function renderNotifications() {
     return;
   }
   const signals = dedupeSignals(rows);
-  const groups = signals.reduce((acc, row) => {
+  const remainingSignals = signals.slice(2);
+  const groups = remainingSignals.reduce((acc, row) => {
     const key = row.project_id ? `project-${row.project_id}` : "general";
     if (!acc[key]) {
       acc[key] = {
@@ -4691,7 +4687,6 @@ async function renderNotifications() {
           </summary>
           <div class="notification-group-list">
             ${group.rows
-              .slice(0, 8)
               .map(renderSignalRow)
               .join("")}
           </div>
@@ -4699,10 +4694,11 @@ async function renderNotifications() {
     })
     .join("");
   qs("#notificationRows").innerHTML = `
-    <details class="inline-collapsible notification-collapsible" ${state.notificationsOpen ? "open" : ""}>
-      <summary>Последние события: ${rows.length}</summary>
+    ${signals.slice(0, 2).map(renderSignalRow).join("")}
+    ${remainingSignals.length ? `<details class="today-list-disclosure notification-collapsible" ${state.notificationsOpen ? "open" : ""}>
+      <summary><span class="disclosure-closed">Показать ещё ${remainingSignals.length}</span><span class="disclosure-open">Свернуть</span></summary>
       <div class="notification-groups">${groupRows}</div>
-    </details>`;
+    </details>` : ""}`;
   qs(".notification-collapsible")?.addEventListener("toggle", (event) => {
     state.notificationsOpen = event.currentTarget.open;
   });
@@ -6021,19 +6017,23 @@ async function renderTasks() {
   if (!taskProjects.length) state.selectedTaskProjectId = null;
   const selectedGroup = grouped[state.selectedTaskProjectId] || null;
   const tasks = selectedGroup ? selectedGroup.tasks : [];
+  const projectExpandKey = `tasks-${currentRoleBase()}-projects`;
+  const projectSelectionKey = `${currentRoleBase()}:${state.selectedTaskProjectId || ""}`;
+  if (state.taskProjectDisclosureSelection !== projectSelectionKey && taskProjects.findIndex((project) => Number(project.id) === Number(state.selectedTaskProjectId)) >= 2) {
+    state.expandedLists[projectExpandKey] = true;
+  }
+  state.taskProjectDisclosureSelection = projectSelectionKey;
   qs("#taskProjectRows").innerHTML = taskProjects.length
-    ? taskProjects
-        .map((project) => {
+    ? renderLimitedRows(taskProjects, (project) => {
           const stats = taskStats(project.tasks);
           const newCount = project.tasks.filter((task) => ["new", "returned", "waiting_check"].includes(taskStatusKey(task))).length;
           const openCount = project.tasks.filter(isOpenTask).length;
           return `
-            <button class="row clickable task-project-row ${state.selectedTaskProjectId === project.id ? "active" : ""}" data-task-project="${project.id}">
-              <div class="stack-line"><strong>${project.title}</strong></div>
+            <button class="row clickable task-project-row ${Number(state.selectedTaskProjectId) === Number(project.id) ? "active" : ""}" data-task-project="${project.id}">
+              <div class="stack-line"><strong>${escapeHtml(project.title)}</strong></div>
               <div class="task-project-indicators">${taskProjectIndicatorPills(stats, openCount, newCount)}</div>
             </button>`;
-        })
-        .join("")
+        }, { limit: 2, expandKey: projectExpandKey })
     : `<p class="muted">${currentRoleBase() === "foreman" ? "За этим прорабом пока нет объектов с задачами." : "Задач пока нет."}</p>`;
   qs("#taskStats").innerHTML =
     renderTaskStats(tasks, state.taskFilter, { compact: true }) +
@@ -6522,19 +6522,18 @@ async function renderLocations() {
   const projects = payload.projects || [];
   const suppliers = payload.suppliers || [];
   qs("#objectLocationRows").innerHTML = projects.length
-    ? projects
-        .map(
+    ? renderLimitedRows(projects,
           (project) => `
           <div class="row location-row">
             <div>
-              <strong>${project.title}</strong>
-              <div class="muted">${project.customer_name || ""}</div>
-              <div class="muted">${project.address || "Адрес не указан"}</div>
+              <strong>${escapeHtml(project.title)}</strong>
+              <div class="muted">${escapeHtml(project.customer_name || "")}</div>
+              <div class="muted">${escapeHtml(project.address || "Адрес не указан")}</div>
             </div>
             ${mapLink(project.address, project.navigator_url)}
-          </div>`
+          </div>`,
+          { limit: 2, expandKey: "locations-projects" }
         )
-        .join("")
     : `<p class="muted">Активных объектов пока нет.</p>`;
 
   qs("#supplierLocationRows").innerHTML = suppliers.length
@@ -8405,6 +8404,7 @@ function bindEvents() {
     } else if (state.view === "projects") {
       await renderProjects();
     }
+    if (canView("tasks")) await renderTasks();
   });
   qs("#globalSearchInput")?.addEventListener("keydown", async (event) => {
     if (event.key !== "Enter") return;

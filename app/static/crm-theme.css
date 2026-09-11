@@ -1406,7 +1406,7 @@ dialog::backdrop {
   min-height: 48px;
 }
 
-#todayAttention .today-list-disclosure > summary {
+.today-list-disclosure > summary {
   width: fit-content;
   min-height: 44px;
   padding: 10px 4px;
@@ -1424,7 +1424,8 @@ dialog::backdrop {
   display: inline;
 }
 
-#todayAttention .today-list-disclosure > .list {
+.today-list-disclosure > .list,
+.today-list-disclosure > .notification-groups {
   margin-top: 6px;
 }
 
@@ -1452,6 +1453,7 @@ dialog::backdrop {
 }
 
 #todayView .today-object-head strong {
+  flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -1485,9 +1487,8 @@ dialog::backdrop {
 }
 
 #todayView[data-role="sales_manager"] #todayComments {
-  max-height: 126px;
-  overflow-y: auto;
-  scrollbar-width: thin;
+  max-height: none;
+  overflow: visible;
 }
 
 #todayView[data-role="sales_manager"] .today-object-grid {
@@ -1522,7 +1523,7 @@ dialog::backdrop {
   line-height: 1.4;
 }
 
-#todayView[data-role="sales_manager"] .today-object-head > .pill {
+#todayView .today-object-head > .pill {
   flex: 0 0 auto;
   white-space: nowrap;
   border-radius: 4px;
@@ -1547,14 +1548,38 @@ dialog::backdrop {
 
 #dashboardView .dashboard-sortable {
   gap: 10px;
+  align-items: stretch;
+}
+
+#dashboardView .dashboard-sortable > .dashboard-preview-panel {
+  align-self: stretch;
+  height: 100%;
+  min-width: 0;
+  padding: 12px;
+}
+
+#dashboardView .dashboard-preview-panel > .panel-head {
+  min-height: 53px;
+  margin-bottom: 8px;
+}
+
+.row > strong + .muted,
+.row > .stack-line:first-child + .muted,
+.row > .stack-line:first-child + .task-project-indicators {
+  margin-top: 8px;
 }
 
 #dashboardView #summaryCards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(148px, 180px));
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
   justify-content: start;
   gap: 6px;
+  padding-right: 32px;
   overflow: visible;
+}
+
+#dashboardView .sortable-block > .panel-head {
+  padding-right: 24px;
 }
 
 #dashboardView #summaryCards .metric {
@@ -2361,10 +2386,11 @@ dialog::backdrop {
 }
 
 @media (max-width: 430px) {
-  #todayView[data-role="sales_manager"] .today-object-head {
+  #todayView .today-object-head {
     flex-wrap: wrap;
   }
 
+  #todayView .today-object-head strong,
   #todayView[data-role="sales_manager"] .today-object-head strong {
     flex-basis: 100%;
   }
@@ -2435,15 +2461,15 @@ dialog::backdrop {
 
 #tasksView .task-project-row,
 #tasksView .task-summary {
-  min-height: 112px;
+  min-height: 80px;
   height: auto;
   padding: 12px;
-  align-content: center;
+  align-content: start;
   gap: 8px;
 }
 
 #tasksView .task-project-row {
-  min-height: 114px;
+  min-height: 80px;
 }
 
 #tasksView .task-collapsible {
@@ -2504,7 +2530,7 @@ dialog::backdrop {
 
 #locationsView .location-row strong {
   display: block;
-  margin-bottom: 4px;
+  margin-bottom: 12px;
 }
 
 #locationsView .location-row .muted {
@@ -2587,25 +2613,94 @@ dialog::backdrop {
   overflow-wrap: anywhere;
 }
 
-/* Both object switches must share the available width, including tablet sizes. */
+/* Keep each switch compact while distributing both groups across the header. */
+#projectsView .split > .panel:first-child {
+  container-type: inline-size;
+  container-name: project-list;
+}
+
+#projectsView .project-list-head {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 24px;
+  align-items: center;
+}
+
+.compact-ui-v1 #projectsView .project-list-head {
+  display: grid;
+}
+
+#projectsView #projectListTitle {
+  width: auto;
+  white-space: nowrap;
+}
+
 #projectsView .project-list-tools {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  justify-content: stretch;
-  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 360px));
+  justify-content: space-evenly;
+  gap: 24px;
   width: 100%;
   min-width: 0;
   overflow: visible;
 }
 
 #projectsView .project-list-tools .segmented-control {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
   width: 100%;
   min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
 }
 
 #projectsView .project-list-tools .segment {
   min-width: 0;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
   white-space: normal;
+}
+
+#projectsView .project-card-main {
+  gap: 8px;
+}
+
+#projectsView .project-card-main .muted {
+  margin-top: 0;
+}
+
+@container project-list (max-width: 680px) {
+  #projectsView .project-list-head,
+  #projectsView .project-list-tools {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  #projectsView .project-list-tools {
+    justify-content: stretch;
+  }
+
+  #projectsView .split:not(.project-selection-empty) #projectRows .project-list-card {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 8px;
+  }
+}
+
+@supports not (container-type: inline-size) {
+  #projectsView .split:not(.is-list-only) .project-list-head,
+  #projectsView .split:not(.is-list-only) .project-list-tools {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #projectsView .split:not(.project-selection-empty) #projectRows .project-list-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* The list-only cards use two named areas, not the old three-column table. */
@@ -2616,7 +2711,23 @@ dialog::backdrop {
 #projectsView .split.project-selection-empty #projectRows .project-list-card,
 .compact-ui-v1 #projectsView .split.is-list-only #projectRows.project-table-mode .project-list-card {
   min-width: 0;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+#projectsView .project-card-badges > .pill {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+#projectsView .split.project-selection-empty .project-meta-line {
+  min-width: 0;
+  white-space: normal;
+}
+
+#projectsView .project-meta-line > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 #estimatesView .estimate-job-body {
@@ -2682,6 +2793,20 @@ dialog::backdrop {
 }
 
 @media (max-width: 1100px) {
+  #projectsView .project-list-head {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  #projectsView #projectListTitle {
+    white-space: normal;
+  }
+
+  #projectsView .project-list-tools {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+
   #projectsView .project-list-tools .segment {
     min-height: 44px;
   }

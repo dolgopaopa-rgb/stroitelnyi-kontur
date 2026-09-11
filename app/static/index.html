@@ -9,11 +9,11 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Строительный контур</title>
-    <link rel="manifest" href="/static/manifest.webmanifest?v=20260910-file-ui-audit-2" />
+    <link rel="manifest" href="/static/manifest.webmanifest?v=20260911-compact-panels" />
     <link rel="icon" type="image/svg+xml" href="/static/assets/d2dom-logo-tile.svg?v=20260825-crm-theme" />
     <link rel="apple-touch-icon" href="/static/assets/g2-logo-192.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260910-file-ui-audit-2" />
-    <link rel="stylesheet" href="/static/crm-theme.css?v=20260910-file-ui-audit-2" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260911-compact-panels" />
+    <link rel="stylesheet" href="/static/crm-theme.css?v=20260911-compact-panels" />
   </head>
   <body>
     <svg class="icon-sprite" aria-hidden="true">
@@ -275,21 +275,21 @@
               </div>
               <div id="dashboardTaskStats"></div>
             </section>
-            <section class="panel" data-sortable-block="dashboard-projects">
+            <section class="panel dashboard-preview-panel" data-sortable-block="dashboard-projects">
               <div class="panel-head">
                 <h2>Объекты</h2>
                 <button class="link-button" data-view-target="projects">Открыть</button>
               </div>
               <div class="list" id="dashboardProjects"></div>
             </section>
-            <section class="panel" data-sortable-block="dashboard-tasks" data-requires-view="tasks">
+            <section class="panel dashboard-preview-panel" data-sortable-block="dashboard-tasks" data-requires-view="tasks">
               <div class="panel-head">
                 <h2>Задачи</h2>
                 <button class="link-button" data-view-target="tasks">Открыть</button>
               </div>
               <div class="list" id="dashboardTasks"></div>
             </section>
-            <section class="panel notifications-panel" data-sortable-block="notifications">
+            <section class="panel notifications-panel dashboard-preview-panel" data-sortable-block="notifications">
               <div class="panel-head">
                 <h2>Уведомления</h2>
               </div>
@@ -301,7 +301,7 @@
         <section class="view" id="projectsView">
           <div class="split">
             <section class="panel">
-              <div class="panel-head">
+              <div class="panel-head project-list-head">
                 <h2 id="projectListTitle">Список объектов</h2>
                 <div class="project-list-tools">
                   <div class="segmented-control">
@@ -1303,6 +1303,6 @@
       </div>
     </div>
     <div class="toast" id="toast"></div>
-    <script src="/static/app.compat.js?v=20260910-file-ui-audit-2"></script>
+    <script src="/static/app.compat.js?v=20260911-compact-panels"></script>
   </body>
 </html>

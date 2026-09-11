@@ -1118,13 +1118,6 @@
     }
     return '\n    <section class="project-doc-spotlight">\n      <div class="project-doc-spotlight-head">\n        <strong>Проектная документация</strong>\n        '.concat(pill("".concat(projectDocs.length, " файл(ов)"), "blue"), '\n      </div>\n      <div class="project-doc-spotlight-list">\n        ').concat(projectDocs.slice(0, 4).map((doc) => '<div class="document-row">'.concat(documentFileLink(doc), "</div>")).join(""), "\n      </div>\n      ").concat(projectDocs.length > 4 ? '<p class="muted">Остальные файлы доступны во вкладке “Документы”.</p>' : "", "\n    </section>");
   }
-  function renderCollapsibleList({ items, visibleCount = 3, emptyText = "Пока пусто.", renderItem, moreLabel = "Показать еще", key = "" }) {
-    if (!items.length) return '<p class="muted">'.concat(emptyText, "</p>");
-    const visible = items.slice(0, visibleCount).map(renderItem).join("");
-    const hidden = items.slice(visibleCount);
-    if (!hidden.length) return visible;
-    return "\n    ".concat(visible, '\n    <details class="inline-collapsible" ').concat(key ? 'data-collapsible-key="'.concat(key, '" ').concat(state.expandedLists[key] ? "open" : "") : "", ">\n      <summary>").concat(moreLabel, ": ").concat(hidden.length, '</summary>\n      <div class="list compact-hidden-list">\n        ').concat(hidden.map(renderItem).join(""), "\n      </div>\n    </details>");
-  }
   function renderDashboardTaskRow(task) {
     return '\n    <button class="row clickable dashboard-task-row" type="button" data-open-task="'.concat(task.id, '">\n      <div class="stack-line"><strong>').concat(task.title, "</strong>").concat(pill(label(taskStatusKey(task)), taskStatusLevel(taskStatusKey(task)))).concat(pill(task.due_date || "без срока", levelByDate(task.due_date)), '</div>\n      <div class="muted">').concat(task.project_title, " · ответственный: ").concat(task.assignee_name || "не назначен", " · принимает: ").concat(task.reviewer_name || task.creator_name || "не назначен", "</div>\n    </button>");
   }
@@ -3250,16 +3243,15 @@
     qs("#summaryCards").innerHTML = metricRows.length ? metricRows.join("") : '<div class="dashboard-empty-strip">Активных сигналов по роли пока нет.</div>';
     qs("#dashboardAttention").innerHTML = renderDashboardAttention(buildDashboardAttention(summary, openRoleTasks, materialRows));
     qs("#dashboardTaskStats").innerHTML = renderTaskStats(openRoleTasks, state.taskFilter, { hideZero: true, emptyText: "Активных задач по выбранной роли пока нет." }) + '<p class="muted dashboard-context-note">На рабочем столе показаны только открытые задачи. Принятые задачи остаются в полном разделе «Задачи» в фильтре «Принято».</p>';
-    qs("#dashboardProjects").innerHTML = state.projects.slice(0, 4).map(
-      (project) => '\n      <button class="row clickable" data-open-project="'.concat(project.id, '">\n        <div class="stack-line"><strong>').concat(project.title, "</strong>").concat(pill(label(project.status), "blue"), '</div>\n        <div class="muted">').concat(project.customer_name || "Заказчик не указан", " · ").concat(project.foreman_name || "Прораб не назначен", "</div>\n      </button>")
-    ).join("");
-    qs("#dashboardTasks").innerHTML = renderCollapsibleList({
-      items: openRoleTasks,
-      visibleCount: 3,
-      emptyText: "Активных задач пока нет.",
-      renderItem: renderDashboardTaskRow,
-      moreLabel: "Остальные задачи",
-      key: "dashboardTasks"
+    qs("#dashboardProjects").innerHTML = renderLimitedRows(
+      state.projects,
+      (project) => '\n      <button class="row clickable" data-open-project="'.concat(project.id, '">\n        <div class="stack-line"><strong>').concat(escapeHtml(project.title), "</strong>").concat(pill(label(project.status), "blue"), '</div>\n        <div class="muted">').concat(escapeHtml(project.customer_name || "Заказчик не указан"), " · ").concat(escapeHtml(project.foreman_name || "Прораб не назначен"), "</div>\n      </button>"),
+      { limit: 2, expandKey: "signals-projects", empty: '<p class="muted">Активных объектов пока нет.</p>' }
+    );
+    qs("#dashboardTasks").innerHTML = renderLimitedRows(openRoleTasks, renderDashboardTaskRow, {
+      limit: 2,
+      expandKey: "signals-tasks",
+      empty: '<p class="muted">Активных задач пока нет.</p>'
     });
     initSortableZones(qs("#dashboardView"));
   }
@@ -3570,7 +3562,7 @@
     const activeProjects = todayProjectsForProfile(roleProjects, roleTasks, roleMaterialRows, profile);
     const noPhotoProjects = activeProjects.filter((project) => !isTodayDate(latestPhotoReportDate(project.id)));
     const openRemarks = roleRemarks.filter((remark) => !["accepted", "closed"].includes(remark.status)).sort((a, b) => Number(isDateOverdue(b.due_date)) - Number(isDateOverdue(a.due_date)) || String(a.due_date || "9999").localeCompare(String(b.due_date || "9999")));
-    const recentComments = notifications.filter((row) => isLast24Hours(row.created_at)).filter((row) => !row.project_id || isLeadershipRole() || roleProjectIds.has(Number(row.project_id || 0))).slice(0, 12);
+    const recentComments = notifications.filter((row) => isLast24Hours(row.created_at)).filter((row) => !row.project_id || isLeadershipRole() || roleProjectIds.has(Number(row.project_id || 0)));
     const decisionItems = todayDecisionItems({ overdueTasks, returnedTasks, waitingTasks, riskyMaterials, noPhotoProjects, blockers: roleBlockers, remarks: openRemarks });
     qs("#todayKpis").innerHTML = renderTodayKpis([
       ["Требует действия", decisionItems.length, "!", decisionItems.length ? "danger" : "", 'data-view-target="tasks"'],
@@ -3580,13 +3572,13 @@
       ["Без фотоотчёта", noPhotoProjects.length, "▣", noPhotoProjects.length ? "warning" : "", 'data-view-target="photos"'],
       ["Материалы под риском", riskyMaterials.length, "◫", riskyMaterials.length ? "warning" : "", 'data-view-target="materials"']
     ].map(([label2, value, icon, level, attrs]) => ({ label: label2, value, icon, level, attrs })));
-    qs("#todayTasks").innerHTML = todayTasks.length ? renderLimitedRows(todayTasks, renderTodayTaskCard, { limit: 5, moreTarget: 'data-view-target="tasks"' }) : '<div class="empty-state"><strong>На сегодня задач нет</strong><p class="muted">Проверьте просроченные или откройте объект.</p></div>';
+    qs("#todayTasks").innerHTML = todayTasks.length ? renderLimitedRows(todayTasks, renderTodayTaskCard, { limit: 2, expandKey: "today-".concat(currentRoleBase(), "-tasks") }) : '<div class="empty-state"><strong>На сегодня задач нет</strong><p class="muted">Проверьте просроченные или откройте объект.</p></div>';
     qs("#todayAttention").innerHTML = decisionItems.length ? renderLimitedRows(decisionItems, renderTodayDecisionItem, ["owner", "estimator", "sales_manager"].includes(currentRoleBase()) ? { limit: 2, expandKey: "today-".concat(currentRoleBase(), "-attention") } : { limit: 5, moreTarget: 'data-view-target="tasks"' }) : '<div class="attention-empty"><strong>Критичных сигналов нет</strong><span>На сейчас ничего срочного не найдено.</span></div>';
-    qs("#todayMaterials").innerHTML = riskyMaterials.length ? renderLimitedRows(riskyMaterials, renderTodayMaterialCard, { limit: 5, moreTarget: 'data-view-target="materials"' }) : '<div class="empty-state"><strong>Заявок под риском нет</strong><p class="muted">Заявки появятся здесь, когда прораб или руководитель запросит материалы.</p>'.concat(canView("materials") ? '<button class="secondary tiny" type="button" data-view-target="materials">Открыть материалы</button>' : "", "</div>");
+    qs("#todayMaterials").innerHTML = riskyMaterials.length ? renderLimitedRows(riskyMaterials, renderTodayMaterialCard, { limit: 2, expandKey: "today-".concat(currentRoleBase(), "-materials") }) : '<div class="empty-state"><strong>Заявок под риском нет</strong><p class="muted">Заявки появятся здесь, когда прораб или руководитель запросит материалы.</p>'.concat(canView("materials") ? '<button class="secondary tiny" type="button" data-view-target="materials">Открыть материалы</button>' : "", "</div>");
     qs("#todayComments").innerHTML = recentComments.length ? renderLimitedRows(
       recentComments,
       (row) => '\n          <button class="row clickable" type="button" '.concat(notificationTargetAttrs(row), ">\n            <strong>").concat(escapeHtml(row.title || "Событие"), '</strong>\n            <div class="muted">').concat(escapeHtml(row.project_title || "без объекта"), " · ").concat(formatDateRu(row.created_at), "</div>\n            <p>").concat(escapeHtml(row.text || ""), "</p>\n          </button>"),
-      { limit: 5, moreTarget: 'data-view-target="dashboard"' }
+      { limit: 2, expandKey: "today-".concat(currentRoleBase(), "-comments") }
     ) : '<p class="muted">Новых комментариев за 24 часа нет.</p>';
     qs("#todayObjects").innerHTML = activeProjects.length ? renderLimitedRows(activeProjects, (project) => renderTodayObjectCard(project, roleTasks, roleMaterialRows), { limit: 5, moreTarget: 'data-view-target="projects"' }) : '<p class="muted">Активных объектов пока нет.</p>';
     qs("#todayNoPhoto").innerHTML = noPhotoProjects.length ? renderLimitedRows(
@@ -3741,7 +3733,8 @@
       return;
     }
     const signals = dedupeSignals(rows);
-    const groups = signals.reduce((acc, row) => {
+    const remainingSignals = signals.slice(2);
+    const groups = remainingSignals.reduce((acc, row) => {
       const key = row.project_id ? "project-".concat(row.project_id) : "general";
       if (!acc[key]) {
         acc[key] = {
@@ -3759,9 +3752,9 @@
     const groupRows = Object.values(groups).sort((a, b) => b.rows.length - a.rows.length || a.title.localeCompare(b.title, "ru")).map((group, index) => {
       var _a2;
       const open = (_a2 = state.notificationGroupsOpen[group.key]) != null ? _a2 : index === 0;
-      return '\n        <details class="notification-group" data-notification-group="'.concat(group.key, '" ').concat(open ? "open" : "", ">\n          <summary>\n            <span>\n              <strong>").concat(escapeHtml(group.title), "</strong>\n              <small>").concat(group.rows.length, " событий").concat(group.unread ? " · новых: ".concat(group.unread) : "", "</small>\n            </span>\n            ").concat(group.unread ? pill("".concat(group.unread, " новых"), "warning") : "", '\n          </summary>\n          <div class="notification-group-list">\n            ').concat(group.rows.slice(0, 8).map(renderSignalRow).join(""), "\n          </div>\n        </details>");
+      return '\n        <details class="notification-group" data-notification-group="'.concat(group.key, '" ').concat(open ? "open" : "", ">\n          <summary>\n            <span>\n              <strong>").concat(escapeHtml(group.title), "</strong>\n              <small>").concat(group.rows.length, " событий").concat(group.unread ? " · новых: ".concat(group.unread) : "", "</small>\n            </span>\n            ").concat(group.unread ? pill("".concat(group.unread, " новых"), "warning") : "", '\n          </summary>\n          <div class="notification-group-list">\n            ').concat(group.rows.map(renderSignalRow).join(""), "\n          </div>\n        </details>");
     }).join("");
-    qs("#notificationRows").innerHTML = '\n    <details class="inline-collapsible notification-collapsible" '.concat(state.notificationsOpen ? "open" : "", ">\n      <summary>Последние события: ").concat(rows.length, '</summary>\n      <div class="notification-groups">').concat(groupRows, "</div>\n    </details>");
+    qs("#notificationRows").innerHTML = "\n    ".concat(signals.slice(0, 2).map(renderSignalRow).join(""), "\n    ").concat(remainingSignals.length ? '<details class="today-list-disclosure notification-collapsible" '.concat(state.notificationsOpen ? "open" : "", '>\n      <summary><span class="disclosure-closed">Показать ещё ').concat(remainingSignals.length, '</span><span class="disclosure-open">Свернуть</span></summary>\n      <div class="notification-groups">').concat(groupRows, "</div>\n    </details>") : "");
     (_a = qs(".notification-collapsible")) == null ? void 0 : _a.addEventListener("toggle", (event) => {
       state.notificationsOpen = event.currentTarget.open;
     });
@@ -4517,12 +4510,18 @@
     if (!taskProjects.length) state.selectedTaskProjectId = null;
     const selectedGroup = grouped[state.selectedTaskProjectId] || null;
     const tasks = selectedGroup ? selectedGroup.tasks : [];
-    qs("#taskProjectRows").innerHTML = taskProjects.length ? taskProjects.map((project) => {
+    const projectExpandKey = "tasks-".concat(currentRoleBase(), "-projects");
+    const projectSelectionKey = "".concat(currentRoleBase(), ":").concat(state.selectedTaskProjectId || "");
+    if (state.taskProjectDisclosureSelection !== projectSelectionKey && taskProjects.findIndex((project) => Number(project.id) === Number(state.selectedTaskProjectId)) >= 2) {
+      state.expandedLists[projectExpandKey] = true;
+    }
+    state.taskProjectDisclosureSelection = projectSelectionKey;
+    qs("#taskProjectRows").innerHTML = taskProjects.length ? renderLimitedRows(taskProjects, (project) => {
       const stats = taskStats(project.tasks);
       const newCount = project.tasks.filter((task) => ["new", "returned", "waiting_check"].includes(taskStatusKey(task))).length;
       const openCount = project.tasks.filter(isOpenTask).length;
-      return '\n            <button class="row clickable task-project-row '.concat(state.selectedTaskProjectId === project.id ? "active" : "", '" data-task-project="').concat(project.id, '">\n              <div class="stack-line"><strong>').concat(project.title, '</strong></div>\n              <div class="task-project-indicators">').concat(taskProjectIndicatorPills(stats, openCount, newCount), "</div>\n            </button>");
-    }).join("") : '<p class="muted">'.concat(currentRoleBase() === "foreman" ? "За этим прорабом пока нет объектов с задачами." : "Задач пока нет.", "</p>");
+      return '\n            <button class="row clickable task-project-row '.concat(Number(state.selectedTaskProjectId) === Number(project.id) ? "active" : "", '" data-task-project="').concat(project.id, '">\n              <div class="stack-line"><strong>').concat(escapeHtml(project.title), '</strong></div>\n              <div class="task-project-indicators">').concat(taskProjectIndicatorPills(stats, openCount, newCount), "</div>\n            </button>");
+    }, { limit: 2, expandKey: projectExpandKey }) : '<p class="muted">'.concat(currentRoleBase() === "foreman" ? "За этим прорабом пока нет объектов с задачами." : "Задач пока нет.", "</p>");
     qs("#taskStats").innerHTML = renderTaskStats(tasks, state.taskFilter, { compact: true }) + '<p class="muted task-status-help">Ждёт проверки — исполнитель отправил результат, дальше действие на проверяющем. На доработке — проверяющий вернул задачу исполнителю с комментарием и новым сроком.</p>';
     const visibleTasks = tasks.filter((task) => taskMatchesFilter(task, state.taskFilter));
     qs("#taskRows").innerHTML = visibleTasks.length ? renderTaskWorkflowSections(visibleTasks) : '<p class="muted">'.concat(isEstimator ? tasks.length ? "В этом фильтре проверок нет." : "Назначенных проверок пока нет." : tasks.length ? "В этом фильтре задач нет." : "Задач пока нет.", "</p>");
@@ -4801,9 +4800,11 @@
     const payload = await api("/api/locations");
     const projects = payload.projects || [];
     const suppliers = payload.suppliers || [];
-    qs("#objectLocationRows").innerHTML = projects.length ? projects.map(
-      (project) => '\n          <div class="row location-row">\n            <div>\n              <strong>'.concat(project.title, '</strong>\n              <div class="muted">').concat(project.customer_name || "", '</div>\n              <div class="muted">').concat(project.address || "Адрес не указан", "</div>\n            </div>\n            ").concat(mapLink(project.address, project.navigator_url), "\n          </div>")
-    ).join("") : '<p class="muted">Активных объектов пока нет.</p>';
+    qs("#objectLocationRows").innerHTML = projects.length ? renderLimitedRows(
+      projects,
+      (project) => '\n          <div class="row location-row">\n            <div>\n              <strong>'.concat(escapeHtml(project.title), '</strong>\n              <div class="muted">').concat(escapeHtml(project.customer_name || ""), '</div>\n              <div class="muted">').concat(escapeHtml(project.address || "Адрес не указан"), "</div>\n            </div>\n            ").concat(mapLink(project.address, project.navigator_url), "\n          </div>"),
+      { limit: 2, expandKey: "locations-projects" }
+    ) : '<p class="muted">Активных объектов пока нет.</p>';
     qs("#supplierLocationRows").innerHTML = suppliers.length ? suppliers.map(
       (supplier) => '\n          <div class="row location-row">\n            <div>\n              <strong>'.concat(supplier.title, '</strong>\n              <div class="muted">').concat(supplier.address || "Адрес не указан", "</div>\n              ").concat(supplier.comment ? '<div class="muted">'.concat(supplier.comment, "</div>") : "", "\n            </div>\n            ").concat(mapLink(supplier.address, supplier.maps_url), "\n          </div>")
     ).join("") : '<p class="muted">Локации поставщиков пока не добавлены.</p>';
@@ -6124,6 +6125,7 @@
       } else if (state.view === "projects") {
         await renderProjects();
       }
+      if (canView("tasks")) await renderTasks();
     });
     (_d = qs("#globalSearchInput")) == null ? void 0 : _d.addEventListener("keydown", async (event) => {
       if (event.key !== "Enter") return;

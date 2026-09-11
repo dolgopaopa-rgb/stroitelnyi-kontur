@@ -1,10 +1,10 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260910-file-ui-audit-2";
+const CACHE_NAME = "stroitelnyi-kontur-20260911-compact-panels";
 const CORE_ASSETS = [
   "/",
-  "/static/styles.css?v=20260910-file-ui-audit-2",
-  "/static/crm-theme.css?v=20260910-file-ui-audit-2",
-  "/static/app.compat.js?v=20260910-file-ui-audit-2",
-  "/static/manifest.webmanifest?v=20260910-file-ui-audit-2",
+  "/static/styles.css?v=20260911-compact-panels",
+  "/static/crm-theme.css?v=20260911-compact-panels",
+  "/static/app.compat.js?v=20260911-compact-panels",
+  "/static/manifest.webmanifest?v=20260911-compact-panels",
   "/static/assets/d2dom-logo-tile.svg?v=20260825-crm-theme",
   "/static/assets/d2dom-logo-white.svg",
   "/static/assets/fonts/Haval-Light.woff2",
