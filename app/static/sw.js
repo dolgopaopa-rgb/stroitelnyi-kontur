@@ -1,10 +1,10 @@
-const CACHE_NAME = "stroitelnyi-kontur-20260911-compact-panels";
+const CACHE_NAME = "stroitelnyi-kontur-20260915-object-card-standard";
 const CORE_ASSETS = [
   "/",
-  "/static/styles.css?v=20260911-compact-panels",
-  "/static/crm-theme.css?v=20260911-compact-panels",
-  "/static/app.compat.js?v=20260911-compact-panels",
-  "/static/manifest.webmanifest?v=20260911-compact-panels",
+  "/static/styles.css?v=20260915-object-card-standard",
+  "/static/crm-theme.css?v=20260915-object-card-standard",
+  "/static/app.compat.js?v=20260915-object-card-standard",
+  "/static/manifest.webmanifest?v=20260915-object-card-standard",
   "/static/assets/d2dom-logo-tile.svg?v=20260825-crm-theme",
   "/static/assets/d2dom-logo-white.svg",
   "/static/assets/fonts/Haval-Light.woff2",

@@ -221,10 +221,11 @@ Required checks:
 
 1. At least one `[data-today-project-card]` is present when active objects exist.
 2. `[data-testid="today-object-details"]` is not visible before expansion.
-3. `[data-toggle-today-project]` is visible and changes text between `Развернуть` and `Свернуть`.
+3. `[data-toggle-today-project]` is a visible chevron control with an accessible name that changes between `Развернуть сведения об объекте` and `Свернуть сведения об объекте`, synchronized `aria-expanded`, and restored keyboard focus after rendering.
 4. Clicking expand shows object details without navigating away from "Сегодня".
 5. Clicking collapse hides object details again.
-6. The separate `Открыть` action still opens the object card.
+6. The object title `[data-open-project]` opens the object card; do not restore a redundant separate `Открыть` button.
+7. Follow `docs/ui-object-card-standard.md` for geometry, spacing and release evidence. Visual review is separate from functional QA.
 
 If object details are expanded by default and make the dashboard visually noisy, UX QA must fail.
 

@@ -4199,11 +4199,10 @@ textarea {
 
 .today-object-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
   gap: 10px;
 }
 
-.today-object-card,
 .compact-task-card,
 .project-material-card {
   display: grid;
@@ -4213,13 +4212,125 @@ textarea {
 }
 
 .today-object-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  grid-template-areas: "head toggle" "metrics toggle";
+  align-content: start;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
   border: 1px solid var(--line);
-  background: #fff;
+  background: var(--surface);
   border-radius: 8px;
-  padding: 10px;
+  padding: 12px;
+  text-align: left;
 }
 
-.today-object-head,
+.today-object-card.is-expanded {
+  grid-template-areas: "head toggle" "metrics toggle" "details details";
+}
+
+.today-object-card > * {
+  min-width: 0;
+}
+
+.today-object-head {
+  grid-area: head;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.today-object-title {
+  flex: 1 1 160px;
+  min-width: 0;
+  min-height: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--brand);
+  font: inherit;
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+
+.today-object-title:hover {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--brand-strong);
+}
+
+.today-object-head > .pill {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  word-break: normal;
+  overflow-wrap: normal;
+  border-radius: 4px;
+}
+
+.today-object-metrics {
+  grid-area: metrics;
+}
+
+.today-object-toggle {
+  grid-area: toggle;
+  align-self: start;
+  justify-self: end;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+}
+
+.today-object-toggle:hover {
+  background: var(--line);
+  color: var(--text);
+}
+
+.today-object-title:focus-visible,
+.today-object-toggle:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.today-object-toggle svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.today-object-toggle[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
 .compact-task-title {
   display: flex;
   align-items: center;
@@ -4236,20 +4347,13 @@ textarea {
   font-size: 12px;
 }
 
-.today-object-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.today-object-actions .tiny {
-  min-height: 30px;
-}
-
 .today-object-details {
+  grid-area: details;
   display: grid;
   gap: 4px;
-  padding-top: 2px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  overflow-wrap: break-word;
 }
 
 .today-task-card,
@@ -5019,7 +5123,6 @@ textarea {
   gap: 6px;
 }
 
-.compact-ui-v1 .today-object-card,
 .compact-ui-v1 .compact-task-card,
 .compact-ui-v1 .today-task-card,
 .compact-ui-v1 .today-material-card {
@@ -5030,7 +5133,6 @@ textarea {
   box-shadow: none;
 }
 
-.compact-ui-v1 .today-object-card:last-child,
 .compact-ui-v1 .compact-task-card:last-child,
 .compact-ui-v1 .today-task-card:last-child,
 .compact-ui-v1 .today-material-card:last-child {

@@ -548,8 +548,7 @@ h3 {
 }
 
 .row.clickable:hover,
-.card.clickable:hover,
-.today-object-card:hover {
+.card.clickable:hover {
   border-color: rgba(123, 13, 24, 0.28);
   box-shadow: 0 12px 28px rgba(28, 34, 35, 0.09);
 }
@@ -624,7 +623,6 @@ h3 {
   gap: 14px;
 }
 
-.today-object-card,
 .today-task-card,
 .today-material-card,
 .photo-report-card,
@@ -750,7 +748,6 @@ dialog::backdrop {
 .panel-head > *,
 .actions > *,
 .today-role-panel > *,
-.today-object-card > *,
 .photo-report-card > *,
 .object-remark-card > * {
   min-width: 0;
@@ -761,8 +758,7 @@ dialog::backdrop {
 .panel,
 .timeline-item,
 .photo-report-card,
-.object-remark-card,
-.today-object-card {
+.object-remark-card {
   overflow-wrap: anywhere;
 }
 
@@ -1161,7 +1157,6 @@ dialog::backdrop {
   .timeline-item,
   .today-task-card,
   .today-material-card,
-  .today-object-card,
   .photo-report-card,
   .object-remark-card {
     border-radius: 13px;
@@ -1429,47 +1424,8 @@ dialog::backdrop {
   margin-top: 6px;
 }
 
-#todayView .today-object-card {
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas:
-    "head actions"
-    "metrics actions";
-  min-height: 76px;
-  column-gap: 12px;
-  row-gap: 4px;
-  align-items: center;
-}
-
-#todayView .today-object-card.is-expanded {
-  grid-template-areas:
-    "head actions"
-    "metrics actions"
-    "details details";
-}
-
-#todayView .today-object-head {
-  grid-area: head;
-  min-width: 0;
-}
-
-#todayView .today-object-head strong {
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-#todayView .today-object-metrics {
-  grid-area: metrics;
-}
-
-#todayView .today-object-actions {
-  grid-area: actions;
-  flex-wrap: nowrap;
-  align-self: center;
-}
-
-#todayView .today-object-details {
-  grid-area: details;
+.today-object-card {
+  background: rgba(247, 248, 245, 0.9);
 }
 
 #todayView #todayNoPhoto .row {
@@ -1494,56 +1450,6 @@ dialog::backdrop {
 #todayView[data-role="sales_manager"] .today-object-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
-}
-
-#todayView[data-role="sales_manager"] .today-object-card {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-areas: "head" "metrics" "actions";
-  grid-template-rows: auto 1fr auto;
-  align-items: start;
-  gap: 8px;
-  min-height: 0;
-  padding: 9px 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-}
-
-#todayView[data-role="sales_manager"] .today-object-card.is-expanded {
-  grid-template-areas: "head" "metrics" "actions" "details";
-  grid-template-rows: auto 1fr auto auto;
-}
-
-#todayView[data-role="sales_manager"] .today-object-head {
-  align-items: start;
-  gap: 8px;
-}
-
-#todayView[data-role="sales_manager"] .today-object-head strong {
-  flex: 1;
-  line-height: 1.4;
-}
-
-#todayView .today-object-head > .pill {
-  flex: 0 0 auto;
-  white-space: nowrap;
-  border-radius: 4px;
-}
-
-#todayView[data-role="sales_manager"] .today-object-metrics {
-  gap: 4px;
-  align-content: start;
-}
-
-#todayView[data-role="sales_manager"] .today-object-actions {
-  justify-content: flex-start;
-  flex-wrap: wrap;
-  margin-top: 0;
-}
-
-#todayView[data-role="sales_manager"] .today-object-actions .tiny {
-  min-height: 30px;
-  padding-inline: 10px;
-  border-radius: 6px;
 }
 
 #dashboardView .dashboard-sortable {
@@ -1962,26 +1868,10 @@ dialog::backdrop {
     grid-column: 1 / -1;
   }
 
-  #todayView .today-object-card,
-  #todayView .today-object-card.is-expanded {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas:
-      "head"
-      "metrics"
-      "actions"
-      "details";
-    min-height: 0;
-  }
-
-  #todayView .today-object-actions {
-    justify-content: flex-start;
-  }
-
   #todayView #todayNoPhoto .row {
     min-height: 64px;
   }
 
-  #todayView[data-role="sales_manager"] .today-object-actions .tiny,
   #estimatesView .estimate-job-actions .tiny,
   .estimate-file-actions .estimate-file-print {
     min-height: 44px;
@@ -2382,17 +2272,6 @@ dialog::backdrop {
 
   #materialsView .material-pipeline-tabs .pipeline-filter {
     min-height: 44px;
-  }
-}
-
-@media (max-width: 430px) {
-  #todayView .today-object-head {
-    flex-wrap: wrap;
-  }
-
-  #todayView .today-object-head strong,
-  #todayView[data-role="sales_manager"] .today-object-head strong {
-    flex-basis: 100%;
   }
 }
 

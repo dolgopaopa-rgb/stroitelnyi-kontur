@@ -82,14 +82,16 @@ for (const role of roles) for (const density of densities) {
         const cards=await page.locator(".today-object-card").evaluateAll(nodes=>nodes.map(node=>{
           const head=node.querySelector(".today-object-head")!;
           const status=head.querySelector(".pill")!;
-          const actions=node.querySelector(".today-object-actions")!.getBoundingClientRect();
+          const toggle=node.querySelector(".today-object-toggle")!.getBoundingClientRect();
           const metrics=node.querySelector(".today-object-metrics")!.getBoundingClientRect();
           const range=document.createRange(); range.selectNodeContents(status);
-          return {textHeight:range.getBoundingClientRect().height,lineHeight:parseFloat(getComputedStyle(status).lineHeight), actionsY:actions.y,metricsBottom:metrics.bottom,height:node.getBoundingClientRect().height};
+          return {textHeight:range.getBoundingClientRect().height,lineHeight:parseFloat(getComputedStyle(status).lineHeight), toggleWidth:toggle.width,toggleHeight:toggle.height,metricsY:metrics.y,headBottom:head.getBoundingClientRect().bottom,height:node.getBoundingClientRect().height};
         }));
         for(const card of cards) {
           expect(card.textHeight).toBeLessThanOrEqual(card.lineHeight+2);
-          expect(card.actionsY).toBeGreaterThanOrEqual(card.metricsBottom);
+          expect(card.metricsY-card.headBottom).toBeGreaterThanOrEqual(8);
+          expect(card.toggleWidth).toBeGreaterThanOrEqual(44);
+          expect(card.toggleHeight).toBeGreaterThanOrEqual(44);
         }
         if(width>=1440) expect(Math.max(...cards.map(card=>card.height))-Math.min(...cards.map(card=>card.height))).toBeLessThanOrEqual(1);
       }

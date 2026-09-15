@@ -4130,7 +4130,7 @@ function renderTodayObjectCard(project, tasks, materialRows) {
   return `
     <article class="today-object-card ${isExpanded ? "is-expanded" : ""}" data-today-project-card="${project.id}" data-testid="object-card">
       <div class="today-object-head">
-        <strong>${escapeHtml(project.title || "Объект")}</strong>
+        <button class="today-object-title" type="button" data-open-project="${project.id}">${escapeHtml(project.title || "Объект")}</button>
         ${pill(statusLabel(project.status), statusLevel(project.status))}
       </div>
       <div class="today-object-metrics">
@@ -4139,12 +4139,11 @@ function renderTodayObjectCard(project, tasks, materialRows) {
         ${blockers ? pill(`блокеры: ${blockers}`, "danger") : ""}
         ${riskyMaterials.length ? pill(`материалы под риском: ${riskyMaterials.length}`, "warning") : ""}
       </div>
-      <div class="today-object-actions">
-        <button class="secondary tiny" type="button" data-toggle-today-project="${project.id}" aria-expanded="${isExpanded ? "true" : "false"}">${isExpanded ? "Свернуть" : "Развернуть"}</button>
-        <button class="secondary tiny" type="button" data-open-project="${project.id}">Открыть</button>
-      </div>
+      <button class="today-object-toggle" type="button" data-toggle-today-project="${project.id}" aria-expanded="${isExpanded ? "true" : "false"}" aria-controls="today-project-details-${project.id}" aria-label="${isExpanded ? "Свернуть" : "Развернуть"} сведения об объекте" title="${isExpanded ? "Свернуть" : "Развернуть"} сведения об объекте">
+        <svg aria-hidden="true" focusable="false"><use href="#i-chevron-down"/></svg>
+      </button>
       ${isExpanded ? `
-        <div class="today-object-details" data-testid="today-object-details">
+        <div class="today-object-details" id="today-project-details-${project.id}" data-testid="today-object-details">
           <div class="muted">ответственный: ${escapeHtml(project.foreman_name || "прораб не назначен")} · этап: ${statusLabel(project.stage || project.status)}</div>
           <div class="muted">последний фотоотчёт: ${latestPhoto ? formatDateRu(latestPhoto) : "не найден"}</div>
           ${project.deadline ? `<div class="muted">ближайший срок: ${formatDateRu(project.deadline)}</div>` : ""}
@@ -9379,6 +9378,7 @@ function bindEvents() {
       if (state.expandedTodayProjectIds.has(projectId)) state.expandedTodayProjectIds.delete(projectId);
       else state.expandedTodayProjectIds.add(projectId);
       await renderToday();
+      document.querySelector(`[data-toggle-today-project="${projectId}"]`)?.focus({ preventScroll: true });
       return;
     }
 

@@ -16,11 +16,14 @@ test("today object cards are collapsed and can be expanded", async ({ page }) =>
 
   const toggle = firstCard.locator("[data-toggle-today-project]");
   await expect(toggle).toBeVisible();
-  await expect(toggle).toHaveText(/Развернуть/);
+  await expect(toggle).toHaveAccessibleName(/Развернуть/);
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
   await toggle.click();
 
   await expect(firstCard.locator('[data-testid="today-object-details"]')).toBeVisible();
-  await expect(toggle).toHaveText(/Свернуть/);
+  await expect(toggle).toHaveAccessibleName(/Свернуть/);
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await expect(toggle).toBeFocused();
   await toggle.click();
   await expect(firstCard.locator('[data-testid="today-object-details"]')).toHaveCount(0);
 });
